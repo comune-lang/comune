@@ -29,6 +29,7 @@ pub enum Basic {
 	F32,
 	ISIZE,
 	USIZE,
+	BOOL,
 	VOID,
 }
 
@@ -49,6 +50,7 @@ impl Basic {
 			"f32" =>	Some(Basic::F32),
 			"isize" =>	Some(Basic::ISIZE),
 			"usize" =>	Some(Basic::USIZE),
+			"bool" =>	Some(Basic::BOOL),
 			"void" =>	Some(Basic::VOID),
 			
 			// Friendly names
@@ -76,6 +78,7 @@ impl Basic {
 			Basic::F32 => "f32",
 			Basic::ISIZE => "isize",
 			Basic::USIZE => "usize",
+			Basic::BOOL => "bool",
 			Basic::VOID => "void",
 		}
 	}

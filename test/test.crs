@@ -6,8 +6,15 @@ void test1() {}
 void test2() { return; }
 
 // compile error, return type mismatch
-// void test3 { return 0; }
+//void test3() { return 0; }
+int test3() {
+	return 1;
+}
 
 int main() {
+	if (test3())
+		return 1;
+	
+
 	return 0;
 }

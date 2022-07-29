@@ -3,13 +3,8 @@ mod parser;
 mod generator;
 
 use std::cell::RefCell;
-
 use parser::Parser;
-
 use crate::{parser::semantic, lexer::Lexer};
-
-
-
 
 
 fn main() {

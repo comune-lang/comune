@@ -11,8 +11,6 @@ const KEYWORDS: &[&str] = &[
 	"use",
 	"else",  
 	"auto", 
-	"bool", 
-	"char",
 	"class",
 	"struct",
 	"public",
@@ -28,6 +26,8 @@ const KEYWORDS: &[&str] = &[
 	"return",
 	"break",
 	"continue",
+	"true",
+	"false",
 ];
 
 const OPERATORS: &[&str] = &[
@@ -73,6 +73,7 @@ pub enum Token {
 	EOF,
 	Identifier(String),
 	StringLiteral(String),
+	BoolLiteral(bool),
 	Keyword(String),
 	NumLiteral(String),
 	Operator(String),
@@ -101,6 +102,8 @@ impl Display for Token {
 		
 			Token::Identifier(x) | Token::StringLiteral(x) | Token::Keyword(x) | Token::NumLiteral(x) | Token::Operator(x) => 
 				x.clone(),
+			
+			Token::BoolLiteral(b) => if *b { "true".to_string() } else { "false".to_string() },
 			
 			Token::Other(c) => c.to_string(),
 
@@ -192,6 +195,28 @@ impl Lexer {
 		&self.token_buffer
 	}
 
+
+	fn skip_whitespace(&mut self) -> io::Result<()> {
+		if let Some(mut token) = self.char_buffer {
+			while token.is_whitespace() && !self.eof_reached() {
+				token = self.get_next_char()?;
+			}
+		}
+		Ok(())
+	}
+
+	fn skip_comment(&mut self) -> io::Result<()> {
+		if let Some(mut token) = self.char_buffer {
+			while token == '/' && self.peek_next_char()? == '/' {
+				while token != '\n' && !self.eof_reached() {
+					token = self.get_next_char()?;
+				}
+				token = self.get_next_char()?;
+			}
+		}
+		Ok(())
+	}
+
 	
 	pub fn next(&mut self) -> io::Result<Token> {
 		let mut result_token = Ok(Token::EOF);
@@ -199,22 +224,16 @@ impl Lexer {
 		if let Some(mut token) = self.char_buffer {
 			
 			// skip whitespace
-			while token.is_whitespace() && !self.eof_reached() {
-				token = self.get_next_char()?;
-			}
+			self.skip_whitespace()?;
 
 			// skip comment
-			if token == '/' && self.peek_next_char()? == '/' {
-				while token != '\n' && !self.eof_reached() {
-					token = self.get_next_char()?;
-				}
-				token = self.get_next_char()?;
-			}
+			self.skip_comment()?;
 
 			// aaand skip whitespace again
-			while token.is_whitespace() && !self.eof_reached() {
-				token = self.get_next_char()?;
-			}
+			self.skip_whitespace()?;
+
+			token = self.char_buffer.unwrap();
+
 			
 			if token.is_alphabetic() {	
 				// Identifier
@@ -228,7 +247,18 @@ impl Lexer {
 				}
 
 				if KEYWORDS.contains(&result.as_str()) {
-					result_token = Ok(Token::Keyword(result));
+					result_token = match result.as_str() {
+					
+						"true" =>
+							Ok(Token::BoolLiteral(true)),
+						
+						"false" =>
+							Ok(Token::BoolLiteral(false)),
+
+						_ => 
+							Ok(Token::Keyword(result))
+
+					}
 				} else {				
 					result_token = Ok(Token::Identifier(result));
 				}
@@ -338,7 +368,7 @@ impl Lexer {
 			);
 
 			println!("\n\t{}", self.get_line(char_idx));
-			print!("\t{: <1$}", "", column);
+			print!("\t{: <1$}", "", column - 1);
 			println!("{:^<1$}", "", token_len);
 			println!("\n[error]\t{}", e);
 		} else {

@@ -25,6 +25,16 @@ fn get_next(lexer: &RefCell<Lexer>) -> ParseResult<Token> {
 	lexer.borrow_mut().next().or(Err(ParserError::UnexpectedEOF))
 }
 
+// Convenience function that matches a &str against various token kinds
+fn token_compare(token: &Token, text: &str) -> bool {
+	match token {
+	    Token::Operator(op) => text == op.as_str(),
+   		Token::Other(c) => text.chars().next().unwrap() == *c,
+		Token::Keyword(keyword) => text == keyword.as_str(),
+		_ => false,
+	}
+}
+
 
 // NamespaceInfo describes a root namespace's type and symbol information, gathered on the first parsing pass.
 // This is used during the generative pass to disambiguate expressions, as well as validating types and symbols.
@@ -340,11 +350,7 @@ impl<'source> Parser<'source> {
 
 		get_next(&self.lexer)?;
 		
-		while get_current(&self.lexer)? != Token::Other('}') {
-			while current == Token::Other(';') {
-				current = get_next(&self.lexer)?;
-			}
-			
+		while get_current(&self.lexer)? != Token::Other('}') {			
 			let stmt = self.parse_statement()?;
 			stmt.print();
 
@@ -360,11 +366,10 @@ impl<'source> Parser<'source> {
 
 			current = get_current(&self.lexer)?;
 
-			if current == Token::Other(';') {
+			while current == Token::Other(';') {
 				current = get_next(&self.lexer)?;
-			} else {
-				return Err(ParserError::UnexpectedToken);
 			}
+
 		}
 
 		get_next(&self.lexer)?; // consume closing bracket
@@ -375,9 +380,9 @@ impl<'source> Parser<'source> {
 
 
 	fn parse_statement(&self) -> ParseResult<ASTNode> {
-		let current = get_current(&self.lexer)?;
+		let mut current = get_current(&self.lexer)?;
 
-		match current {
+		match &current {
 		
 			Token::Identifier(id) => {
 				// Might be a declaration, check if identifier is a type
@@ -386,19 +391,20 @@ impl<'source> Parser<'source> {
 				if decl_type.is_some() {
 					// TODO: Parse variable declaration / definition
 					return Err(ParserError::Unimplemented);
-				} else {
-					// Not a type, try parsing as expression
-					self.parse_expression()
 				}
 			},
 
 			Token::Keyword(keyword) => {
 				match keyword.as_str() {
+					
+
+					// Parse return statement
+
 					"return" => {
 						let next = get_next(&self.lexer)?;
 						
 						if next == Token::Other(';') {
-							Ok(ASTNode::ControlFlow(ControlFlow::Return{expr: None}))
+							return Ok(ASTNode::ControlFlow(ControlFlow::Return{expr: None}));
 						} else {
 
 							let expr = match self.parse_expression()? {
@@ -406,20 +412,97 @@ impl<'source> Parser<'source> {
 								_ => panic!() // what
 							};
 							
-							Ok(ASTNode::ControlFlow(ControlFlow::Return{expr}))
+							return Ok(ASTNode::ControlFlow(ControlFlow::Return{expr}));
 						}
 					}
 
+
+					// Parse if statement
+					
+					"if" => {
+						current = get_next(&self.lexer)?;
+
+						// Check opening brace
+						if token_compare(&current, "(") {
+							get_next(&self.lexer)?;
+						} else {
+							return Err(ParserError::UnexpectedToken);
+						}
+						let cond;
+
+						if let ASTNode::Expression(expr) = self.parse_expression()? {
+							cond = expr;
+						} else {
+							panic!();
+						}
+
+						current = get_current(&self.lexer)?;
+						
+						// Check closing brace
+						if token_compare(&current, ")") {
+							get_next(&self.lexer)?;
+						} else {
+							return Err(ParserError::UnexpectedToken);
+						}
+
+						// Parse body
+						let start_idx = self.lexer.borrow().get_index();	
+						let body;
+						let mut else_body = None;
+
+						if token_compare(&get_current(&self.lexer)?, "{") {
+							body = self.parse_block()?;
+						} else {
+							body = self.parse_statement()?;
+						}
+
+						let end_idx = self.lexer.borrow().get_index();
+
+						if token_compare(&get_current(&self.lexer)?, "else") {
+							get_next(&self.lexer)?;
+							
+							if token_compare(&get_current(&self.lexer)?, "{") {
+								else_body = Some(self.parse_block()?);
+							} else {
+								else_body = Some(self.parse_statement()?);
+							}
+						}
+
+						return Ok(ASTNode::ControlFlow(
+							ControlFlow::If {
+								cond,
+								body: Box::new(ASTElem { node: body , token_data: (start_idx, end_idx - start_idx) }),
+								
+								// TODO: Add proper metadata to this
+								else_body: match else_body { 
+									None => None, 
+									Some(e) => Some(Box::new(ASTElem { node: e, token_data: (start_idx, end_idx - start_idx)}))},
+							}));
+						
+						
+					}
+
+					// Invalid keyword at start of statement 
 					_ => {
 						return Err(ParserError::UnexpectedKeyword)
 					}
 				}
 			}
-
-			// Not any of the above, try parsing an expression
-			_ => self.parse_expression()
+	
+			_ => {}
 		}
-		
+
+		// Not any of the above, try parsing an expression
+		let expr = self.parse_expression()?;
+
+		current = get_current(&self.lexer)?;
+
+		if current == Token::Other(';') {
+			get_next(&self.lexer)?;
+			return Ok(expr);
+		} else {
+			return Err(ParserError::UnexpectedToken);
+		}
 		
 	}
 
@@ -439,7 +522,7 @@ impl<'source> Parser<'source> {
 		// Get initial part of expression, could be an Atom or the operator of a unary Cons
 		let lhs = match current {
 
-			Token::Identifier(_) | Token::StringLiteral(_) | Token::NumLiteral(_) => 
+			Token::Identifier(_) | Token::StringLiteral(_) | Token::NumLiteral(_) | Token::BoolLiteral(_) => 
 				Expr::Atom(self.parse_atom()?, meta),
 			
 			Token::Operator(tk) => {
@@ -586,6 +669,8 @@ impl<'source> Parser<'source> {
 			
 			// TODO: Separate NumLiteral into float and int?
 			Token::NumLiteral(i) => Ok(Atom::IntegerLit(i.parse::<isize>().unwrap())),
+
+			Token::BoolLiteral(b) => Ok(Atom::BoolLit(b)),
 
 			_ => Err(ParserError::UnexpectedToken)
 		}

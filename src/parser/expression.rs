@@ -178,6 +178,7 @@ impl Operator {
 #[derive(Clone)]
 pub enum Atom {
 	IntegerLit(isize),
+	BoolLit(bool),
 	FloatLit(f64),
 	StringLit(String),
 	Variable(String),
@@ -197,6 +198,7 @@ impl Typed for Atom {
 		match self {
 			Atom::IntegerLit(_) => Ok(Type::from_basic(Basic::I32)),
 			Atom::FloatLit(_) => Ok(Type::from_basic(Basic::F32)),
+			Atom::BoolLit(_) => Ok(Type::from_basic(Basic::BOOL)),
 			Atom::StringLit(_) => todo!(),
 
 			Atom::Variable(name) => scope.get_identifier_type(name).ok_or((ParserError::UndeclaredIdentifier(name.clone()), meta)),
@@ -244,6 +246,8 @@ impl Display for Atom {
             Atom::FloatLit(fl) => write!(f, "{}", fl),
 
             Atom::StringLit(s) => write!(f, "{}", s),
+
+			Atom::BoolLit(b) => if *b { write!(f, "true") } else { write!(f, "false") }
 
             Atom::FnCall {name, args} => {
 				let mut args_iter = args.iter();

@@ -73,6 +73,42 @@ impl ASTNode {
 	}
 
 
+	pub fn validate_node(&self, scope: &mut Scope, meta: TokenData) -> ASTResult<()> {
+		match self {
+			ASTNode::Block(elems) => {
+				let mut subscope = Scope::from_parent(scope);
+				for elem in elems {
+					elem.node.validate_node(&mut subscope, elem.token_data)?;
+				}
+				Ok(())
+			},
+			ASTNode::Expression(_) => Ok(()), // Bare expression has no type requirements
+			ASTNode::Declaration(_, _, _) => Ok(()), // Ditto
+
+			ASTNode::ControlFlow(ctrl) => match ctrl {
+
+				ControlFlow::If { cond, .. } | 
+				ControlFlow::While { cond, .. } | 
+				ControlFlow::For { cond, .. } => {	
+					// Check if condition is coercable to bool
+					let cond_type = cond.get_type(scope, meta)?;
+					let bool_t = Type::from_basic(Basic::BOOL);
+
+					if cond_type.coercable_to(&bool_t) {
+						Ok(())
+					} else {
+						Err((ParserError::TypeMismatch(cond_type, bool_t), meta))
+					}
+				},
+				
+				_ => Ok(())
+			},
+		}
+		
+	}
+
+
+
 	// Recursively validate the return type of a block. Ignores everything except return statements and sub-blocks.
 	// Returns Ok(Some(Type)) if block 
 	pub fn get_return_type(&self, scope: &Scope, meta: TokenData, ret: &Type) -> ASTResult<Option<Type>> {
@@ -97,15 +133,20 @@ impl ASTNode {
 								}
 
 								ControlFlow::If { body, cond: _, else_body } => {
-									let ret_type = body.node.get_return_type(scope, meta, ret)?;
+									let body_type = body.node.get_return_type(scope, meta, ret)?;
 									
-									// If this ControlFlow::If has an else_body, this block inherits its return type from it
+									// Check if both block's return types match
+									// This is kinda fucked rn, figure out how to do this properly later
 									if let Some(else_body) = else_body {
-										else_body.node.get_return_type(scope, meta, ret)?;
+										let else_type = else_body.node.get_return_type(scope, meta, ret)?;
+										if let Some(else_type) = else_type {
+											if body_type.is_some() && !else_type.coercable_to(body_type.as_ref().unwrap()) {
+												return Err((ParserError::TypeMismatch(body_type.unwrap(), else_type), meta));
+											}
+										}	
 									}
-									
-									ret_type
-									
+
+									body_type
 								},
 
 								ControlFlow::While { body, .. } | ControlFlow::For { body, .. } => {
@@ -133,12 +174,7 @@ impl ASTNode {
 					}
 				}
 
-				if last_ret_type.is_some() || ret.inner == InnerType::Basic(Basic::VOID) {
-					Ok(last_ret_type)
-				} else {
-					// No returns in non-void function
-					Err((ParserError::ReturnTypeMismatch { expected: ret.clone(), got: Type::from_basic(Basic::VOID) }, meta))
-				}
+				Ok(last_ret_type)
 			},
 
 			// Non-block nodes don't evaluate themselves for return types

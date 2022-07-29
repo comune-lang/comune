@@ -1,6 +1,6 @@
 use std::{cell::RefCell, collections::HashMap};
 
-use super::{NamespaceInfo, types::{Type, InnerType, Typed}, ParserError, ASTResult};
+use super::{NamespaceInfo, types::{Type, InnerType, Typed, Basic}, ParserError, ASTResult};
 
 
 // Did i do it. did i do lifetime annotations right
@@ -51,7 +51,7 @@ impl<'ctx> Scope<'ctx> {
 pub fn parse_namespace(namespace: &RefCell<NamespaceInfo>) -> ASTResult<()> {
 
 	for (_sym_name, (sym_type, sym_elem)) in &namespace.borrow().symbols {
-		let scope = Scope::new(namespace, sym_type.clone());
+		let mut scope = Scope::new(namespace, sym_type.clone());
 
 		let ret = match &sym_type.inner {
 			
@@ -62,12 +62,24 @@ pub fn parse_namespace(namespace: &RefCell<NamespaceInfo>) -> ASTResult<()> {
 				return Err((ParserError::NotCallable, (0usize, 0usize))), // TODO: Fix
 		};
 
-		// Get function block return type, make sure it matches the signature
+		
 		if let Some(elem) = sym_elem {
-			elem.node.get_return_type(&scope, elem.token_data, &ret)?;
-		} else {
-			todo!(); // Handle unparsed block? Don't think this should ever happen
+			// General block validation pass
+			elem.node.validate_node(&mut scope, elem.token_data)?;
+
+			// Get function block return type, make sure it matches the signature
+			let void = Type::from_basic(Basic::VOID);
+			let ret_type = elem.node.get_return_type(&scope, elem.token_data, &ret)?;
+			
+			
+			if ret_type.is_none() && ret.inner != void.inner {
+				// No returns in non-void function
+				return Err((ParserError::ReturnTypeMismatch { expected: ret.clone(), got: void }, (0usize, 0usize)));
+			} else if ret_type.is_some() && !ret_type.as_ref().unwrap().coercable_to(&ret) {
+				return Err((ParserError::ReturnTypeMismatch { expected: ret.clone(), got: ret_type.unwrap() }, (0usize, 0usize)));
+			}
 		}
+
 	}
 	Ok(())
 }
