@@ -1,0 +1,352 @@
+use std::fmt::Display;
+use std::fs::File;
+use std::io::{self, Read, Error};
+use std::path::Path;
+
+use crate::parser::ParserError;
+
+const KEYWORDS: &[&str] = &[
+	"mod",	
+	"if",
+	"use",
+	"else",  
+	"auto", 
+	"bool", 
+	"char",
+	"class",
+	"struct",
+	"public",
+	"private",
+	"protected",
+	"namespace",
+	"static",
+	"const",
+	"for",
+	"while",
+	"using",
+	"import",
+	"return",
+	"break",
+	"continue",
+];
+
+const OPERATORS: &[&str] = &[
+	"+",
+	"-",
+	"/",
+	"*",
+	"%",
+	"^",
+	"|",
+	"||",
+	"&",
+	"&&",
+	"=",
+	"==",
+	"/=",
+	"*=",
+	"+=",
+	"-=",
+	"++",
+	"--",
+	"->",
+	"(",
+	")",
+	"[",
+	"]",
+	".",
+	"::",
+	"<",
+	">",
+	"<=",
+	">=",
+	"!=",
+	"<<",
+	">>",
+];
+
+
+
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Token {
+	EOF,
+	Identifier(String),
+	StringLiteral(String),
+	Keyword(String),
+	NumLiteral(String),
+	Operator(String),
+	Other(char),
+}
+
+impl Token {
+	pub fn len(&self) -> usize {
+		match self {
+			
+			Token::Identifier(x) | Token::StringLiteral(x) | Token::Keyword(x) | Token::NumLiteral(x) | Token::Operator(x)
+				=> x.len(),
+
+			Token::EOF => 0,
+			
+			_ => 1
+		}
+	}
+}
+
+impl Display for Token {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", 
+		
+		match self {
+		
+			Token::Identifier(x) | Token::StringLiteral(x) | Token::Keyword(x) | Token::NumLiteral(x) | Token::Operator(x) => 
+				x.clone(),
+			
+			Token::Other(c) => c.to_string(),
+
+			Token::EOF => "[eof]".to_string()
+
+		})
+    }
+}
+
+
+pub struct Lexer {
+	file_buffer: String,
+	// hate hate hate hate hate hate
+	file_index: usize, // must be on a valid utf-8 character boundary
+	char_buffer: Option<char>,
+	token_buffer: Option<Token>,
+}
+
+impl Lexer {
+	pub fn new<P: AsRef<Path>>(path: P) -> std::io::Result<Lexer> {
+		let mut result = Lexer { 
+			file_buffer: String::new(), 
+			file_index: 0usize,
+			char_buffer: None,
+			token_buffer: None,
+		};
+
+		File::open(path)?.read_to_string(&mut result.file_buffer)?; // lol
+		
+		// Tabs fuck up the visual error reporting and making it Really Work is a nightmare because Unicode
+		// So here's this hack lol
+		result.file_buffer = result.file_buffer.replace("\t", "    ");
+
+		result.advance_char()?; // Populate char buffer
+		result.next()?; 		// Populate token buffer
+
+		Ok(result)
+	}
+
+	pub fn reset(&mut self) -> io::Result<()> {
+		self.file_index = 0usize;
+		self.char_buffer = None;
+		self.token_buffer = None;
+		
+		self.advance_char()?;
+		self.next()?;
+
+		Ok(())
+	}
+
+	pub fn get_line_number(&self, char_idx: usize) -> usize {
+		if char_idx >= self.file_buffer.len() {
+			self.file_buffer.lines().count()
+		} else {
+			self.file_buffer[..char_idx].chars().filter(|x| *x == '\n').count()
+		}
+	}
+
+
+	pub fn get_column(&self, char_idx: usize) -> usize {
+		if char_idx >= self.file_buffer.len() {
+			char_idx - self.file_buffer.len()
+		} else {
+			let line_num = self.get_line_number(char_idx);
+
+			if line_num == 0 {
+				char_idx - 1
+			} else {
+				let line_index = self.file_buffer.match_indices('\n').nth(line_num - 1).unwrap().0;
+				char_idx - line_index - 1
+			}
+		}
+	}
+
+	pub fn get_line(&self, char_idx: usize) -> &str {
+		if char_idx >= self.file_buffer.len() {
+			"[end of file]"
+		} else {
+			self.file_buffer.lines().nth(self.get_line_number(char_idx)).unwrap()
+		}
+	}
+
+
+	pub fn get_index(&self) -> usize {
+		self.file_index
+	}
+	
+	pub fn current(&self) -> &Option<Token> {
+		&self.token_buffer
+	}
+
+	
+	pub fn next(&mut self) -> io::Result<Token> {
+		let mut result_token = Ok(Token::EOF);
+
+		if let Some(mut token) = self.char_buffer {
+			
+			// skip whitespace
+			while token.is_whitespace() && !self.eof_reached() {
+				token = self.get_next_char()?;
+			}
+
+			// skip comment
+			if token == '/' && self.peek_next_char()? == '/' {
+				while token != '\n' && !self.eof_reached() {
+					token = self.get_next_char()?;
+				}
+				token = self.get_next_char()?;
+			}
+
+			// aaand skip whitespace again
+			while token.is_whitespace() && !self.eof_reached() {
+				token = self.get_next_char()?;
+			}
+			
+			if token.is_alphabetic() {	
+				// Identifier
+				
+				let mut result = String::from(token);
+				let mut next = self.get_next_char()?;
+
+				while next.is_alphanumeric() {
+					result.push(next);
+					next = self.get_next_char()?;
+				}
+
+				if KEYWORDS.contains(&result.as_str()) {
+					result_token = Ok(Token::Keyword(result));
+				} else {				
+					result_token = Ok(Token::Identifier(result));
+				}
+
+			} else if token.is_numeric() { 
+				// Numeric literal
+				
+				let mut result = String::from(token);
+				let mut next = self.get_next_char()?;
+
+				while next.is_numeric() {
+					result.push(next);
+					next = self.get_next_char()?;
+				}
+
+				result_token = Ok(Token::NumLiteral(result));
+
+			} else if OPERATORS.iter().find(|x| { x.chars().next().unwrap() == token }).is_some() {
+				// Operator
+
+				let result = String::from(token);
+				
+				let next = self.peek_next_char()?;
+				let mut result_double = result.clone(); result_double.push(next);
+
+				// Check for two-char operator
+				if OPERATORS.contains(&result_double.as_str()) {
+					self.get_next_char()?;
+					result_token = Ok(Token::Operator(result_double));
+				} else {
+					result_token = Ok(Token::Operator(result));
+				}
+
+				self.get_next_char()?;
+
+
+			} else if !self.eof_reached() { 
+				result_token = Ok(Token::Other(token));
+				self.get_next_char()?;
+			}
+		}
+
+		if result_token.is_ok() {
+		//	println!("{:?}", result_token.as_ref().unwrap());
+			self.token_buffer = Some(result_token.as_ref().unwrap().clone());
+		} else {
+			self.token_buffer = None;
+		}
+
+		result_token
+	}
+
+	
+	fn get_next_char(&mut self) -> io::Result<char> {
+		match self.advance_char() {
+			Ok(()) => {
+				// Char buffer filled
+				Ok(self.char_buffer.unwrap())
+			}
+    		Err(e) => {
+				if self.char_buffer.is_some() {
+					self.file_index += self.char_buffer.unwrap().len_utf8();
+					Ok(self.char_buffer.take().unwrap())
+				} else {
+					Err(e)
+				}
+			},
+		}
+	}
+
+
+	fn eof_reached(&self) -> bool {
+		self.file_index >= self.file_buffer.len()
+	}
+
+
+	fn advance_char(&mut self) -> io::Result<()> {
+		if self.eof_reached() {
+			Err(Error::new(io::ErrorKind::UnexpectedEof, "file buffer exhausted"))
+		} else {
+			let mut chars_buf = self.file_buffer[self.file_index..].chars();
+
+			self.char_buffer = chars_buf.next();
+			self.file_index += self.char_buffer.unwrap().len_utf8();
+
+			Ok(())
+		}
+	}
+
+
+	fn peek_next_char(&self) -> io::Result<char> {
+		// Good language
+		self.file_buffer[self.file_index..].chars().next().ok_or(
+			Error::new(io::ErrorKind::UnexpectedEof, "Unexpected EOF")
+		)
+	}
+	
+
+	pub fn log_error_at(&self, char_idx: usize, token_len: usize, e: ParserError) {
+		if char_idx > 0 {
+			let line = self.get_line_number(char_idx);
+			let column = self.get_column(char_idx);
+
+			println!("\nerror on line {}:{}!", 
+				line + 1,
+				column
+			);
+
+			println!("\n\t{}", self.get_line(char_idx));
+			print!("\t{: <1$}", "", column);
+			println!("{:^<1$}", "", token_len);
+			println!("\n[error]\t{}", e);
+		} else {
+			println!("\n[error]\t{} \n[note]\tno error metadata found, can't display error location", e);
+		}
+	}
+
+	pub fn log_error(&self, e: ParserError) {
+		self.log_error_at(self.file_index, self.current().as_ref().unwrap().len(), e)
+	}
+}
