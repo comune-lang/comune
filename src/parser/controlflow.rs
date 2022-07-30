@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use super::{ast::ASTElem, types::{Typed, Type, Basic}, ParserError};
 
 
@@ -65,6 +67,26 @@ impl Typed for ControlFlow {
 					Ok(Type::from_basic(Basic::VOID))
 				}},
 
+            ControlFlow::Break => todo!(),
+            ControlFlow::Continue => todo!(),
+        }
+    }
+}
+
+
+impl Display for ControlFlow {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ControlFlow::If { cond, body, else_body } => {
+				if let Some(else_body) = else_body {
+					write!(f, "if {} then {} else {}", cond, body, else_body)
+				} else {
+					write!(f, "if {} then {}", cond, body)
+				}
+			},
+			ControlFlow::While { cond, body } => write!(f, "while {} {}", cond, body),
+            ControlFlow::For { init, cond, iter, body } => write!(f, "for ({}; {}; {}) {}", init, cond, iter, body),
+            ControlFlow::Return { expr } => if let Some(expr) = expr { write!(f, "return {}", expr) } else { write!(f, "return") },
             ControlFlow::Break => todo!(),
             ControlFlow::Continue => todo!(),
         }

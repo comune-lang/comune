@@ -377,6 +377,7 @@ impl Lexer {
 	}
 
 	pub fn log_error(&self, e: ParserError) {
-		self.log_error_at(self.file_index, self.current().as_ref().unwrap().len(), e)
+		let len = self.current().as_ref().unwrap().len();
+		self.log_error_at(self.file_index - len, len, e)
 	}
 }

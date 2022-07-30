@@ -46,6 +46,10 @@ impl<'ctx> Scope<'ctx> {
 		}
 	}
 
+	pub fn add_variable(&mut self, t: Type, n: String) {
+		self.variables.insert(n, t);
+	}
+
 }
 
 pub fn parse_namespace(namespace: &RefCell<NamespaceInfo>) -> ASTResult<()> {

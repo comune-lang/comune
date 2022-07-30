@@ -65,7 +65,7 @@ impl ASTElem {
 				
 			},
     		ASTNode::ControlFlow(ctrl) => {
-				println!("ctrl flow (todo)");
+				println!("ctrl {}", ctrl);
 			},
 		}
 	}
@@ -85,22 +85,61 @@ impl ASTElem {
 				Ok(())
 			},
 			ASTNode::Expression(_) => Ok(()), // Bare expression has no type requirements
-			ASTNode::Declaration(_, _, _) => Ok(()), // Ditto
+			ASTNode::Declaration(t, n, e) => {
+				scope.add_variable(t.clone(), n.to_string());
+
+				if let Some(expr) = e {
+					let expr_type = expr.get_type(scope)?;
+					if expr_type.coercable_to(t) {
+						Ok(())
+					} else {
+						Err((ParserError::TypeMismatch(t.clone(), expr_type), self.token_data))
+					}
+				} else {
+					Ok(())
+				}
+			},
 
 			ASTNode::ControlFlow(ctrl) => match ctrl.as_ref() {
 
-				ControlFlow::If { cond, .. } | 
-				ControlFlow::While { cond, .. } | 
-				ControlFlow::For { cond, .. } => {	
+				ControlFlow::If { cond, body, else_body } => {
+					let cond_type = cond.get_type(scope)?;
+					let bool_t = Type::from_basic(Basic::BOOL);
+
+					if !cond_type.coercable_to(&bool_t) {
+						return Err((ParserError::TypeMismatch(cond_type, bool_t), self.token_data));
+					}
+
+					body.validate_node(scope)?;
+					if let Some(else_body) = else_body {
+						else_body.validate_node(scope)?;
+					}
+
+					Ok(())
+				}
+				ControlFlow::While { cond, body } => {
+					let cond_type = cond.get_type(scope)?;
+					let bool_t = Type::from_basic(Basic::BOOL);
+
+					if !cond_type.coercable_to(&bool_t) {
+						return Err((ParserError::TypeMismatch(cond_type, bool_t), self.token_data));
+					}
+					body.validate_node(scope)?;
+					Ok(())
+				} 
+
+				ControlFlow::For { cond, body, init, iter } => {	
 					// Check if condition is coercable to bool
 					let cond_type = cond.get_type(scope)?;
 					let bool_t = Type::from_basic(Basic::BOOL);
 
-					if cond_type.coercable_to(&bool_t) {
-						Ok(())
-					} else {
-						Err((ParserError::TypeMismatch(cond_type, bool_t), self.token_data))
+					if !cond_type.coercable_to(&bool_t) {
+						return Err((ParserError::TypeMismatch(cond_type, bool_t), self.token_data));
 					}
+					init.validate_node(scope)?;
+					iter.validate_node(scope)?;
+					body.validate_node(scope)?;
+					Ok(())
 				},
 				
 				_ => Ok(())
@@ -189,10 +228,17 @@ impl ASTElem {
 impl Display for ASTElem {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self.node {
-            ASTNode::Block(b) => 				write!(f, "{:?}", b),
+            ASTNode::Block(b) => {
+				write!(f, "{{\n")?;
+				for elem in b {
+					write!(f, "\t\t{}", elem)?;
+				}
+				write!(f, "\n\t}}")
+			},
+
             ASTNode::Expression(e) => 			write!(f, "{}", e),
             ASTNode::Declaration(_, _, _) => 	write!(f, "declaration (todo)"),
-            ASTNode::ControlFlow(c) => 			write!(f, "{:?}", c),
+            ASTNode::ControlFlow(c) => 			write!(f, "{}", c),
         }
     }
 }

@@ -28,8 +28,8 @@ fn main() {
 	};
 
 	// Resolve types
-	match semantic::parse_namespace(namespace) {
-    Ok(()) => {},
-    Err(e) => { lexer.borrow().log_error_at(e.1.0, e.1.1, e.0); return; },
+		match semantic::parse_namespace(namespace) {
+		Ok(()) => {},
+		Err(e) => { lexer.borrow().log_error_at(e.1.0, e.1.1, e.0); return; },
 	}
 }

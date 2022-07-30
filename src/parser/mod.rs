@@ -355,9 +355,6 @@ impl<'source> Parser<'source> {
 			let stmt = self.parse_statement()?;
 			stmt.print();
 
-			let idx = self.lexer.borrow().get_index();
-			let len = get_current(&self.lexer)?.len();
-
 			result.push(stmt);
 
 			current = get_current(&self.lexer)?;
@@ -379,7 +376,7 @@ impl<'source> Parser<'source> {
 
 	fn parse_statement(&self) -> ParseResult<ASTElem> {
 		let mut current = get_current(&self.lexer)?;
-		let begin = self.lexer.borrow().get_index();
+		let begin = self.lexer.borrow().get_index() - current.len();
 		let mut result = None;
 
 		match &current {
@@ -389,8 +386,18 @@ impl<'source> Parser<'source> {
 				let decl_type = self.context.borrow().get_type(&id);
 
 				if decl_type.is_some() {
-					// TODO: Parse variable declaration / definition
-					return Err(ParserError::Unimplemented);
+					// Parse variable declaration
+					let t = self.parse_type()?;
+					let name = get_next(&self.lexer)?;
+					let mut expr = None;
+					
+					if token_compare(&get_current(&self.lexer)?, "=") {
+						get_next(&self.lexer)?;
+						expr = Some(Box::new(self.parse_expression()?));
+					}
+					self.check_semicolon()?;
+					result = Some(ASTNode::Declaration(t, name, expr));
+					
 				}
 			},
 
@@ -408,6 +415,7 @@ impl<'source> Parser<'source> {
 						} else {
 							result = Some(ASTNode::ControlFlow(Box::new(ControlFlow::Return{expr: Some(self.parse_expression()?)})));
 						}
+						self.check_semicolon()?;
 					}
 
 
@@ -435,7 +443,6 @@ impl<'source> Parser<'source> {
 						}
 
 						// Parse body
-						let start_idx = self.lexer.borrow().get_index();	
 						let body;
 						let mut else_body = None;
 
@@ -444,8 +451,6 @@ impl<'source> Parser<'source> {
 						} else {
 							body = self.parse_statement()?;
 						}
-
-						let end_idx = self.lexer.borrow().get_index();
 
 						if token_compare(&get_current(&self.lexer)?, "else") {
 							get_next(&self.lexer)?;
@@ -467,8 +472,6 @@ impl<'source> Parser<'source> {
 									None => None, 
 									Some(e) => Some(e)},
 							})));
-						
-						
 					}
 
 					// Invalid keyword at start of statement 
@@ -481,22 +484,25 @@ impl<'source> Parser<'source> {
 			_ => {}
 		}
 		if result.is_some() {
-			let end = self.lexer.borrow().get_index();
-			return Ok(ASTElem {node: result.unwrap(), token_data: (begin, end - begin)});
+			let end = self.lexer.borrow().get_index() - get_current(&self.lexer)?.len();
+			let len = end - begin;
+			return Ok(ASTElem {node: result.unwrap(), token_data: (begin, len)});
 		}
-		
+
 		// Not any of the above, try parsing an expression
 		let expr = self.parse_expression()?;
+		self.check_semicolon()?;
+		return Ok(expr);
+	}
 
-		current = get_current(&self.lexer)?;
 
-		if current == Token::Other(';') {
+	fn check_semicolon(&self) -> ParseResult<()> {
+		if token_compare(&get_current(&self.lexer)?, ";") {
 			get_next(&self.lexer)?;
-			return Ok(expr);
+			Ok(())
 		} else {
-			return Err(ParserError::UnexpectedToken);
+			Err(ParserError::UnexpectedToken)
 		}
-		
 	}
 
 
@@ -505,7 +511,8 @@ impl<'source> Parser<'source> {
 		let begin = self.lexer.borrow().get_index();
 		let expr = ASTNode::Expression(self.parse_expression_bp(0)?);
 		let end = self.lexer.borrow().get_index();
-		Ok((ASTElem { node: expr, token_data: (begin, end - begin)}))
+		let len = end - begin;
+		Ok(ASTElem { node: expr, token_data: (begin - len, len)})
 	}
 
 
