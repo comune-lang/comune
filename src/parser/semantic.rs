@@ -65,11 +65,11 @@ pub fn parse_namespace(namespace: &RefCell<NamespaceInfo>) -> ASTResult<()> {
 		
 		if let Some(elem) = sym_elem {
 			// General block validation pass
-			elem.node.validate_node(&mut scope, elem.token_data)?;
+			elem.validate_node(&mut scope)?;
 
 			// Get function block return type, make sure it matches the signature
 			let void = Type::from_basic(Basic::VOID);
-			let ret_type = elem.node.get_return_type(&scope, elem.token_data, &ret)?;
+			let ret_type = elem.get_return_type(&scope, &ret)?;
 			
 			
 			if ret_type.is_none() && ret.inner != void.inner {

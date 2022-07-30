@@ -5,16 +5,13 @@ void test1() {}
 // valid, explicit void return
 void test2() { return; }
 
-// compile error, return type mismatch
-//void test3() { return 0; }
 int test3() {
 	return 1;
 }
 
 int main() {
-	if (test3())
+	if (true)
 		return 1;
-	
 
 	return 0;
 }

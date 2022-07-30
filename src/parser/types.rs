@@ -10,7 +10,7 @@ pub type FnParamList = Vec<(Type, Option<String>)>;
 
 
 pub trait Typed {
-	fn get_type(&self, scope: &Scope, meta: TokenData) -> ASTResult<Type>;
+	fn get_type(&self, scope: &Scope) -> ASTResult<Type>;
 }
 
 

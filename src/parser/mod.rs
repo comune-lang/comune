@@ -245,7 +245,7 @@ impl<'source> Parser<'source> {
 									if current == Token::Other('{') {
 										// Are we generating the AST? If not, skip the function body
 										if self.generate_ast {
-											ast_elem = Some(ASTElem {node: self.parse_block()?, token_data: (0usize, 0usize)}); // TODO: Add metadata
+											ast_elem = Some(self.parse_block()?);
 										} else {
 											self.skip_block()?;
 										}
@@ -339,7 +339,8 @@ impl<'source> Parser<'source> {
 
 
 
-	fn parse_block(&self) -> ParseResult<ASTNode> {
+	fn parse_block(&self) -> ParseResult<ASTElem> {
+		let begin = self.lexer.borrow().get_index();
 		let mut current = get_current(&self.lexer)?;
 
 		if current != Token::Other('{') {
@@ -357,12 +358,7 @@ impl<'source> Parser<'source> {
 			let idx = self.lexer.borrow().get_index();
 			let len = get_current(&self.lexer)?.len();
 
-			result.push(
-				ASTElem {
-					node: stmt, 
-					token_data: (idx - len, len)
-				}
-			);
+			result.push(stmt);
 
 			current = get_current(&self.lexer)?;
 
@@ -373,14 +369,18 @@ impl<'source> Parser<'source> {
 		}
 
 		get_next(&self.lexer)?; // consume closing bracket
+		
+		let end = self.lexer.borrow().get_index();
 
-		Ok(ASTNode::Block(result))
+		Ok(ASTElem { node: ASTNode::Block(result), token_data: (begin, end - begin)})
 	}
 
 
 
-	fn parse_statement(&self) -> ParseResult<ASTNode> {
+	fn parse_statement(&self) -> ParseResult<ASTElem> {
 		let mut current = get_current(&self.lexer)?;
+		let begin = self.lexer.borrow().get_index();
+		let mut result = None;
 
 		match &current {
 		
@@ -404,15 +404,9 @@ impl<'source> Parser<'source> {
 						let next = get_next(&self.lexer)?;
 						
 						if next == Token::Other(';') {
-							return Ok(ASTNode::ControlFlow(ControlFlow::Return{expr: None}));
+							result = Some(ASTNode::ControlFlow(Box::new(ControlFlow::Return{expr: None})));
 						} else {
-
-							let expr = match self.parse_expression()? {
-								ASTNode::Expression(expr) => Some(expr),
-								_ => panic!() // what
-							};
-							
-							return Ok(ASTNode::ControlFlow(ControlFlow::Return{expr}));
+							result = Some(ASTNode::ControlFlow(Box::new(ControlFlow::Return{expr: Some(self.parse_expression()?)})));
 						}
 					}
 
@@ -428,13 +422,8 @@ impl<'source> Parser<'source> {
 						} else {
 							return Err(ParserError::UnexpectedToken);
 						}
-						let cond;
 
-						if let ASTNode::Expression(expr) = self.parse_expression()? {
-							cond = expr;
-						} else {
-							panic!();
-						}
+						let cond = self.parse_expression()?;
 
 						current = get_current(&self.lexer)?;
 						
@@ -468,16 +457,16 @@ impl<'source> Parser<'source> {
 							}
 						}
 
-						return Ok(ASTNode::ControlFlow(
-							ControlFlow::If {
+						result = Some(ASTNode::ControlFlow(
+							Box::new(ControlFlow::If {
 								cond,
-								body: Box::new(ASTElem { node: body , token_data: (start_idx, end_idx - start_idx) }),
+								body,
 								
 								// TODO: Add proper metadata to this
 								else_body: match else_body { 
 									None => None, 
-									Some(e) => Some(Box::new(ASTElem { node: e, token_data: (start_idx, end_idx - start_idx)}))},
-							}));
+									Some(e) => Some(e)},
+							})));
 						
 						
 					}
@@ -491,7 +480,11 @@ impl<'source> Parser<'source> {
 	
 			_ => {}
 		}
-
+		if result.is_some() {
+			let end = self.lexer.borrow().get_index();
+			return Ok(ASTElem {node: result.unwrap(), token_data: (begin, end - begin)});
+		}
+		
 		// Not any of the above, try parsing an expression
 		let expr = self.parse_expression()?;
 
@@ -508,8 +501,11 @@ impl<'source> Parser<'source> {
 
 
 
-	fn parse_expression(&self) -> ParseResult<ASTNode> {
-		Ok(ASTNode::Expression(self.parse_expression_bp(0)?))
+	fn parse_expression(&self) -> ParseResult<ASTElem> {
+		let begin = self.lexer.borrow().get_index();
+		let expr = ASTNode::Expression(self.parse_expression_bp(0)?);
+		let end = self.lexer.borrow().get_index();
+		Ok((ASTElem { node: expr, token_data: (begin, end - begin)}))
 	}
 
 
@@ -625,15 +621,9 @@ impl<'source> Parser<'source> {
 							current = get_next(&self.lexer)?;
 							
 							if current != Token::Operator(")".to_string()) {
-								loop {
-									let node = self.parse_expression()?;
+								loop {									
+									args.push(self.parse_expression()?);
 									
-									if let ASTNode::Expression(expr) = node {
-										args.push(expr);
-									} else {
-										return Err(ParserError::UnexpectedToken);
-									}
-
 									current = get_current(&self.lexer)?;
 
 									if let Token::Other(',') = current {

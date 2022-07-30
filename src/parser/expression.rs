@@ -1,7 +1,7 @@
 use std::fmt::Display;
 
 
-use super::{types::{Type, Basic, InnerType, Typed}, ParserError, semantic::Scope, ASTResult, ast::TokenData};
+use super::{types::{Type, Basic, InnerType, Typed}, ParserError, semantic::Scope, ASTResult, ast::{TokenData, ASTElem}};
 
 #[derive(Clone, Debug)]
 pub enum Operator {
@@ -175,25 +175,25 @@ impl Operator {
 
 
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Atom {
 	IntegerLit(isize),
 	BoolLit(bool),
 	FloatLit(f64),
 	StringLit(String),
 	Variable(String),
-	ArrayLit(Vec<Expr>),
+	ArrayLit(Vec<ASTElem>),
 
 	FnCall{
 		name: String, 
-		args: Vec<Expr>
+		args: Vec<ASTElem>
 	},
 
 	
 }
 
 
-impl Typed for Atom {
+impl Atom {
 	fn get_type(&self, scope: &Scope, meta: TokenData) -> ASTResult<Type> {
 		match self {
 			Atom::IntegerLit(_) => Ok(Type::from_basic(Basic::I32)),
@@ -212,9 +212,9 @@ impl Typed for Atom {
 						if args.len() == params.len() {
 
 							for i in 0..args.len() {
-								let arg_type = args[i].get_type(scope, meta)?;
+								let arg_type = args[i].get_type(scope)?;
 								if !arg_type.coercable_to(&params[i]) {
-									return Err((ParserError::TypeMismatch(arg_type, *params[i].clone()), args[i].get_meta()));
+									return Err((ParserError::TypeMismatch(arg_type, *params[i].clone()), args[i].token_data));
 								}
 							}
 							// All good, return function's return type
@@ -271,7 +271,7 @@ impl Display for Atom {
 
 
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Expr {
 	Atom(Atom, TokenData),
 	Cons(Operator, Vec<Expr>, TokenData)
@@ -288,10 +288,10 @@ impl Expr {
 
 }
 
-impl Typed for Expr {
-	fn get_type(&self, scope: &Scope, _meta: TokenData) -> ASTResult<Type> {
+impl Expr {
+	pub fn get_type(&self, scope: &Scope, meta: TokenData) -> ASTResult<Type> {
 		match self {
-			Expr::Atom(a, _) => a.get_type(scope, self.get_meta()),
+			Expr::Atom(a, _) => a.get_type(scope, meta),
 
 			// This should probably implement some sort of type coercion ruleset? Works for now though
 			Expr::Cons(_, elems, meta) => {
