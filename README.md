@@ -46,3 +46,13 @@ the modules feature, like the rest of the build system, is highly influenced by 
 
 > note: several major language features (like modules) are still WIP, and the semantics and behaviour are seriously subject to change.
 
+## compiling
+
+### windows
+
+on windows, compiling using WSL2 is ***highly*** recommended, unless you want to go through the trouble of compiling LLVM yourself (you don't).
+simply make sure Rust and LLVM 12 are installed on your WSL distro, run `cargo build`, and you should be good to go.
+
+### linux
+
+ditto, just make sure you've got Rust and LLVM 12 set up properly and you oughta be fine.
