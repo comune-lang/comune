@@ -201,8 +201,10 @@ impl Lexer {
 			while token.is_whitespace() && !self.eof_reached() {
 				token = self.get_next_char()?;
 			}
+			Ok(())
+		} else {
+			Err(Error::new(io::ErrorKind::UnexpectedEof, "file buffer exhausted"))
 		}
-		Ok(())
 	}
 
 	fn skip_comment(&mut self) -> io::Result<()> {
@@ -213,8 +215,10 @@ impl Lexer {
 				}
 				token = self.get_next_char()?;
 			}
+			Ok(())
+		} else {
+			Err(Error::new(io::ErrorKind::UnexpectedEof, "file buffer exhausted"))
 		}
-		Ok(())
 	}
 
 	
@@ -222,17 +226,13 @@ impl Lexer {
 		let mut result_token = Ok(Token::EOF);
 
 		if let Some(mut token) = self.char_buffer {
-			
-			// skip whitespace
-			self.skip_whitespace()?;
 
-			// skip comment
-			self.skip_comment()?;
-
-			// aaand skip whitespace again
-			self.skip_whitespace()?;
-
-			token = self.char_buffer.unwrap();
+			// skip whitespace and comments
+			while !self.eof_reached() && (token.is_whitespace() || (token == '/' && self.peek_next_char()? == '/')) {
+				self.skip_whitespace()?;
+				self.skip_comment()?;
+				token = self.char_buffer.unwrap();
+			}
 
 			
 			if token.is_alphabetic() {	

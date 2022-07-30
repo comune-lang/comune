@@ -1,0 +1,15 @@
+int test() {
+	return 1;
+}
+
+int main() {
+	int a = test();
+	
+	if (true)
+		int b = 0;
+
+	// compile error: undeclared identifier "b"
+	// return b;
+	return a;
+}
+

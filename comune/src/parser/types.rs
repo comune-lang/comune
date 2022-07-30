@@ -2,7 +2,7 @@ use std::{fmt::Display, collections::HashMap};
 
 use crate::lexer::{Token};
 
-use super::{semantic::Scope, ast::TokenData, ASTResult};
+use super::{semantic::Scope, ASTResult};
 
 type TypeRef = Box<Type>;
 

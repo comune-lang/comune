@@ -1,6 +1,6 @@
 mod lexer;
 mod parser;
-mod generator;
+mod backend;
 
 use std::cell::RefCell;
 use parser::Parser;

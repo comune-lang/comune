@@ -387,11 +387,12 @@ impl<'source> Parser<'source> {
 
 				if decl_type.is_some() {
 					// Parse variable declaration
+					
 					let t = self.parse_type()?;
-					let name = get_next(&self.lexer)?;
+					let name = get_current(&self.lexer)?;
 					let mut expr = None;
 					
-					if token_compare(&get_current(&self.lexer)?, "=") {
+					if token_compare(&get_next(&self.lexer)?, "=") {
 						get_next(&self.lexer)?;
 						expr = Some(Box::new(self.parse_expression()?));
 					}
@@ -449,7 +450,7 @@ impl<'source> Parser<'source> {
 						if token_compare(&get_current(&self.lexer)?, "{") {
 							body = self.parse_block()?;
 						} else {
-							body = self.parse_statement()?;
+							body = self.parse_statement()?.wrap_in_block();
 						}
 
 						if token_compare(&get_current(&self.lexer)?, "else") {
@@ -458,7 +459,7 @@ impl<'source> Parser<'source> {
 							if token_compare(&get_current(&self.lexer)?, "{") {
 								else_body = Some(self.parse_block()?);
 							} else {
-								else_body = Some(self.parse_statement()?);
+								else_body = Some(self.parse_statement()?.wrap_in_block());
 							}
 						}
 

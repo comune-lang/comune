@@ -1,6 +1,6 @@
 use std::{cell::RefCell, collections::HashMap};
 
-use super::{NamespaceInfo, types::{Type, InnerType, Typed, Basic}, ParserError, ASTResult};
+use super::{NamespaceInfo, types::{Type, InnerType, Basic}, ParserError, ASTResult};
 
 
 // Did i do it. did i do lifetime annotations right
@@ -68,13 +68,10 @@ pub fn parse_namespace(namespace: &RefCell<NamespaceInfo>) -> ASTResult<()> {
 
 		
 		if let Some(elem) = sym_elem {
-			// General block validation pass
-			elem.validate_node(&mut scope)?;
-
-			// Get function block return type, make sure it matches the signature
-			let void = Type::from_basic(Basic::VOID);
-			let ret_type = elem.get_return_type(&scope, &ret)?;
 			
+			// Validate function block & get return type, make sure it matches the signature
+			let void = Type::from_basic(Basic::VOID);
+			let ret_type = elem.validate(&mut scope, &ret)?;
 			
 			if ret_type.is_none() && ret.inner != void.inner {
 				// No returns in non-void function

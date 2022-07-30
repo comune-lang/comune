@@ -4,7 +4,7 @@ use crate::lexer::Token;
 
 use super::{ASTResult, ParserError};
 use super::semantic::Scope;
-use super::types::{Type, Basic, Typed, InnerType};
+use super::types::{Type, Basic, Typed};
 use super::expression::Expr;
 use super::controlflow::ControlFlow;
 
@@ -75,29 +75,44 @@ impl ASTElem {
 	}
 
 
-	pub fn validate_node(&self, scope: &mut Scope) -> ASTResult<()> {
+	pub fn wrap_in_block(self) -> ASTElem {
+		let meta = self.token_data;
+		ASTElem { node: ASTNode::Block(vec![self]), token_data: meta }
+	}
+
+	// Recursively validate ASTNode types and check if blocks have matching return types
+	pub fn validate(&self, scope: &mut Scope, ret: &Type) -> ASTResult<Option<Type>> {
 		match &self.node {
+
 			ASTNode::Block(elems) => {
 				let mut subscope = Scope::from_parent(scope);
+				let mut last_ret = None;
 				for elem in elems {
-					elem.validate_node(&mut subscope)?;
+					let t = elem.validate(&mut subscope, ret)?;
+					if let Some(t) = t{
+						if !t.coercable_to(ret) {
+							return Err((ParserError::TypeMismatch(t, ret.clone()), elem.token_data))
+						}
+						last_ret = Some(t);
+					}
 				}
-				Ok(())
+				Ok(last_ret)
 			},
-			ASTNode::Expression(_) => Ok(()), // Bare expression has no type requirements
+			
+			ASTNode::Expression(_) => Ok(None), // Bare expression has no type requirements
+			
 			ASTNode::Declaration(t, n, e) => {
-				scope.add_variable(t.clone(), n.to_string());
 
 				if let Some(expr) = e {
 					let expr_type = expr.get_type(scope)?;
-					if expr_type.coercable_to(t) {
-						Ok(())
-					} else {
-						Err((ParserError::TypeMismatch(t.clone(), expr_type), self.token_data))
+					if !expr_type.coercable_to(t) {
+						return Err((ParserError::TypeMismatch(t.clone(), expr_type), self.token_data));
 					}
-				} else {
-					Ok(())
 				}
+
+				scope.add_variable(t.clone(), n.to_string());
+
+				Ok(None)	
 			},
 
 			ASTNode::ControlFlow(ctrl) => match ctrl.as_ref() {
@@ -109,14 +124,15 @@ impl ASTElem {
 					if !cond_type.coercable_to(&bool_t) {
 						return Err((ParserError::TypeMismatch(cond_type, bool_t), self.token_data));
 					}
+					let t = body.validate(scope, ret)?;
 
-					body.validate_node(scope)?;
 					if let Some(else_body) = else_body {
-						else_body.validate_node(scope)?;
+						else_body.validate(scope, ret)?;
 					}
 
-					Ok(())
+					Ok(t)
 				}
+
 				ControlFlow::While { cond, body } => {
 					let cond_type = cond.get_type(scope)?;
 					let bool_t = Type::from_basic(Basic::BOOL);
@@ -124,8 +140,9 @@ impl ASTElem {
 					if !cond_type.coercable_to(&bool_t) {
 						return Err((ParserError::TypeMismatch(cond_type, bool_t), self.token_data));
 					}
-					body.validate_node(scope)?;
-					Ok(())
+
+					let t = body.validate(scope, ret)?;
+					Ok(t)
 				} 
 
 				ControlFlow::For { cond, body, init, iter } => {	
@@ -136,13 +153,33 @@ impl ASTElem {
 					if !cond_type.coercable_to(&bool_t) {
 						return Err((ParserError::TypeMismatch(cond_type, bool_t), self.token_data));
 					}
-					init.validate_node(scope)?;
-					iter.validate_node(scope)?;
-					body.validate_node(scope)?;
-					Ok(())
+					init.validate(scope, ret)?;
+					iter.validate(scope, ret)?;
+					let t = body.validate(scope, ret)?;
+					if t.is_some() {
+						Ok(t)
+					} else {
+						Ok(None)
+					}
+				}
+
+				ControlFlow::Return { expr } => {
+					if let Some(expr) = expr {
+						let t = expr.get_type(scope)?;
+
+						if t.coercable_to(ret) {
+							Ok(Some(t))
+						} else {
+							Err((ParserError::ReturnTypeMismatch { expected: ret.clone(), got: t }, self.token_data))
+						}
+
+					} else {
+						Ok(Some(Type::from_basic(Basic::VOID))) // Return with no expression is of type void 
+					}
+				
 				},
 				
-				_ => Ok(())
+				_ => Ok(None)
 			},
 		}
 		
@@ -152,7 +189,7 @@ impl ASTElem {
 
 	// Recursively validate the return type of a block. Ignores everything except return statements and sub-blocks.
 	// Returns Ok(Some(Type)) if block 
-	pub fn get_return_type(&self, scope: &Scope, ret: &Type) -> ASTResult<Option<Type>> {
+	/*pub fn get_return_type(&self, scope: &Scope, ret: &Type) -> ASTResult<Option<Type>> {
 		match &self.node {
 			ASTNode::Block(elems) => {
 				let subscope = Scope::from_parent(scope);
@@ -221,7 +258,7 @@ impl ASTElem {
 			// Non-block nodes don't evaluate themselves for return types
 			_ => Ok(None),
 		}
-	}
+	}*/
 }
 
 
