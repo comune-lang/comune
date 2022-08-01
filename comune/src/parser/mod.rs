@@ -39,8 +39,8 @@ fn token_compare(token: &Token, text: &str) -> bool {
 // NamespaceInfo describes a root namespace's type and symbol information, gathered on the first parsing pass.
 // This is used during the generative pass to disambiguate expressions, as well as validating types and symbols.
 pub struct NamespaceInfo {
-	types: HashMap<String, Type>,
-	symbols: HashMap<String, (Type, Option<ASTElem>)>
+	pub types: HashMap<String, Type>,
+	pub symbols: HashMap<String, (Type, Option<ASTElem>)>
 }
 
 impl NamespaceInfo {
@@ -369,7 +369,7 @@ impl<'source> Parser<'source> {
 		
 		let end = self.lexer.borrow().get_index();
 
-		Ok(ASTElem { node: ASTNode::Block(result), token_data: (begin, end - begin)})
+		Ok(ASTElem { node: ASTNode::Block(result), token_data: (begin, end - begin), type_info: RefCell::new(None)})
 	}
 
 
@@ -487,7 +487,7 @@ impl<'source> Parser<'source> {
 		if result.is_some() {
 			let end = self.lexer.borrow().get_index() - get_current(&self.lexer)?.len();
 			let len = end - begin;
-			return Ok(ASTElem {node: result.unwrap(), token_data: (begin, len)});
+			return Ok(ASTElem {node: result.unwrap(), token_data: (begin, len), type_info: RefCell::new(None)});
 		}
 
 		// Not any of the above, try parsing an expression
@@ -513,7 +513,7 @@ impl<'source> Parser<'source> {
 		let expr = ASTNode::Expression(self.parse_expression_bp(0)?);
 		let end = self.lexer.borrow().get_index();
 		let len = end - begin;
-		Ok(ASTElem { node: expr, token_data: (begin - len, len)})
+		Ok(ASTElem { node: expr, token_data: (begin - len, len), type_info: RefCell::new(None)})
 	}
 
 

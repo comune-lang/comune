@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::fmt::Display;
 
 use crate::lexer::Token;
@@ -18,6 +19,7 @@ pub struct ASTElem {
 
 	// For error reporting
 	pub token_data: TokenData,
+	pub type_info: RefCell<Option<Type>>,
 }
 
 
@@ -77,19 +79,19 @@ impl ASTElem {
 
 	pub fn wrap_in_block(self) -> ASTElem {
 		let meta = self.token_data;
-		ASTElem { node: ASTNode::Block(vec![self]), token_data: meta }
+		ASTElem { node: ASTNode::Block(vec![self]), token_data: meta, type_info: RefCell::new(None) }
 	}
 
 	// Recursively validate ASTNode types and check if blocks have matching return types
 	pub fn validate(&self, scope: &mut Scope, ret: &Type) -> ASTResult<Option<Type>> {
-		match &self.node {
+		let result = match &self.node {
 
 			ASTNode::Block(elems) => {
 				let mut subscope = Scope::from_parent(scope);
 				let mut last_ret = None;
 				for elem in elems {
 					let t = elem.validate(&mut subscope, ret)?;
-					if let Some(t) = t{
+					if let Some(t) = t {
 						if !t.coercable_to(ret) {
 							return Err((ParserError::TypeMismatch(t, ret.clone()), elem.token_data))
 						}
@@ -99,7 +101,7 @@ impl ASTElem {
 				Ok(last_ret)
 			},
 			
-			ASTNode::Expression(_) => Ok(None), // Bare expression has no type requirements
+			ASTNode::Expression(e) => Ok(Some(e.get_type(scope, self.token_data)?)),
 			
 			ASTNode::Declaration(t, n, e) => {
 
@@ -165,13 +167,18 @@ impl ASTElem {
 
 				ControlFlow::Return { expr } => {
 					if let Some(expr) = expr {
-						let t = expr.get_type(scope)?;
+						let t = expr.validate(scope, ret)?;
 
-						if t.coercable_to(ret) {
-							Ok(Some(t))
+						if let Some(t) = t {
+							if t.coercable_to(ret) {
+								Ok(Some(t))
+							} else {
+								Err((ParserError::ReturnTypeMismatch { expected: ret.clone(), got: t }, self.token_data))
+							}
 						} else {
-							Err((ParserError::ReturnTypeMismatch { expected: ret.clone(), got: t }, self.token_data))
+							Ok(None)
 						}
+
 
 					} else {
 						Ok(Some(Type::from_basic(Basic::VOID))) // Return with no expression is of type void 
@@ -181,8 +188,13 @@ impl ASTElem {
 				
 				_ => Ok(None)
 			},
-		}
-		
+		};
+
+		match result {
+			Ok(ref r) => self.type_info.replace(r.clone()),
+			Err(e) => return Err(e),
+		};
+		result
 	}
 
 
