@@ -1,12 +1,23 @@
+
+
 int printf(char* fmt);
 
-int add(int a, int b) {
-	return a + b;
-}
+
+
 int main() {
-	str a = "Hello world!\n"; 
+	// `str` is an opaque ref to an immutable string (all strings are valid utf-8)
+	str a = "Hello world!\n\0"; 
+
+	// printf is a libc function, which doesn't have a str type. luckily, str can be coerced to a const char*!
+	// NOTE: strings in comune are not null-terminated by default (as 0 is a valid utf-8 codepoint)
+	// if you intend to pass it to a C function, be sure to null-terminate it manually
 	printf(a);
+	
+	// functions and types can be used independently of their declaration order
 	return add(2, 7);
 }
 
 
+int add(int a, int b) {
+	return a + b;
+}

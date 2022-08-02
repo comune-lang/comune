@@ -327,9 +327,6 @@ impl Lexer {
 
 				// Consume ending quote 
 				self.get_next_char()?;
-
-				result.push('\0'); // TEMP: Append null byte for interaction with libc
-
 				result_token = Ok(Token::StringLiteral(result));
 
 			} else if !self.eof_reached() { 
