@@ -1,18 +1,18 @@
 use std::cell::{RefCell, Ref};
 use std::collections::HashMap;
-use std::fmt::Pointer;
 
 use crate::parser::ast::{ASTElem, ASTNode};
 use crate::parser::controlflow::ControlFlow;
 use crate::parser::expression::{Expr, Atom, Operator};
 use crate::parser::types::{Type, Basic, InnerType};
 
-use inkwell::IntPredicate;
+use inkwell::{IntPredicate, AddressSpace};
 use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::{Module, Linkage};
-use inkwell::types::{AnyTypeEnum, BasicTypeEnum, FunctionType, BasicMetadataTypeEnum, AnyType, BasicType};
-use inkwell::values::{AnyValueEnum, FunctionValue, BasicValue, BasicValueEnum, AnyValue, PointerValue, BasicMetadataValueEnum};
+use inkwell::passes::PassManager;
+use inkwell::types::{AnyTypeEnum, BasicTypeEnum, FunctionType, BasicMetadataTypeEnum, AnyType, BasicType, VectorType, ArrayType, IntType, StructType};
+use inkwell::values::{AnyValueEnum, FunctionValue, BasicValue, BasicValueEnum, AnyValue, PointerValue, BasicMetadataValueEnum, AggregateValue, InstructionOpcode};
 
 
 // This shit is a mess of enum conversions. hat  it
@@ -23,6 +23,7 @@ pub struct LLVMBackend<'ctx> {
 	pub context: &'ctx Context,
 	pub module: Module<'ctx>,
 	pub builder: Builder<'ctx>,
+	pub fpm: Option<PassManager<FunctionValue<'ctx>>>,
 	pub fn_value_opt: Option<FunctionValue<'ctx>>,
 }
 
@@ -73,15 +74,21 @@ impl<'ctx> LLVMBackend<'ctx> {
 	
 	pub fn generate_libc_bindings(&self) {
 		let exit_t = self.context.void_type().fn_type(&[BasicMetadataTypeEnum::IntType(self.context.i32_type())], false);
-		let exit_v = self.module.add_function("_exit", exit_t, Some(Linkage::External));		
+		self.module.add_function("_exit", exit_t, Some(Linkage::External));		
 	}
 
-
-	pub fn generate_fn(&mut self, name: String, t: &Type, body: &Option<ASTElem>) -> LLVMResult<FunctionValue> {
+	pub fn register_fn(&mut self, name: String, t: &Type) -> LLVMResult<FunctionValue> {
 		let fn_t = self.generate_prototype(t)?;
 		let fn_v = self.module.add_function(name.as_str(), fn_t, None);
 
+		Ok(fn_v)
+	}
+
+	pub fn generate_fn(&mut self, name: String, t: &Type, body: &Option<ASTElem>) -> LLVMResult<FunctionValue> {
+		let fn_v = self.module.get_function(name.as_str()).unwrap();
+
 		self.fn_value_opt = Some(fn_v);
+		self.fpm = Some(PassManager::create(&self.module));
 
 		if let Some(body) = body {
 			let entry = self.context.append_basic_block(fn_v, "entry");
@@ -114,6 +121,31 @@ impl<'ctx> LLVMBackend<'ctx> {
 		Ok(fn_v)
 	}
 
+
+	fn generate_prototype(&self, t: &Type) -> LLVMResult<FunctionType<'ctx>> {
+		if let InnerType::Function(ret, args) = &t.inner {
+
+			let types_mapped: Vec<_> = args.iter().map(
+				|t| LLVMBackend::to_basic_metadata_enum(self.get_llvm_type(t.0.as_ref())).unwrap()
+			).collect();
+
+			Ok(match self.get_llvm_type(&ret).as_any_type_enum() {
+				AnyTypeEnum::ArrayType(a) => a.fn_type(&types_mapped, false),
+				AnyTypeEnum::FloatType(f) => f.fn_type(&types_mapped, false),
+				AnyTypeEnum::IntType(i) => i.fn_type(&types_mapped, false),
+				AnyTypeEnum::PointerType(p) => p.fn_type(&types_mapped, false),
+				AnyTypeEnum::StructType(s) => s.fn_type(&types_mapped, false),
+				AnyTypeEnum::VectorType(v) => v.fn_type(&types_mapped, false),
+				AnyTypeEnum::VoidType(v) => v.fn_type(&types_mapped, false),
+
+				_ => panic!()
+			})
+		} else {
+			panic!()
+		}
+	}
+
+
 	fn generate_node(&self, elem: &ASTElem, scope: &LLVMScope<'ctx, '_>) -> LLVMResult<Option<Box<dyn BasicValue<'ctx> + 'ctx>>> {
 		let mut ret = None;
 
@@ -142,7 +174,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 				if let Some(expr) = e {
 					if let ASTNode::Expression(expr) = &expr.as_ref().node {
-						self.builder.build_store(alloca, self.generate_expr(&expr, t, scope).as_basic_value_enum());
+						self.builder.build_store(alloca, LLVMBackend::into_basic_value(self.generate_expr(&expr, t, scope)).as_basic_value_enum());
 					} else {
 						unreachable!(); //idk
 					}
@@ -157,31 +189,6 @@ impl<'ctx> LLVMBackend<'ctx> {
 		};
 
 		Ok(ret)
-	}
-
-
-
-	fn generate_prototype(&self, t: &Type) -> LLVMResult<FunctionType<'ctx>> {
-		if let InnerType::Function(ret, args) = &t.inner {
-
-			let types_mapped: Vec<_> = args.iter().map(
-				|t| LLVMBackend::to_basic_metadata_enum(self.get_llvm_type(t.0.as_ref())).unwrap()
-			).collect();
-
-			Ok(match self.get_llvm_type(&ret).as_any_type_enum() {
-				AnyTypeEnum::ArrayType(a) => a.fn_type(&types_mapped, false),
-				AnyTypeEnum::FloatType(f) => f.fn_type(&types_mapped, false),
-				AnyTypeEnum::IntType(i) => i.fn_type(&types_mapped, false),
-				AnyTypeEnum::PointerType(p) => p.fn_type(&types_mapped, false),
-				AnyTypeEnum::StructType(s) => s.fn_type(&types_mapped, false),
-				AnyTypeEnum::VectorType(v) => v.fn_type(&types_mapped, false),
-				AnyTypeEnum::VoidType(v) => v.fn_type(&types_mapped, false),
-
-				_ => panic!()
-			})
-		} else {
-			panic!()
-		}
 	}
 
 
@@ -260,11 +267,13 @@ impl<'ctx> LLVMBackend<'ctx> {
 					};
 
 					let e = self.generate_expr(expr_inner, expr.type_info.borrow().as_ref().unwrap(), scope);
-
-					Ok(Some(Box::new(self.builder.build_return(Some(e.as_ref())))))
-				} else {
-					Ok(Some(Box::new(self.builder.build_return(None))))
+					
+					if let Some(e) = LLVMBackend::try_into_basic_value(e) {
+						return Ok(Some(Box::new(self.builder.build_return(Some(e.as_ref())))));
+					}
 				}
+				Ok(Some(Box::new(self.builder.build_return(None))))
+				
 				
 			},
 			ControlFlow::Break => todo!(),
@@ -274,19 +283,58 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 
 
-	fn generate_expr(&self, expr: &Expr, t: &Type, scope: &LLVMScope<'ctx, '_>) -> Box<dyn BasicValue<'ctx> + 'ctx> {
+	fn generate_expr(&self, expr: &Expr, t: &Type, scope: &LLVMScope<'ctx, '_>) -> Box<dyn AnyValue<'ctx> + 'ctx> {
 		match expr {
 			Expr::Atom(atom, _meta) => {
-				match atom {
+				let a = atom.borrow();
+				match &*a {
 					Atom::IntegerLit(i) => Box::new(self.context.i32_type().const_int(*i as u64, false)),
 					Atom::BoolLit(b) => Box::new(self.context.i8_type().const_int(if *b { 1 } else { 0 }, false)),
 					Atom::FloatLit(f) => Box::new(self.context.f32_type().const_float(*f)),
-					Atom::StringLit(_) => todo!(),
-					Atom::Variable(v) => Box::new(self.builder.build_load(scope.get_variable(v).unwrap().clone(), "vload")),
+					Atom::Variable(v) => Box::new(self.builder.build_load(scope.get_variable(&v).unwrap().clone(), "vload")),
 					Atom::ArrayLit(_) => todo!(),
-					Atom::FnCall { name, args } => todo!(),
+
+					Atom::Cast(elem, to) => {
+						if let ASTNode::Expression(expr) = &elem.node {
+							self.generate_cast(&expr, elem.type_info.borrow().as_ref().unwrap(), &to, scope)
+						} else { panic!(); }
+					},
+
+					Atom::FnCall { name, args } => {
+						let fn_v = self.module.get_function(&name).unwrap();
+
+						let args_mapped: Vec<_> = args.iter().map(
+							|x| LLVMBackend::into_basic_metadata_value(
+								self.generate_expr(
+									if let ASTNode::Expression(e) = &x.node { &e } else { panic!() }, 
+									t,
+									scope
+								)
+							)
+						).collect(); 
+
+						Box::new(self.builder.build_call(fn_v, &args_mapped, &name))
+					},
+
+					Atom::StringLit(s) => {
+						let len = s.as_bytes().len().try_into().unwrap();
+						let string_t = self.context.i8_type().array_type(len);
+						let val = self.module.add_global(string_t, Some(AddressSpace::Const), ".str");
+						let literal: Vec<_> = s.as_bytes().iter().map(|x| self.context.i8_type().const_int(*x as u64, false)).collect();
+
+						val.set_initializer(&IntType::const_array(self.context.i8_type(), &literal));
+
+						Box::new(self.str_type().const_named_struct(&[
+								val.as_pointer_value().as_basic_value_enum(), 
+								self.context.i64_type().const_int(len.into(), false).as_basic_value_enum()
+								]
+							)
+						)
+					}
 				}
+
 			},
+
 			Expr::Cons(op, elems, _meta) => 
 			{
 				let lhs = &elems[0];
@@ -328,6 +376,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 							},
 							Basic::BOOL => todo!(),
 							Basic::VOID => todo!(),
+      						Basic::STR => todo!(),
 						}
 					},
 					InnerType::Alias(_, _) => todo!(),
@@ -339,6 +388,46 @@ impl<'ctx> LLVMBackend<'ctx> {
 			},
 		}
 	}
+
+
+	fn generate_cast(&self, expr: &Expr, from: &Type, to: &Type, scope: &LLVMScope<'ctx, '_>) -> Box<dyn AnyValue<'ctx> + 'ctx> {
+		match from.inner {
+			InnerType::Basic(b) => {
+				match b {
+					Basic::STR => {
+						if let InnerType::Pointer(other_p) = &to.inner {
+							if let InnerType::Basic(other_b) = other_p.inner {
+								if let Basic::CHAR = other_b {
+									// Cast from `str` to char*
+									let val = self.generate_expr(expr, from, scope);
+
+									match val.as_any_value_enum() {
+										AnyValueEnum::StructValue(struct_val) => {
+											//let cast = self.builder.build_cast(InstructionOpcode::ExtractValue, struct_val.const_extract_value(&mut [0]), self.context.i8_type().ptr_type(AddressSpace::Generic), "cast");
+											let cast = self.builder.build_extract_value(struct_val, 0, "cast").unwrap();
+											
+											return Box::new(cast);
+										}
+										_ => panic!(),
+									}
+								}
+							}
+						}
+						panic!()
+					},
+					
+					_ => todo!(),
+				}
+			},
+			InnerType::Alias(_, _) => todo!(),
+			InnerType::Aggregate(_) => todo!(),
+			InnerType::Pointer(_) => todo!(),
+			InnerType::Function(_, _) => todo!(),
+			InnerType::Unresolved(_) => todo!(),
+		}
+	}
+
+
 
 
 
@@ -357,16 +446,35 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 
 
+	fn into_basic_metadata_value<'scope>(t: Box<dyn AnyValue<'scope> + 'scope>) -> BasicMetadataValueEnum<'scope> {
+		LLVMBackend::try_into_basic_metadata_value(t).unwrap()
+	}
 
-
-	fn to_basic_value<'scope>(t: Box<dyn AnyValue<'scope> + 'scope>) -> Box<dyn BasicValue<'scope> + 'scope> {
+	fn try_into_basic_metadata_value<'scope>(t: Box<dyn AnyValue<'scope> + 'scope>) -> Option<BasicMetadataValueEnum<'scope>> {
 		match (*t).as_any_value_enum() {
-			AnyValueEnum::ArrayValue(a) => Box::new(a),
-			AnyValueEnum::FloatValue(f) => Box::new(f),
-			AnyValueEnum::IntValue(i) => Box::new(i),
-			AnyValueEnum::PointerValue(p) => Box::new(p),
-			AnyValueEnum::StructValue(s) => Box::new(s),
-			AnyValueEnum::VectorValue(v) => Box::new(v),
+			AnyValueEnum::ArrayValue(a) => Some(inkwell::values::BasicMetadataValueEnum::ArrayValue(a)),
+			AnyValueEnum::FloatValue(f) => Some(inkwell::values::BasicMetadataValueEnum::FloatValue(f)),
+			AnyValueEnum::IntValue(i) => Some(inkwell::values::BasicMetadataValueEnum::IntValue(i)),
+			AnyValueEnum::PointerValue(p) => Some(inkwell::values::BasicMetadataValueEnum::PointerValue(p)),
+			AnyValueEnum::StructValue(s) => Some(inkwell::values::BasicMetadataValueEnum::StructValue(s)),
+			AnyValueEnum::VectorValue(v) => Some(inkwell::values::BasicMetadataValueEnum::VectorValue(v)),
+			_ => panic!(),
+		}
+	}
+
+
+	fn into_basic_value<'scope>(t: Box<dyn AnyValue<'scope> + 'scope>) -> Box<dyn BasicValue<'scope> + 'scope> {
+		LLVMBackend::try_into_basic_value(t).unwrap()
+	}
+
+	fn try_into_basic_value<'scope>(t: Box<dyn AnyValue<'scope> + 'scope>) -> Option<Box<dyn BasicValue<'scope> + 'scope>> {
+		match (*t).as_any_value_enum() {
+			AnyValueEnum::ArrayValue(a) => Some(Box::new(a)),
+			AnyValueEnum::FloatValue(f) => Some(Box::new(f)),
+			AnyValueEnum::IntValue(i) => Some(Box::new(i)),
+			AnyValueEnum::PointerValue(p) => Some(Box::new(p)),
+			AnyValueEnum::StructValue(s) => Some(Box::new(s)),
+			AnyValueEnum::VectorValue(v) => Some(Box::new(v)),
 			_ => panic!(),
 		}
 	}
@@ -409,6 +517,8 @@ impl<'ctx> LLVMBackend<'ctx> {
 				Basic::F32 => 							Box::new(self.context.f64_type()),
 				Basic::BOOL => 							Box::new(self.context.bool_type()),
 				Basic::VOID => 							Box::new(self.context.void_type()),
+
+				Basic::STR => 							Box::new(self.str_type()),
 			},
 
 			InnerType::Alias(_id, t) => self.get_llvm_type(t.as_ref()),
@@ -421,7 +531,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 				Box::new(self.context.struct_type(&types_mapped, false))
 			},
 
-			InnerType::Pointer(_) => todo!(),
+			InnerType::Pointer(t_sub) => Box::new(LLVMBackend::to_basic_type(self.get_llvm_type(t_sub)).ptr_type(AddressSpace::Generic)),
 			InnerType::Function(_, _) => todo!(),
 			InnerType::Unresolved(_) => panic!(),
 		}
@@ -436,5 +546,15 @@ impl<'ctx> LLVMBackend<'ctx> {
 			BasicTypeEnum::StructType(_) => 	Box::new(val.into_struct_value()),
 			BasicTypeEnum::VectorType(_) => 	Box::new(val.into_vector_value()),
 		}
+	}
+
+
+	fn str_type(&self) -> StructType<'ctx> {
+		self.context.struct_type(
+			&[
+				BasicTypeEnum::PointerType(self.context.i8_type().ptr_type(AddressSpace::Generic)),
+				BasicTypeEnum::IntType(self.context.i64_type())
+			], false
+		)
 	}
 }

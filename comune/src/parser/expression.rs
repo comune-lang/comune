@@ -1,7 +1,7 @@
-use std::fmt::Display;
+use std::{fmt::Display, cell::RefCell, borrow::Borrow};
 
 
-use super::{types::{Type, Basic, InnerType, Typed}, ParserError, semantic::Scope, ASTResult, ast::{TokenData, ASTElem}};
+use super::{types::{Type, Basic, InnerType, Typed}, ParserError, semantic::Scope, ASTResult, ast::{TokenData, ASTElem, ASTNode}};
 
 #[derive(Clone, Debug)]
 pub enum Operator {
@@ -183,6 +183,7 @@ pub enum Atom {
 	StringLit(String),
 	Variable(String),
 	ArrayLit(Vec<ASTElem>),
+	Cast(Box<ASTElem>, Type),
 
 	FnCall{
 		name: String, 
@@ -199,9 +200,11 @@ impl Atom {
 			Atom::IntegerLit(_) => Ok(Type::from_basic(Basic::I32)),
 			Atom::FloatLit(_) => Ok(Type::from_basic(Basic::F32)),
 			Atom::BoolLit(_) => Ok(Type::from_basic(Basic::BOOL)),
-			Atom::StringLit(_) => todo!(),
+			Atom::StringLit(_) => Ok(Type::from_basic(Basic::STR)),
 
 			Atom::Variable(name) => scope.get_identifier_type(name).ok_or((ParserError::UndeclaredIdentifier(name.clone()), meta)),
+
+			Atom::Cast(_, t) => Ok(t.clone()),
 
 			Atom::FnCall { name, args } => {
 				
@@ -212,6 +215,7 @@ impl Atom {
 						if args.len() == params.len() {
 
 							for i in 0..args.len() {
+								args[i].type_info.replace(Some(*params[i].0.clone()));
 								let arg_type = args[i].get_type(scope)?;
 								if !arg_type.coercable_to(params[i].0.as_ref()) {
 									return Err((ParserError::TypeMismatch(arg_type, params[i].0.as_ref().clone()), args[i].token_data));
@@ -262,6 +266,9 @@ impl Display for Atom {
 				
 				write!(f, ")")
 			},
+
+			Atom::Cast(elem, to) => write!(f, "{}({})", to, elem),
+
             Atom::Variable(var) => write!(f, "{}", var),
             Atom::ArrayLit(_elems) => todo!(),
 		}
@@ -273,7 +280,7 @@ impl Display for Atom {
 
 #[derive(Clone, Debug)]
 pub enum Expr {
-	Atom(Atom, TokenData),
+	Atom(RefCell<Atom>, TokenData),
 	Cons(Operator, Vec<Expr>, TokenData)
 }
 
@@ -289,17 +296,45 @@ impl Expr {
 }
 
 impl Expr {
-	pub fn get_type(&self, scope: &Scope, meta: TokenData) -> ASTResult<Type> {
+	pub fn get_type(&self, scope: &Scope, goal_t: &Type, meta: TokenData) -> ASTResult<Type> {
 		match self {
-			Expr::Atom(a, _) => a.get_type(scope, meta),
+			Expr::Atom(a, _) => {
+				let a_t = a.borrow().get_type(scope, meta)?;
+				
+				if a_t != *goal_t {
+					if a_t.coercable_to(goal_t) {
+						let mut swap = Atom::IntegerLit(0);
+
+						swap = a.replace(swap); // swap now contains old Atom
+						
+						// Construct a new Atom to cast the containing Atom to the goal type 
+						let cast = Atom::Cast(Box::new(
+							ASTElem { 
+								node: ASTNode::Expression(Expr::Atom(RefCell::new(swap), meta)), 
+								type_info: RefCell::new(Some(a_t)), 
+								token_data: meta
+							}), 
+							goal_t.clone()
+						);
+
+						a.replace(cast);
+
+						return Ok(goal_t.clone());
+					} else {
+						return Err((ParserError::TypeMismatch(a_t, goal_t.clone()), meta));
+					}
+				}
+
+				Ok(a_t)
+			},
 
 			// This should probably implement some sort of type coercion ruleset? Works for now though
 			Expr::Cons(_, elems, meta) => {
 				let mut iter = elems.iter();
-				let mut last = iter.next().unwrap().get_type(scope, *meta)?;
+				let mut last = iter.next().unwrap().get_type(scope, goal_t, *meta)?;
 				
 				while let Some(item) = iter.next() {
-					let current = item.get_type(scope, *meta)?;
+					let current = item.get_type(scope, goal_t, *meta)?;
 					if last != current {
 						return Err((ParserError::TypeMismatch(last, current), *meta))
 					}
@@ -315,7 +350,7 @@ impl Expr {
 impl Display for Expr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match self {
-			Expr::Atom(tk, _) => write!(f, "{}", tk),
+			Expr::Atom(tk, _) => write!(f, "{}", tk.borrow()),
 
 			Expr::Cons(op, params, _) => {
 				write!(f, "({:?}", op)?;

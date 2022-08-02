@@ -31,6 +31,7 @@ pub enum Basic {
 	USIZE,
 	BOOL,
 	VOID,
+	STR,
 }
 
 impl Basic {
@@ -46,6 +47,7 @@ impl Basic {
 			"i8" =>		Some(Basic::I8),
 			"u8" =>		Some(Basic::U8),
 			"char" =>	Some(Basic::CHAR),
+			"str" =>	Some(Basic::STR),
 			"f64" =>	Some(Basic::F64),
 			"f32" =>	Some(Basic::F32),
 			"isize" =>	Some(Basic::ISIZE),
@@ -74,6 +76,7 @@ impl Basic {
 			Basic::I8 => "i8",
 			Basic::U8 => "u8",
 			Basic::CHAR => "char",
+			Basic::STR => "str",
 			Basic::F64 => "f64",
 			Basic::F32 => "f32",
 			Basic::ISIZE => "isize",
@@ -109,6 +112,10 @@ pub struct Type {
 }
 
 impl Type {
+	pub fn ptr_type(self) -> Self {
+		Type { inner: InnerType::Pointer(Box::new(self)), generics: vec![], is_const: false }
+	}
+
 	pub fn new(inner: InnerType, generics: Vec<Type>, is_const: bool) -> Self {
 		Type { inner, generics, is_const }
 	}
@@ -121,8 +128,31 @@ impl Type {
 		if *self == *target {
 			true
 		} else {
-			// TODO: Implement
-			false
+			match &self.inner {
+				InnerType::Basic(b) => {
+					match b {
+
+			        	Basic::STR => {
+							// Abusing the hell outta `if let` here lol
+							// Allow coercion from str to char*, for compatibility with C 	
+							if let InnerType::Pointer(other_p) = &target.inner {
+								if let InnerType::Basic(other_b) = other_p.inner {
+									if let Basic::CHAR = other_b {
+										return true;
+									}
+								}
+							} 
+							false
+						},
+						_ => todo!(),
+    				}
+				},
+				InnerType::Alias(_, _) => todo!(),
+				InnerType::Aggregate(_) => todo!(),
+				InnerType::Pointer(_) => todo!(),
+				InnerType::Function(_, _) => todo!(),
+				InnerType::Unresolved(_) => todo!(),
+			}
 		}
 	}
 

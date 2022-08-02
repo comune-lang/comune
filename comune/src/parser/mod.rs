@@ -525,7 +525,7 @@ impl<'source> Parser<'source> {
 		let lhs = match current {
 
 			Token::Identifier(_) | Token::StringLiteral(_) | Token::NumLiteral(_) | Token::BoolLiteral(_) => 
-				Expr::Atom(self.parse_atom()?, meta),
+				Expr::Atom(RefCell::new(self.parse_atom()?), meta),
 			
 			Token::Operator(tk) => {
 				// Handle unary prefix operators
@@ -752,14 +752,16 @@ impl<'source> Parser<'source> {
 				}
 			}
 
-			let next = lexer.borrow_mut().next().unwrap();
-
+			let mut next = lexer.borrow_mut().next().unwrap();
+		
 			match next { 
-				Token::Operator(op) => {
+				Token::Operator(ref op) => {
 					match op.as_str() {
 						"*" => {
-							result = Type::new(InnerType::Pointer(Box::new(result)), vec![], false);
-							lexer.borrow_mut().next().unwrap();
+							while token_compare(&next, "*") {
+								result = Type::new(InnerType::Pointer(Box::new(result)), vec![], false);
+								next = lexer.borrow_mut().next().unwrap();
+							}
 						}
 						
 						"<" => {
@@ -792,7 +794,6 @@ impl<'source> Parser<'source> {
 					return Ok(result);
 				}
 			}
-			
 			Ok(result)
 		} else {
 			Err(ParserError::ExpectedIdentifier)

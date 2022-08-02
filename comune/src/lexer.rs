@@ -295,6 +295,25 @@ impl Lexer {
 				self.get_next_char()?;
 
 
+			} else if token == '"' {
+				// Parse string literal
+				token = self.get_next_char()?;
+				
+				let mut result = String::new();
+
+				// Very basic. TODO: Escape sequences
+				while token != '"' {
+					result.push(token);
+					token = self.get_next_char()?;
+				}
+
+				// Consume ending quote 
+				self.get_next_char()?;
+
+				result.push('\0'); // TEMP: Append null byte for interaction with libc
+
+				result_token = Ok(Token::StringLiteral(result));
+
 			} else if !self.eof_reached() { 
 				result_token = Ok(Token::Other(token));
 				self.get_next_char()?;

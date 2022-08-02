@@ -63,8 +63,11 @@ impl ASTElem {
 			},
 
 			ASTNode::Declaration(t, n, e) => {
-				println!("declaration (todo)");
-				
+				if let Some(e) = e {
+					println!("declaration {} {} = {};", t, n, e);
+				} else {
+					println!("declaration {} {};", t, n);
+				}
 			},
     		ASTNode::ControlFlow(ctrl) => {
 				println!("ctrl {}", ctrl);
@@ -89,23 +92,29 @@ impl ASTElem {
 			ASTNode::Block(elems) => {
 				let mut subscope = Scope::from_parent(scope);
 				let mut last_ret = None;
+
 				for elem in elems {
 					let t = elem.validate(&mut subscope, ret)?;
+
 					if let Some(t) = t {
-						if !t.coercable_to(ret) {
-							return Err((ParserError::TypeMismatch(t, ret.clone()), elem.token_data))
+						// Only compare against return type for control flow nodes
+						if let ASTNode::ControlFlow(_) = elem.node {
+							if !t.coercable_to(ret) {
+								return Err((ParserError::TypeMismatch(t, ret.clone()), elem.token_data))
+							}
+							last_ret = Some(t);
 						}
-						last_ret = Some(t);
 					}
 				}
 				Ok(last_ret)
 			},
 			
-			ASTNode::Expression(e) => Ok(Some(e.get_type(scope, self.token_data)?)),
+			ASTNode::Expression(e) => Ok(Some(e.get_type(scope, ret, self.token_data)?)),
 			
 			ASTNode::Declaration(t, n, e) => {
 
 				if let Some(expr) = e {
+					expr.type_info.replace(Some(t.clone()));
 					let expr_type = expr.get_type(scope)?;
 					if !expr_type.coercable_to(t) {
 						return Err((ParserError::TypeMismatch(t.clone(), expr_type), self.token_data));
@@ -286,7 +295,7 @@ impl Display for ASTElem {
 			},
 
             ASTNode::Expression(e) => 			write!(f, "{}", e),
-            ASTNode::Declaration(_, _, _) => 	write!(f, "declaration (todo)"),
+            ASTNode::Declaration(t, n, e) => 	if let Some(e) = e { write!(f, "{} {} = {};", t, n, e) } else { write!(f, "{} {};", t, n) },
             ASTNode::ControlFlow(c) => 			write!(f, "{}", c),
         }
     }
@@ -295,18 +304,18 @@ impl Display for ASTElem {
 
 
 impl ASTNode {
-	fn get_type(&self, scope: &Scope, meta: TokenData) -> ASTResult<Type> {
+	fn get_type(&self, scope: &Scope, t: Option<&Type>, meta: TokenData) -> ASTResult<Type> {
 		match self {
 			ASTNode::Block(elems) => {
 				let subscope = Scope::from_parent(scope);
 				let mut result = Type::from_basic(Basic::VOID);
 				for elem in elems {
-					result = elem.node.get_type(&subscope, meta)?;
+					result = elem.node.get_type(&subscope, t, meta)?;
 				}
 				Ok(result) // Just take the type of the last statement for now. Remember to add support for `return` later
 			},
 			
-			ASTNode::Expression(e) => e.get_type(scope, meta),
+			ASTNode::Expression(e) => e.get_type(scope, t.unwrap(), meta),
 
 			// Declaration types are deduced at parse-time (thanks, C-style syntax)
 			ASTNode::Declaration(t, _, _) => Ok(t.clone()),
@@ -318,6 +327,6 @@ impl ASTNode {
 
 impl Typed for ASTElem {
     fn get_type(&self, scope: &Scope) -> ASTResult<Type> {
-        self.node.get_type(scope, self.token_data)
+        self.node.get_type(scope, self.type_info.borrow().as_ref(), self.token_data)
     }
 }

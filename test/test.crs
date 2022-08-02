@@ -1,8 +1,13 @@
+int printf(char* fmt);
 
 
 int main() {
-	int test = 69;
-	return test;
+	// who needs escape sequences
+	
+	str a = "Hello world!
+"; 
+	printf(a);
+	return 0;
 }
 
 
