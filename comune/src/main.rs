@@ -22,6 +22,9 @@ struct ComuneCLI {
 
 	#[clap(short='o', long="output", default_value="a.out", value_parser)]
 	output_file: String,
+
+	#[clap(long="emit-llvm", default_value_t=false, value_parser)]
+	emit_llvm: bool,
 }
 
 
@@ -34,14 +37,14 @@ fn main() {
 		return;
 	}
 
-
+	// Extremely basic, needs parallelization and linking modules together
 	for file in args.input_files.iter() {
 	
 		let lexer = RefCell::new(match Lexer::new(file) {
 			Ok(f) => f,
 			Err(e) => { println!("{} failed to open input file '{}' ({})", "fatal:".red().bold(), file, e); return; }
 		});
-		
+
 		let mut parser = parser::Parser::new(&lexer, args.verbose);
 
 		if args.verbose {
@@ -110,7 +113,6 @@ fn main() {
 		}
 
 		backend.generate_libc_bindings();
-		backend.module.print_to_file("a.ir").unwrap();
 
 		match backend.module.verify() {
 			Ok(_) => {},
@@ -130,25 +132,26 @@ fn main() {
 
 		mpm.run_on(&backend.module);
 
-		backend.module.print_to_file("a.ir.optimized").unwrap();
+		if args.emit_llvm {
+			backend.module.print_to_file(args.output_file.clone() + ".ll").unwrap();
+		}
 
-		// Write to file
-
-		target_machine.write_to_file(&backend.module, FileType::Object, &Path::new("test.o")).unwrap();
-
-		// Link into executable
-		// We use gcc here because fuck dude i don't know how to use ld manually
-		let output = Command::new("gcc")
-					.arg("-ooutput")
-					.arg("-nodefaultlibs")
-					.arg("-lc")
-					.arg("-fno-rtti")
-					.arg("-fno-exceptions")
-					.arg("test.o")
-					.output()
-					.expect("fatal: failed to link executable");
-		
-		io::stdout().write(&output.stdout).unwrap();
-		io::stderr().write(&output.stderr).unwrap();
+		// TODO: Link modules together into single executable
+		target_machine.write_to_file(&backend.module, FileType::Object, &Path::new("out.o")).unwrap();
 	}
+
+	// Link into executable
+	// We use gcc here because fuck dude i don't know how to use ld manually
+	let output = Command::new("gcc")
+				.arg("-o".to_string() + &args.output_file)
+				.arg("-nodefaultlibs")
+				.arg("-lc")
+				.arg("-fno-rtti")
+				.arg("-fno-exceptions")
+				.arg("out.o")
+				.output()
+				.expect("fatal: failed to link executable");
+	
+	io::stdout().write(&output.stdout).unwrap();
+	io::stderr().write(&output.stderr).unwrap();
 }
