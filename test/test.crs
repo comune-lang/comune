@@ -1,3 +1,8 @@
+
+
 int main() {
-	return 69;
+	int test = 69;
+	return test;
 }
+
+

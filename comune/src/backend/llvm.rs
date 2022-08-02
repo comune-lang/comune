@@ -134,9 +134,23 @@ impl<'ctx> LLVMBackend<'ctx> {
 			},
 
 			ASTNode::Declaration(t, n, e) => {
-				//self.builder.build_alloca(ty, name)
-				//scope.add_variable(&n.to_string(), );
+				let name = n.to_string();
+				let alloca = self.create_entry_block_alloca(
+					&name, 
+					LLVMBackend::to_basic_type(self.get_llvm_type(t)).as_basic_type_enum()
+				);
+
+				if let Some(expr) = e {
+					if let ASTNode::Expression(expr) = &expr.as_ref().node {
+						self.builder.build_store(alloca, self.generate_expr(&expr, t, scope).as_basic_value_enum());
+					} else {
+						unreachable!(); //idk
+					}
+				}
+
+				scope.add_variable(&name, alloca);
 			},
+
 			ASTNode::ControlFlow(ctrl) => {
 				self.generate_control_flow(ctrl.as_ref(), scope)?;
 			},
@@ -144,6 +158,8 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 		Ok(ret)
 	}
+
+
 
 	fn generate_prototype(&self, t: &Type) -> LLVMResult<FunctionType<'ctx>> {
 		if let InnerType::Function(ret, args) = &t.inner {
@@ -167,6 +183,8 @@ impl<'ctx> LLVMBackend<'ctx> {
 			panic!()
 		}
 	}
+
+
 
 	fn generate_control_flow(&self, ctrl: &ControlFlow, scope: &LLVMScope<'ctx, '_>) -> LLVMResult<Option<Box<dyn AnyValue<'ctx> + 'ctx>>> {
 		match ctrl {
@@ -241,7 +259,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 						_ => panic!(), 
 					};
 
-					let e = LLVMBackend::to_basic_value(self.generate_expr(expr_inner, expr.type_info.borrow().as_ref().unwrap(), scope));
+					let e = self.generate_expr(expr_inner, expr.type_info.borrow().as_ref().unwrap(), scope);
 
 					Ok(Some(Box::new(self.builder.build_return(Some(e.as_ref())))))
 				} else {
@@ -256,7 +274,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 
 
-	fn generate_expr(&self, expr: &Expr, t: &Type, scope: &LLVMScope<'ctx, '_>) -> Box<dyn AnyValue<'ctx> + 'ctx> {
+	fn generate_expr(&self, expr: &Expr, t: &Type, scope: &LLVMScope<'ctx, '_>) -> Box<dyn BasicValue<'ctx> + 'ctx> {
 		match expr {
 			Expr::Atom(atom, _meta) => {
 				match atom {
@@ -264,11 +282,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 					Atom::BoolLit(b) => Box::new(self.context.i8_type().const_int(if *b { 1 } else { 0 }, false)),
 					Atom::FloatLit(f) => Box::new(self.context.f32_type().const_float(*f)),
 					Atom::StringLit(_) => todo!(),
-					Atom::Variable(v) => {
-
-							Box::new(self.builder.build_load(scope.get_variable(v).unwrap().clone(), "vload"))
-						
-					}
+					Atom::Variable(v) => Box::new(self.builder.build_load(scope.get_variable(v).unwrap().clone(), "vload")),
 					Atom::ArrayLit(_) => todo!(),
 					Atom::FnCall { name, args } => todo!(),
 				}
