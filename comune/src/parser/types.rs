@@ -112,10 +112,6 @@ pub struct Type {
 }
 
 impl Type {
-	pub fn ptr_type(self) -> Self {
-		Type { inner: InnerType::Pointer(Box::new(self)), generics: vec![], is_const: false }
-	}
-
 	pub fn new(inner: InnerType, generics: Vec<Type>, is_const: bool) -> Self {
 		Type { inner, generics, is_const }
 	}

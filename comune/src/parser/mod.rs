@@ -134,16 +134,18 @@ pub struct Parser<'source> {
 	lexer: &'source RefCell<Lexer>,
 	context: RefCell<NamespaceInfo>,
 	generate_ast: bool,
+	verbose: bool,
 }
 
 
 
 impl<'source> Parser<'source> {
-	pub fn new(lexer: &'source RefCell<Lexer>) -> Parser<'source> {
+	pub fn new(lexer: &'source RefCell<Lexer>, verbose: bool) -> Parser<'source> {
 		let result = Parser { 
 			lexer, 
 			context: RefCell::new(NamespaceInfo::new()),
-			generate_ast: false
+			generate_ast: false,
+			verbose
 		};
 
 		result

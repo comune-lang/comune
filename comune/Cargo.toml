@@ -5,3 +5,5 @@ edition = "2021"
 
 [dependencies]
 inkwell = { git = "https://github.com/TheDan64/inkwell", branch = "master", features = ["llvm12-0"] }
+clap = { version = "3.2.16", features = ["derive"] }
+colored = "2.0.0"

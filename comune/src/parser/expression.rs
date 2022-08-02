@@ -286,16 +286,6 @@ pub enum Expr {
 
 
 impl Expr {
-	pub fn get_meta(&self) -> TokenData {
-		match self {
-			Expr::Atom(_, tk) => *tk,
-			Expr::Cons(_, _, tk) => *tk
-		}
-	}
-
-}
-
-impl Expr {
 	pub fn get_type(&self, scope: &Scope, goal_t: &Type, meta: TokenData) -> ASTResult<Type> {
 		match self {
 			Expr::Atom(a, _) => {

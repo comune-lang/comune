@@ -1,10 +1,12 @@
 int printf(char* fmt);
 
-
+int add(int a, int b) {
+	return a + b;
+}
 int main() {
 	str a = "Hello world!\n"; 
 	printf(a);
-	return 0;
+	return add(2, 7);
 }
 
 
