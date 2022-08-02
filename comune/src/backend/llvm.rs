@@ -403,10 +403,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 									match val.as_any_value_enum() {
 										AnyValueEnum::StructValue(struct_val) => {
-											//let cast = self.builder.build_cast(InstructionOpcode::ExtractValue, struct_val.const_extract_value(&mut [0]), self.context.i8_type().ptr_type(AddressSpace::Generic), "cast");
-											let cast = self.builder.build_extract_value(struct_val, 0, "cast").unwrap();
-											
-											return Box::new(cast);
+											return Box::new(self.builder.build_extract_value(struct_val, 0, "cast").unwrap());
 										}
 										_ => panic!(),
 									}

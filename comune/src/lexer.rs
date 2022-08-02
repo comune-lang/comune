@@ -300,10 +300,28 @@ impl Lexer {
 				token = self.get_next_char()?;
 				
 				let mut result = String::new();
+				let mut escaped = false;
 
-				// Very basic. TODO: Escape sequences
 				while token != '"' {
-					result.push(token);
+					if escaped {
+						match token {
+							'n' => result.push('\n'),
+							't' => result.push('\t'),
+							'\\' => result.push('\\'),
+
+							_ => {}
+						}
+						escaped = false;
+
+					} else {
+
+						if token == '\\' {
+							escaped = true;
+						} else {
+							result.push(token);
+						}
+					}
+					
 					token = self.get_next_char()?;
 				}
 
