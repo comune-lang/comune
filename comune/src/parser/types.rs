@@ -6,7 +6,7 @@ use super::{semantic::Scope, ASTResult};
 
 type TypeRef = Box<Type>;
 
-pub type FnParamList = Vec<(Type, Option<String>)>;
+pub type FnParamList = Vec<(Box<Type>, Option<String>)>;
 
 
 pub trait Typed {
@@ -93,12 +93,12 @@ impl Display for Basic {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InnerType {
-	Basic(Basic),						// Fundamental type
-	Alias(Token, TypeRef),				// Identifier + referenced type
-	Aggregate(HashMap<String, TypeRef>),			// Vector of component types
-	Pointer(TypeRef),					// Pretty self-explanatory
-	Function(TypeRef, Vec<TypeRef>),	// Return type + parameter types
-	Unresolved(Token)					// Unresolved type (during parsing phase)
+	Basic(Basic),										// Fundamental type
+	Alias(Token, TypeRef),								// Identifier + referenced type
+	Aggregate(HashMap<String, TypeRef>),				// Vector of component types
+	Pointer(TypeRef),									// Pretty self-explanatory
+	Function(TypeRef, Vec<(TypeRef, Option<String>)>),	// Return type + parameter types
+	Unresolved(Token)									// Unresolved type (during parsing phase)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -169,7 +169,7 @@ impl Display for Type {
 			InnerType::Function(ret, params) => {
 				write!(f, "{}(", ret)?;
 				for param in params {
-					write!(f, "{}, ", param)?;
+					write!(f, "{}, ", param.0)?;
 				}
 				write!(f, ")")?;
 			},

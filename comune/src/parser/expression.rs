@@ -213,8 +213,8 @@ impl Atom {
 
 							for i in 0..args.len() {
 								let arg_type = args[i].get_type(scope)?;
-								if !arg_type.coercable_to(&params[i]) {
-									return Err((ParserError::TypeMismatch(arg_type, *params[i].clone()), args[i].token_data));
+								if !arg_type.coercable_to(params[i].0.as_ref()) {
+									return Err((ParserError::TypeMismatch(arg_type, params[i].0.as_ref().clone()), args[i].token_data));
 								}
 							}
 							// All good, return function's return type

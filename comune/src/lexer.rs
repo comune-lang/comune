@@ -235,13 +235,13 @@ impl Lexer {
 			}
 
 			
-			if token.is_alphabetic() {	
+			if token.is_alphabetic() || token == '_' {	
 				// Identifier
 				
 				let mut result = String::from(token);
 				let mut next = self.get_next_char()?;
 
-				while next.is_alphanumeric() {
+				while next.is_alphanumeric() || next == '_' {
 					result.push(next);
 					next = self.get_next_char()?;
 				}

@@ -228,12 +228,10 @@ impl<'source> Parser<'source> {
 								
 								// Function declaration
 								"(" => {	
-									let param_list = self.parse_parameter_list()?;
-
 									t = Type::new(
 										InnerType::Function(
 											Box::new(t), 
-											param_list.into_iter().map(|x| Box::new(x.0)).collect()
+											self.parse_parameter_list()?
 										), 
 										vec![], // TODO: Generics in function declarations 
 										true
@@ -682,7 +680,7 @@ impl<'source> Parser<'source> {
 		let mut result = vec![];
 
 		while let Token::Identifier(_) = next {
-			let mut param = (self.parse_type()?, None);
+			let mut param = (Box::new(self.parse_type()?), None);
 			
 			
 			// Check for param name

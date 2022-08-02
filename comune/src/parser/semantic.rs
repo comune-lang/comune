@@ -57,14 +57,16 @@ pub fn parse_namespace(namespace: &RefCell<NamespaceInfo>) -> ASTResult<()> {
 	for (_sym_name, (sym_type, sym_elem)) in &namespace.borrow().symbols {
 		let mut scope = Scope::new(namespace, sym_type.clone());
 
-		let ret = match &sym_type.inner {
+		let ret;
+		if let InnerType::Function(fn_ret, args) = &sym_type.inner {
+			ret = fn_ret.as_ref().clone();
+			for arg in args.iter() {
+				scope.add_variable(arg.0.as_ref().clone(), arg.1.clone().unwrap())
+			}
 			
-			InnerType::Function(ret, _) => 
-				*ret.clone(),
-			
-			_ => 
-				return Err((ParserError::NotCallable, (0usize, 0usize))), // TODO: Fix
-		};
+		} else { 
+			panic!()
+		}
 
 		
 		if let Some(elem) = sym_elem {
