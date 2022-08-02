@@ -2,8 +2,8 @@ mod lexer;
 mod parser;
 mod backend;
 
-use std::{cell::RefCell, fs::File, path::Path, io::{self, Write}, borrow::Borrow, collections::HashMap};
-use inkwell::{context::Context, targets::{Target, InitializationConfig, TargetTriple, FileType}, passes::{PassManager, PassManagerBuilder, PassRegistry}, OptimizationLevel, module::Module};
+use std::{cell::RefCell, path::Path, io::{self, Write}};
+use inkwell::{context::Context, targets::{Target, InitializationConfig, TargetTriple, FileType}, passes::PassManager, module::Module};
 use parser::Parser;
 use crate::{parser::semantic, lexer::Lexer, backend::{llvm::LLVMBackend}};
 use std::process::Command;

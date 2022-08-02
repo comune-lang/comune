@@ -1,4 +1,4 @@
-use std::{fmt::Display, cell::RefCell, borrow::Borrow};
+use std::{fmt::Display, cell::RefCell};
 
 
 use super::{types::{Type, Basic, InnerType, Typed}, ParserError, semantic::Scope, ASTResult, ast::{TokenData, ASTElem, ASTNode}};

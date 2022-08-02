@@ -11,8 +11,8 @@ use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::{Module, Linkage};
 use inkwell::passes::PassManager;
-use inkwell::types::{AnyTypeEnum, BasicTypeEnum, FunctionType, BasicMetadataTypeEnum, AnyType, BasicType, VectorType, ArrayType, IntType, StructType};
-use inkwell::values::{AnyValueEnum, FunctionValue, BasicValue, BasicValueEnum, AnyValue, PointerValue, BasicMetadataValueEnum, AggregateValue, InstructionOpcode};
+use inkwell::types::{AnyTypeEnum, BasicTypeEnum, FunctionType, BasicMetadataTypeEnum, AnyType, BasicType, IntType, StructType};
+use inkwell::values::{AnyValueEnum, FunctionValue, BasicValue, AnyValue, PointerValue, BasicMetadataValueEnum};
 
 
 // This shit is a mess of enum conversions. hat  it
@@ -256,8 +256,8 @@ impl<'ctx> LLVMBackend<'ctx> {
 				Ok(Some(Box::new(phi.as_basic_value())))
 			},
 
-			ControlFlow::While { cond, body } => todo!(),
-			ControlFlow::For { init, cond, iter, body } => todo!(),
+			ControlFlow::While { .. } => todo!(),
+			ControlFlow::For { .. } => todo!(),
 
 			ControlFlow::Return { expr } => {
 				if let Some(expr) = expr {
@@ -534,16 +534,6 @@ impl<'ctx> LLVMBackend<'ctx> {
 		}
 	}
 
-	fn convert_basic_value(&self, val: &BasicValueEnum<'ctx>, t: &BasicTypeEnum) -> Box<dyn BasicValue<'ctx> + 'ctx> {
-		match t {
-			BasicTypeEnum::ArrayType(_) =>		Box::new(val.into_array_value()),
-			BasicTypeEnum::FloatType(_) =>		Box::new(val.into_float_value()),
-			BasicTypeEnum::IntType(_) => 		Box::new(val.into_int_value()),
-			BasicTypeEnum::PointerType(_) =>	Box::new(val.into_pointer_value()),
-			BasicTypeEnum::StructType(_) => 	Box::new(val.into_struct_value()),
-			BasicTypeEnum::VectorType(_) => 	Box::new(val.into_vector_value()),
-		}
-	}
 
 
 	fn str_type(&self) -> StructType<'ctx> {

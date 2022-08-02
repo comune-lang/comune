@@ -2,8 +2,6 @@ int printf(char* fmt);
 
 
 int main() {
-	// who needs escape sequences
-
 	str a = "Hello world!\n"; 
 	printf(a);
 	return 0;
