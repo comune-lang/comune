@@ -2,7 +2,7 @@ mod lexer;
 mod parser;
 mod backend;
 
-use std::{cell::RefCell, path::Path, io::{self, Write}};
+use std::{path::Path, io::{self, Write}};
 use clap::Parser;
 use colored::Colorize;
 use inkwell::{context::Context, targets::{Target, InitializationConfig, TargetTriple, FileType}, passes::PassManager, module::Module};

@@ -272,7 +272,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 						panic!();
 					}
 				} else {
-					self.builder.build_unconditional_branch(end_bb);
+					self.builder.build_unconditional_branch(body_bb);
 				}
 
 				self.builder.position_at_end(body_bb);

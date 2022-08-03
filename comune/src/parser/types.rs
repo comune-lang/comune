@@ -239,13 +239,13 @@ impl Type {
 		match &self.inner {
 			InnerType::Basic(b) => match b {
 				Basic::I64 | Basic::U64 | Basic::F64 => 8,
-				Basic::I32 | Basic::U32 | Basic::F32 | Basic::CHAR => 4,
+				Basic::I32 | Basic::U32 | Basic::F32 | Basic::CHAR => 4, // Chars in a string are variable-width, lone char is 4 bytes
 				Basic::I16 | Basic::U16 => 2,
 				Basic::I8 | Basic::U8 => 1,
 
 				// TODO: Actually implement based on target ptr size
 				Basic::ISIZE | Basic::USIZE => PTR_SIZE,
-				Basic::STR => PTR_SIZE + PTR_SIZE, // ptr size + len size
+				Basic::STR => PTR_SIZE + PTR_SIZE, // sizeof(char*) + sizeof(usize)
 
 				Basic::BOOL => 1,
 				Basic::VOID => 0,

@@ -112,7 +112,7 @@ impl CMNWarning {
 				"if you're the author of this function, consider taking a `str` parameter instead".into()
 				],
 				
-			_ => vec![],
+			//_ => vec![],
 		}
 	}
 }
