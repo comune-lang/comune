@@ -20,7 +20,7 @@ pub(crate) fn log_msg_at(char_idx: usize, token_len: usize, e: CMNMessage) {
 	});
 }
 
-const KEYWORDS: &[&str] = &[
+const KEYWORDS: &[&'static str] = &[
 	"mod",	
 	"if",
 	"use",
@@ -90,7 +90,7 @@ pub enum Token {
 	Identifier(String),
 	StringLiteral(String),
 	BoolLiteral(bool),
-	Keyword(String),
+	Keyword(&'static str),
 	NumLiteral(String),
 	Operator(String),
 	Other(char),
@@ -100,8 +100,10 @@ impl Token {
 	pub fn len(&self) -> usize {
 		match self {
 			
-			Token::Identifier(x) | Token::StringLiteral(x) | Token::Keyword(x) | Token::NumLiteral(x) | Token::Operator(x)
+			Token::Identifier(x) | Token::StringLiteral(x) | Token::NumLiteral(x) | Token::Operator(x)
 				=> x.len(),
+
+			Token::Keyword(x) => x.len(),
 
 			Token::EOF => 0,
 			
@@ -116,8 +118,10 @@ impl Display for Token {
 		
 		match self {
 		
-			Token::Identifier(x) | Token::StringLiteral(x) | Token::Keyword(x) | Token::NumLiteral(x) | Token::Operator(x) => 
+			Token::Identifier(x) | Token::StringLiteral(x) | Token::NumLiteral(x) | Token::Operator(x) => 
 				x.clone(),
+
+			Token::Keyword(x) => x.to_string(),
 			
 			Token::BoolLiteral(b) => if *b { "true".to_string() } else { "false".to_string() },
 			
@@ -284,7 +288,7 @@ impl Lexer {
 							Ok(Token::BoolLiteral(false)),
 
 						_ => 
-							Ok(Token::Keyword(result))
+							Ok(Token::Keyword(*KEYWORDS.iter().find(|x_static| **x_static == result.as_str()).unwrap()))
 
 					}
 				} else {				
@@ -422,12 +426,13 @@ impl Lexer {
 
 	pub fn log_msg_at(&self, char_idx: usize, token_len: usize, e: CMNMessage) {
 		if char_idx > 0 {
+
 			let line = self.get_line_number(char_idx);
 			let column = self.get_column(char_idx);
 
 			match e {
-				CMNMessage::Error(_) => print!("{}: {}", "error".bold().red(), e.to_string().bold()),
-				CMNMessage::Warning(_) => print!("{}: {}", "warning".bold().yellow(), e.to_string().bold()),
+				CMNMessage::Error(_) =>		print!("{}: {}", "error".bold().red(), e.to_string().bold()),
+				CMNMessage::Warning(_) =>	print!("{}: {}", "warning".bold().yellow(), e.to_string().bold()),
 			}
 
 			println!("{}", 
@@ -439,7 +444,13 @@ impl Lexer {
 				self.get_line(line));
 
 			print!("\t{: <1$}", "", column - 1 + 2);
-			println!("{:~<1$}\n", "", token_len);			
+			println!("{:~<1$}\n", "", token_len);	
+			
+			let notes = e.get_notes();
+			for note in notes {
+				println!("{} {}\n", "note:".bold().italic(), note.italic());
+			}
+
 		} else {
 			println!("\n[error]\t{} \n[note]\tno error metadata found, can't display error location", e);
 		}

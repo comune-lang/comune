@@ -17,9 +17,9 @@ pub enum ControlFlow {
 	},
 	
 	For {
-		init: ASTElem, 
-		cond: ASTElem, 
-		iter: ASTElem,
+		init: Option<ASTElem>, 
+		cond: Option<ASTElem>, 
+		iter: Option<ASTElem>,
 		body: ASTElem
 	},
 
@@ -85,7 +85,7 @@ impl Display for ControlFlow {
 				}
 			},
 			ControlFlow::While { cond, body } => write!(f, "while {} {}", cond, body),
-            ControlFlow::For { init, cond, iter, body } => write!(f, "for ({}; {}; {}) {}", init, cond, iter, body),
+            ControlFlow::For { init, cond, iter, body } => write!(f, "for ({:?}; {:?}; {:?}) {}", init, cond, iter, body),
             ControlFlow::Return { expr } => if let Some(expr) = expr { write!(f, "return {}", expr) } else { write!(f, "return") },
             ControlFlow::Break => todo!(),
             ControlFlow::Continue => todo!(),

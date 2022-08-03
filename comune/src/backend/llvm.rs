@@ -235,8 +235,67 @@ impl<'ctx> LLVMBackend<'ctx> {
 				Ok(None)
 			},
 
+
 			ControlFlow::While { .. } => todo!(),
-			ControlFlow::For { .. } => todo!(),
+
+
+			ControlFlow::For { init, cond, iter, body } => {
+				let parent = self.fn_value_opt.unwrap();
+				let subscope = LLVMScope::from_parent(scope);
+
+
+				if let Some(init) = init {
+					self.generate_node(init, &subscope)?;
+				}
+
+				let cond_bb = self.context.append_basic_block(parent, "forcond");
+				let body_bb = self.context.append_basic_block(parent, "forblock");
+				let end_bb = self.context.append_basic_block(parent, "forend");
+				
+				self.builder.build_unconditional_branch(cond_bb);
+
+				self.builder.position_at_end(cond_bb);
+
+				if let Some(cond) = cond {
+					if let ASTNode::Expression(expr) = &cond.node {
+						let cond_expr = self.generate_expr(&expr, &cond.type_info.borrow().as_ref().unwrap(), &subscope);
+
+						let cond_ir = self.builder.build_int_compare(
+							IntPredicate::NE, 
+							cond_expr.as_any_value_enum().into_int_value(), 
+							self.context.bool_type().const_zero(), 
+							"forcond"
+						);
+
+						self.builder.build_conditional_branch(cond_ir, body_bb, end_bb);
+
+					} else {
+						panic!();
+					}
+				} else {
+					self.builder.build_unconditional_branch(end_bb);
+				}
+
+				self.builder.position_at_end(body_bb);
+
+				// Generate body
+				self.generate_node(body, &subscope)?;
+
+				if let Some(iter) = iter {
+					if let ASTNode::Expression(expr) = &iter.node {
+						self.generate_expr(&expr, &iter.type_info.borrow().as_ref().unwrap(), &subscope);
+					} else {
+						panic!();
+					}
+				}
+
+				self.builder.build_unconditional_branch(cond_bb);
+
+				self.builder.position_at_end(end_bb);
+
+				Ok(None)
+			}
+
 
 			ControlFlow::Return { expr } => {
 				if let Some(expr) = expr {
@@ -316,53 +375,68 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 			Expr::Cons(op, elems, _meta) => 
 			{
-				let lhs = &elems[0];
-				let rhs = &elems[1];
-				match &t.inner {
-					crate::parser::types::InnerType::Basic(b) => {
-						match b { //self.builder.build_int_add(lhs, rhs, name)
-							
-							Basic::ISIZE | Basic::USIZE | Basic::I64 | Basic::U64 | Basic::I32 | Basic::U32 | Basic::I16 | Basic::U16 | Basic::I8 | Basic::U8 | Basic::CHAR => {
-								let lhs = self.generate_expr(lhs, t, scope).as_any_value_enum().into_int_value();
-								let rhs = self.generate_expr(rhs, t, scope).as_any_value_enum().into_int_value();
+				if elems.len() == 1 {
+					todo!()
+				} else {
+					let lhs = &elems[0];
+					let rhs = &elems[1];
 
-								Box::new(
-									match op {
-										Operator::Add => self.builder.build_int_add(lhs, rhs, "iadd"),
-										Operator::Sub => self.builder.build_int_sub(lhs, rhs, "isub"),
-										Operator::Mult => self.builder.build_int_mul(lhs, rhs, "imul"),
-										Operator::Div => self.builder.build_int_signed_div(lhs, rhs, "idiv"), // TODO: Add unsigned
+					match &t.inner {
+						crate::parser::types::InnerType::Basic(b) => {
+							match b { //self.builder.build_int_add(lhs, rhs, name)
+								
+								Basic::ISIZE | Basic::USIZE | Basic::I64 | Basic::U64 | Basic::I32 | Basic::U32 | Basic::I16 | Basic::U16 | Basic::I8 | Basic::U8 | Basic::CHAR => {
+									let lhs_i = self.generate_expr(lhs, t, scope).as_any_value_enum().into_int_value();
+									let rhs_i = self.generate_expr(rhs, t, scope).as_any_value_enum().into_int_value();
 
-										_ => todo!(),
-									}
-								)
-							},
-							Basic::F64 | Basic::F32 => {
-								let lhs = self.generate_expr(lhs, t, scope).as_any_value_enum().into_float_value();
-								let rhs = self.generate_expr(rhs, t, scope).as_any_value_enum().into_float_value();
+									Box::new(
+										match op {
+											Operator::Add => self.builder.build_int_add(lhs_i, rhs_i, "iadd"),
+											Operator::Sub => self.builder.build_int_sub(lhs_i, rhs_i, "isub"),
+											Operator::Mult => self.builder.build_int_mul(lhs_i, rhs_i, "imul"),
+											Operator::Div => self.builder.build_int_signed_div(lhs_i, rhs_i, "idiv"), // TODO: Add unsigned
 
-								Box::new(
-									match op {
-										Operator::Add => self.builder.build_float_add(lhs, rhs, "fadd"),
-										Operator::Sub => self.builder.build_float_sub(lhs, rhs, "fsub"),
-										Operator::Mult => self.builder.build_float_mul(lhs, rhs, "fmul"),
-										Operator::Div => self.builder.build_float_div(lhs, rhs, "fdiv"),
+											Operator::Assign => {
+												if let Expr::Atom(a, _) = &lhs {
+													if let Atom::Variable(v) = &*a.borrow() {						
+														self.builder.build_store(*scope.get_variable(&v).unwrap(), rhs_i);
+														return Box::new(rhs_i);
+													}
+												}
+												panic!();
+												
+											}
+											_ => todo!(),
+										}
+									)
+								},
+								Basic::F64 | Basic::F32 => {
+									let lhs = self.generate_expr(lhs, t, scope).as_any_value_enum().into_float_value();
+									let rhs = self.generate_expr(rhs, t, scope).as_any_value_enum().into_float_value();
 
-										_ => todo!(),
-									}
-								)
-	
-							},
-							Basic::BOOL => todo!(),
-							Basic::VOID => todo!(),
-      						Basic::STR => todo!(),
-						}
-					},
-					InnerType::Alias(_, _) => todo!(),
-					InnerType::Aggregate(_) => todo!(),
-					InnerType::Pointer(_) => todo!(),
-					InnerType::Function(_, _) => todo!(),
-					InnerType::Unresolved(_) => todo!(),
+									Box::new(
+										match op {
+											Operator::Add => self.builder.build_float_add(lhs, rhs, "fadd"),
+											Operator::Sub => self.builder.build_float_sub(lhs, rhs, "fsub"),
+											Operator::Mult => self.builder.build_float_mul(lhs, rhs, "fmul"),
+											Operator::Div => self.builder.build_float_div(lhs, rhs, "fdiv"),
+
+											_ => todo!(),
+										}
+									)
+		
+								},
+								Basic::BOOL => todo!(),
+								Basic::VOID => todo!(),
+								Basic::STR => todo!(),
+							}
+						},
+						InnerType::Alias(_, _) => todo!(),
+						InnerType::Aggregate(_) => todo!(),
+						InnerType::Pointer(_) => todo!(),
+						InnerType::Function(_, _) => todo!(),
+						InnerType::Unresolved(_) => todo!(),
+					}
 				}
 			},
 		}

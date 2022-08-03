@@ -32,7 +32,7 @@ fn token_compare(token: &Token, text: &str) -> bool {
 	match token {
 	    Token::Operator(op) => text == op.as_str(),
    		Token::Other(c) => text.chars().next().unwrap() == *c,
-		Token::Keyword(keyword) => text == keyword.as_str(),
+		Token::Keyword(keyword) => text == *keyword,
 		_ => false,
 	}
 }
@@ -145,7 +145,7 @@ impl<'source> Parser<'source> {
 
 				Token::Keyword(ref keyword) => {
 
-					match keyword.as_str() {
+					match *keyword {
 
 						"class" | "struct" => {
 							// TODO: Register aggregate type
@@ -364,11 +364,10 @@ impl<'source> Parser<'source> {
 			},
 
 			Token::Keyword(keyword) => {
-				match keyword.as_str() {
+				match *keyword {
 					
 
 					// Parse return statement
-
 					"return" => {
 						let next = get_next(&self.lexer)?;
 						
@@ -382,7 +381,6 @@ impl<'source> Parser<'source> {
 
 
 					// Parse if statement
-					
 					"if" => {
 						current = get_next(&self.lexer)?;
 
@@ -435,6 +433,69 @@ impl<'source> Parser<'source> {
 									Some(e) => Some(e)},
 							})));
 					}
+
+					// Parse for loop
+					"for" => {
+						current = get_next(&self.lexer)?;
+
+						// Check opening brace
+						if token_compare(&current, "(") {
+							current = get_next(&self.lexer)?;
+						} else {
+							return Err(CMNError::UnexpectedToken);
+						}
+
+						let mut init = None;
+						let mut cond = None;
+						let mut iter = None;
+
+						if token_compare(&current, ";") {
+							// No init statement, skip
+							current = get_next(&self.lexer)?;
+						} else {
+							init = Some(self.parse_statement()?); // TODO: Restrict to declaration?
+							current = get_current(&self.lexer)?;
+						}
+
+						if token_compare(&current, ";") {
+							// No iter expression, skip
+							current = get_next(&self.lexer)?;
+						} else {
+							cond = Some(self.parse_expression()?);
+							self.check_semicolon()?;
+							current = get_current(&self.lexer)?;
+						}
+
+						if token_compare(&current, ";") {
+							// No cond expression, skip
+							current = get_next(&self.lexer)?;
+						} else if !token_compare(&current, ")") {
+							iter = Some(self.parse_expression()?);
+							current = get_current(&self.lexer)?;
+						}
+
+						// Check closing brace
+						if token_compare(&current, ")") {
+							current = get_next(&self.lexer)?;
+						} else {
+							return Err(CMNError::UnexpectedToken);
+						}
+
+						// Parse body
+						let body;
+						if token_compare(&current, "{") {
+							body = self.parse_block()?;
+						} else {
+							body = self.parse_statement()?.wrap_in_block();
+						}
+
+						result = Some(ASTNode::ControlFlow(
+							Box::new(ControlFlow::For { 
+								init, cond, iter, body
+							})
+						));
+					}
+
 
 					// Invalid keyword at start of statement 
 					_ => {
@@ -610,7 +671,7 @@ impl<'source> Parser<'source> {
 
 						"<" => {
 							// TODO: Disambiguate between type parameter list or LT operator 
-							todo!()
+							Ok(Atom::Variable(id))
 						}
 
 						_ => {

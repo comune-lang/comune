@@ -157,17 +157,27 @@ impl ASTElem {
 					Ok(t)
 				} 
 
-				ControlFlow::For { cond, body, init, iter } => {	
-					// Check if condition is coercable to bool
-					let cond_type = cond.get_type(scope)?;
-					let bool_t = Type::from_basic(Basic::BOOL);
+				ControlFlow::For { cond, body, init, iter } => {
+					let mut subscope = Scope::from_parent(&scope);	
 
-					if !cond_type.coercable_to(&bool_t) {
-						return Err((CMNError::TypeMismatch(cond_type, bool_t), self.token_data));
+					if let Some(init) = init { init.validate(&mut subscope, ret)?; }
+
+					// Check if condition is coercable to bool
+					if let Some(cond) = cond {
+						let bool_t = Type::from_basic(Basic::BOOL);
+						
+						cond.type_info.replace(Some(bool_t.clone()));
+						let cond_type = cond.get_type(&mut subscope)?;
+						
+
+						if !cond_type.coercable_to(&bool_t) {
+							return Err((CMNError::TypeMismatch(cond_type, bool_t), self.token_data));
+						}
 					}
-					init.validate(scope, ret)?;
-					iter.validate(scope, ret)?;
-					let t = body.validate(scope, ret)?;
+					
+					if let Some(iter) = iter { iter.validate(&mut subscope, ret)?; }
+
+					let t = body.validate(&mut subscope, ret)?;
 					if t.is_some() {
 						Ok(t)
 					} else {

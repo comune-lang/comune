@@ -2,7 +2,10 @@ int printf(char* fmt);
 
 
 int main() {
-	printf("Hello world!\n");
+
+	for (int i = 3; i; i = i - 1) { // remind me to implement ++ and -- later
+		printf("Test!\n\0");
+	}
 	return 0;
 }
 
