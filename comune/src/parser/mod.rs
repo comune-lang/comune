@@ -2,6 +2,8 @@ use std::collections::HashMap;
 use std::fmt::Display;
 use std::cell::RefCell;
 
+use colored::Colorize;
+
 use crate::lexer::{Lexer, Token};
 
 use self::ast::{ASTNode, ASTElem, TokenData};
@@ -99,8 +101,8 @@ pub enum ParserError {
 	UndeclaredIdentifier(String),
 	TypeMismatch(Type, Type),
 	ReturnTypeMismatch{expected: Type, got: Type},
-	ParameterCountMismatch,
-	NotCallable,
+	ParameterCountMismatch{expected: usize, got: usize},
+	NotCallable(String),
 
 	// Misc
 	Unimplemented,
@@ -114,11 +116,11 @@ impl Display for ParserError {
 			ParserError::UnexpectedEOF => 							write!(f, "unexpected end of file"),
 			ParserError::UnexpectedToken => 						write!(f, "unexpected token"),
 			ParserError::ExpectedIdentifier => 						write!(f, "expected identifier"),
-			ParserError::UndeclaredIdentifier(_) =>	 				write!(f, "undeclared identifier"),
+			ParserError::UndeclaredIdentifier(id) =>				write!(f, "undeclared identifier `{}`", id),
 			ParserError::TypeMismatch(a, b) => 						write!(f, "type mismatch ({}, {})", a, b),
 			ParserError::ReturnTypeMismatch { expected, got } =>	write!(f, "return type mismatch; expected {}, got {}", expected, got),
-			ParserError::ParameterCountMismatch =>					write!(f, "parameter count mismatch"),
-			ParserError::NotCallable => 							write!(f, "not a callable"),
+			ParserError::ParameterCountMismatch{ expected, got } =>	write!(f, "parameter count mismatch; expected {}, got {}", expected, got),
+			ParserError::NotCallable(id) => 						write!(f, "{} is not callable", id),
 			ParserError::Unimplemented =>							write!(f, "not yet implemented"),
     		ParserError::UnexpectedKeyword => 						write!(f, "unexpected keyword"),
 		}
@@ -338,7 +340,7 @@ impl<'source> Parser<'source> {
 
 
 	fn parse_block(&self) -> ParseResult<ASTElem> {
-		let begin = self.lexer.borrow().get_index();
+		let begin = self.lexer.borrow().get_current_start_index();
 		let mut current = get_current(&self.lexer)?;
 
 		if current != Token::Other('{') {
@@ -377,7 +379,7 @@ impl<'source> Parser<'source> {
 
 	fn parse_statement(&self) -> ParseResult<ASTElem> {
 		let mut current = get_current(&self.lexer)?;
-		let begin = self.lexer.borrow().get_index() - current.len();
+		let begin = self.lexer.borrow().get_current_start_index();
 		let mut result = None;
 
 		match &current {
@@ -510,11 +512,10 @@ impl<'source> Parser<'source> {
 
 
 	fn parse_expression(&self) -> ParseResult<ASTElem> {
-		let begin = self.lexer.borrow().get_index();
+		let begin = self.lexer.borrow().get_current_start_index();
 		let expr = ASTNode::Expression(self.parse_expression_bp(0)?);
-		let end = self.lexer.borrow().get_index();
-		let len = end - begin;
-		Ok(ASTElem { node: expr, token_data: (begin - len, len), type_info: RefCell::new(None)})
+		let len = self.lexer.borrow().get_index() - begin;
+		Ok(ASTElem { node: expr, token_data: (begin, len), type_info: RefCell::new(None)})
 	}
 
 
@@ -522,7 +523,7 @@ impl<'source> Parser<'source> {
 	// Basic pratt parser, nothing too fancy
 	fn parse_expression_bp(&self, min_bp: u8) -> ParseResult<Expr> {
 		let mut current = get_current(&self.lexer)?;
-		let meta = (self.lexer.borrow().get_index(), current.len());
+		let meta = (self.lexer.borrow().get_current_start_index(), current.len());
 
 		// Get initial part of expression, could be an Atom or the operator of a unary Cons
 		let lhs = match current {
@@ -551,11 +552,11 @@ impl<'source> Parser<'source> {
 							}
 							
 						} else {
-							let begin_index = self.lexer.borrow().get_index() - get_current(&self.lexer).unwrap().len();
+							let begin_index = self.lexer.borrow().get_current_start_index();
 
 							let rhs = self.parse_expression_bp(op.get_binding_power())?;
 
-							let end_index = self.lexer.borrow().get_index() - get_current(&self.lexer).unwrap().len();
+							let end_index = self.lexer.borrow().get_current_start_index() - 1;
 							return Ok(Expr::Cons(op, vec![rhs], (end_index, end_index - begin_index)));
 						}
 					},

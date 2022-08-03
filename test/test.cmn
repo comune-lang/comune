@@ -3,7 +3,7 @@ int printf(char* fmt);
 
 int main() {
 	str a = "Hello world!\n\0";
-	printf(a);
+	printf(a, 2);
 
 	printf("This works too!\n\0");
 

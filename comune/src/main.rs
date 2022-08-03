@@ -117,15 +117,20 @@ fn main() {
 
 		backend.generate_libc_bindings();
 
-		if args.emit_llvm {
-			backend.module.print_to_file(args.output_file.clone() + ".ll").unwrap();
-		}
 
-		match backend.module.verify() {
-			Ok(_) => {},
-			Err(e) => {println!("an internal compiler error occurred:\n{}", e); return; },
+		if let Err(e) = backend.module.verify() {
+			println!("an internal compiler error occurred:\n{}", e);
+			
+			// Output bogus LLVM here, for debugging purposes
+			if args.emit_llvm {
+				backend.module.print_to_file(args.output_file.clone() + ".ll").unwrap();
+			}
+
+			return;
 		};	
 
+		
+		// Optimization passes
 
 		let mpm = PassManager::<Module>::create(());
 		mpm.add_instruction_combining_pass();
@@ -138,6 +143,12 @@ fn main() {
 		mpm.add_reassociate_pass();
 
 		mpm.run_on(&backend.module);
+
+
+		if args.emit_llvm {
+			backend.module.print_to_file(args.output_file.clone() + ".ll").unwrap();
+		}
+
 
 		// TODO: Link modules together into single executable
 		target_machine.write_to_file(&backend.module, FileType::Object, &Path::new("out.o")).unwrap();

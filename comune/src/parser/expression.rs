@@ -225,11 +225,11 @@ impl Atom {
 							Ok(*ret.clone())
 
 						} else {
-							Err((ParserError::ParameterCountMismatch, meta)) // Wrong number of parameters! 
+							Err((ParserError::ParameterCountMismatch{expected: params.len(), got: args.len()}, meta))
 						}
 						
 					} else {
-						Err((ParserError::NotCallable, meta)) // Trying to call a non-function
+						Err((ParserError::NotCallable(name.clone()), meta)) // Trying to call a non-function
 					}
 
 				} else {

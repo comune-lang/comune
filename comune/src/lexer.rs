@@ -198,6 +198,9 @@ impl Lexer {
 		&self.token_buffer
 	}
 
+	pub fn get_current_start_index(&self) -> usize {
+		self.file_index - self.token_buffer.as_ref().unwrap().len()
+	}
 
 	fn skip_whitespace(&mut self) -> io::Result<()> {
 		if let Some(mut token) = self.char_buffer {
