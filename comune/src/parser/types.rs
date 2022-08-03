@@ -147,7 +147,8 @@ impl Type {
 
 							Basic::STR => {
 								// Abusing the hell outta `if let` here lol
-								// Allow coercion from str to char*, for compatibility with C 	
+								// Allow coercion from str to char*, for compatibility with C 
+								// For string literals, emits a warning during semantic analysis if it doesn't end with a null byte	
 								if let InnerType::Pointer(other_p) = &target.inner {
 									if let InnerType::Basic(other_b) = other_p.inner {
 										if let Basic::CHAR = other_b {

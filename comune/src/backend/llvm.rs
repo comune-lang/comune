@@ -229,7 +229,6 @@ impl<'ctx> LLVMBackend<'ctx> {
 				}
 				self.builder.build_unconditional_branch(cont_bb);
 
-
 				self.builder.position_at_end(cont_bb);
 
 				Ok(None)
@@ -251,7 +250,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 				let cond_bb = self.context.append_basic_block(parent, "forcond");
 				let body_bb = self.context.append_basic_block(parent, "forblock");
 				let end_bb = self.context.append_basic_block(parent, "forend");
-				
+
 				self.builder.build_unconditional_branch(cond_bb);
 
 				self.builder.position_at_end(cond_bb);
@@ -457,7 +456,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 								match val.as_any_value_enum() {
 									
 									AnyValueEnum::IntValue(i) => return Box::new(
-										self.builder.build_int_cast(i, self.context.bool_type(), "boolcast").as_any_value_enum()
+										self.builder.build_int_compare(IntPredicate::NE, i, i.get_type().const_zero(), "boolcast")
 									),
 
 									_ => panic!()
