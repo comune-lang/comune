@@ -1,7 +1,9 @@
 use std::{fmt::Display, cell::RefCell};
 
 
-use super::{types::{Type, Basic, InnerType, Typed}, CMNError, semantic::Scope, ASTResult, ast::{TokenData, ASTElem, ASTNode}};
+use crate::lexer;
+
+use super::{types::{Type, Basic, InnerType, Typed}, CMNError, semantic::Scope, ASTResult, ast::{TokenData, ASTElem, ASTNode}, ParseResult, errors::{CMNWarning, CMNMessage}};
 
 #[derive(Clone, Debug)]
 pub enum Operator {
@@ -173,111 +175,6 @@ impl Operator {
 }
 
 
-
-
-#[derive(Clone, Debug)]
-pub enum Atom {
-	IntegerLit(isize),
-	BoolLit(bool),
-	FloatLit(f64),
-	StringLit(String),
-	Variable(String),
-	ArrayLit(Vec<ASTElem>),
-	Cast(Box<ASTElem>, Type),
-
-	FnCall{
-		name: String, 
-		args: Vec<ASTElem>
-	},
-
-	
-}
-
-
-impl Atom {
-	fn get_type(&self, scope: &Scope, meta: TokenData) -> ASTResult<Type> {
-		match self {
-			Atom::IntegerLit(_) => Ok(Type::from_basic(Basic::I32)),
-			Atom::FloatLit(_) => Ok(Type::from_basic(Basic::F32)),
-			Atom::BoolLit(_) => Ok(Type::from_basic(Basic::BOOL)),
-			Atom::StringLit(_) => Ok(Type::from_basic(Basic::STR)),
-
-			Atom::Variable(name) => scope.get_identifier_type(name).ok_or((CMNError::UndeclaredIdentifier(name.clone()), meta)),
-
-			Atom::Cast(_, t) => Ok(t.clone()),
-
-			Atom::FnCall { name, args } => {
-				
-				if let Some(t) = scope.get_identifier_type(name) {
-					if let InnerType::Function(ret, params) = t.inner {
-
-						// Identifier is a function, check parameter types
-						if args.len() == params.len() {
-
-							for i in 0..args.len() {
-								args[i].type_info.replace(Some(*params[i].0.clone()));
-								let arg_type = args[i].get_type(scope)?;
-								if !arg_type.coercable_to(params[i].0.as_ref()) {
-									return Err((CMNError::TypeMismatch(arg_type, params[i].0.as_ref().clone()), args[i].token_data));
-								}
-							}
-							// All good, return function's return type
-							Ok(*ret.clone())
-
-						} else {
-							Err((CMNError::ParameterCountMismatch{expected: params.len(), got: args.len()}, meta))
-						}
-						
-					} else {
-						Err((CMNError::NotCallable(name.clone()), meta)) // Trying to call a non-function
-					}
-
-				} else {
-					Err((CMNError::UndeclaredIdentifier(name.clone()), meta)) // Couldn't find symbol!
-				}
-			},
-
-			Atom::ArrayLit(_) => todo!(),
-		}
-	}
-}
-
-impl Display for Atom {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-			Atom::IntegerLit(i) => write!(f, "{}", i),
-			
-            Atom::FloatLit(fl) => write!(f, "{}", fl),
-
-            Atom::StringLit(s) => write!(f, "{}", s),
-
-			Atom::BoolLit(b) => if *b { write!(f, "true") } else { write!(f, "false") }
-
-            Atom::FnCall {name, args} => {
-				let mut args_iter = args.iter();
-				write!(f, "FnCall:{}(", name)?;
-				
-				if !args.is_empty() {
-					write!(f, "{}", args_iter.next().unwrap())?;
-					while let Some(arg) = args_iter.next() {
-						write!(f, ", {}", arg)?;
-					}
-				}
-				
-				write!(f, ")")
-			},
-
-			Atom::Cast(elem, to) => write!(f, "{}({})", to, elem),
-
-            Atom::Variable(var) => write!(f, "{}", var),
-            Atom::ArrayLit(_elems) => todo!(),
-		}
-    }
-}
-
-
-
-
 #[derive(Clone, Debug)]
 pub enum Expr {
 	Atom(RefCell<Atom>, TokenData),
@@ -293,7 +190,10 @@ impl Expr {
 				
 				if a_t != *goal_t {
 					if a_t.coercable_to(goal_t) {
-						let mut swap = Atom::IntegerLit(0);
+						// Atom is coercable to goal_t, so we place it inside a Cast node
+						a.borrow().check_cast(&a_t, goal_t, scope, &meta)?;
+
+						let mut swap = Atom::IntegerLit(0); //dummy Atom
 
 						swap = a.replace(swap); // swap now contains old Atom
 						
@@ -351,6 +251,144 @@ impl Display for Expr {
 				
 				write!(f, ")")
 			},
+		}
+    }
+}
+
+
+
+
+
+#[derive(Clone, Debug)]
+pub enum Atom {
+	IntegerLit(isize),
+	BoolLit(bool),
+	FloatLit(f64),
+	StringLit(String),
+	Variable(String),
+	ArrayLit(Vec<ASTElem>),
+	Cast(Box<ASTElem>, Type),
+
+	FnCall{
+		name: String, 
+		args: Vec<ASTElem>
+	},
+
+	
+}
+
+
+
+impl Atom {
+	fn get_type(&self, scope: &Scope, meta: TokenData) -> ASTResult<Type> {
+		match self {
+			Atom::IntegerLit(_) => Ok(Type::from_basic(Basic::I32)),
+			Atom::FloatLit(_) => Ok(Type::from_basic(Basic::F32)),
+			Atom::BoolLit(_) => Ok(Type::from_basic(Basic::BOOL)),
+			Atom::StringLit(_) => Ok(Type::from_basic(Basic::STR)),
+
+			Atom::Variable(name) => scope.get_identifier_type(name).ok_or((CMNError::UndeclaredIdentifier(name.clone()), meta)),
+
+			Atom::Cast(_, t) => Ok(t.clone()),
+
+			Atom::FnCall { name, args } => {
+				
+				if let Some(t) = scope.get_identifier_type(name) {
+					if let InnerType::Function(ret, params) = t.inner {
+
+						// Identifier is a function, check parameter types
+						if args.len() == params.len() {
+
+							for i in 0..args.len() {
+								args[i].type_info.replace(Some(*params[i].0.clone()));
+								let arg_type = args[i].get_type(scope)?;
+								if !arg_type.coercable_to(params[i].0.as_ref()) {
+									return Err((CMNError::TypeMismatch(arg_type, params[i].0.as_ref().clone()), args[i].token_data));
+								}
+							}
+							// All good, return function's return type
+							Ok(*ret.clone())
+
+						} else {
+							Err((CMNError::ParameterCountMismatch{expected: params.len(), got: args.len()}, meta))
+						}
+						
+					} else {
+						Err((CMNError::NotCallable(name.clone()), meta)) // Trying to call a non-function
+					}
+
+				} else {
+					Err((CMNError::UndeclaredIdentifier(name.clone()), meta)) // Couldn't find symbol!
+				}
+			},
+
+			Atom::ArrayLit(_) => todo!(),
+		}
+	}
+
+
+	// Check if we should issue any warnings or errors when casting
+	fn check_cast(&self, from: &Type, to: &Type, scope: &Scope, meta: &TokenData) -> ASTResult<()> {
+		match &from.inner {
+
+			InnerType::Basic(b) => match b {
+
+				Basic::STR => {
+					if let Atom::StringLit(s) = self {
+						if s.chars().last() != Some('\0') {
+							lexer::log_msg_at(meta.0, meta.1, CMNMessage::Warning(CMNWarning::CharPtrNoNull));
+						}
+					}
+
+					Ok(())
+				},
+
+				_ => Ok(())
+			},
+
+			InnerType::Alias(_, t) => {
+				self.check_cast(t.as_ref(), to, scope, meta)
+			},
+			
+			InnerType::Aggregate(_) => todo!(),
+			InnerType::Pointer(_) => todo!(),
+			InnerType::Function(_, _) => todo!(),
+			InnerType::Unresolved(_) => todo!(),
+		}
+	}
+}
+
+
+
+impl Display for Atom {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+			Atom::IntegerLit(i) => write!(f, "{}", i),
+			
+            Atom::FloatLit(fl) => write!(f, "{}", fl),
+
+            Atom::StringLit(s) => write!(f, "{}", s),
+
+			Atom::BoolLit(b) => if *b { write!(f, "true") } else { write!(f, "false") }
+
+            Atom::FnCall {name, args} => {
+				let mut args_iter = args.iter();
+				write!(f, "FnCall:{}(", name)?;
+				
+				if !args.is_empty() {
+					write!(f, "{}", args_iter.next().unwrap())?;
+					while let Some(arg) = args_iter.next() {
+						write!(f, ", {}", arg)?;
+					}
+				}
+				
+				write!(f, ")")
+			},
+
+			Atom::Cast(elem, to) => write!(f, "{}({})", to, elem),
+
+            Atom::Variable(var) => write!(f, "{}", var),
+            Atom::ArrayLit(_elems) => todo!(),
 		}
     }
 }

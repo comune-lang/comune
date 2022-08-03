@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::ffi::OsString;
 use std::fmt::Display;
 use std::fs::File;
@@ -6,7 +7,18 @@ use std::path::Path;
 
 use colored::Colorize;
 
-use crate::parser::errors::{CMNError, CMNMessage};
+use crate::parser::errors::CMNMessage;
+
+thread_local! {
+	pub(crate) static CURRENT_LEXER: RefCell<Lexer> = RefCell::new(Lexer::dummy());
+}
+
+// For logging warnings from arbitrary locations in the parse code
+pub(crate) fn log_msg_at(char_idx: usize, token_len: usize, e: CMNMessage) {
+	CURRENT_LEXER.with(|lexer| { 
+		lexer.borrow().log_msg_at(char_idx, token_len, e);
+	});
+}
 
 const KEYWORDS: &[&str] = &[
 	"mod",	
@@ -128,6 +140,16 @@ pub struct Lexer {
 }
 
 impl Lexer {
+	pub fn dummy() -> Lexer {
+		Lexer {
+			file_buffer: String::new(),
+			file_index: 0usize,
+			char_buffer: None,
+			token_buffer: None,
+			file_name: OsString::new(),
+		}
+	}
+
 	pub fn new<P: AsRef<Path>>(path: P) -> std::io::Result<Lexer> {
 		let mut result = Lexer { 
 			file_buffer: String::new(), 

@@ -2,8 +2,6 @@ use std::collections::HashMap;
 use std::fmt::Display;
 use std::cell::RefCell;
 
-use colored::Colorize;
-
 use crate::lexer::{Lexer, Token};
 
 use self::ast::{ASTNode, ASTElem, TokenData};
