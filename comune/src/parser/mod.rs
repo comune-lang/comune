@@ -2,14 +2,14 @@ use std::collections::HashMap;
 use std::fmt::Display;
 use std::cell::RefCell;
 
-use crate::lexer::{Lexer, Token};
-
+use self::lexer::{Lexer, Token};
 use self::ast::{ASTNode, ASTElem, TokenData};
 use self::controlflow::ControlFlow;
 use self::errors::CMNError;
 use self::expression::{Expr, Operator, Atom};
 use self::types::{Type, InnerType, Basic, FnParamList};
 
+pub mod lexer;
 pub mod errors;
 pub mod ast;
 pub mod types;
@@ -288,6 +288,7 @@ impl<'source> Parser<'source> {
 			match current {
 				Token::Other('{') => bracket_depth += 1,
 				Token::Other('}') => bracket_depth -= 1,
+				Token::EOF => break,
 				_ => {}
 			}
 		}

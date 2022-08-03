@@ -1,6 +1,6 @@
 use std::{fmt::Display, collections::HashMap};
 
-use crate::lexer::{Token};
+use super::lexer::{Token};
 
 use super::{semantic::Scope, ASTResult};
 

@@ -1,9 +1,7 @@
 use std::{fmt::Display, cell::RefCell};
 
+use super::{lexer, types::{Type, Basic, InnerType, Typed}, CMNError, semantic::Scope, ASTResult, ast::{TokenData, ASTElem, ASTNode}, errors::{CMNWarning, CMNMessage}};
 
-use crate::lexer;
-
-use super::{types::{Type, Basic, InnerType, Typed}, CMNError, semantic::Scope, ASTResult, ast::{TokenData, ASTElem, ASTNode}, errors::{CMNWarning, CMNMessage}};
 
 #[derive(Clone, Debug)]
 pub enum Operator {

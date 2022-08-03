@@ -1,8 +1,7 @@
 use std::cell::RefCell;
 use std::fmt::Display;
 
-use crate::lexer::Token;
-
+use super::lexer::Token;
 use super::{ASTResult, CMNError};
 use super::semantic::Scope;
 use super::types::{Type, Basic, Typed};

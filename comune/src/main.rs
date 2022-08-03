@@ -1,4 +1,3 @@
-mod lexer;
 mod parser;
 mod backend;
 
@@ -6,7 +5,7 @@ use std::{path::Path, io::{self, Write}};
 use clap::Parser;
 use colored::Colorize;
 use inkwell::{context::Context, targets::{Target, InitializationConfig, TargetTriple, FileType}, passes::PassManager, module::Module};
-use crate::{parser::{semantic, errors::CMNMessage}, lexer::Lexer, backend::llvm::LLVMBackend};
+use crate::{parser::{semantic, errors::CMNMessage}, parser::lexer::Lexer, backend::llvm::LLVMBackend};
 use std::process::Command;
 
 
@@ -40,7 +39,7 @@ fn main() {
 	// Extremely basic, needs parallelization and linking modules together
 	for file in args.input_files.iter() {
 	
-		lexer::CURRENT_LEXER.with(|lexer| { 
+		parser::lexer::CURRENT_LEXER.with(|lexer| { 
 
 			lexer.replace(match Lexer::new(file) {
 				Ok(f) => f,
