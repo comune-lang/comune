@@ -5,7 +5,7 @@ int main() {
 	str a = "Hello world!\n\0"; 
 	printf(a);
 
-	bool cond = 0;
+	bool cond = true;
 	if (cond) {
 		str b = "cond is true!\n\0"; 
 		printf(b);

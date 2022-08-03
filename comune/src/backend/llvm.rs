@@ -268,7 +268,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 				let a = atom.borrow();
 				match &*a {
 					Atom::IntegerLit(i) => Box::new(self.context.i32_type().const_int(*i as u64, false)),
-					Atom::BoolLit(b) => Box::new(self.context.i8_type().const_int(if *b { 1 } else { 0 }, false)),
+					Atom::BoolLit(b) => Box::new(self.context.bool_type().const_int(if *b { 1 } else { 0 }, false)),
 					Atom::FloatLit(f) => Box::new(self.context.f32_type().const_float(*f)),
 					Atom::Variable(v) => Box::new(self.builder.build_load(scope.get_variable(&v).unwrap().clone(), "vload")),
 					Atom::ArrayLit(_) => todo!(),
