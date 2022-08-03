@@ -2,17 +2,10 @@ int printf(char* fmt);
 
 
 int main() {
-	str a = "Hello world!\n\0"; 
+	str a = "Hello world!\n\0";
 	printf(a);
 
-	bool cond = true;
-	if (cond) {
-		str b = "cond is true!\n\0"; 
-		printf(b);
-	} else {
-		str c = "cond is false :(\n\0";
-		printf(c);
-	}
+	printf("This works too!\n\0");
 
 	return add(2, 7);
 }

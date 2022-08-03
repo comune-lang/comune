@@ -47,6 +47,9 @@ fn main() {
 
 		let mut parser = parser::Parser::new(&lexer, args.verbose);
 
+		println!("{} {}\n", "compiling".bold().green(), lexer.borrow().file_name.to_string_lossy());
+
+
 		if args.verbose {
 			println!("\ncollecting symbols...");
 		}
@@ -117,7 +120,7 @@ fn main() {
 		if args.emit_llvm {
 			backend.module.print_to_file(args.output_file.clone() + ".ll").unwrap();
 		}
-		
+
 		match backend.module.verify() {
 			Ok(_) => {},
 			Err(e) => {println!("an internal compiler error occurred:\n{}", e); return; },

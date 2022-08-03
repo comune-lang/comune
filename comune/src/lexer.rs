@@ -124,7 +124,7 @@ pub struct Lexer {
 	file_index: usize, // must be on a valid utf-8 character boundary
 	char_buffer: Option<char>,
 	token_buffer: Option<Token>,
-	file_name: OsString,
+	pub file_name: OsString,
 }
 
 impl Lexer {
