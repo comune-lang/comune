@@ -3,7 +3,7 @@ use std::{fmt::Display, cell::RefCell};
 
 use crate::lexer;
 
-use super::{types::{Type, Basic, InnerType, Typed}, CMNError, semantic::Scope, ASTResult, ast::{TokenData, ASTElem, ASTNode}, ParseResult, errors::{CMNWarning, CMNMessage}};
+use super::{types::{Type, Basic, InnerType, Typed}, CMNError, semantic::Scope, ASTResult, ast::{TokenData, ASTElem, ASTNode}, errors::{CMNWarning, CMNMessage}};
 
 #[derive(Clone, Debug)]
 pub enum Operator {
@@ -161,6 +161,8 @@ impl Operator {
 				"&" => Some(Operator::Ref),
 				"*" => Some(Operator::Deref),
 				"!" => Some(Operator::LogicNot),
+				"++" => Some(Operator::PreInc),
+				"--" => Some(Operator::PreDec),
 				_ => None,
 			}
 		}
@@ -198,7 +200,7 @@ impl Expr {
 				// Handle operators that change the expression's type here
 				match op {
 					Operator::Ref => last.ptr_type(),
-					
+
 					Operator::Deref => {
 						match last.inner {
 							InnerType::Pointer(t) => *t.clone(),

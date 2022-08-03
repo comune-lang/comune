@@ -47,11 +47,9 @@ fn main() {
 				Err(e) => { println!("{} failed to open input file '{}' ({})", "fatal:".red().bold(), file, e); return; }
 			});
 		
-
 			let mut parser = parser::Parser::new(&lexer, args.verbose);
 
 			println!("{} {}\n", "compiling".bold().green(), lexer.borrow().file_name.to_string_lossy());
-
 
 			if args.verbose {
 				println!("\ncollecting symbols...");
