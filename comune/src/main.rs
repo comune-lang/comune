@@ -145,7 +145,7 @@ fn main() {
 			mpm.add_instruction_combining_pass();
 			mpm.add_reassociate_pass();
 
-			mpm.run_on(&backend.module);
+			//mpm.run_on(&backend.module);
 
 
 			if args.emit_llvm {

@@ -21,8 +21,12 @@ pub enum Operator {
 	PreInc,
 	PreDec,
 	
+	ScopeRes,
+	MemberAccess,
 	Call,
 	Subscr,
+	Ref,
+	Deref,
 	
 	Eq,
 	NotEq,
@@ -64,16 +68,27 @@ impl Operator {
 
 	pub fn get_binding_power(&self) -> u8 {
 		match self {
-			Operator::Call		| Operator::Subscr	| Operator::PostInc	| Operator::PostDec 	=> { 200 }
 			
-			Operator::PreInc	| Operator::PreDec	| Operator::LogicNot | 
-			Operator::UnaryPlus | Operator::UnaryMinus											=> { 190 }
+			Operator::Call		| Operator::Subscr	| 
+			Operator::PostInc	| Operator::PostDec |
+			Operator::ScopeRes	| Operator::MemberAccess										=> { 200 }
+
+			
+			Operator::UnaryPlus | Operator::UnaryMinus | Operator::LogicNot | 
+			Operator::PreInc	| Operator::PreDec |	
+			Operator::Ref		| Operator::Deref												=> { 190 }
+
 
 			Operator::Mult		| Operator::Div		| Operator::Mod 							=> { 180 }
+			
 			Operator::Add		| Operator::Sub 												=> { 170 }
+			
 			Operator::BitShiftL	| Operator::BitShiftR 											=> { 160 }
+			
 			Operator::Less		| Operator::LessEq	| Operator::Greater	| Operator::GreaterEq	=> { 150 }
+			
 			Operator::Eq		| Operator::NotEq												=> { 140 }
+
 
 			Operator::BitAND	=> { 130 }
 			Operator::BitXOR	=> { 120 }
@@ -81,6 +96,7 @@ impl Operator {
 			Operator::LogicAnd	=> { 100 }
 			Operator::LogicOr	=> { 90 }
 
+			
 			Operator::Assign | Operator::AssAdd | Operator::AssSub | Operator::AssMult | Operator::AssDiv | Operator::AssMod | 
 			Operator::AssBitShL | Operator::AssBitShR | Operator::AssBitOR | Operator::AssBitXOR | Operator::AssBitAND 
 			=> { 80 }
@@ -177,62 +193,78 @@ impl Operator {
 
 #[derive(Clone, Debug)]
 pub enum Expr {
-	Atom(RefCell<Atom>, TokenData),
+	Atom(Atom, TokenData),
 	Cons(Operator, Vec<Expr>, TokenData)
 }
 
 
 impl Expr {
-	pub fn get_type(&self, scope: &Scope, goal_t: &Type, meta: TokenData) -> ASTResult<Type> {
-		match self {
+	pub fn get_type(&mut self, scope: &Scope, goal_t: Option<&Type>, meta: TokenData) -> ASTResult<Type> {
+		let this_t = match self {
 			Expr::Atom(a, _) => {
-				let a_t = a.borrow().get_type(scope, meta)?;
-				
-				if a_t != *goal_t {
-					if a_t.coercable_to(goal_t) {
-						// Atom is coercable to goal_t, so we place it inside a Cast node
-						a.borrow().check_cast(&a_t, goal_t, scope, &meta)?;
-
-						let mut swap = Atom::IntegerLit(0); //dummy Atom
-
-						swap = a.replace(swap); // swap now contains old Atom
-						
-						// Construct a new Atom to cast the containing Atom to the goal type 
-						let cast = Atom::Cast(Box::new(
-							ASTElem { 
-								node: ASTNode::Expression(Expr::Atom(RefCell::new(swap), meta)), 
-								type_info: RefCell::new(Some(a_t)), 
-								token_data: meta
-							}), 
-							goal_t.clone()
-						);
-
-						a.replace(cast);
-
-						return Ok(goal_t.clone());
-					} else {
-						return Err((CMNError::TypeMismatch(a_t, goal_t.clone()), meta));
-					}
-				}
-
-				Ok(a_t)
+				a.get_type(scope, meta)?
 			},
 
 			// This should probably implement some sort of type coercion ruleset? Works for now though
 			Expr::Cons(_, elems, meta) => {
-				let mut iter = elems.iter();
-				let mut last = iter.next().unwrap().get_type(scope, goal_t, *meta)?;
+				let mut iter = elems.iter_mut();
+				let mut last = iter.next().unwrap().get_type(scope, None, *meta)?;
 				
 				while let Some(item) = iter.next() {
-					let current = item.get_type(scope, goal_t, *meta)?;
+					let current = item.get_type(scope, None, *meta)?;
 					if last != current {
 						return Err((CMNError::TypeMismatch(last, current), *meta))
 					}
 					last = current;
 				}
-				return Ok(last);
+				last
 			}
+		};
+
+		if let Some(goal_t) = goal_t {
+			if this_t != *goal_t {
+				if this_t.coercable_to(goal_t) {
+					let meta;
+
+					match self { 
+						Expr::Atom(a, m) => {
+							// If self is an atom, we perform extra diagnostics for the cast here
+							meta = *m;
+							a.check_cast(&this_t, goal_t, scope, &meta)?;
+
+						}
+						Expr::Cons(_, _, m) => {
+							meta = *m;
+						}
+					}
+
+					let mut swap = Expr::Atom(Atom::IntegerLit(0), meta); //dummy Expr
+
+					swap = std::mem::replace(self, swap); // swap now contains old Atom
+					
+					// Construct a new Atom to cast the containing Expr to the goal type 
+					let cast = Expr::Atom(Atom::Cast(Box::new(
+						ASTElem { 
+							node: ASTNode::Expression(RefCell::new(swap)), 
+							type_info: RefCell::new(Some(this_t)), 
+							token_data: meta
+						}), 
+						goal_t.clone()
+					), meta);
+
+					*self = cast;
+
+					return Ok(goal_t.clone());
+				} else {
+					return Err((CMNError::TypeMismatch(this_t, goal_t.clone()), meta));
+				}
+			} else {
+				return Ok(this_t);
+			}
+		} else {
+			return Ok(this_t);
 		}
+
 	}
 }
 
@@ -240,7 +272,7 @@ impl Expr {
 impl Display for Expr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match self {
-			Expr::Atom(tk, _) => write!(f, "{}", tk.borrow()),
+			Expr::Atom(tk, _) => write!(f, "{}", tk),
 
 			Expr::Cons(op, params, _) => {
 				write!(f, "({:?}", op)?;
@@ -367,7 +399,7 @@ impl Display for Atom {
 			
             Atom::FloatLit(fl) => write!(f, "{}", fl),
 
-            Atom::StringLit(s) => write!(f, "{}", s),
+            Atom::StringLit(s) => write!(f, "\"{}\"", s.escape_default()),
 
 			Atom::BoolLit(b) => if *b { write!(f, "true") } else { write!(f, "false") }
 

@@ -126,7 +126,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 		if let InnerType::Function(ret, args) = &t.inner {
 
 			let types_mapped: Vec<_> = args.iter().map(
-				|t| LLVMBackend::to_basic_metadata_enum(self.get_llvm_type(t.0.as_ref())).unwrap()
+				|t| Self::to_basic_metadata_enum(self.get_llvm_type(t.0.as_ref())).unwrap()
 			).collect();
 
 			Ok(match self.get_llvm_type(&ret).as_any_type_enum() {
@@ -162,19 +162,19 @@ impl<'ctx> LLVMBackend<'ctx> {
 			},
 			
 			ASTNode::Expression(e) => {
-				self.generate_expr(&e, elem.type_info.borrow().as_ref().unwrap(), scope); 
+				self.generate_expr(&e.borrow(), elem.type_info.borrow().as_ref().unwrap(), scope); 
 			},
 
 			ASTNode::Declaration(t, n, e) => {
 				let name = n.to_string();
 				let alloca = self.create_entry_block_alloca(
 					&name, 
-					LLVMBackend::to_basic_type(self.get_llvm_type(t)).as_basic_type_enum()
+					Self::to_basic_type(self.get_llvm_type(t)).as_basic_type_enum()
 				);
 
 				if let Some(expr) = e {
 					if let ASTNode::Expression(expr) = &expr.as_ref().node {
-						self.builder.build_store(alloca, LLVMBackend::into_basic_value(self.generate_expr(&expr, t, scope)).as_basic_value_enum());
+						self.builder.build_store(alloca, Self::into_basic_value(self.generate_expr(&expr.borrow(), t, scope)).as_basic_value_enum());
 					} else {
 						unreachable!(); //idk
 					}
@@ -201,7 +201,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 				let expr;
 				if let ASTNode::Expression(e) = &cond.node { expr = e; } else { unreachable!(); }
 
-				let cond = self.generate_expr(&expr, cond.type_info.borrow().as_ref().unwrap_or(&Type::from_basic(Basic::VOID)), scope);
+				let cond = self.generate_expr(&expr.borrow(), cond.type_info.borrow().as_ref().unwrap_or(&Type::from_basic(Basic::VOID)), scope);
 				
 				let cond = self.builder.build_int_compare(
 					IntPredicate::NE, 
@@ -235,7 +235,40 @@ impl<'ctx> LLVMBackend<'ctx> {
 			},
 
 
-			ControlFlow::While { .. } => todo!(),
+			ControlFlow::While { cond, body } => {
+				let parent = self.fn_value_opt.unwrap();
+
+				let expr;
+				if let ASTNode::Expression(e) = &cond.node { expr = e; } else { unreachable!(); }
+
+
+				let cond_bb = self.context.append_basic_block(parent, "whilecond");
+				let body_bb = self.context.append_basic_block(parent, "whileblock");
+				let end_bb = self.context.append_basic_block(parent, "whileend");
+
+				self.builder.build_unconditional_branch(cond_bb);
+				self.builder.position_at_end(cond_bb);
+
+				let cond = self.generate_expr(&expr.borrow(), cond.type_info.borrow().as_ref().unwrap_or(&Type::from_basic(Basic::VOID)), scope);
+				
+				let cond = self.builder.build_int_compare(
+					IntPredicate::NE, 
+					cond.as_any_value_enum().into_int_value(), 
+					self.context.bool_type().const_zero(), 
+					"whilecond"
+				);
+
+				self.builder.build_conditional_branch(cond, body_bb, end_bb);
+				
+				self.builder.position_at_end(body_bb);
+
+				// Generate body
+				self.generate_node(body, scope)?;
+				self.builder.build_unconditional_branch(cond_bb);
+				self.builder.position_at_end(end_bb);
+
+				Ok(None)
+			},
 
 
 			ControlFlow::For { init, cond, iter, body } => {
@@ -252,12 +285,11 @@ impl<'ctx> LLVMBackend<'ctx> {
 				let end_bb = self.context.append_basic_block(parent, "forend");
 
 				self.builder.build_unconditional_branch(cond_bb);
-
 				self.builder.position_at_end(cond_bb);
 
 				if let Some(cond) = cond {
 					if let ASTNode::Expression(expr) = &cond.node {
-						let cond_expr = self.generate_expr(&expr, &cond.type_info.borrow().as_ref().unwrap(), &subscope);
+						let cond_expr = self.generate_expr(&expr.borrow(), &cond.type_info.borrow().as_ref().unwrap(), &subscope);
 
 						let cond_ir = self.builder.build_int_compare(
 							IntPredicate::NE, 
@@ -282,7 +314,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 				if let Some(iter) = iter {
 					if let ASTNode::Expression(expr) = &iter.node {
-						self.generate_expr(&expr, &iter.type_info.borrow().as_ref().unwrap(), &subscope);
+						self.generate_expr(&expr.borrow(), &iter.type_info.borrow().as_ref().unwrap(), &subscope);
 					} else {
 						panic!();
 					}
@@ -303,9 +335,9 @@ impl<'ctx> LLVMBackend<'ctx> {
 						_ => panic!(), 
 					};
 
-					let e = self.generate_expr(expr_inner, expr.type_info.borrow().as_ref().unwrap(), scope);
+					let e = self.generate_expr(&expr_inner.borrow(), expr.type_info.borrow().as_ref().unwrap(), scope);
 					
-					if let Some(e) = LLVMBackend::try_into_basic_value(e) {
+					if let Some(e) = Self::try_into_basic_value(e) {
 						return Ok(Some(Box::new(self.builder.build_return(Some(e.as_ref())))));
 					}
 				}
@@ -322,9 +354,8 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 	fn generate_expr(&self, expr: &Expr, t: &Type, scope: &LLVMScope<'ctx, '_>) -> Box<dyn AnyValue<'ctx> + 'ctx> {
 		match expr {
-			Expr::Atom(atom, _meta) => {
-				let a = atom.borrow();
-				match &*a {
+			Expr::Atom(a, _meta) => {
+				match a {
 					Atom::IntegerLit(i) => Box::new(self.context.i32_type().const_int(*i as u64, false)),
 					Atom::BoolLit(b) => Box::new(self.context.bool_type().const_int(if *b { 1 } else { 0 }, false)),
 					Atom::FloatLit(f) => Box::new(self.context.f32_type().const_float(*f)),
@@ -333,7 +364,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 					Atom::Cast(elem, to) => {
 						if let ASTNode::Expression(expr) = &elem.node {
-							self.generate_cast(&expr, elem.type_info.borrow().as_ref().unwrap(), &to, scope)
+							self.generate_cast(&expr.borrow(), elem.type_info.borrow().as_ref().unwrap(), &to, scope)
 						} else { panic!(); }
 					},
 
@@ -341,13 +372,16 @@ impl<'ctx> LLVMBackend<'ctx> {
 						let fn_v = self.module.get_function(&name).unwrap();
 
 						let args_mapped: Vec<_> = args.iter().map(
-							|x| LLVMBackend::into_basic_metadata_value(
-								self.generate_expr(
-									if let ASTNode::Expression(e) = &x.node { &e } else { panic!() }, 
-									t,
-									scope
+							|x| {
+								let expr;
+								if let ASTNode::Expression(e) = &x.node { 
+									expr = e.borrow(); 
+								} else { 
+									panic!() 
+								}
+								Self::into_basic_metadata_value(self.generate_expr(&expr, t, scope)
 								)
-							)
+							}
 						).collect(); 
 
 						Box::new(self.builder.build_call(fn_v, &args_mapped, &name))
@@ -380,6 +414,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 					let lhs = &elems[0];
 					let rhs = &elems[1];
 
+					// Type of cons
 					match &t.inner {
 						crate::parser::types::InnerType::Basic(b) => {
 							match b { //self.builder.build_int_add(lhs, rhs, name)
@@ -397,18 +432,23 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 											Operator::Assign => {
 												if let Expr::Atom(a, _) = &lhs {
-													if let Atom::Variable(v) = &*a.borrow() {						
+													if let Atom::Variable(v) = &a {						
 														self.builder.build_store(*scope.get_variable(&v).unwrap(), rhs_i);
 														return Box::new(rhs_i);
 													}
 												}
 												panic!();
-												
 											}
-											_ => todo!(),
+
+											// TODO: Add compound assignment
+
+											// Relational operators
+											_ => self.builder.build_int_compare(Self::to_int_predicate(op, true), lhs_i, rhs_i, "icomp")
+											
 										}
 									)
 								},
+
 								Basic::F64 | Basic::F32 => {
 									let lhs = self.generate_expr(lhs, t, scope).as_any_value_enum().into_float_value();
 									let rhs = self.generate_expr(rhs, t, scope).as_any_value_enum().into_float_value();
@@ -535,7 +575,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 
 	fn into_basic_metadata_value<'scope>(t: Box<dyn AnyValue<'scope> + 'scope>) -> BasicMetadataValueEnum<'scope> {
-		LLVMBackend::try_into_basic_metadata_value(t).unwrap()
+		Self::try_into_basic_metadata_value(t).unwrap()
 	}
 
 	fn try_into_basic_metadata_value<'scope>(t: Box<dyn AnyValue<'scope> + 'scope>) -> Option<BasicMetadataValueEnum<'scope>> {
@@ -552,7 +592,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 
 	fn into_basic_value<'scope>(t: Box<dyn AnyValue<'scope> + 'scope>) -> Box<dyn BasicValue<'scope> + 'scope> {
-		LLVMBackend::try_into_basic_value(t).unwrap()
+		Self::try_into_basic_value(t).unwrap()
 	}
 
 	fn try_into_basic_value<'scope>(t: Box<dyn AnyValue<'scope> + 'scope>) -> Option<Box<dyn BasicValue<'scope> + 'scope>> {
@@ -613,18 +653,44 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 			InnerType::Aggregate(types) => {
 				let types_mapped : Vec<_> = types.values().map(
-					|t| LLVMBackend::to_basic_type(self.get_llvm_type(t.as_ref())).as_basic_type_enum()
+					|t| Self::to_basic_type(self.get_llvm_type(t.as_ref())).as_basic_type_enum()
 				).collect();
 
 				Box::new(self.context.struct_type(&types_mapped, false))
 			},
 
-			InnerType::Pointer(t_sub) => Box::new(LLVMBackend::to_basic_type(self.get_llvm_type(t_sub)).ptr_type(AddressSpace::Generic)),
+			InnerType::Pointer(t_sub) => Box::new(Self::to_basic_type(self.get_llvm_type(t_sub)).ptr_type(AddressSpace::Generic)),
 			InnerType::Function(_, _) => todo!(),
 			InnerType::Unresolved(_) => panic!(),
 		}
 	}
 
+
+	fn to_int_predicate(op: &Operator, signed: bool) -> IntPredicate {
+		if signed {
+			match op {
+				Operator::Eq =>			IntPredicate::EQ,
+				Operator::NotEq =>		IntPredicate::NE,
+				Operator::Greater =>	IntPredicate::SGT,
+				Operator::GreaterEq =>	IntPredicate::SGE,
+				Operator::Less =>		IntPredicate::SLT,
+				Operator::LessEq =>		IntPredicate::SLE,
+				
+				_ => panic!(),
+			}
+		} else {
+			match op {
+				Operator::Eq =>			IntPredicate::EQ,
+				Operator::NotEq =>		IntPredicate::NE,
+				Operator::Greater =>	IntPredicate::UGT,
+				Operator::GreaterEq =>	IntPredicate::UGE,
+				Operator::Less =>		IntPredicate::ULT,
+				Operator::LessEq =>		IntPredicate::ULE,
+				
+				_ => panic!(),
+			}
+		}
+	}
 
 
 	fn str_type(&self) -> StructType<'ctx> {

@@ -84,10 +84,21 @@ impl Display for ControlFlow {
 					write!(f, "if {} then {}", cond, body)
 				}
 			},
+			
 			ControlFlow::While { cond, body } => write!(f, "while {} {}", cond, body),
-            ControlFlow::For { init, cond, iter, body } => write!(f, "for ({:?}; {:?}; {:?}) {}", init, cond, iter, body),
-            ControlFlow::Return { expr } => if let Some(expr) = expr { write!(f, "return {}", expr) } else { write!(f, "return") },
-            ControlFlow::Break => todo!(),
+           
+			ControlFlow::For { init, cond, iter, body } => {
+				write!(f, "for (")?;
+				if let Some(init) = init { write!(f, "{} ", init)?; } else { write!(f, "; ")?; }
+				if let Some(cond) = cond { write!(f, "{}; ", cond)?; } else { write!(f, "; ")?; }
+				if let Some(iter) = iter { write!(f, "{}", iter)?; }
+
+				write!(f, ") {}", body)
+			},
+           
+			ControlFlow::Return { expr } => if let Some(expr) = expr { write!(f, "return {}", expr) } else { write!(f, "return") },
+           
+			ControlFlow::Break => todo!(),
             ControlFlow::Continue => todo!(),
         }
     }

@@ -434,6 +434,49 @@ impl<'source> Parser<'source> {
 							})));
 					}
 
+					// Parse while loop
+					"while" => {
+						current = get_next(&self.lexer)?;
+
+						// Check opening brace
+						if token_compare(&current, "(") {
+							current = get_next(&self.lexer)?;
+						} else {
+							return Err(CMNError::UnexpectedToken);
+						}
+
+						let cond;
+						
+						if token_compare(&current, ")") {
+							// No condtion in while statement!
+							return Err(CMNError::UnexpectedToken);
+						} else {
+							cond = self.parse_expression()?;
+							current = get_current(&self.lexer)?;
+						}
+
+						// Check closing brace
+						if token_compare(&current, ")") {
+							current = get_next(&self.lexer)?;
+						} else {
+							return Err(CMNError::UnexpectedToken);
+						}
+
+						// Parse body
+						let body;
+						if token_compare(&current, "{") {
+							body = self.parse_block()?;
+						} else {
+							body = self.parse_statement()?.wrap_in_block();
+						}
+
+						result = Some(ASTNode::ControlFlow(
+							Box::new(ControlFlow::While { 
+								cond, body
+							})
+						));
+					}
+
 					// Parse for loop
 					"for" => {
 						current = get_next(&self.lexer)?;
@@ -532,7 +575,7 @@ impl<'source> Parser<'source> {
 
 	fn parse_expression(&self) -> ParseResult<ASTElem> {
 		let begin = self.lexer.borrow().get_current_start_index();
-		let expr = ASTNode::Expression(self.parse_expression_bp(0)?);
+		let expr = ASTNode::Expression(RefCell::new(self.parse_expression_bp(0)?));
 		let len = self.lexer.borrow().get_index() - begin;
 		Ok(ASTElem { node: expr, token_data: (begin, len), type_info: RefCell::new(None)})
 	}
@@ -548,7 +591,7 @@ impl<'source> Parser<'source> {
 		let lhs = match current {
 
 			Token::Identifier(_) | Token::StringLiteral(_) | Token::NumLiteral(_) | Token::BoolLiteral(_) => 
-				Expr::Atom(RefCell::new(self.parse_atom()?), meta),
+				Expr::Atom(self.parse_atom()?, meta),
 			
 			Token::Operator(tk) => {
 				// Handle unary prefix operators

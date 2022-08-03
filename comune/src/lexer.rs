@@ -443,7 +443,7 @@ impl Lexer {
 				format!("{}\t{}", line + 1, "|").bright_black(), 
 				self.get_line(line));
 
-			print!("\t{: <1$}", "", column - 1 + 2);
+			print!("\t{: <1$}", "", column - 1);
 			println!("{:~<1$}\n", "", token_len);	
 			
 			let notes = e.get_notes();

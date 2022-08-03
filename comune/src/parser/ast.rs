@@ -1,3 +1,4 @@
+use std::borrow::Borrow;
 use std::cell::RefCell;
 use std::fmt::Display;
 
@@ -29,7 +30,7 @@ pub enum ASTNode {
 		Vec<ASTElem>			// Statements (doesnt need to be ASTChild because Vec is already dynamic)
 	), 			
 	Expression(
-		Expr
+		RefCell<Expr>
 	),
 	Declaration(
 		Type, 					// Type
@@ -59,7 +60,7 @@ impl ASTElem {
 			},
 
 			ASTNode::Expression(expr) => {
-				println!("expression {}", expr);
+				println!("expression {}", expr.borrow());
 			},
 
 			ASTNode::Declaration(t, n, e) => {
@@ -109,7 +110,7 @@ impl ASTElem {
 				Ok(last_ret)
 			},
 			
-			ASTNode::Expression(e) => Ok(Some(e.get_type(scope, ret, self.token_data)?)),
+			ASTNode::Expression(e) => Ok(Some(e.borrow_mut().get_type(scope, Some(ret), self.token_data)?)),
 			
 			ASTNode::Declaration(t, n, e) => {
 
@@ -146,6 +147,7 @@ impl ASTElem {
 				}
 
 				ControlFlow::While { cond, body } => {
+					cond.type_info.replace(Some(Type::from_basic(Basic::BOOL)));
 					let cond_type = cond.get_type(scope)?;
 					let bool_t = Type::from_basic(Basic::BOOL);
 
@@ -169,7 +171,6 @@ impl ASTElem {
 						cond.type_info.replace(Some(bool_t.clone()));
 						let cond_type = cond.get_type(&mut subscope)?;
 						
-
 						if !cond_type.coercable_to(&bool_t) {
 							return Err((CMNError::TypeMismatch(cond_type, bool_t), self.token_data));
 						}
@@ -230,7 +231,7 @@ impl Display for ASTElem {
 				write!(f, "\n\t}}")
 			},
 
-            ASTNode::Expression(e) => 			write!(f, "{}", e),
+            ASTNode::Expression(e) => 			write!(f, "{}", e.borrow()),
             ASTNode::Declaration(t, n, e) => 	if let Some(e) = e { write!(f, "{} {} = {};", t, n, e) } else { write!(f, "{} {};", t, n) },
             ASTNode::ControlFlow(c) => 			write!(f, "{}", c),
         }
@@ -251,7 +252,7 @@ impl ASTNode {
 				Ok(result) // Just take the type of the last statement for now. Remember to add support for `return` later
 			},
 			
-			ASTNode::Expression(e) => e.get_type(scope, t.unwrap(), meta),
+			ASTNode::Expression(e) => e.borrow_mut().get_type(scope, t, meta),
 
 			// Declaration types are deduced at parse-time (thanks, C-style syntax)
 			ASTNode::Declaration(t, _, _) => Ok(t.clone()),
