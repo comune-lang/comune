@@ -8,9 +8,11 @@ use crate::lexer::{Lexer, Token};
 
 use self::ast::{ASTNode, ASTElem, TokenData};
 use self::controlflow::ControlFlow;
+use self::errors::CMNError;
 use self::expression::{Expr, Operator, Atom};
 use self::types::{Type, InnerType, Basic, FnParamList};
 
+pub mod errors;
 pub mod ast;
 pub mod types;
 pub mod expression;
@@ -84,51 +86,6 @@ impl Display for NamespaceInfo {
 	}
 }
 
-
-#[allow(dead_code)]
-#[derive(Debug, Clone)]
-pub enum CMNError {
-	// Not really used in Results but i don't want an error code 0
-	OK,
-
-	// Syntactic errors
-	UnexpectedEOF,
-	UnexpectedToken,
-	UnexpectedKeyword,
-	ExpectedIdentifier,
-
-	// Semantic errors
-	UndeclaredIdentifier(String),
-	TypeMismatch(Type, Type),
-	ReturnTypeMismatch{expected: Type, got: Type},
-	ParameterCountMismatch{expected: usize, got: usize},
-	NotCallable(String),
-
-
-	// Warning
-
-	// Misc
-	Unimplemented,
-}
-
-
-impl Display for CMNError {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		match self {
-			CMNError::OK => 										write!(f, "ok"),
-			CMNError::UnexpectedEOF => 							write!(f, "unexpected end of file"),
-			CMNError::UnexpectedToken => 						write!(f, "unexpected token"),
-			CMNError::ExpectedIdentifier => 						write!(f, "expected identifier"),
-			CMNError::UndeclaredIdentifier(id) =>				write!(f, "undeclared identifier `{}`", id),
-			CMNError::TypeMismatch(a, b) => 						write!(f, "type mismatch ({}, {})", a, b),
-			CMNError::ReturnTypeMismatch { expected, got } =>	write!(f, "return type mismatch; expected {}, got {}", expected, got),
-			CMNError::ParameterCountMismatch{ expected, got } =>	write!(f, "parameter count mismatch; expected {}, got {}", expected, got),
-			CMNError::NotCallable(id) => 						write!(f, "{} is not callable", id),
-			CMNError::Unimplemented =>							write!(f, "not yet implemented"),
-    		CMNError::UnexpectedKeyword => 						write!(f, "unexpected keyword"),
-		}
-	}
-}
 
 
 

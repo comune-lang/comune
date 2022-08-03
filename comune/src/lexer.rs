@@ -6,7 +6,7 @@ use std::path::Path;
 
 use colored::Colorize;
 
-use crate::parser::CMNError;
+use crate::parser::errors::{CMNError, CMNMessage};
 
 const KEYWORDS: &[&str] = &[
 	"mod",	
@@ -398,13 +398,16 @@ impl Lexer {
 	}
 	
 
-	pub fn log_error_at(&self, char_idx: usize, token_len: usize, e: CMNError) {
+	pub fn log_msg_at(&self, char_idx: usize, token_len: usize, e: CMNMessage) {
 		if char_idx > 0 {
 			let line = self.get_line_number(char_idx);
 			let column = self.get_column(char_idx);
 
-			print!("{}: {}", "error".bold().red(), e.to_string().bold());
-			
+			match e {
+				CMNMessage::Error(_) => print!("{}: {}", "error".bold().red(), e.to_string().bold()),
+				CMNMessage::Warning(_) => print!("{}: {}", "warning".bold().yellow(), e.to_string().bold()),
+			}
+
 			println!("{}", 
 				format!(" in {}:{}:{}\n", self.file_name.to_string_lossy(), line + 1, column).bright_black()
 			);
@@ -420,8 +423,8 @@ impl Lexer {
 		}
 	}
 
-	pub fn log_error(&self, e: CMNError) {
+	pub fn log_msg(&self, e: CMNMessage) {
 		let len = self.current().as_ref().unwrap().len();
-		self.log_error_at(self.file_index - len, len, e)
+		self.log_msg_at(self.file_index - len, len, e)
 	}
 }

@@ -6,7 +6,7 @@ use std::{cell::RefCell, path::Path, io::{self, Write}};
 use clap::Parser;
 use colored::Colorize;
 use inkwell::{context::Context, targets::{Target, InitializationConfig, TargetTriple, FileType}, passes::PassManager, module::Module};
-use crate::{parser::semantic, lexer::Lexer, backend::{llvm::LLVMBackend}};
+use crate::{parser::{semantic, errors::CMNMessage}, lexer::Lexer, backend::{llvm::LLVMBackend}};
 use std::process::Command;
 
 
@@ -57,19 +57,19 @@ fn main() {
 		// Declarative pass
 		match parser.parse_module(false) {
 			Ok(_) => { if args.verbose { println!("\nbuilding AST..."); } },
-			Err(e) => { lexer.borrow().log_error(e); return; },
+			Err(e) => { lexer.borrow().log_msg(CMNMessage::Error(e)); return; },
 		};
 
 		// Generative pass
 		let namespace = match parser.parse_module(true) {
 			Ok(ctx) => { if args.verbose { println!("\nresolving types..."); } ctx },
-			Err(e) => { lexer.borrow().log_error(e); return; },
+			Err(e) => { lexer.borrow().log_msg(CMNMessage::Error(e)); return; },
 		};
 
 		// Resolve types
 		match semantic::parse_namespace(namespace) {
 			Ok(()) => {	if args.verbose { println!("generating code..."); } },
-			Err(e) => { lexer.borrow().log_error_at(e.1.0, e.1.1, e.0); return; },
+			Err(e) => { lexer.borrow().log_msg_at(e.1.0, e.1.1, CMNMessage::Error(e.0)); return; },
 		}
 
 
