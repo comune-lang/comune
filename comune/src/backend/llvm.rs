@@ -206,7 +206,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 				let cond = self.builder.build_int_compare(
 					IntPredicate::NE, 
 					cond.as_any_value_enum().into_int_value(), 
-					self.context.i64_type().const_zero(), 
+					self.context.bool_type().const_zero(), 
 					"ifcond"
 				);
 				
@@ -218,42 +218,21 @@ impl<'ctx> LLVMBackend<'ctx> {
 				
 				// Build then block
 				self.builder.position_at_end(then_bb);
-				let then_val = self.generate_node(body, scope)?;
+				self.generate_node(body, scope)?;
 				self.builder.build_unconditional_branch(cont_bb);
 
-				let then_bb = self.builder.get_insert_block().unwrap();
 				
 				// Build else block
 				self.builder.position_at_end(else_bb);
-				let mut else_val = None;
-
 				if let Some(else_body) = else_body {
-					else_val = Some(self.generate_node(else_body, scope)?);
+					self.generate_node(else_body, scope)?;
 				}
 				self.builder.build_unconditional_branch(cont_bb);
 
-				let else_bb = self.builder.get_insert_block().unwrap();
 
-
-				// Emit merge block
 				self.builder.position_at_end(cont_bb);
 
-				let phi = self.builder.build_phi(self.context.i8_type(), "iftmp");
-				
-
-				let mut phi_vals = vec![];
-				
-				if then_val.is_some() {
-					phi_vals.push((then_val.as_ref().unwrap().as_ref(), then_bb));
-				}
-
-				if else_val.is_some() && else_val.as_ref().unwrap().is_some() {
-					phi_vals.push((else_val.as_ref().unwrap().as_ref().unwrap().as_ref(), else_bb));
-				}
-				
-				phi.add_incoming(&phi_vals);
-	
-				Ok(Some(Box::new(phi.as_basic_value())))
+				Ok(None)
 			},
 
 			ControlFlow::While { .. } => todo!(),
@@ -393,27 +372,55 @@ impl<'ctx> LLVMBackend<'ctx> {
 	fn generate_cast(&self, expr: &Expr, from: &Type, to: &Type, scope: &LLVMScope<'ctx, '_>) -> Box<dyn AnyValue<'ctx> + 'ctx> {
 		match from.inner {
 			InnerType::Basic(b) => {
-				match b {
-					Basic::STR => {
-						if let InnerType::Pointer(other_p) = &to.inner {
-							if let InnerType::Basic(other_b) = other_p.inner {
-								if let Basic::CHAR = other_b {
-									// Cast from `str` to char*
-									let val = self.generate_expr(expr, from, scope);
+				
+				if from.is_numeric() {
+					if let InnerType::Basic(b) = &to.inner {
 
-									match val.as_any_value_enum() {
-										AnyValueEnum::StructValue(struct_val) => {
-											return Box::new(self.builder.build_extract_value(struct_val, 0, "cast").unwrap());
+						match b {
+
+							Basic::BOOL => {
+								let val = self.generate_expr(expr, from, scope);
+								match val.as_any_value_enum() {
+									
+									AnyValueEnum::IntValue(i) => return Box::new(
+										self.builder.build_int_cast(i, self.context.bool_type(), "boolcast").as_any_value_enum()
+									),
+
+									_ => panic!()
+								}
+							}
+
+							_ => todo!()
+						}
+
+					} else {
+						panic!(); // Not a valid cast, semantic analysis went wrong
+					}
+
+				} else { // Not numeric, match other Basics
+
+					match b {
+						Basic::STR => {
+							if let InnerType::Pointer(other_p) = &to.inner {
+								if let InnerType::Basic(other_b) = other_p.inner {
+									if let Basic::CHAR = other_b {
+										// Cast from `str` to char*
+										let val = self.generate_expr(expr, from, scope);
+
+										match val.as_any_value_enum() {
+											AnyValueEnum::StructValue(struct_val) => {
+												return Box::new(self.builder.build_extract_value(struct_val, 0, "cast").unwrap());
+											}
+											_ => panic!(),
 										}
-										_ => panic!(),
 									}
 								}
 							}
-						}
-						panic!()
-					},
-					
-					_ => todo!(),
+							panic!()
+						},
+						
+						_ => todo!(),
+					}
 				}
 			},
 			InnerType::Alias(_, _) => todo!(),

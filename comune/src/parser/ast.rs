@@ -129,6 +129,7 @@ impl ASTElem {
 			ASTNode::ControlFlow(ctrl) => match ctrl.as_ref() {
 
 				ControlFlow::If { cond, body, else_body } => {
+					cond.type_info.replace(Some(Type::from_basic(Basic::BOOL)));
 					let cond_type = cond.get_type(scope)?;
 					let bool_t = Type::from_basic(Basic::BOOL);
 

@@ -116,41 +116,67 @@ impl Type {
 		Type { inner, generics, is_const }
 	}
 	
+
 	pub fn from_basic(basic: Basic) -> Self {
 		Type { inner: InnerType::Basic(basic), generics: vec![], is_const: false }
 	}
+
 
 	pub fn coercable_to(&self, target: &Type) -> bool {
 		if *self == *target {
 			true
 		} else {
-			match &self.inner {
-				InnerType::Basic(b) => {
+
+			if self.is_numeric() {
+				if let InnerType::Basic(b) = target.inner {
 					match b {
 
-			        	Basic::STR => {
-							// Abusing the hell outta `if let` here lol
-							// Allow coercion from str to char*, for compatibility with C 	
-							if let InnerType::Pointer(other_p) = &target.inner {
-								if let InnerType::Basic(other_b) = other_p.inner {
-									if let Basic::CHAR = other_b {
-										return true;
-									}
-								}
-							} 
-							false
-						},
+						// Numeric types are coercable to bool
+						Basic::BOOL => true,
+
 						_ => todo!(),
-    				}
-				},
-				InnerType::Alias(_, _) => todo!(),
-				InnerType::Aggregate(_) => todo!(),
-				InnerType::Pointer(_) => todo!(),
-				InnerType::Function(_, _) => todo!(),
-				InnerType::Unresolved(_) => todo!(),
+
+					}
+				} else { // Other type is not Basic, can't coerce a numeric type to it
+					false
+				}
+			} else {
+				match &self.inner {
+					InnerType::Basic(b) => {
+						match b {
+
+							Basic::STR => {
+								// Abusing the hell outta `if let` here lol
+								// Allow coercion from str to char*, for compatibility with C 	
+								if let InnerType::Pointer(other_p) = &target.inner {
+									if let InnerType::Basic(other_b) = other_p.inner {
+										if let Basic::CHAR = other_b {
+											return true;
+										}
+									}
+								} 
+								false
+							}
+
+							Basic::VOID => { // Void is not coercable to any other type
+								false
+							}
+							
+							_ => {
+								false
+							}
+						}
+					},
+					InnerType::Alias(_, _) => todo!(),
+					InnerType::Aggregate(_) => todo!(),
+					InnerType::Pointer(_) => todo!(),
+					InnerType::Function(_, _) => todo!(),
+					InnerType::Unresolved(_) => todo!(),
+				}
 			}
 		}
 	}
+
 
 	pub fn castable_to(&self, target: &Type) -> bool {
 		if *self == *target {
@@ -162,7 +188,88 @@ impl Type {
 			false
 		}
 	}
+
+
+	pub fn is_numeric(&self) -> bool {
+		self.is_integral() || self.is_floating_point()
+	}
+
+
+	pub fn is_integral(&self) -> bool {
+		match self.inner {
+			InnerType::Basic(b) =>
+				match b {
+					Basic::ISIZE | Basic::USIZE | 
+					Basic::I64 | Basic::U64 | 
+					Basic::I32 | Basic::U32 | 
+					Basic::I16 | Basic::U16 | 
+					Basic::I8 | Basic::U8 | 
+					Basic::CHAR => 
+						true,
+					
+					_ => 
+						false
+				}
+			
+			_ => false
+		}
+	}
+
+
+	pub fn is_floating_point(&self) -> bool {
+		match self.inner {
+			InnerType::Basic(b) =>
+				match b {
+					Basic::F32 | Basic::F64 => 
+						true,
+					
+					_ => 
+						false
+				}
+			
+			_ => false
+		}
+	}
+
+
+	pub fn get_size_bytes(&self) -> usize {
+		let PTR_SIZE = 8;
+
+		match &self.inner {
+			InnerType::Basic(b) => match b {
+				Basic::I64 | Basic::U64 | Basic::F64 => 8,
+				Basic::I32 | Basic::U32 | Basic::F32 | Basic::CHAR => 4,
+				Basic::I16 | Basic::U16 => 2,
+				Basic::I8 | Basic::U8 => 1,
+
+				// TODO: Actually implement based on target ptr size
+				Basic::ISIZE | Basic::USIZE => PTR_SIZE,
+				Basic::STR => PTR_SIZE + PTR_SIZE, // ptr size + len size
+
+				Basic::BOOL => 1,
+				Basic::VOID => 0,
+				
+			},
+			
+			InnerType::Alias(_, t) => t.get_size_bytes(),
+
+			InnerType::Aggregate(ts) => {
+				let mut result: usize = 0;
+
+				for t in ts.iter() {
+					result += t.1.get_size_bytes();
+				}
+				result
+			},
+
+			InnerType::Pointer(_) => PTR_SIZE,
+			
+			_ => 0,
+		}
+	}
 }
+
+
 
 
 impl Display for Type {

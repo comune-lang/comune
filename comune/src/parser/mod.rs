@@ -159,10 +159,8 @@ impl<'source> Parser<'source> {
 		match self.parse_namespace("") {
 			Ok(()) => {
 				
-				if !generate_ast {
+				if !generate_ast && self.verbose {
 					println!("\ngenerated namespace info:\n\n{}", self.context.borrow());
-				} else {
-
 				}
 
 				Ok(&self.context)
@@ -353,7 +351,10 @@ impl<'source> Parser<'source> {
 		
 		while get_current(&self.lexer)? != Token::Other('}') {			
 			let stmt = self.parse_statement()?;
-			stmt.print();
+			
+			if self.verbose {
+				stmt.print();
+			}
 
 			result.push(stmt);
 
