@@ -1,6 +1,6 @@
 use std::{cell::RefCell, collections::HashMap};
 
-use super::{NamespaceInfo, types::{Type, InnerType, Basic}, ParserError, ASTResult};
+use super::{NamespaceInfo, types::{Type, InnerType, Basic}, CMNError, ASTResult};
 
 
 // Did i do it. did i do lifetime annotations right
@@ -77,9 +77,9 @@ pub fn parse_namespace(namespace: &RefCell<NamespaceInfo>) -> ASTResult<()> {
 			
 			if ret_type.is_none() && ret.inner != void.inner {
 				// No returns in non-void function
-				return Err((ParserError::ReturnTypeMismatch { expected: ret.clone(), got: void }, (0usize, 0usize)));
+				return Err((CMNError::ReturnTypeMismatch { expected: ret.clone(), got: void }, elem.token_data));
 			} else if ret_type.is_some() && !ret_type.as_ref().unwrap().coercable_to(&ret) {
-				return Err((ParserError::ReturnTypeMismatch { expected: ret.clone(), got: ret_type.unwrap() }, (0usize, 0usize)));
+				return Err((CMNError::ReturnTypeMismatch { expected: ret.clone(), got: ret_type.unwrap() }, elem.token_data));
 			}
 		}
 

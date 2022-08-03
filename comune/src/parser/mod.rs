@@ -20,11 +20,11 @@ pub mod controlflow;
 // Utility functions to make the code a bit cleaner
 
 fn get_current(lexer: &RefCell<Lexer>) -> ParseResult<Token> {
-	lexer.borrow().current().clone().ok_or(ParserError::UnexpectedEOF)
+	lexer.borrow().current().clone().ok_or(CMNError::UnexpectedEOF)
 }
 
 fn get_next(lexer: &RefCell<Lexer>) -> ParseResult<Token> {
-	lexer.borrow_mut().next().or(Err(ParserError::UnexpectedEOF))
+	lexer.borrow_mut().next().or(Err(CMNError::UnexpectedEOF))
 }
 
 // Convenience function that matches a &str against various token kinds
@@ -87,7 +87,7 @@ impl Display for NamespaceInfo {
 
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
-pub enum ParserError {
+pub enum CMNError {
 	// Not really used in Results but i don't want an error code 0
 	OK,
 
@@ -104,33 +104,36 @@ pub enum ParserError {
 	ParameterCountMismatch{expected: usize, got: usize},
 	NotCallable(String),
 
+
+	// Warning
+
 	// Misc
 	Unimplemented,
 }
 
 
-impl Display for ParserError {
+impl Display for CMNError {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match self {
-			ParserError::OK => 										write!(f, "ok"),
-			ParserError::UnexpectedEOF => 							write!(f, "unexpected end of file"),
-			ParserError::UnexpectedToken => 						write!(f, "unexpected token"),
-			ParserError::ExpectedIdentifier => 						write!(f, "expected identifier"),
-			ParserError::UndeclaredIdentifier(id) =>				write!(f, "undeclared identifier `{}`", id),
-			ParserError::TypeMismatch(a, b) => 						write!(f, "type mismatch ({}, {})", a, b),
-			ParserError::ReturnTypeMismatch { expected, got } =>	write!(f, "return type mismatch; expected {}, got {}", expected, got),
-			ParserError::ParameterCountMismatch{ expected, got } =>	write!(f, "parameter count mismatch; expected {}, got {}", expected, got),
-			ParserError::NotCallable(id) => 						write!(f, "{} is not callable", id),
-			ParserError::Unimplemented =>							write!(f, "not yet implemented"),
-    		ParserError::UnexpectedKeyword => 						write!(f, "unexpected keyword"),
+			CMNError::OK => 										write!(f, "ok"),
+			CMNError::UnexpectedEOF => 							write!(f, "unexpected end of file"),
+			CMNError::UnexpectedToken => 						write!(f, "unexpected token"),
+			CMNError::ExpectedIdentifier => 						write!(f, "expected identifier"),
+			CMNError::UndeclaredIdentifier(id) =>				write!(f, "undeclared identifier `{}`", id),
+			CMNError::TypeMismatch(a, b) => 						write!(f, "type mismatch ({}, {})", a, b),
+			CMNError::ReturnTypeMismatch { expected, got } =>	write!(f, "return type mismatch; expected {}, got {}", expected, got),
+			CMNError::ParameterCountMismatch{ expected, got } =>	write!(f, "parameter count mismatch; expected {}, got {}", expected, got),
+			CMNError::NotCallable(id) => 						write!(f, "{} is not callable", id),
+			CMNError::Unimplemented =>							write!(f, "not yet implemented"),
+    		CMNError::UnexpectedKeyword => 						write!(f, "unexpected keyword"),
 		}
 	}
 }
 
 
 
-pub type ParseResult<T> = Result<T, ParserError>;
-pub type ASTResult<T> = Result<T, (ParserError, TokenData)>;
+pub type ParseResult<T> = Result<T, CMNError>;
+pub type ASTResult<T> = Result<T, (CMNError, TokenData)>;
 
 pub struct Parser<'source> {
 	lexer: &'source RefCell<Lexer>,
@@ -182,7 +185,7 @@ impl<'source> Parser<'source> {
 		while current != Token::EOF && current != Token::Other('}') {
 			match current {
 				Token::EOF => {
-					return Err(ParserError::UnexpectedEOF);
+					return Err(CMNError::UnexpectedEOF);
 				},
 
 				Token::Keyword(ref keyword) => {
@@ -199,7 +202,7 @@ impl<'source> Parser<'source> {
 							if let Token::Identifier(namespace_name) = name_token {
 								self.parse_namespace(format!("{}::{}", path, namespace_name).as_str())?;
 							} else {
-								return Err(ParserError::ExpectedIdentifier);
+								return Err(CMNError::ExpectedIdentifier);
 							}
 							
 						}
@@ -209,7 +212,7 @@ impl<'source> Parser<'source> {
 						}
 
 						_ => {
-							return Err(ParserError::UnexpectedToken);
+							return Err(CMNError::UnexpectedToken);
 						}
 					}
 				},
@@ -254,7 +257,7 @@ impl<'source> Parser<'source> {
 										get_next(&self.lexer)?;
 									} else {
 										// Expected a function body or semicolon!
-										return Err(ParserError::UnexpectedToken);
+										return Err(CMNError::UnexpectedToken);
 									}
 								}
 
@@ -263,7 +266,7 @@ impl<'source> Parser<'source> {
 								}
 								
 								_ => {
-									return Err(ParserError::UnexpectedToken);
+									return Err(CMNError::UnexpectedToken);
 								}
 							}
 						}
@@ -281,13 +284,13 @@ impl<'source> Parser<'source> {
 						}
 
 						_ => {
-							return Err(ParserError::UnexpectedToken);
+							return Err(CMNError::UnexpectedToken);
 						}
 					}
 				},
 
 				_ => { // Other types of tokens (literals etc) not valid at this point
-					return Err(ParserError::UnexpectedToken);
+					return Err(CMNError::UnexpectedToken);
 				}
 			}
 
@@ -298,13 +301,13 @@ impl<'source> Parser<'source> {
 			if path == "" {
 				Ok(())
 			} else {
-				Err(ParserError::UnexpectedEOF)
+				Err(CMNError::UnexpectedEOF)
 			}
 		} else if current == Token::Other('}') {
 			if path != "" {
 				Ok(())
 			} else {
-				Err(ParserError::UnexpectedToken)
+				Err(CMNError::UnexpectedToken)
 			}
 		}
 		else {
@@ -320,7 +323,7 @@ impl<'source> Parser<'source> {
 		let mut current = get_current(&self.lexer)?;
 	
 		if current != Token::Other('{') {
-			return Err(ParserError::UnexpectedToken);
+			return Err(CMNError::UnexpectedToken);
 		}
 		let mut bracket_depth = 1;
 
@@ -344,7 +347,7 @@ impl<'source> Parser<'source> {
 		let mut current = get_current(&self.lexer)?;
 
 		if current != Token::Other('{') {
-			return Err(ParserError::UnexpectedToken);
+			return Err(CMNError::UnexpectedToken);
 		}
 	
 		let mut result = Vec::<ASTElem>::new();
@@ -432,7 +435,7 @@ impl<'source> Parser<'source> {
 						if token_compare(&current, "(") {
 							get_next(&self.lexer)?;
 						} else {
-							return Err(ParserError::UnexpectedToken);
+							return Err(CMNError::UnexpectedToken);
 						}
 
 						let cond = self.parse_expression()?;
@@ -443,7 +446,7 @@ impl<'source> Parser<'source> {
 						if token_compare(&current, ")") {
 							get_next(&self.lexer)?;
 						} else {
-							return Err(ParserError::UnexpectedToken);
+							return Err(CMNError::UnexpectedToken);
 						}
 
 						// Parse body
@@ -480,7 +483,7 @@ impl<'source> Parser<'source> {
 
 					// Invalid keyword at start of statement 
 					_ => {
-						return Err(ParserError::UnexpectedKeyword)
+						return Err(CMNError::UnexpectedKeyword)
 					}
 				}
 			}
@@ -505,7 +508,7 @@ impl<'source> Parser<'source> {
 			get_next(&self.lexer)?;
 			Ok(())
 		} else {
-			Err(ParserError::UnexpectedToken)
+			Err(CMNError::UnexpectedToken)
 		}
 	}
 
@@ -543,12 +546,12 @@ impl<'source> Parser<'source> {
 							current = get_current(&self.lexer)?;
 							if let Token::Operator(op) = current {
 								if op.as_str() != ")" {
-									return Err(ParserError::UnexpectedToken);
+									return Err(CMNError::UnexpectedToken);
 								}
 								get_next(&self.lexer)?;
 								return Ok(sub);
 							} else {
-								return Err(ParserError::UnexpectedToken);
+								return Err(CMNError::UnexpectedToken);
 							}
 							
 						} else {
@@ -560,13 +563,13 @@ impl<'source> Parser<'source> {
 							return Ok(Expr::Cons(op, vec![rhs], (end_index, end_index - begin_index)));
 						}
 					},
-					None => return Err(ParserError::UnexpectedToken)
+					None => return Err(CMNError::UnexpectedToken)
 				};
 				
 				
 			}
 			
-			_ => { return Err(ParserError::UnexpectedToken); }
+			_ => { return Err(CMNError::UnexpectedToken); }
 
 		};
 
@@ -641,7 +644,7 @@ impl<'source> Parser<'source> {
 									} else if current == Token::Operator(")".to_string()) {
 										break;
 									} else {
-										return Err(ParserError::UnexpectedToken);
+										return Err(CMNError::UnexpectedToken);
 									}
 								}
 							}
@@ -672,7 +675,7 @@ impl<'source> Parser<'source> {
 
 			Token::BoolLiteral(b) => Ok(Atom::BoolLit(b)),
 
-			_ => Err(ParserError::UnexpectedToken)
+			_ => Err(CMNError::UnexpectedToken)
 		}
 	}
 
@@ -707,11 +710,11 @@ impl<'source> Parser<'source> {
 					if s.as_str() == ")" {
 						break;
 					} else {
-						return Err(ParserError::UnexpectedToken);
+						return Err(CMNError::UnexpectedToken);
 					}
 				}
 				_ => {
-					return Err(ParserError::UnexpectedToken);
+					return Err(CMNError::UnexpectedToken);
 				}
 			}
 		}
@@ -723,10 +726,10 @@ impl<'source> Parser<'source> {
 				lexer.borrow_mut().next().unwrap();
 				Ok(result)
 			} else {
-				Err(ParserError::UnexpectedToken)
+				Err(CMNError::UnexpectedToken)
 			}
 		} else {
-			Err(ParserError::UnexpectedToken)
+			Err(CMNError::UnexpectedToken)
 		}
 	}
 
@@ -783,7 +786,7 @@ impl<'source> Parser<'source> {
 
 							// assert token == '>'
 							if *lexer.borrow_mut().current().as_ref().unwrap() != Token::Operator(">".to_string()) {
-								return Err(ParserError::UnexpectedToken)
+								return Err(CMNError::UnexpectedToken)
 							}
 							// consume >
 							lexer.borrow_mut().next().unwrap();
@@ -800,7 +803,7 @@ impl<'source> Parser<'source> {
 			}
 			Ok(result)
 		} else {
-			Err(ParserError::ExpectedIdentifier)
+			Err(CMNError::ExpectedIdentifier)
 		}
 	}
 		

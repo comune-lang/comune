@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use super::{ast::ASTElem, types::{Typed, Type, Basic}, ParserError};
+use super::{ast::ASTElem, types::{Typed, Type, Basic}, CMNError};
 
 
 #[derive(Clone, Debug)]
@@ -47,7 +47,7 @@ impl Typed for ControlFlow {
 					} else if body_type.coercable_to(&else_type) {
 						Ok(else_type)
 					} else {
-						Err((ParserError::TypeMismatch(body_type, else_type), else_body.token_data))
+						Err((CMNError::TypeMismatch(body_type, else_type), else_body.token_data))
 					}
 
 				} else {

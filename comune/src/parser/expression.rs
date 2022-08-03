@@ -1,7 +1,7 @@
 use std::{fmt::Display, cell::RefCell};
 
 
-use super::{types::{Type, Basic, InnerType, Typed}, ParserError, semantic::Scope, ASTResult, ast::{TokenData, ASTElem, ASTNode}};
+use super::{types::{Type, Basic, InnerType, Typed}, CMNError, semantic::Scope, ASTResult, ast::{TokenData, ASTElem, ASTNode}};
 
 #[derive(Clone, Debug)]
 pub enum Operator {
@@ -202,7 +202,7 @@ impl Atom {
 			Atom::BoolLit(_) => Ok(Type::from_basic(Basic::BOOL)),
 			Atom::StringLit(_) => Ok(Type::from_basic(Basic::STR)),
 
-			Atom::Variable(name) => scope.get_identifier_type(name).ok_or((ParserError::UndeclaredIdentifier(name.clone()), meta)),
+			Atom::Variable(name) => scope.get_identifier_type(name).ok_or((CMNError::UndeclaredIdentifier(name.clone()), meta)),
 
 			Atom::Cast(_, t) => Ok(t.clone()),
 
@@ -218,22 +218,22 @@ impl Atom {
 								args[i].type_info.replace(Some(*params[i].0.clone()));
 								let arg_type = args[i].get_type(scope)?;
 								if !arg_type.coercable_to(params[i].0.as_ref()) {
-									return Err((ParserError::TypeMismatch(arg_type, params[i].0.as_ref().clone()), args[i].token_data));
+									return Err((CMNError::TypeMismatch(arg_type, params[i].0.as_ref().clone()), args[i].token_data));
 								}
 							}
 							// All good, return function's return type
 							Ok(*ret.clone())
 
 						} else {
-							Err((ParserError::ParameterCountMismatch{expected: params.len(), got: args.len()}, meta))
+							Err((CMNError::ParameterCountMismatch{expected: params.len(), got: args.len()}, meta))
 						}
 						
 					} else {
-						Err((ParserError::NotCallable(name.clone()), meta)) // Trying to call a non-function
+						Err((CMNError::NotCallable(name.clone()), meta)) // Trying to call a non-function
 					}
 
 				} else {
-					Err((ParserError::UndeclaredIdentifier(name.clone()), meta)) // Couldn't find symbol!
+					Err((CMNError::UndeclaredIdentifier(name.clone()), meta)) // Couldn't find symbol!
 				}
 			},
 
@@ -311,7 +311,7 @@ impl Expr {
 
 						return Ok(goal_t.clone());
 					} else {
-						return Err((ParserError::TypeMismatch(a_t, goal_t.clone()), meta));
+						return Err((CMNError::TypeMismatch(a_t, goal_t.clone()), meta));
 					}
 				}
 
@@ -326,7 +326,7 @@ impl Expr {
 				while let Some(item) = iter.next() {
 					let current = item.get_type(scope, goal_t, *meta)?;
 					if last != current {
-						return Err((ParserError::TypeMismatch(last, current), *meta))
+						return Err((CMNError::TypeMismatch(last, current), *meta))
 					}
 					last = current;
 				}

@@ -2,16 +2,7 @@ int printf(char* fmt);
 
 
 int main() {
-	str a = "Hello world!\n\0";
-	printf(a, 2);
-
-	printf("This works too!\n\0");
-
-	return add(2, 7);
-}
-
-
-int add(int a, int b) {
-	return a + b;
+	printf("Hello world!\n\0");
+	return 0;
 }
 

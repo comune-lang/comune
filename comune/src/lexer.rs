@@ -6,7 +6,7 @@ use std::path::Path;
 
 use colored::Colorize;
 
-use crate::parser::ParserError;
+use crate::parser::CMNError;
 
 const KEYWORDS: &[&str] = &[
 	"mod",	
@@ -398,7 +398,7 @@ impl Lexer {
 	}
 	
 
-	pub fn log_error_at(&self, char_idx: usize, token_len: usize, e: ParserError) {
+	pub fn log_error_at(&self, char_idx: usize, token_len: usize, e: CMNError) {
 		if char_idx > 0 {
 			let line = self.get_line_number(char_idx);
 			let column = self.get_column(char_idx);
@@ -420,7 +420,7 @@ impl Lexer {
 		}
 	}
 
-	pub fn log_error(&self, e: ParserError) {
+	pub fn log_error(&self, e: CMNError) {
 		let len = self.current().as_ref().unwrap().len();
 		self.log_error_at(self.file_index - len, len, e)
 	}

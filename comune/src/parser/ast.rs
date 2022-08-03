@@ -3,7 +3,7 @@ use std::fmt::Display;
 
 use crate::lexer::Token;
 
-use super::{ASTResult, ParserError};
+use super::{ASTResult, CMNError};
 use super::semantic::Scope;
 use super::types::{Type, Basic, Typed};
 use super::expression::Expr;
@@ -100,7 +100,7 @@ impl ASTElem {
 						// Only compare against return type for control flow nodes
 						if let ASTNode::ControlFlow(_) = elem.node {
 							if !t.coercable_to(ret) {
-								return Err((ParserError::TypeMismatch(t, ret.clone()), elem.token_data))
+								return Err((CMNError::TypeMismatch(t, ret.clone()), elem.token_data))
 							}
 							last_ret = Some(t);
 						}
@@ -117,7 +117,7 @@ impl ASTElem {
 					expr.type_info.replace(Some(t.clone()));
 					let expr_type = expr.get_type(scope)?;
 					if !expr_type.coercable_to(t) {
-						return Err((ParserError::TypeMismatch(t.clone(), expr_type), self.token_data));
+						return Err((CMNError::TypeMismatch(t.clone(), expr_type), self.token_data));
 					}
 				}
 
@@ -134,7 +134,7 @@ impl ASTElem {
 					let bool_t = Type::from_basic(Basic::BOOL);
 
 					if !cond_type.coercable_to(&bool_t) {
-						return Err((ParserError::TypeMismatch(cond_type, bool_t), self.token_data));
+						return Err((CMNError::TypeMismatch(cond_type, bool_t), self.token_data));
 					}
 					let t = body.validate(scope, ret)?;
 
@@ -150,7 +150,7 @@ impl ASTElem {
 					let bool_t = Type::from_basic(Basic::BOOL);
 
 					if !cond_type.coercable_to(&bool_t) {
-						return Err((ParserError::TypeMismatch(cond_type, bool_t), self.token_data));
+						return Err((CMNError::TypeMismatch(cond_type, bool_t), self.token_data));
 					}
 
 					let t = body.validate(scope, ret)?;
@@ -163,7 +163,7 @@ impl ASTElem {
 					let bool_t = Type::from_basic(Basic::BOOL);
 
 					if !cond_type.coercable_to(&bool_t) {
-						return Err((ParserError::TypeMismatch(cond_type, bool_t), self.token_data));
+						return Err((CMNError::TypeMismatch(cond_type, bool_t), self.token_data));
 					}
 					init.validate(scope, ret)?;
 					iter.validate(scope, ret)?;
@@ -183,7 +183,7 @@ impl ASTElem {
 							if t.coercable_to(ret) {
 								Ok(Some(t))
 							} else {
-								Err((ParserError::ReturnTypeMismatch { expected: ret.clone(), got: t }, self.token_data))
+								Err((CMNError::ReturnTypeMismatch { expected: ret.clone(), got: t }, self.token_data))
 							}
 						} else {
 							Ok(None)
@@ -206,81 +206,6 @@ impl ASTElem {
 		};
 		result
 	}
-
-
-
-	// Recursively validate the return type of a block. Ignores everything except return statements and sub-blocks.
-	// Returns Ok(Some(Type)) if block 
-	/*pub fn get_return_type(&self, scope: &Scope, ret: &Type) -> ASTResult<Option<Type>> {
-		match &self.node {
-			ASTNode::Block(elems) => {
-				let subscope = Scope::from_parent(scope);
-				let mut last_ret_type = None;
-
-				for elem in elems {
-					let stmt_type;
-
-					match &elem.node {
-
-						ASTNode::ControlFlow(ctrl) => {
-
-							stmt_type = match ctrl.as_ref() {
-								ControlFlow::Return { expr: _ } => {
-									// An unconditional return statement gives the current block a return type
-									let ret_type = Some(ctrl.get_type(scope)?);
-									last_ret_type = ret_type.clone();
-									ret_type
-								}
-
-								ControlFlow::If { body, cond: _, else_body } => {
-									let body_type = body.get_return_type(scope, ret)?;
-									
-									// Check if both block's return types match
-									// This is kinda fucked rn, figure out how to do this properly later
-									if let Some(else_body) = else_body {
-										let else_type = else_body.get_return_type(scope, ret)?;
-										if let Some(else_type) = else_type {
-											if body_type.is_some() && !else_type.coercable_to(body_type.as_ref().unwrap()) {
-												return Err((ParserError::TypeMismatch(body_type.unwrap(), else_type), self.token_data));
-											}
-										}	
-									}
-
-									body_type
-								},
-
-								ControlFlow::While { body, .. } | ControlFlow::For { body, .. } => {
-									body.get_return_type(scope, ret)?
-								},
-
-								ControlFlow::Break => todo!(),
-								ControlFlow::Continue => todo!(),
-							};
-						},
-
-						_ => {
-							// Validate sub-blocks
-							stmt_type = elem.get_return_type(&subscope, ret)?; 
-
-						}
-					}
-
-					if let Some(stmt_type) = stmt_type {
-						if stmt_type.coercable_to(ret) {
-							Some(stmt_type);
-						} else {
-							return Err((ParserError::ReturnTypeMismatch { expected: ret.clone(), got: stmt_type }, elem.token_data));
-						}
-					}
-				}
-
-				Ok(last_ret_type)
-			},
-
-			// Non-block nodes don't evaluate themselves for return types
-			_ => Ok(None),
-		}
-	}*/
 }
 
 
