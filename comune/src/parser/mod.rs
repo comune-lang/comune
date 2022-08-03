@@ -797,11 +797,7 @@ impl<'source> Parser<'source> {
 	fn parse_type(&self) -> ParseResult<Type> {
 		let lexer = &self.lexer;
 		let mut result : Type;
-		let current;
-		
-		{
-			current = lexer.borrow().current().as_ref().unwrap().clone();
-		}
+		let current = lexer.borrow().current().as_ref().unwrap().clone();
 
 		if let Token::Identifier(ref id) = current {
 			// Typename

@@ -409,7 +409,28 @@ impl<'ctx> LLVMBackend<'ctx> {
 			Expr::Cons(op, elems, _meta) => 
 			{
 				if elems.len() == 1 {
-					todo!()
+					match op {
+						Operator::Ref => {
+							if let Expr::Atom(a, _) = &elems[0] {
+								if let Atom::Variable(v) = &a {						
+									return Box::new(scope.get_variable(&v).unwrap().clone());
+								}
+							}
+							panic!()
+						}
+
+						Operator::Deref => {
+							if let Expr::Atom(a, _) = &elems[0] {
+								if let Atom::Variable(v) = &a {
+									let ptr = self.builder.build_load(*scope.get_variable(&v).unwrap(), "loadptr").as_basic_value_enum().into_pointer_value();
+									return Box::new(self.builder.build_load(ptr, "deref"));
+								}
+							}
+							panic!()
+						}
+
+						_ => todo!(),
+					}
 				} else {
 					let lhs = &elems[0];
 					let rhs = &elems[1];

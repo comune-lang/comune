@@ -121,6 +121,10 @@ impl Type {
 		Type { inner: InnerType::Basic(basic), generics: vec![], is_const: false }
 	}
 
+	pub fn ptr_type(&self) -> Self {
+		Type { inner: InnerType::Pointer(Box::new(self.clone())), generics: vec![], is_const: false }
+	}
+
 
 	pub fn coercable_to(&self, target: &Type) -> bool {
 		if *self == *target {

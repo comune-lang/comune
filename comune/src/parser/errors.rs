@@ -28,6 +28,7 @@ pub enum CMNError {
 	ReturnTypeMismatch{expected: Type, got: Type},
 	ParameterCountMismatch{expected: usize, got: usize},
 	NotCallable(String),
+	NonPtrDeref,
 
 	// Misc
 	Unimplemented,
@@ -60,14 +61,18 @@ impl Display for CMNError {
 			CMNError::OK => 										write!(f, "ok (how did you trigger this error???)"),
 			CMNError::UnexpectedEOF => 								write!(f, "unexpected end of file"),
 			CMNError::UnexpectedToken => 							write!(f, "unexpected token"),
+			CMNError::UnexpectedKeyword => 							write!(f, "unexpected keyword"),
 			CMNError::ExpectedIdentifier => 						write!(f, "expected identifier"),
+			
 			CMNError::UndeclaredIdentifier(id) =>					write!(f, "undeclared identifier `{}`", id),
-			CMNError::TypeMismatch(a, b) => 						write!(f, "type mismatch ({}, {})", a, b),
+			CMNError::TypeMismatch(a, b) => 						write!(f, "type mismatch; expected {}, got {}", a, b),
 			CMNError::ReturnTypeMismatch { expected, got } =>		write!(f, "return type mismatch; expected {}, got {}", expected, got),
 			CMNError::ParameterCountMismatch{ expected, got } =>	write!(f, "parameter count mismatch; expected {}, got {}", expected, got),
 			CMNError::NotCallable(id) => 							write!(f, "{} is not callable", id),
+			CMNError::NonPtrDeref =>								write!(f, "attempt to dereference a non-pointer value"),
+			
 			CMNError::Unimplemented =>								write!(f, "not yet implemented"),
-    		CMNError::UnexpectedKeyword => 							write!(f, "unexpected keyword"),
+    		
 		}
 	}
 }

@@ -2,12 +2,14 @@ int printf(char* fmt);
 
 
 int main() {
-	int i = 100;
-	while (i > 0) {
-		printf("Test!\n\0");
-		i = i - 1;
-	}
+	str test = "This is a string literal!\n\0";
+	str* testptr = &test;
 	
-	return 0;
+	printf(*testptr);
+
+	int a = 69;
+	int* b = &a;
+
+	return *b;
 }
 

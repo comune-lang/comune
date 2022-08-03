@@ -115,77 +115,54 @@ impl Operator {
 
 	
 	pub fn get_operator(token: &str, has_lhs: bool) -> Option<Operator> {
-		
-		match token {
-			"+" => {
-				if !has_lhs {
-					Some(Operator::UnaryPlus)
-				} else {
-					Some(Operator::Add)
-				}
-			},
-
-			"-" => {
-				if !has_lhs {
-					Some(Operator::UnaryMinus)
-				} else { 
-					Some(Operator::Sub) 
-				}
-			},
-
-			"/" => Some(Operator::Div),
-			"*" => Some(Operator::Mult),
-			"%" => Some(Operator::Mod),
-			"^" => Some(Operator::BitXOR),
-			"|" => Some(Operator::BitOR),
-			"&" => Some(Operator::BitAND),
-			"=" => Some(Operator::Assign),
-			"/=" => Some(Operator::AssDiv),
-			"*=" => Some(Operator::AssMult),
-			"+=" => Some(Operator::AssAdd),
-			"-=" => Some(Operator::AssSub),
-
-			"++" => {
-				if has_lhs {
-					Some(Operator::PostInc)
-				} else {
-					Some(Operator::PreInc)
-				}
-			},
-
-			"--" => {
-				if has_lhs {
-					Some(Operator::PostDec)
-				} else {
-					Some(Operator::PreDec)
-				}
-			},
-
-
-			"(" => Some(Operator::Call),
-			")" => None,
-
-			"[" => Some(Operator::Subscr),
-			"]" => None,
-
-			"->" => todo!(),
-			"." => todo!(),
-			"::" => todo!(),
-
-			"<" => Some(Operator::Less),
-			">" => Some(Operator::Greater),
-			"||" => Some(Operator::LogicOr),
-			"&&" => Some(Operator::LogicAnd),
-			"==" => Some(Operator::Eq),
-			"<=" => Some(Operator::LessEq),
-			">=" => Some(Operator::GreaterEq),
-			"!=" => Some(Operator::NotEq),
-
-			"<<" => Some(Operator::BitShiftL),
-			">>" => Some(Operator::BitShiftR),
+		if has_lhs {
+			match token {
+				"+" => Some(Operator::Add),
+				"-" => Some(Operator::Sub),
+				"/" => Some(Operator::Div),
+				"*" => Some(Operator::Mult),
+				"%" => Some(Operator::Mod),
+				"^" => Some(Operator::BitXOR),
+				"|" => Some(Operator::BitOR),
+				"&" => Some(Operator::BitAND),
+				"=" => Some(Operator::Assign),
+				"/=" => Some(Operator::AssDiv),
+				"*=" => Some(Operator::AssMult),
+				"+=" => Some(Operator::AssAdd),
+				"-=" => Some(Operator::AssSub),
+				"++" => Some(Operator::PostInc),
+				"--" => Some(Operator::PostDec),
+				"(" => Some(Operator::Call),
+				")" => None,
+				"[" => Some(Operator::Subscr),
+				"]" => None,
+				"->" => Some(Operator::MemberAccess),
+				"." => Some(Operator::MemberAccess),
+				"::" => Some(Operator::ScopeRes),
+				"<" => Some(Operator::Less),
+				">" => Some(Operator::Greater),
+				"||" => Some(Operator::LogicOr),
+				"&&" => Some(Operator::LogicAnd),
+				"==" => Some(Operator::Eq),
+				"<=" => Some(Operator::LessEq),
+				">=" => Some(Operator::GreaterEq),
+				"!=" => Some(Operator::NotEq),
+				"<<" => Some(Operator::BitShiftL),
+				">>" => Some(Operator::BitShiftR),
+				
+				_ => None,
 			
-			_ => None,
-		
+			}
+		} else {
+			match token {
+				"+" => Some(Operator::UnaryPlus),
+				"-" => Some(Operator::UnaryMinus),
+				"(" => Some(Operator::Call),
+				"&" => Some(Operator::Ref),
+				"*" => Some(Operator::Deref),
+				"!" => Some(Operator::LogicNot),
+				_ => None,
+			}
 		}
 	}
 }
@@ -206,7 +183,7 @@ impl Expr {
 			},
 
 			// This should probably implement some sort of type coercion ruleset? Works for now though
-			Expr::Cons(_, elems, meta) => {
+			Expr::Cons(op, elems, meta) => {
 				let mut iter = elems.iter_mut();
 				let mut last = iter.next().unwrap().get_type(scope, None, *meta)?;
 				
@@ -217,7 +194,19 @@ impl Expr {
 					}
 					last = current;
 				}
-				last
+
+				// Handle operators that change the expression's type here
+				match op {
+					Operator::Ref => last.ptr_type(),
+					
+					Operator::Deref => {
+						match last.inner {
+							InnerType::Pointer(t) => *t.clone(),
+							_ => return Err((CMNError::NonPtrDeref, *meta)),
+						}
+					}
+					_ => last
+				}
 			}
 		};
 
