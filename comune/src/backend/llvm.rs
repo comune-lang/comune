@@ -12,7 +12,7 @@ use inkwell::context::Context;
 use inkwell::module::{Module, Linkage};
 use inkwell::passes::PassManager;
 use inkwell::types::{AnyTypeEnum, BasicTypeEnum, FunctionType, BasicMetadataTypeEnum, AnyType, BasicType, IntType, StructType};
-use inkwell::values::{AnyValueEnum, FunctionValue, BasicValue, AnyValue, PointerValue, BasicMetadataValueEnum};
+use inkwell::values::{AnyValueEnum, FunctionValue, BasicValue, AnyValue, PointerValue, BasicMetadataValueEnum, BasicValueEnum};
 
 
 // This shit is a mess of enum conversions. hat  it
@@ -406,10 +406,21 @@ impl<'ctx> LLVMBackend<'ctx> {
 									if let Basic::CHAR = other_b {
 										// Cast from `str` to char*
 										let val = self.generate_expr(expr, from, scope);
-
+										
 										match val.as_any_value_enum() {
 											AnyValueEnum::StructValue(struct_val) => {
-												return Box::new(self.builder.build_extract_value(struct_val, 0, "cast").unwrap());
+												let val_extracted = match self.builder.build_extract_value(struct_val, 0, "cast").unwrap() {
+													BasicValueEnum::PointerValue(p) => p,
+													_ => panic!(),
+												};
+
+												return Box::new(
+													self.builder.build_pointer_cast(
+														val_extracted, 
+														self.context.i8_type().ptr_type(AddressSpace::Generic), 
+														"charcast"
+													)
+												);
 											}
 											_ => panic!(),
 										}
