@@ -28,6 +28,7 @@ const KEYWORDS: &[&str] = &[
 	"continue",
 	"true",
 	"false",
+	"unsafe",
 ];
 
 const OPERATORS: &[&str] = &[
@@ -308,8 +309,9 @@ impl Lexer {
 							'n' => result.push('\n'),
 							't' => result.push('\t'),
 							'\\' => result.push('\\'),
+							'0' => result.push('\0'),
 
-							_ => {}
+							_ => panic!() // TODO: proper error handling
 						}
 						escaped = false;
 
