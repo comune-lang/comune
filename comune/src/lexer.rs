@@ -1,7 +1,10 @@
+use std::ffi::OsString;
 use std::fmt::Display;
 use std::fs::File;
 use std::io::{self, Read, Error};
 use std::path::Path;
+
+use colored::Colorize;
 
 use crate::parser::ParserError;
 
@@ -121,6 +124,7 @@ pub struct Lexer {
 	file_index: usize, // must be on a valid utf-8 character boundary
 	char_buffer: Option<char>,
 	token_buffer: Option<Token>,
+	file_name: OsString,
 }
 
 impl Lexer {
@@ -130,10 +134,13 @@ impl Lexer {
 			file_index: 0usize,
 			char_buffer: None,
 			token_buffer: None,
+			file_name: path.as_ref().file_name().unwrap().to_os_string()
 		};
+	
 
 		File::open(path)?.read_to_string(&mut result.file_buffer)?; // lol
 		
+
 		// Tabs fuck up the visual error reporting and making it Really Work is a nightmare because Unicode
 		// So here's this hack lol
 		result.file_buffer = result.file_buffer.replace("\t", "    ");
@@ -179,14 +186,9 @@ impl Lexer {
 		}
 	}
 
-	pub fn get_line(&self, char_idx: usize) -> &str {
-		if char_idx >= self.file_buffer.len() {
-			"[end of file]"
-		} else {
-			self.file_buffer.lines().nth(self.get_line_number(char_idx)).unwrap()
-		}
+	pub fn get_line(&self, line: usize) -> &str {
+		self.file_buffer.lines().nth(line).unwrap()
 	}
-
 
 	pub fn get_index(&self) -> usize {
 		self.file_index
@@ -398,15 +400,18 @@ impl Lexer {
 			let line = self.get_line_number(char_idx);
 			let column = self.get_column(char_idx);
 
-			println!("\nerror on line {}:{}!", 
-				line + 1,
-				column
+			print!("{}: {}", "error".bold().red(), e.to_string().bold());
+			
+			println!("{}", 
+				format!(" in {}:{}:{}\n", self.file_name.to_string_lossy(), line + 1, column).bright_black()
 			);
 
-			println!("\n\t{}", self.get_line(char_idx));
-			print!("\t{: <1$}", "", column - 1);
-			println!("{:^<1$}", "", token_len);
-			println!("\n[error]\t{}", e);
+			println!("{} {}", 
+				format!("{}\t{}", line + 1, "|").bright_black(), 
+				self.get_line(line));
+
+			print!("\t{: <1$}", "", column - 1 + 2);
+			println!("{:~<1$}\n", "", token_len);			
 		} else {
 			println!("\n[error]\t{} \n[note]\tno error metadata found, can't display error location", e);
 		}
