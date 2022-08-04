@@ -20,6 +20,12 @@ pub(crate) fn log_msg_at(char_idx: usize, token_len: usize, e: CMNMessage) {
 	});
 }
 
+pub(crate) fn log_msg(e: CMNMessage) {
+	CURRENT_LEXER.with(|lexer| { 
+		lexer.borrow().log_msg(e);
+	});
+}
+
 const KEYWORDS: &[&'static str] = &[
 	"mod",	
 	"if",
@@ -136,7 +142,6 @@ impl Display for Token {
 
 pub struct Lexer {
 	file_buffer: String,
-	// hate hate hate hate hate hate
 	file_index: usize, // must be on a valid utf-8 character boundary
 	char_buffer: Option<char>,
 	token_buffer: Option<Token>,

@@ -15,6 +15,7 @@ So, with these things in mind, I started sketching up some design goals for my o
 - Expressive, familiar C-like syntax, with a focus on readability
 - A large feature set for creating performant, high-level abstractions
 - Competitive performance, using LLVM as the compiler backend
+- *Seriously* improved error messages, especially concerning generics
 - High-level integration with C++ constructs, allowing for gradual adoption
 - A Rust-inspired "it just works" build system, with easy dependency management
 - Memory safety: Not capital-S Safe, but safe-by-default

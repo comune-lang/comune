@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::{fmt::Display, ffi::OsString};
 
 use super::types::Type;
 
@@ -29,6 +29,9 @@ pub enum CMNError {
 	ParameterCountMismatch{expected: usize, got: usize},
 	NotCallable(String),
 	NonPtrDeref,
+
+	// Resolution errors
+	ModuleNotFound(OsString),
 
 	// Misc
 	Unimplemented,
@@ -70,6 +73,8 @@ impl Display for CMNError {
 			CMNError::ParameterCountMismatch{ expected, got } =>	write!(f, "parameter count mismatch; expected {}, got {}", expected, got),
 			CMNError::NotCallable(id) => 							write!(f, "{} is not callable", id),
 			CMNError::NonPtrDeref =>								write!(f, "attempt to dereference a non-pointer value"),
+
+			CMNError::ModuleNotFound(m) =>							write!(f, "module not found: {}", m.to_string_lossy()),
 			
 			CMNError::Unimplemented =>								write!(f, "not yet implemented"),
     		

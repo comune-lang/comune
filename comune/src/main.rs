@@ -2,7 +2,7 @@ mod parser;
 mod backend;
 mod modules;
 
-use std::{path::Path, io::{self, Write}};
+use std::{path::Path, io::{self, Write}, ffi::OsString};
 use clap::Parser;
 use colored::Colorize;
 use inkwell::{context::Context, targets::{Target, InitializationConfig, TargetTriple, FileType}, passes::PassManager, module::Module};
@@ -17,11 +17,11 @@ struct ComuneCLI {
 	#[clap(short='v', long="verbose", default_value_t=false, value_parser)]
 	verbose: bool,
 
-	#[clap(value_parser)]
-	input_files: Vec<String>,
+	#[clap(value_parser, default_value="")]
+	input_file: OsString,
 
 	#[clap(short='o', long="output", default_value="a.out", value_parser)]
-	output_file: String,
+	output_file: OsString,
 
 	#[clap(long="emit-llvm", default_value_t=false, value_parser)]
 	emit_llvm: bool,
@@ -35,14 +35,23 @@ struct ComuneCLI {
 fn main() {
 	let args = ComuneCLI::parse();
 
-	if args.input_files.is_empty() {
-		println!("{} {}", "fatal:".red().bold(), "no input files");
+	if args.input_file.is_empty() {
+		println!("{} {}", "fatal:".red().bold(), "no input module");
 		return;
 	}
-	let manager = modules::ModuleJobManager::new("test/".into(), vec![], args.num_jobs);
+
+	rayon::ThreadPoolBuilder::new()
+		.num_threads(args.num_jobs)
+		.build_global()
+		.unwrap();
+
+	let manager = modules::ModuleJobManager::new("test/".into(), vec![], args.num_jobs, args.verbose);
+
+	let state = manager.start_module_compilation(args.input_file).unwrap(); // TODO: Handle error
+	manager.continue_module_compilation(state);
 
 	// Extremely basic, needs parallelization and linking modules together
-	for file in args.input_files.iter() {
+	/*for file in args.input_files.iter() {
 	
 		parser::lexer::CURRENT_LEXER.with(|lexer| { 
 
@@ -158,12 +167,12 @@ fn main() {
 			// TODO: Link modules together into single executable
 			target_machine.write_to_file(&backend.module, FileType::Object, &Path::new("out.o")).unwrap();
 		});
-	}
+	}*/
 
 	// Link into executable
 	// We use gcc here because fuck dude i don't know how to use ld manually
 	let output = Command::new("gcc")
-				.arg("-o".to_string() + &args.output_file)
+				.arg("-o".to_string() + &args.output_file.to_string_lossy())
 				.arg("-nodefaultlibs")
 				.arg("-lc")
 				.arg("-fno-rtti")
