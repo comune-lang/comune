@@ -1,8 +1,9 @@
 use std::{ffi::OsString, sync::Arc};
 
 use colored::Colorize;
+use inkwell::{targets::{Target, InitializationConfig, TargetTriple}, context::Context, module::Module, passes::PassManager};
 
-use crate::parser::{NamespaceInfo, errors::{CMNMessage, CMNError}, self, lexer::{Lexer, log_msg_at, log_msg}, Parser, semantic};
+use crate::{parser::{NamespaceInfo, errors::{CMNMessage, CMNError}, self, lexer::{Lexer, log_msg_at, log_msg}, Parser, semantic}, backend::llvm::LLVMState};
 
 
 pub struct ManagerState {
@@ -71,7 +72,7 @@ impl ModuleJobManager {
 
 
 
-	pub fn continue_module_compilation(&self, mut mod_state: ModuleCompileState) {
+	pub fn continue_module_compilation(&self, mut mod_state: ModuleCompileState) -> Result<LLVMState, CMNError> {
 		
 		// Generative pass
 		// TODO: This completely re-tokenizes the module, which is useless
@@ -80,15 +81,89 @@ impl ModuleJobManager {
 		// B) store the relevant token sequences in the mod state to avoid redundant namespace parsing
 		let namespace = match mod_state.parser.parse_module(true) {
 			Ok(ctx) => { if self.state.verbose_output { println!("\nresolving types..."); } ctx },
-			Err(e) => { log_msg(CMNMessage::Error(e)); return; },
+			Err(e) => { log_msg(CMNMessage::Error(e.clone())); return Err(e); },
 		};
 
 		// Resolve types
 		match semantic::parse_namespace(namespace) {
 			Ok(()) => {	if self.state.verbose_output { println!("generating code..."); } },
-			Err(e) => { log_msg_at(e.1.0, e.1.1, CMNMessage::Error(e.0)); return; },
+			Err(e) => { log_msg_at(e.1.0, e.1.1, CMNMessage::Error(e.0.clone())); return Err(e.0); },
 		}
+
+		// Generate code
+	
+		Target::initialize_x86(&InitializationConfig::default());
+		let target = Target::from_name("x86-64").unwrap();
+
+		let target_machine = target.create_target_machine(
+			&TargetTriple::create("x86_64-pc-linux-gnu"), 
+			"x86-64", 
+			"+avx2", 
+			inkwell::OptimizationLevel::Aggressive, 
+			inkwell::targets::RelocMode::Default, 
+			inkwell::targets::CodeModel::Default
+		).unwrap();
+
+		// Create LLVM generator
+		let context = Context::create();
+		let module = context.create_module("test");
+		let builder = context.create_builder();
+
+
+		let mut backend = LLVMState {
+			context: &context,
+			module,
+			builder,
+			fpm: None,
+			fn_value_opt: None,
+		};
+
+
+		// Generate LLVM IR
+
+		// Register function prototypes
+		for (sym_name, (sym_type, _)) in &namespace.borrow().symbols {
+			backend.register_fn(sym_name.clone(), sym_type).unwrap();
+		}
+
+		// Generate function bodies
+		for (sym_name, (sym_type, sym_elem)) in &namespace.borrow().symbols {
+			backend.generate_fn(sym_name.clone(), sym_type, sym_elem).unwrap();
+		}
+
+		backend.generate_libc_bindings();
+
+
+		if let Err(e) = backend.module.verify() {
+			println!("an internal compiler error occurred:\n{}", e);
+			
+			// Output bogus LLVM here, for debugging purposes
+			//if args.emit_llvm {
+			//	backend.module.print_to_file(args.output_file.clone() + ".ll").unwrap();
+			//}
+
+			return Err(CMNError::LLVMError);
+		};
+		
+		// Optimization passes
+
+		let mpm = PassManager::<Module>::create(());
+		mpm.add_instruction_combining_pass();
+		mpm.add_reassociate_pass();
+		mpm.add_gvn_pass();
+		mpm.add_cfg_simplification_pass();
+		mpm.add_basic_alias_analysis_pass();
+		mpm.add_promote_memory_to_register_pass();
+		mpm.add_instruction_combining_pass();
+		mpm.add_reassociate_pass();
+
+		mpm.run_on(&backend.module);
+
+		Ok(backend)
 	}
+	
+
+
 
 	// This function attempts to load a cached NamespaceInfo from disk, or else attempts to find a module and
 	// initialize its compilation, blocking until the NamespaceInfo is ready

@@ -6,7 +6,7 @@ use std::{path::Path, io::{self, Write}, ffi::OsString};
 use clap::Parser;
 use colored::Colorize;
 use inkwell::{context::Context, targets::{Target, InitializationConfig, TargetTriple, FileType}, passes::PassManager, module::Module};
-use crate::{parser::{semantic, errors::CMNMessage}, parser::lexer::Lexer, backend::llvm::LLVMBackend};
+use crate::{parser::{semantic, errors::CMNMessage}, parser::lexer::Lexer, backend::llvm::LLVMState};
 use std::process::Command;
 
 

@@ -33,6 +33,9 @@ pub enum CMNError {
 	// Resolution errors
 	ModuleNotFound(OsString),
 
+	// Code generation errors
+	LLVMError,
+
 	// Misc
 	Unimplemented,
 }
@@ -76,6 +79,8 @@ impl Display for CMNError {
 
 			CMNError::ModuleNotFound(m) =>							write!(f, "module not found: {}", m.to_string_lossy()),
 			
+			CMNError::LLVMError =>									write!(f, "an internal compiler error occurred"),
+
 			CMNError::Unimplemented =>								write!(f, "not yet implemented"),
     		
 		}
