@@ -176,7 +176,7 @@ pub enum Expr {
 
 
 impl Expr {
-	pub fn get_type(&mut self, scope: &Scope, goal_t: Option<&Type>, meta: TokenData) -> ASTResult<Type> {
+	pub fn get_type<'ctx>(&mut self, scope: &'ctx Scope<'ctx>, goal_t: Option<&Type>, meta: TokenData) -> ASTResult<Type> {
 		let this_t = match self {
 			Expr::Atom(a, _) => {
 				a.get_type(scope, meta)?
@@ -301,7 +301,7 @@ pub enum Atom {
 
 
 impl Atom {
-	fn get_type(&self, scope: &Scope, meta: TokenData) -> ASTResult<Type> {
+	fn get_type<'ctx>(&self, scope: &'ctx Scope<'ctx>, meta: TokenData) -> ASTResult<Type> {
 		match self {
 			Atom::IntegerLit(_) => Ok(Type::from_basic(Basic::I32)),
 			Atom::FloatLit(_) => Ok(Type::from_basic(Basic::F32)),

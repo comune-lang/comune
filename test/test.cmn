@@ -1,19 +1,20 @@
-//using cool::fib;
 
 int printf(char* fmt);
 
-int fib(int n) {
-	int a = 0;
-	int b = 1;
-	int c = 0;
-	for (int i = 1; i < n; i = i + 1) {
-		c = a + b;
-		a = b;
-		b = c;
+namespace cool {
+	int fib(int n) {
+		int a = 0;
+		int b = 1;
+		int c = 0;
+		for (int i = 1; i < n; i = i + 1) {
+			c = a + b;
+			a = b;
+			b = c;
+		}
+		return c;
 	}
-	return c;
 }
 
 int main() {
-	return fib(10);
+	return cool::fib(10);
 }

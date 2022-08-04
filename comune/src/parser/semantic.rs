@@ -40,7 +40,7 @@ impl<'ctx> Scope<'ctx> {
 			parent.get_identifier_type(name)
 		} else {
 			match self.context.borrow().get_symbol(name) {
-				Some((t, _)) => Some(t),
+				Some((t, _)) => Some(t.clone()),
 				None => None,
 			}
 		}

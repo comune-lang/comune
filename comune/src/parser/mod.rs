@@ -1,8 +1,8 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Display;
-use std::cell::RefCell;
+use std::cell::{RefCell, Ref};
 
-use self::lexer::{Lexer, Token};
+use self::lexer::Token;
 use self::ast::{ASTNode, ASTElem, TokenData};
 use self::controlflow::ControlFlow;
 use self::errors::CMNError;
@@ -46,12 +46,38 @@ fn token_compare(token: &Token, text: &str) -> bool {
 // This is used during the generative pass to disambiguate expressions, as well as validating types and symbols.
 pub struct NamespaceInfo {
 	pub types: HashMap<String, Type>,
-	pub symbols: HashMap<String, (Type, Option<ASTElem>)>
+	pub symbols: HashMap<String, (Type, Option<ASTElem>)>,
+	pub parsed_children: HashMap<String, NamespaceInfo>,
+	pub parent: Option<Box<NamespaceInfo>>,
+
+	pub referenced_modules: HashSet<String>,
+	pub imported: Box<Option<NamespaceInfo>>,
 }
 
 impl NamespaceInfo {
 	fn new() -> Self {
-		NamespaceInfo { types: HashMap::new(), symbols: HashMap::new() }
+		NamespaceInfo { 
+			types: HashMap::new(), 
+			symbols: HashMap::new(),
+			parsed_children: HashMap::new(),
+
+			referenced_modules: HashSet::new(),
+			imported: Box::new(None),
+			parent: None,
+		}
+	}
+
+	// Children take temporary ownership of their parent to avoid lifetime hell
+	fn from_parent(parent: Box<NamespaceInfo>) -> Self {
+		NamespaceInfo { 
+			types: HashMap::new(), 
+			symbols: HashMap::new(),
+			parsed_children: HashMap::new(),
+
+			referenced_modules: HashSet::new(),
+			imported: Box::new(None),
+			parent: Some(parent),
+		}
 	}
 
 	fn get_type(&self, name: &str) -> Option<Type> {
@@ -60,15 +86,36 @@ impl NamespaceInfo {
 		} else if self.types.contains_key(name) {
 			self.types.get(name).cloned()
 		} else {
+			let scope_op_idx = name.find("::");
+			
+			if let Some(idx) = scope_op_idx {
+				if self.parsed_children.contains_key(&name[..idx]) {
+					return self.parsed_children.get(&name[..idx]).unwrap().get_type(&name[idx+2..]);
+				}
+			}
+
 			None
 		}
 	}
 
-	fn get_symbol(&self, name: &str) -> Option<(Type, Option<ASTElem>)> {
-		self.symbols.get(name).cloned()
-	}
 
+	fn get_symbol(&self, name: &str) -> Option<&(Type, Option<ASTElem>)> {
+		if self.symbols.contains_key(name) {
+			self.symbols.get(name)
+		} else {
+			let scope_op_idx = name.find("::");
+			
+			if let Some(idx) = scope_op_idx {
+				if self.parsed_children.contains_key(&name[..idx]) {
+					return self.parsed_children.get(&name[..idx]).unwrap().get_symbol(&name[idx+2..]);
+				}
+			}
+
+			None
+		}
+	}
 }
+
 
 impl Display for NamespaceInfo {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -95,8 +142,7 @@ pub type ParseResult<T> = Result<T, CMNError>;
 pub type ASTResult<T> = Result<T, (CMNError, TokenData)>;
 
 pub struct Parser {
-	//lexer: &'static RefCell<Lexer>,
-	context: RefCell<NamespaceInfo>,
+	active_namespace: Option<RefCell<NamespaceInfo>>,
 	generate_ast: bool,
 	verbose: bool,
 }
@@ -106,8 +152,7 @@ pub struct Parser {
 impl Parser {
 	pub fn new(verbose: bool) -> Parser {
 		let result = Parser { 
-			//lexer, 
-			context: RefCell::new(NamespaceInfo::new()),
+			active_namespace: None,
 			generate_ast: false,
 			verbose
 		};
@@ -115,6 +160,9 @@ impl Parser {
 		result
 	}
 
+	fn current_namespace(& self) -> &RefCell<NamespaceInfo> {
+		self.active_namespace.as_ref().unwrap()
+	}
 
 	pub fn parse_module(&mut self, generate_ast: bool) -> ParseResult<&RefCell<NamespaceInfo>> {
 		self.generate_ast = generate_ast;
@@ -123,14 +171,16 @@ impl Parser {
 			lexer.borrow_mut().reset().unwrap();
 		});
 
+		self.active_namespace = Some(RefCell::new(NamespaceInfo::new()));
+
 		match self.parse_namespace("") {
 			Ok(()) => {
 				
 				if !generate_ast && self.verbose {
-					println!("\ngenerated namespace info:\n\n{}", self.context.borrow());
+					println!("\ngenerated namespace info:\n\n{}", self.current_namespace().borrow());
 				}
 
-				Ok(&self.context)
+				Ok(&self.current_namespace())
 			}
 			Err(e) => {
 				Err(e)
@@ -162,15 +212,56 @@ impl Parser {
 							let name_token = get_next()?;
 
 							if let Token::Identifier(namespace_name) = name_token {
-								self.parse_namespace(format!("{}::{}", path, namespace_name).as_str())?;
+								// We do some serious bullshit here to avoid lifetime hell
+								// Children namespaces take temporary ownership of their parents,
+								// and instead of having an explicit namespace stack, the parent values just live... here.
+								// In the call stack. We use the stack to make a stack.
+								// God I hate Rust so fucking much sometimes
+								
+								get_next()?; // Consume name
+								get_next()?; // Consume brace
+
+								let namespace_path = format!("{}::{}", path, namespace_name);
+								let new_namespace = NamespaceInfo::new();
+								let old_namespace = self.current_namespace().replace(new_namespace);
+
+								self.current_namespace().borrow_mut().parent = Some(Box::new(old_namespace));
+
+								self.parse_namespace(
+									if path.is_empty() {
+										namespace_name.as_str()
+									} else {
+										namespace_path.as_str()
+									}
+								)?;
+
+								let dummy = NamespaceInfo::new();
+								let mut parsed_namespace = self.current_namespace().replace(dummy);
+
+								let mut old_namespace = parsed_namespace.parent.take().unwrap();
+								old_namespace.parsed_children.insert(namespace_name, parsed_namespace);
+								self.current_namespace().replace(*old_namespace);
+
 							} else {
 								return Err(CMNError::ExpectedIdentifier);
 							}
-							
 						}
 
+
 						"using" => {
-							// TODO: Register type alias/import statement
+							// Register type alias/import statement
+							let name_token = get_next()?;
+
+							if let Token::Identifier(name) = name_token {
+								self.current_namespace().borrow_mut().referenced_modules.insert(name);
+						
+								let scoped_name = self.parse_scoped_name()?;
+
+								
+							} else {
+								return Err(CMNError::ExpectedIdentifier);
+							}
+
 						}
 
 						_ => {
@@ -234,7 +325,7 @@ impl Parser {
 						}
 
 						// Register declaration to symbol table
-						let mut ctx = self.context.borrow_mut();
+						let mut ctx = self.current_namespace().borrow_mut();
 						ctx.symbols.insert(id, (t, ast_elem));
 					}
 				}
@@ -244,6 +335,8 @@ impl Parser {
 						';' => {
 							get_next()?;
 						}
+
+						'}' => return Ok(()),
 
 						_ => {
 							return Err(CMNError::UnexpectedToken);
@@ -267,6 +360,7 @@ impl Parser {
 			}
 		} else if current == Token::Other('}') {
 			if path != "" {
+				get_next()?;
 				Ok(())
 			} else {
 				Err(CMNError::UnexpectedToken)
@@ -352,7 +446,7 @@ impl Parser {
 		
 			Token::Identifier(id) => {
 				// Might be a declaration, check if identifier is a type
-				let decl_type = self.context.borrow().get_type(&id);
+				let decl_type = self.current_namespace().borrow().get_type(&id);
 
 				if decl_type.is_some() {
 					// Parse variable declaration
@@ -687,11 +781,21 @@ impl Parser {
 
 	fn parse_atom(&self) -> ParseResult<Atom> {
 		let mut current = get_current()?;
-		let next = get_next()?;
+		let mut scoped = None;
+		let next;
+
+		if let Token::Identifier(_) = current {
+			scoped = Some(self.parse_scoped_name()?);
+			next = get_current()?;	
+		} else {
+			next = get_next()?;
+		}
 
 		match current {
 			// TODO: Variables and function calls
 			Token::Identifier(id) => {
+				let name = if scoped.is_some() { scoped.unwrap() } else { id };
+
 				if let Token::Operator(ref op) = next {
 					match op.as_str() {
 
@@ -717,21 +821,21 @@ impl Parser {
 							}
 							get_next()?;
 
-							Ok(Atom::FnCall{name: id, args})
+							Ok(Atom::FnCall{name, args})
 						}
 
 						"<" => {
 							// TODO: Disambiguate between type parameter list or LT operator 
-							Ok(Atom::Variable(id))
+							Ok(Atom::Variable(name))
 						}
 
 						_ => {
 							// Just a variable
-							Ok(Atom::Variable(id))
+							Ok(Atom::Variable(name))
 						}
 					} 
 				} else {
-					Ok(Atom::Variable(id))
+					Ok(Atom::Variable(name))
 				}	
 			},
 
@@ -749,7 +853,7 @@ impl Parser {
 	
 
 	fn parse_parameter_list(&self) -> ParseResult<FnParamList> {
-		let mut next = get_next()?;
+		let next = get_next()?;
 		let mut result = vec![];
 
 		while let Token::Identifier(_) = next {
@@ -769,7 +873,7 @@ impl Parser {
 			current = get_current()?;
 			match current {
 				Token::Other(',') => {
-					current = get_next()?;
+					get_next()?;
 					continue;
 				}
 				Token::Operator(s) => {
@@ -801,6 +905,29 @@ impl Parser {
 
 
 
+	fn parse_scoped_name(&self) -> ParseResult<String> {
+		let mut result = String::new();
+		
+		if let Token::Identifier(id) = get_current()? {
+			result.push_str(&id);
+		} else {
+			return Err(CMNError::ExpectedIdentifier);
+		}
+
+		while token_compare(&get_next()?, "::") {
+			if let Token::Identifier(id) = get_next()? {
+				result.push_str("::");
+				result.push_str(&id);
+			} else {
+				return Err(CMNError::ExpectedIdentifier);
+			}
+		}
+
+		Ok(result)
+	}
+
+
+
 	fn parse_type(&self) -> ParseResult<Type> {
 		let mut result : Type;
 		let current = get_current()?;
@@ -811,7 +938,7 @@ impl Parser {
 
 			let found_type;
 			{
-				let ctx = self.context.borrow_mut();
+				let ctx = self.current_namespace().borrow_mut();
 				found_type = ctx.get_type(&typename);
 
 				result = match found_type { 
