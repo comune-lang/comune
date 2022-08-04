@@ -1,5 +1,6 @@
 mod parser;
 mod backend;
+mod modules;
 
 use std::{path::Path, io::{self, Write}};
 use clap::Parser;
@@ -24,6 +25,9 @@ struct ComuneCLI {
 
 	#[clap(long="emit-llvm", default_value_t=false, value_parser)]
 	emit_llvm: bool,
+
+	#[clap(short='j', long="jobs", default_value_t=1, value_parser)]
+	num_jobs: usize,
 }
 
 
@@ -35,6 +39,7 @@ fn main() {
 		println!("{} {}", "fatal:".red().bold(), "no input files");
 		return;
 	}
+	let manager = modules::ModuleJobManager::new("test/".into(), vec![], args.num_jobs);
 
 	// Extremely basic, needs parallelization and linking modules together
 	for file in args.input_files.iter() {
