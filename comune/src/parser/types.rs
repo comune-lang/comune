@@ -108,21 +108,20 @@ pub enum InnerType {
 pub struct Type {
 	pub inner: InnerType,
 	pub generics: Vec<Type>,
-	pub is_const: bool,
 }
 
 impl Type {
-	pub fn new(inner: InnerType, generics: Vec<Type>, is_const: bool) -> Self {
-		Type { inner, generics, is_const }
+	pub fn new(inner: InnerType, generics: Vec<Type>) -> Self {
+		Type { inner, generics }
 	}
 	
 	pub fn from_basic(basic: Basic) -> Self {
-		Type { inner: InnerType::Basic(basic), generics: vec![], is_const: false }
+		Type { inner: InnerType::Basic(basic), generics: vec![] }
 	}
 
 	
 	pub fn ptr_type(&self) -> Self {
-		Type { inner: InnerType::Pointer(Box::new(self.clone())), generics: vec![], is_const: false }
+		Type { inner: InnerType::Pointer(Box::new(self.clone())), generics: vec![] }
 	}
 
 
@@ -314,10 +313,6 @@ impl Type {
 
 impl Display for Type {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.is_const && !matches!(self.inner, InnerType::Function(_, _)) {
-			write!(f, "const ")?;
-		}
-
 		match &self.inner {
 			InnerType::Basic(t) => {
 				write!(f, "{}", t)?;

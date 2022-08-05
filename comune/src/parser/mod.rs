@@ -206,7 +206,7 @@ impl Parser {
 
 						"class" | "struct" => {
 							// Register aggregate type
-							let aggregate = Type::new(InnerType::Aggregate(HashMap::new()), vec![], false);
+							let aggregate = Type::new(InnerType::Aggregate(HashMap::new()), vec![]);
 							let name_token = get_next()?;
 							
 							if let Token::Identifier(name) = name_token {
@@ -314,7 +314,6 @@ impl Parser {
 											self.parse_parameter_list()?
 										), 
 										vec![], // TODO: Generics in function declarations 
-										true
 									);
 									
 									// Past the parameter list, check if we're at a function body or not
@@ -964,7 +963,7 @@ impl Parser {
 
 				result = match found_type { 
 					Some(t) => t.clone(),
-					None => Type::new(InnerType::Unresolved(current.clone()), vec![], false)
+					None => Type::new(InnerType::Unresolved(current.clone()), vec![])
 				}
 			}
 
@@ -975,7 +974,7 @@ impl Parser {
 					match op.as_str() {
 						"*" => {
 							while token_compare(&next, "*") {
-								result = Type::new(InnerType::Pointer(Box::new(result)), vec![], false);
+								result = Type::new(InnerType::Pointer(Box::new(result)), vec![]);
 								next = get_next()?;
 							}
 						}
@@ -1015,8 +1014,4 @@ impl Parser {
 			Err(CMNError::ExpectedIdentifier)
 		}
 	}
-		
-
-
-	
 }
