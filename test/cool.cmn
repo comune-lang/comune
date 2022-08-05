@@ -1,16 +1,4 @@
-namespace cool {
-	int fib(int n) {
-		int a = 0;
-		int b = 1;
-		int c = 0;
-		for (int i = 1; i < n; i = i + 1) {
-			c = a + b;
-			a = b;
-			b = c;
-		}
-		return c;
-	}
-}
+
 
 u64 cool_cast_fn(u64 blah) {
 	return blah;

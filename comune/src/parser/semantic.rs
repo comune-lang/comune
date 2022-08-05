@@ -209,7 +209,7 @@ impl ASTElem {
 					Ok(last_ret)
 				},
 				
-				ASTNode::Expression(e) => Ok(Some(e.borrow_mut().validate(scope, Some(ret), self.token_data)?)),
+				ASTNode::Expression(e) => Ok(Some(e.borrow_mut().validate(scope, None, self.token_data)?)),
 				
 				ASTNode::Declaration(t, n, e) => {
 	
