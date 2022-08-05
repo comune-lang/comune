@@ -1,9 +1,9 @@
-use std::{ffi::OsString, sync::Arc, cell::RefCell};
+use std::{ffi::OsString, sync::Arc};
 
 use colored::Colorize;
 use inkwell::{context::Context, module::Module, passes::PassManager};
 
-use crate::{parser::{errors::{CMNMessage, CMNError}, self, lexer::{Lexer, log_msg_at, log_msg}, Parser, semantic, namespace::Namespace}, backend::llvm::LLVMBackend};
+use crate::{parser::{errors::{CMNMessage, CMNError}, self, lexer::{Lexer, log_msg_at, log_msg}, Parser, semantic, namespace::Namespace}, llvm::LLVMBackend};
 
 pub struct ManagerState {
 	import_paths: Vec<OsString>,
@@ -147,7 +147,6 @@ impl ModuleJobManager {
 
 		for (sym_name, (sym_type, _, attributes)) in &namespace.symbols {
 			let name_mangled = namespace.get_mangled_name(sym_name, attributes);
-			println!("registering {}", name_mangled);
 			backend.register_fn(name_mangled, sym_type).unwrap();
 		}
 
