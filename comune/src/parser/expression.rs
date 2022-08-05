@@ -1,6 +1,6 @@
-use std::{fmt::Display, cell::RefCell};
+use std::fmt::Display;
 
-use super::{lexer, types::{Type, Basic, InnerType, Typed}, CMNError, semantic::FnScope, ASTResult, ast::{TokenData, ASTElem, ASTNode}, errors::{CMNWarning, CMNMessage}, namespace::Identifier};
+use super::{types::Type, ast::{TokenData, ASTElem}, namespace::Identifier};
 
 
 #[derive(Clone, Debug)]

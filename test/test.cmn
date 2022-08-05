@@ -17,5 +17,6 @@ namespace cool {
 }
 
 int main() {
-	return printf("Hello world!\n\0");
+	printf("Hello world!\n\0");
+	return cool::fib(69);
 }

@@ -144,11 +144,11 @@ impl<'ctx> FnScope<'ctx> {
 pub fn parse_namespace(namespace: &RefCell<Namespace>) -> ASTResult<()> {
 	for child in namespace.borrow_mut().parsed_children.iter_mut() {
 		let hack = RefCell::new(std::mem::take(child.1));
-		parse_namespace(&hack);
+		parse_namespace(&hack)?;
 		*child.1 = hack.into_inner();
 	}
 
-	for (_sym_name, (sym_type, sym_elem, attributes)) in &namespace.borrow().symbols {
+	for (_sym_name, (sym_type, sym_elem, _)) in &namespace.borrow().symbols {
 		let mut scope = FnScope::new(namespace, sym_type.clone());
 
 		let ret;

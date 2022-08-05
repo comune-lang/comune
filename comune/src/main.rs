@@ -62,6 +62,8 @@ fn main() {
 	let state = manager.start_module_compilation(args.input_file).unwrap(); // TODO: Handle error
 	let context = Context::create();
 	let result = manager.continue_module_compilation(state, &context).unwrap();
+	
+	result.module.print_to_file("ir.ll").unwrap();
 	target_machine.write_to_file(&result.module, FileType::Object, &Path::new("out.o")).unwrap();
 
 	

@@ -9,8 +9,6 @@ use colored::Colorize;
 
 use crate::parser::errors::CMNMessage;
 
-use super::types::Type;
-
 thread_local! {
 	pub(crate) static CURRENT_LEXER: RefCell<Lexer> = RefCell::new(Lexer::dummy());
 }
