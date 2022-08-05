@@ -177,7 +177,7 @@ impl Type {
 						// Numeric types are coercable to bool
 						Basic::BOOL => true,
 
-						_ => todo!(),
+						_ => false, //TODO
 
 					}
 				} else { // Other type is not Basic, can't coerce a numeric type to it
@@ -228,7 +228,12 @@ impl Type {
 		} else if self.coercable_to(target) {
 			true
 		} else {
-			// TODO: Implement
+
+			if self.is_numeric() {
+				if target.is_numeric() {
+					return true;
+				}
+			}
 			false
 		}
 	}

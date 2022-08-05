@@ -359,7 +359,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 					Atom::IntegerLit(i) => Box::new(self.context.i32_type().const_int(*i as u64, false)),
 					Atom::BoolLit(b) => Box::new(self.context.bool_type().const_int(if *b { 1 } else { 0 }, false)),
 					Atom::FloatLit(f) => Box::new(self.context.f32_type().const_float(*f)),
-					Atom::Variable(v) => Box::new(self.builder.build_load(scope.get_variable(v.resolved.as_ref().unwrap()).unwrap().clone(), "vload")),
+					Atom::Identifier(v) => Box::new(self.builder.build_load(scope.get_variable(v.resolved.as_ref().unwrap()).unwrap().clone(), "vload")),
 					Atom::ArrayLit(_) => todo!(),
 
 					Atom::Cast(elem, to) => {
@@ -412,7 +412,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 					match op {
 						Operator::Ref => {
 							if let Expr::Atom(a, _) = &elems[0] {
-								if let Atom::Variable(v) = &a {						
+								if let Atom::Identifier(v) = &a {						
 									return Box::new(scope.get_variable(v.resolved.as_ref().unwrap()).unwrap().clone());
 								}
 							}
@@ -421,7 +421,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 						Operator::Deref => {
 							if let Expr::Atom(a, _) = &elems[0] {
-								if let Atom::Variable(v) = &a {
+								if let Atom::Identifier(v) = &a {
 									let ptr = self.builder.build_load(*scope.get_variable(v.resolved.as_ref().unwrap()).unwrap(), "loadptr").as_basic_value_enum().into_pointer_value();
 									return Box::new(self.builder.build_load(ptr, "deref"));
 								}
@@ -453,7 +453,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 											Operator::Assign => {
 												if let Expr::Atom(a, _) = &lhs {
-													if let Atom::Variable(v) = &a {						
+													if let Atom::Identifier(v) = &a {						
 														self.builder.build_store(*scope.get_variable(v.resolved.as_ref().unwrap()).unwrap(), rhs_i);
 														return Box::new(rhs_i);
 													}
@@ -508,28 +508,41 @@ impl<'ctx> LLVMBackend<'ctx> {
 			InnerType::Basic(b) => {
 				
 				if from.is_numeric() {
-					if let InnerType::Basic(b) = &to.inner {
-
-						match b {
-
-							Basic::BOOL => {
-								let val = self.generate_expr(expr, from, scope);
-								match val.as_any_value_enum() {
+					let val = self.generate_expr(expr, from, scope);
+					match val.as_any_value_enum() {
 									
-									AnyValueEnum::IntValue(i) => return Box::new(
-										self.builder.build_int_compare(IntPredicate::NE, i, i.get_type().const_zero(), "boolcast")
-									),
+						AnyValueEnum::IntValue(i) => {
+							if let InnerType::Basic(b) = &to.inner {
+								match b {
 
-									_ => panic!()
+									Basic::BOOL => 
+										return Box::new(
+											self.builder.build_int_compare(IntPredicate::NE, i, i.get_type().const_zero(), "boolcast")
+										),
+
+									_ => {
+
+										if to.is_numeric() {
+											match self.get_llvm_type(to).as_any_type_enum() {
+												AnyTypeEnum::IntType(t) => return Box::new(self.builder.build_int_cast(i, t, "icast")),
+												
+												_ => panic!(),
+											}
+										}
+
+										todo!()
+									}
 								}
+
 							}
+						},
 
-							_ => todo!()
-						}
+						AnyValueEnum::FloatValue(f) => todo!(),
 
-					} else {
-						panic!(); // Not a valid cast, semantic analysis went wrong
+						_ => panic!(),
 					}
+					
+					panic!() // Didn't return, incorrect cast
 
 				} else { // Not numeric, match other Basics
 

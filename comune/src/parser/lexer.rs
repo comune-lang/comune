@@ -85,6 +85,7 @@ const OPERATORS: &[&str] = &[
 	"!=",
 	"<<",
 	">>",
+	"as",
 ];
 
 
@@ -295,7 +296,10 @@ impl Lexer {
 							Ok(Token::Keyword(*KEYWORDS.iter().find(|x_static| **x_static == result.as_str()).unwrap()))
 
 					}
-				} else {				
+				} else if OPERATORS.contains(&result.as_str()) {
+					result_token = Ok(Token::Operator(result));
+				}
+				else {				
 					result_token = Ok(Token::Identifier(result));
 				}
 
@@ -447,7 +451,7 @@ impl Lexer {
 				format!("{}\t{}", line + 1, "|").bright_black(), 
 				self.get_line(line));
 
-			print!("\t{: <1$}", "", column - 1);
+			print!("\t{: <1$}", "", column + 1);
 			println!("{:~<1$}\n", "", token_len);	
 			
 			let notes = e.get_notes();

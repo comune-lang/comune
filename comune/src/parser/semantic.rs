@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::HashMap};
+use std::{cell::RefCell, collections::HashMap, borrow::BorrowMut};
 
 use super::{types::{Type, InnerType, Basic, Typed}, CMNError, ASTResult, namespace::{Namespace, Identifier}, ast::{ASTElem, ASTNode, TokenData}, controlflow::ControlFlow, expression::{Expr, Operator, Atom}, lexer, errors::{CMNMessage, CMNWarning}};
 
@@ -324,10 +324,10 @@ impl ASTElem {
 
 impl Expr {
 	pub fn validate<'ctx>(&mut self, scope: &'ctx FnScope<'ctx>, goal_t: Option<&Type>, meta: TokenData) -> ASTResult<Type> {
+
 		let this_t = match self {
 
 			Expr::Atom(a, _) => a.validate(scope, meta)?,
-
 
 			Expr::Cons(op, elems, meta) => {
 				let mut iter = elems.iter_mut();
@@ -366,15 +366,14 @@ impl Expr {
 							// If self is an atom, we perform extra diagnostics for the cast here
 							meta = *m;
 							a.check_cast(&this_t, goal_t, scope, &meta)?;
-
 						}
+
 						Expr::Cons(_, _, m) => {
 							meta = *m;
 						}
 					}
 
 					let mut swap = Expr::Atom(Atom::IntegerLit(0), meta); //dummy Expr
-
 					swap = std::mem::replace(self, swap); // swap now contains old Atom
 					
 					// Construct a new Atom to cast the containing Expr to the goal type 
@@ -414,9 +413,22 @@ impl Atom {
 			Atom::BoolLit(_) => Ok(Type::from_basic(Basic::BOOL)),
 			Atom::StringLit(_) => Ok(Type::from_basic(Basic::STR)),
 
-			Atom::Variable(name) => scope.resolve_symbol(name).ok_or((CMNError::UndeclaredIdentifier(name.to_string()), meta)),
+			Atom::Identifier(name) => scope.resolve_symbol(name).ok_or((CMNError::UndeclaredIdentifier(name.to_string()), meta)),
+			
+			Atom::Cast(a, t) => {
+				if let ASTNode::Expression(expr) = &a.node {
+					let a_t = expr.borrow_mut().validate(scope, None, meta)?;
 
-			Atom::Cast(_, t) => Ok(t.clone()),
+					if a_t.castable_to(t) {
+						a.type_info.replace(Some(t.clone()));
+						Ok(t.clone())
+					} else {
+						Err((CMNError::TypeMismatch(a_t, t.clone()), meta))
+					}
+				} else { 
+					panic!(); 
+				}
+			},
 
 			Atom::FnCall { name, args } => {
 				

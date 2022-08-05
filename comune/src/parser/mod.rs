@@ -635,7 +635,9 @@ impl Parser {
 						if let Operator::Call = op {
 							// Special case; parse sub-expression
 							let sub = self.parse_expression_bp(0)?;
+
 							current = get_current()?;
+
 							if let Token::Operator(op) = current {
 								if op.as_str() != ")" {
 									return Err(CMNError::UnexpectedToken);
@@ -645,7 +647,6 @@ impl Parser {
 							} else {
 								return Err(CMNError::UnexpectedToken);
 							}
-							
 						} else {
 							let begin_index = get_current_start_index();
 
@@ -698,11 +699,35 @@ impl Parser {
 			get_next()?;
 
 			let begin_index = get_current_start_index();
+			let result;
 
-			let rhs = self.parse_expression_bp(rbp)?;
+			if op == Operator::Cast {
+				let goal_t = self.parse_type()?;
 
-			let end_index = get_current_start_index();
-			return Ok(Expr::Cons(op, vec![lhs, rhs], (end_index, end_index - begin_index)));
+				let end_index = get_current_start_index();
+				let meta = (begin_index, end_index - begin_index);
+				
+				result = Ok(
+					Expr::Atom(
+						Atom::Cast(
+							Box::new(
+								ASTElem {
+									node: ASTNode::Expression(RefCell::new(lhs)),
+									type_info: RefCell::new(None),
+									token_data: meta
+								}
+							), goal_t
+						), meta)
+					);
+			} else {
+
+				let rhs = self.parse_expression_bp(rbp)?;
+
+				let end_index = get_current_start_index();
+				result = Ok(Expr::Cons(op, vec![lhs, rhs], (begin_index, end_index - begin_index)));
+			}
+			
+			return result;
 		}
 
 		Ok(lhs)
@@ -713,7 +738,8 @@ impl Parser {
 	fn parse_atom(&self) -> ParseResult<Atom> {
 		let mut current = get_current()?;
 		let mut scoped = None;
-		let next;
+		let start = get_current_start_index();
+		let mut next;
 
 		if let Token::Identifier(_) = current {
 			scoped = Some(self.parse_scoped_name()?);
@@ -722,19 +748,22 @@ impl Parser {
 			next = get_next()?;
 		}
 
+		let mut result;
 		match current {
-			Token::Identifier(id) => {
+			Token::Identifier(_id) => {
 				let name = scoped.unwrap();
 
-				if let Token::Operator(ref op) = next {
+				result = Atom::Identifier(name.clone());
+
+				while let Token::Operator(ref op) = next {
 					match op.as_str() {
 
 						"(" => {
 							// Function call
 							let mut args = vec![];
-							current = get_next()?;
+							next = get_next()?;
 							
-							if current != Token::Operator(")".to_string()) {
+							if next != Token::Operator(")".to_string()) {
 								loop {									
 									args.push(self.parse_expression()?);
 									
@@ -749,35 +778,37 @@ impl Parser {
 									}
 								}
 							}
-							get_next()?;
+							next = get_next()?;
 
-							Ok(Atom::FnCall{name, args})
+							result = Atom::FnCall{name: name.clone(), args};
+							break;
 						}
 
 						"<" => {
 							// TODO: Disambiguate between type parameter list or LT operator 
-							Ok(Atom::Variable(name))
+							result = Atom::Identifier(name.clone());
+							break;
 						}
 
 						_ => {
 							// Just a variable
-							Ok(Atom::Variable(name))
+							result = Atom::Identifier(name.clone());
+							break;
 						}
 					} 
-				} else {
-					Ok(Atom::Variable(name))
-				}	
+				};
 			},
 
-			Token::StringLiteral(s) => Ok(Atom::StringLit(s)),
+			Token::StringLiteral(s) => result = Atom::StringLit(s),
 			
 			// TODO: Separate NumLiteral into float and int?
-			Token::NumLiteral(i) => Ok(Atom::IntegerLit(i.parse::<isize>().unwrap())),
+			Token::NumLiteral(i) => result = Atom::IntegerLit(i.parse::<isize>().unwrap()),
 
-			Token::BoolLiteral(b) => Ok(Atom::BoolLit(b)),
+			Token::BoolLiteral(b) => result = Atom::BoolLit(b),
 
-			_ => Err(CMNError::UnexpectedToken)
-		}
+			_ => return Err(CMNError::UnexpectedToken),
+		};
+		Ok(result)
 	}
 
 	
@@ -930,6 +961,7 @@ impl Parser {
 		if !token_compare(&get_current()?, "@") {
 			return Err(CMNError::UnexpectedToken); // You called this from the wrong place lol
 		}
+
 		let name = get_next()?;
 		let mut result;
 		

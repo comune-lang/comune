@@ -3,7 +3,7 @@ use std::fmt::Display;
 use super::{types::Type, ast::{TokenData, ASTElem}, namespace::Identifier};
 
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Operator {
 	Add,
 	Sub,
@@ -59,7 +59,8 @@ pub enum Operator {
 	AssBitAND,
 	AssBitXOR,
 	AssBitOR,
-	
+
+	Cast,	
 }
 
 impl Operator {
@@ -70,7 +71,8 @@ impl Operator {
 			Operator::Call		| Operator::Subscr	| 
 			Operator::PostInc	| Operator::PostDec |
 			Operator::ScopeRes	| Operator::MemberAccess										=> { 200 }
-
+			
+			Operator::Cast																		=> { 195 }
 			
 			Operator::UnaryPlus | Operator::UnaryMinus | Operator::LogicNot | 
 			Operator::PreInc	| Operator::PreDec |	
@@ -147,6 +149,7 @@ impl Operator {
 				"!=" => Some(Operator::NotEq),
 				"<<" => Some(Operator::BitShiftL),
 				">>" => Some(Operator::BitShiftR),
+				"as" => Some(Operator::Cast),
 				
 				_ => None,
 			
@@ -206,7 +209,7 @@ pub enum Atom {
 	BoolLit(bool),
 	FloatLit(f64),
 	StringLit(String),
-	Variable(Identifier),
+	Identifier(Identifier),
 	ArrayLit(Vec<ASTElem>),
 	Cast(Box<ASTElem>, Type),
 
@@ -246,7 +249,8 @@ impl Display for Atom {
 
 			Atom::Cast(elem, to) => write!(f, "{}({})", to, elem),
 
-            Atom::Variable(var) => write!(f, "{}", var),
+            Atom::Identifier(var) => write!(f, "{}", var),
+			
             Atom::ArrayLit(_elems) => todo!(),
 		}
     }
