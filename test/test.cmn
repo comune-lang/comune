@@ -17,5 +17,5 @@ namespace cool {
 }
 
 int main() {
-	return printf("Hello world!\n"); // char* coercion automatically adds a null terminator
+	return printf("Hello world!\n\0");
 }
