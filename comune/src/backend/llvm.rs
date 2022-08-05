@@ -77,15 +77,15 @@ impl<'ctx> LLVMBackend<'ctx> {
 		self.module.add_function("_exit", exit_t, Some(Linkage::External));		
 	}
 
-	pub fn register_fn(&mut self, name: String, t: &Type) -> LLVMResult<FunctionValue> {
+	pub fn register_fn(&mut self, name_mangled: String, t: &Type) -> LLVMResult<FunctionValue> {
 		let fn_t = self.generate_prototype(t)?;
-		let fn_v = self.module.add_function(name.as_str(), fn_t, None);
+		let fn_v = self.module.add_function(name_mangled.as_str(), fn_t, None);
 
 		Ok(fn_v)
 	}
 
-	pub fn generate_fn(&mut self, name: String, t: &Type, body: &Option<ASTElem>) -> LLVMResult<FunctionValue> {
-		let fn_v = self.module.get_function(name.as_str()).unwrap();
+	pub fn generate_fn(&mut self, name_mangled: String, t: &Type, body: &Option<ASTElem>) -> LLVMResult<FunctionValue> {
+		let fn_v = self.module.get_function(name_mangled.as_str()).unwrap();
 
 		self.fn_value_opt = Some(fn_v);
 		self.fpm = Some(PassManager::create(&self.module));
@@ -359,7 +359,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 					Atom::IntegerLit(i) => Box::new(self.context.i32_type().const_int(*i as u64, false)),
 					Atom::BoolLit(b) => Box::new(self.context.bool_type().const_int(if *b { 1 } else { 0 }, false)),
 					Atom::FloatLit(f) => Box::new(self.context.f32_type().const_float(*f)),
-					Atom::Variable(v) => Box::new(self.builder.build_load(scope.get_variable(&v).unwrap().clone(), "vload")),
+					Atom::Variable(v) => Box::new(self.builder.build_load(scope.get_variable(v.resolved.as_ref().unwrap()).unwrap().clone(), "vload")),
 					Atom::ArrayLit(_) => todo!(),
 
 					Atom::Cast(elem, to) => {
@@ -369,7 +369,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 					},
 
 					Atom::FnCall { name, args } => {
-						let fn_v = self.module.get_function(&name).unwrap();
+						let fn_v = self.module.get_function(name.resolved.as_ref().unwrap()).unwrap();
 
 						let args_mapped: Vec<_> = args.iter().map(
 							|x| {
@@ -384,7 +384,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 							}
 						).collect(); 
 
-						Box::new(self.builder.build_call(fn_v, &args_mapped, &name))
+						Box::new(self.builder.build_call(fn_v, &args_mapped, name.resolved.as_ref().unwrap()))
 					},
 
 					Atom::StringLit(s) => {
@@ -413,7 +413,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 						Operator::Ref => {
 							if let Expr::Atom(a, _) = &elems[0] {
 								if let Atom::Variable(v) = &a {						
-									return Box::new(scope.get_variable(&v).unwrap().clone());
+									return Box::new(scope.get_variable(v.resolved.as_ref().unwrap()).unwrap().clone());
 								}
 							}
 							panic!()
@@ -422,7 +422,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 						Operator::Deref => {
 							if let Expr::Atom(a, _) = &elems[0] {
 								if let Atom::Variable(v) = &a {
-									let ptr = self.builder.build_load(*scope.get_variable(&v).unwrap(), "loadptr").as_basic_value_enum().into_pointer_value();
+									let ptr = self.builder.build_load(*scope.get_variable(v.resolved.as_ref().unwrap()).unwrap(), "loadptr").as_basic_value_enum().into_pointer_value();
 									return Box::new(self.builder.build_load(ptr, "deref"));
 								}
 							}
@@ -454,7 +454,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 											Operator::Assign => {
 												if let Expr::Atom(a, _) = &lhs {
 													if let Atom::Variable(v) = &a {						
-														self.builder.build_store(*scope.get_variable(&v).unwrap(), rhs_i);
+														self.builder.build_store(*scope.get_variable(v.resolved.as_ref().unwrap()).unwrap(), rhs_i);
 														return Box::new(rhs_i);
 													}
 												}

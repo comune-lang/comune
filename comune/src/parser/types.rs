@@ -2,7 +2,7 @@ use std::{fmt::Display, collections::HashMap};
 
 use super::lexer::{Token};
 
-use super::{semantic::Scope, ASTResult};
+use super::{semantic::FnScope, ASTResult};
 
 type TypeRef = Box<Type>;
 
@@ -10,7 +10,7 @@ pub type FnParamList = Vec<(Box<Type>, Option<String>)>;
 
 
 pub trait Typed {
-	fn get_type<'ctx>(&self, scope: &'ctx Scope<'ctx>) -> ASTResult<Type>;
+	fn get_type<'ctx>(&self, scope: &'ctx FnScope<'ctx>) -> ASTResult<Type>;
 }
 
 
@@ -126,7 +126,7 @@ impl Type {
 
 
 	// Name mangling
-	pub fn mangled(&self) -> String {
+	pub fn serialize(&self) -> String {
 		let mut result = String::new();
 		match &self.inner {
 			InnerType::Basic(b) => {
@@ -135,24 +135,29 @@ impl Type {
 			},
 
 			// TODO: Consider if aliased types are equivalent at the ABI stage?
-			InnerType::Alias(_, t) => return t.mangled(),
+			InnerType::Alias(_, t) => return t.serialize(),
 			
 			InnerType::Aggregate(a) => {
 				for t in a {
-					result.push_str(&t.1.mangled());
+					result.push_str(&t.1.serialize());
 				}
 			},
 
 			InnerType::Pointer(t) => {
-				result.push_str(&t.mangled());
+				result.push_str(&t.serialize());
 				result.push_str("*");
 			},
 
-			InnerType::Function(ret, _) => {
-				result.push_str(&ret.mangled());
+			InnerType::Function(ret, args) => {
+				result.push_str("?");
+				for arg in args {
+					result.push_str(&arg.0.serialize());
+				}
+				result.push_str("!");
+				result.push_str(&ret.serialize());
 			},
 
-			InnerType::Unresolved(_) => { panic!("Attempt to mangle an unresolved type!"); }, // Not supposed to happen Lol
+			InnerType::Unresolved(_) => { panic!("Attempt to serialize an unresolved type!"); }, // Not supposed to happen Lol
 		}
 		// TODO: Generics
 

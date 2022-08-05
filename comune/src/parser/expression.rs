@@ -1,6 +1,6 @@
 use std::{fmt::Display, cell::RefCell};
 
-use super::{lexer, types::{Type, Basic, InnerType, Typed}, CMNError, semantic::Scope, ASTResult, ast::{TokenData, ASTElem, ASTNode}, errors::{CMNWarning, CMNMessage}};
+use super::{lexer, types::{Type, Basic, InnerType, Typed}, CMNError, semantic::FnScope, ASTResult, ast::{TokenData, ASTElem, ASTNode}, errors::{CMNWarning, CMNMessage}, namespace::Identifier};
 
 
 #[derive(Clone, Debug)]
@@ -175,87 +175,7 @@ pub enum Expr {
 }
 
 
-impl Expr {
-	pub fn get_type<'ctx>(&mut self, scope: &'ctx Scope<'ctx>, goal_t: Option<&Type>, meta: TokenData) -> ASTResult<Type> {
-		let this_t = match self {
-			Expr::Atom(a, _) => {
-				a.get_type(scope, meta)?
-			},
 
-			// This should probably implement some sort of type coercion ruleset? Works for now though
-			Expr::Cons(op, elems, meta) => {
-				let mut iter = elems.iter_mut();
-				let mut last = iter.next().unwrap().get_type(scope, None, *meta)?;
-				
-				while let Some(item) = iter.next() {
-					let current = item.get_type(scope, None, *meta)?;
-					if last != current {
-						return Err((CMNError::TypeMismatch(last, current), *meta))
-					}
-					last = current;
-				}
-
-				// Handle operators that change the expression's type here
-				match op {
-					Operator::Ref => last.ptr_type(),
-
-					Operator::Deref => {
-						match last.inner {
-							InnerType::Pointer(t) => *t.clone(),
-							_ => return Err((CMNError::NonPtrDeref, *meta)),
-						}
-					}
-					_ => last
-				}
-			}
-		};
-
-		if let Some(goal_t) = goal_t {
-			if this_t != *goal_t {
-				if this_t.coercable_to(goal_t) {
-					let meta;
-
-					match self { 
-						Expr::Atom(a, m) => {
-							// If self is an atom, we perform extra diagnostics for the cast here
-							meta = *m;
-							a.check_cast(&this_t, goal_t, scope, &meta)?;
-
-						}
-						Expr::Cons(_, _, m) => {
-							meta = *m;
-						}
-					}
-
-					let mut swap = Expr::Atom(Atom::IntegerLit(0), meta); //dummy Expr
-
-					swap = std::mem::replace(self, swap); // swap now contains old Atom
-					
-					// Construct a new Atom to cast the containing Expr to the goal type 
-					let cast = Expr::Atom(Atom::Cast(Box::new(
-						ASTElem { 
-							node: ASTNode::Expression(RefCell::new(swap)), 
-							type_info: RefCell::new(Some(this_t)), 
-							token_data: meta
-						}), 
-						goal_t.clone()
-					), meta);
-
-					*self = cast;
-
-					return Ok(goal_t.clone());
-				} else {
-					return Err((CMNError::TypeMismatch(this_t, goal_t.clone()), meta));
-				}
-			} else {
-				return Ok(this_t);
-			}
-		} else {
-			return Ok(this_t);
-		}
-
-	}
-}
 
 
 impl Display for Expr {
@@ -286,99 +206,17 @@ pub enum Atom {
 	BoolLit(bool),
 	FloatLit(f64),
 	StringLit(String),
-	Variable(String),
+	Variable(Identifier),
 	ArrayLit(Vec<ASTElem>),
 	Cast(Box<ASTElem>, Type),
 
 	FnCall{
-		name: String, 
+		name: Identifier, 
 		args: Vec<ASTElem>
 	},
 
 	
 }
-
-
-
-impl Atom {
-	fn get_type<'ctx>(&self, scope: &'ctx Scope<'ctx>, meta: TokenData) -> ASTResult<Type> {
-		match self {
-			Atom::IntegerLit(_) => Ok(Type::from_basic(Basic::I32)),
-			Atom::FloatLit(_) => Ok(Type::from_basic(Basic::F32)),
-			Atom::BoolLit(_) => Ok(Type::from_basic(Basic::BOOL)),
-			Atom::StringLit(_) => Ok(Type::from_basic(Basic::STR)),
-
-			Atom::Variable(name) => scope.get_identifier_type(name).ok_or((CMNError::UndeclaredIdentifier(name.clone()), meta)),
-
-			Atom::Cast(_, t) => Ok(t.clone()),
-
-			Atom::FnCall { name, args } => {
-				
-				if let Some(t) = scope.get_identifier_type(name) {
-					if let InnerType::Function(ret, params) = t.inner {
-
-						// Identifier is a function, check parameter types
-						if args.len() == params.len() {
-
-							for i in 0..args.len() {
-								args[i].type_info.replace(Some(*params[i].0.clone()));
-								let arg_type = args[i].get_type(scope)?;
-								if !arg_type.coercable_to(params[i].0.as_ref()) {
-									return Err((CMNError::TypeMismatch(arg_type, params[i].0.as_ref().clone()), args[i].token_data));
-								}
-							}
-							// All good, return function's return type
-							Ok(*ret.clone())
-
-						} else {
-							Err((CMNError::ParameterCountMismatch{expected: params.len(), got: args.len()}, meta))
-						}
-						
-					} else {
-						Err((CMNError::NotCallable(name.clone()), meta)) // Trying to call a non-function
-					}
-
-				} else {
-					Err((CMNError::UndeclaredIdentifier(name.clone()), meta)) // Couldn't find symbol!
-				}
-			},
-
-			Atom::ArrayLit(_) => todo!(),
-		}
-	}
-
-
-	// Check if we should issue any warnings or errors when casting
-	fn check_cast(&self, from: &Type, to: &Type, scope: &Scope, meta: &TokenData) -> ASTResult<()> {
-		match &from.inner {
-
-			InnerType::Basic(b) => match b {
-
-				Basic::STR => {
-					if let Atom::StringLit(s) = self {
-						if s.chars().last() != Some('\0') {
-							lexer::log_msg_at(meta.0, meta.1, CMNMessage::Warning(CMNWarning::CharPtrNoNull));
-						}
-					}
-
-					Ok(())
-				},
-
-				_ => Ok(())
-			},
-
-			InnerType::Alias(_, t) => {
-				self.check_cast(t.as_ref(), to, scope, meta)
-			},
-			
-			InnerType::Aggregate(_) => todo!(),
-			InnerType::Pointer(_) => todo!(),
-			InnerType::Function(_, _) => todo!(),
-			InnerType::Unresolved(_) => todo!(),
-		}
-	}
-}
-
 
 
 impl Display for Atom {

@@ -1,0 +1,171 @@
+use std::{collections::{HashMap, HashSet}, fmt::Display};
+
+use mangling::mangle;
+
+use super::{types::{Type, Basic}, ast::ASTElem};
+
+
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Identifier {
+	pub name: String,
+	pub path: ScopePath,
+	pub resolved: Option<String> // Mangled name, resolved during semantic analysis
+}
+
+
+impl Display for Identifier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", if self.path.elems.is_empty() {
+			self.name.clone()
+		} else {
+			let mut result = self.path.to_string();
+			result.push_str("::");
+			result.push_str(&self.name);
+			result
+		})
+    }
+}
+
+
+#[derive(Default, Debug, Clone, PartialEq, Eq)]
+pub struct ScopePath {
+	pub elems: Vec<String>,
+	pub absolute: bool,
+}
+
+impl ScopePath {
+	fn new(absolute: bool) -> Self {
+		ScopePath { elems: vec![], absolute }
+	}
+
+	fn from_parent(parent: &ScopePath, name: String) -> Self {
+		let mut result = ScopePath { elems: parent.elems.clone(), absolute: parent.absolute };
+		result.elems.push(name);
+		result
+	}
+}
+
+
+impl ToString for ScopePath {
+    fn to_string(&self) -> String {
+		if self.elems.is_empty() { return String::new(); }
+		let mut iter = self.elems.iter();
+        let mut result = iter.next().unwrap().clone();
+		for scope in iter {
+			result.push_str("::");
+			result.push_str(scope);
+		}
+		result
+    }
+}
+
+#[derive(Default)]
+pub struct Namespace {
+	pub types: HashMap<String, Type>,
+	pub symbols: HashMap<String, (Type, Option<ASTElem>)>,
+	pub parsed_children: HashMap<String, Namespace>,
+	pub parent_temp: Option<Box<Namespace>>,
+	pub path: ScopePath,
+
+	pub referenced_modules: HashSet<String>,
+	pub imported: Box<Option<Namespace>>,
+}
+
+impl Namespace {
+	pub fn new() -> Self {
+		Namespace { 
+			types: HashMap::new(), 
+			symbols: HashMap::new(),
+			parsed_children: HashMap::new(),
+			parent_temp: None,
+			path: ScopePath::new(true),
+
+			referenced_modules: HashSet::new(),
+			imported: Box::new(None),
+		}
+	}
+
+	// Children take temporary ownership of their parent to avoid lifetime hell
+	pub fn from_parent(parent: Box<Namespace>, name: String) -> Self {
+		Namespace { 
+			types: HashMap::new(), 
+			symbols: HashMap::new(),
+			parsed_children: HashMap::new(),
+			path: ScopePath::from_parent(&parent.path.clone(), name),
+			parent_temp: Some(parent),
+
+			referenced_modules: HashSet::new(),
+			imported: Box::new(None),
+		}
+	}
+
+
+	pub fn get_type(&self, name: &str) -> Option<Type> {
+		if let Some(basic) = Basic::get_basic_type(name) {
+			Some(Type::from_basic(basic))
+		} else if self.types.contains_key(name) {
+			self.types.get(name).cloned()
+		} else {
+			let scope_op_idx = name.find("::");
+			
+			if let Some(idx) = scope_op_idx {
+				if self.parsed_children.contains_key(&name[..idx]) {
+					return self.parsed_children.get(&name[..idx]).unwrap().get_type(&name[idx+2..]);
+				}
+			}
+
+			None
+		}
+	}
+
+	pub fn get_mangled_name(&self, symbol_name: &str) -> String {
+		if let Some(symbol) = self.symbols.get(symbol_name) {
+			// Don't mangle int main() {}
+			if symbol_name == "main" && self.path.elems.is_empty() {
+				return symbol_name.to_string();
+			}
+
+			mangle(format!("{}::{}({})", self.path.to_string(), symbol_name, symbol.0.serialize()).as_bytes())
+		} else {
+			panic!("Invalid symbol name");
+		}
+	}
+
+
+	pub fn get_symbol(&self, name: &str) -> Option<&(Type, Option<ASTElem>)> {
+		if self.symbols.contains_key(name) {
+			self.symbols.get(name)
+		} else {
+			let scope_op_idx = name.find("::");
+			
+			if let Some(idx) = scope_op_idx {
+				if self.parsed_children.contains_key(&name[..idx]) {
+					return self.parsed_children.get(&name[..idx]).unwrap().get_symbol(&name[idx+2..]);
+				}
+			}
+
+			None
+		}
+	}
+}
+
+
+impl Display for Namespace {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		write!(f, "types:\n")?;
+		
+		for t in &self.types {
+			write!(f, "\t{}: {}\n", t.0, t.1)?;
+		}
+		
+		write!(f, "\nsymbols:\n")?;
+		
+		for t in &self.symbols {
+			write!(f, "\t{}: {}\n", t.0, t.1.0)?;
+		}
+
+		Ok(())
+	}
+}
+

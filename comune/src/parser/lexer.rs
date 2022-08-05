@@ -89,34 +89,6 @@ const OPERATORS: &[&str] = &[
 	">>",
 ];
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct Identifier {
-	pub name: String,
-	t: Type,
-	path: String,
-	module: String,
-	pub mangled_name: String,
-}
-
-
-impl Identifier {
-	fn new(name: String, t: Type, path: String, module: String) -> Self {
-		let mut result = Identifier { name, t, path, module, mangled_name: String::new() };
-		result.mangled_name = result.mangled();
-		result
-	}
-
-	fn mangled(&self) -> String {
-		let mut full_name = self.module.clone();
-		full_name.push_str("::");
-		full_name.push_str(self.path.as_str());
-		full_name.push_str("::");
-		full_name.push_str(self.name.as_str());
-		full_name.push_str(&self.t.mangled());
-
-		mangling::mangle(full_name.as_bytes())
-	}
-}
 
 
 #[derive(Debug, Clone, PartialEq, Eq)]

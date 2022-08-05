@@ -1,9 +1,9 @@
-use std::{ffi::OsString, sync::Arc};
+use std::{ffi::OsString, sync::Arc, cell::RefCell};
 
 use colored::Colorize;
-use inkwell::{targets::{Target, InitializationConfig, TargetTriple}, context::Context, module::Module, passes::PassManager};
+use inkwell::{context::Context, module::Module, passes::PassManager};
 
-use crate::{parser::{NamespaceInfo, errors::{CMNMessage, CMNError}, self, lexer::{Lexer, log_msg_at, log_msg}, Parser, semantic}, backend::llvm::LLVMBackend};
+use crate::{parser::{errors::{CMNMessage, CMNError}, self, lexer::{Lexer, log_msg_at, log_msg}, Parser, semantic, namespace::Namespace}, backend::llvm::LLVMBackend};
 
 pub struct ManagerState {
 	import_paths: Vec<OsString>,
@@ -106,14 +106,8 @@ impl ModuleJobManager {
 		// Generate LLVM IR
 
 		// Register function prototypes
-		for (sym_name, (sym_type, _)) in &namespace.borrow().symbols {
-			backend.register_fn(sym_name.clone(), sym_type).unwrap();
-		}
-
-		// Generate function bodies
-		for (sym_name, (sym_type, sym_elem)) in &namespace.borrow().symbols {
-			backend.generate_fn(sym_name.clone(), sym_type, sym_elem).unwrap();
-		}
+		self.register_namespace(&mut backend, &namespace.borrow());
+		self.compile_namespace(&mut backend, &namespace.borrow());
 
 		backend.generate_libc_bindings();
 
@@ -129,6 +123,7 @@ impl ModuleJobManager {
 			return Err(CMNError::LLVMError);
 		};
 		
+		backend.module.print_to_file("tempout.ll").unwrap();
 		// Optimization passes
 
 		let mpm = PassManager::<Module>::create(());
@@ -146,14 +141,36 @@ impl ModuleJobManager {
 		Ok(backend)
 	}
 	
+	fn register_namespace(&self, backend: &mut LLVMBackend, namespace: &Namespace) {
+		for child in namespace.parsed_children.iter() {
+			self.register_namespace(backend, child.1);
+		}
 
+		for (sym_name, (sym_type, _)) in &namespace.symbols {
+			let name_mangled = namespace.get_mangled_name(sym_name);
+			println!("registering {}", name_mangled);
+			backend.register_fn(name_mangled, sym_type).unwrap();
+		}
+
+		
+	}
+
+	fn compile_namespace(&self, backend: &mut LLVMBackend, namespace: &Namespace) {
+		for child in namespace.parsed_children.iter() {
+			self.compile_namespace(backend, child.1);
+		}
+		// Generate function bodies
+		for (sym_name, (sym_type, sym_elem)) in &namespace.symbols {
+			backend.generate_fn(namespace.get_mangled_name(sym_name), sym_type, sym_elem).unwrap();
+		}
+	}
 
 
 	// This function attempts to load a cached NamespaceInfo from disk, or else attempts to find a module and
 	// initialize its compilation, blocking until the NamespaceInfo is ready
 	// The paths searched for the module are defined by `CompilerState::import_paths`,
 	// Returns CMNError::ModuleNotFound if the module could not be found
-	fn resolve_module_imports(&mut self, module_names: Vec<OsString>) -> Result<Vec<NamespaceInfo>, CMNMessage> {		
+	fn resolve_module_imports(&mut self, module_names: Vec<OsString>) -> Result<Vec<Namespace>, CMNMessage> {		
 		rayon::scope(|s| {
 			
 		});

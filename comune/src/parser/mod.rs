@@ -1,14 +1,15 @@
-use std::collections::{HashMap, HashSet};
-use std::fmt::Display;
-use std::cell::{RefCell, Ref};
+use std::collections::HashMap;
+use std::cell::RefCell;
 
 use self::lexer::Token;
 use self::ast::{ASTNode, ASTElem, TokenData};
 use self::controlflow::ControlFlow;
 use self::errors::CMNError;
 use self::expression::{Expr, Operator, Atom};
-use self::types::{Type, InnerType, Basic, FnParamList};
+use self::namespace::{Namespace, Identifier, ScopePath};
+use self::types::{Type, InnerType, FnParamList};
 
+pub mod namespace;
 pub mod lexer;
 pub mod errors;
 pub mod ast;
@@ -42,107 +43,13 @@ fn token_compare(token: &Token, text: &str) -> bool {
 }
 
 
-// NamespaceInfo describes a root namespace's type and symbol information, gathered on the first parsing pass.
-// This is used during the generative pass to disambiguate expressions, as well as validating types and symbols.
-pub struct NamespaceInfo {
-	pub types: HashMap<String, Type>,
-	pub symbols: HashMap<String, (Type, Option<ASTElem>)>,
-	pub parsed_children: HashMap<String, NamespaceInfo>,
-	pub parent: Option<Box<NamespaceInfo>>,
-
-	pub referenced_modules: HashSet<String>,
-	pub imported: Box<Option<NamespaceInfo>>,
-}
-
-impl NamespaceInfo {
-	fn new() -> Self {
-		NamespaceInfo { 
-			types: HashMap::new(), 
-			symbols: HashMap::new(),
-			parsed_children: HashMap::new(),
-
-			referenced_modules: HashSet::new(),
-			imported: Box::new(None),
-			parent: None,
-		}
-	}
-
-	// Children take temporary ownership of their parent to avoid lifetime hell
-	fn from_parent(parent: Box<NamespaceInfo>) -> Self {
-		NamespaceInfo { 
-			types: HashMap::new(), 
-			symbols: HashMap::new(),
-			parsed_children: HashMap::new(),
-
-			referenced_modules: HashSet::new(),
-			imported: Box::new(None),
-			parent: Some(parent),
-		}
-	}
-
-	fn get_type(&self, name: &str) -> Option<Type> {
-		if let Some(basic) = Basic::get_basic_type(name) {
-			Some(Type::from_basic(basic))
-		} else if self.types.contains_key(name) {
-			self.types.get(name).cloned()
-		} else {
-			let scope_op_idx = name.find("::");
-			
-			if let Some(idx) = scope_op_idx {
-				if self.parsed_children.contains_key(&name[..idx]) {
-					return self.parsed_children.get(&name[..idx]).unwrap().get_type(&name[idx+2..]);
-				}
-			}
-
-			None
-		}
-	}
-
-
-	fn get_symbol(&self, name: &str) -> Option<&(Type, Option<ASTElem>)> {
-		if self.symbols.contains_key(name) {
-			self.symbols.get(name)
-		} else {
-			let scope_op_idx = name.find("::");
-			
-			if let Some(idx) = scope_op_idx {
-				if self.parsed_children.contains_key(&name[..idx]) {
-					return self.parsed_children.get(&name[..idx]).unwrap().get_symbol(&name[idx+2..]);
-				}
-			}
-
-			None
-		}
-	}
-}
-
-
-impl Display for NamespaceInfo {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		write!(f, "types:\n")?;
-		
-		for t in &self.types {
-			write!(f, "\t{}: {}\n", t.0, t.1)?;
-		}
-		
-		write!(f, "\nsymbols:\n")?;
-		
-		for t in &self.symbols {
-			write!(f, "\t{}: {}\n", t.0, t.1.0)?;
-		}
-
-		Ok(())
-	}
-}
-
-
 
 
 pub type ParseResult<T> = Result<T, CMNError>;
 pub type ASTResult<T> = Result<T, (CMNError, TokenData)>;
 
 pub struct Parser {
-	active_namespace: Option<RefCell<NamespaceInfo>>,
+	active_namespace: Option<RefCell<Namespace>>,
 	generate_ast: bool,
 	verbose: bool,
 }
@@ -160,20 +67,20 @@ impl Parser {
 		result
 	}
 
-	fn current_namespace(& self) -> &RefCell<NamespaceInfo> {
+	fn current_namespace(& self) -> &RefCell<Namespace> {
 		self.active_namespace.as_ref().unwrap()
 	}
 
-	pub fn parse_module(&mut self, generate_ast: bool) -> ParseResult<&RefCell<NamespaceInfo>> {
+	pub fn parse_module(&mut self, generate_ast: bool) -> ParseResult<&RefCell<Namespace>> {
 		self.generate_ast = generate_ast;
 
 		lexer::CURRENT_LEXER.with(|lexer| {
 			lexer.borrow_mut().reset().unwrap();
 		});
 
-		self.active_namespace = Some(RefCell::new(NamespaceInfo::new()));
+		self.active_namespace = Some(RefCell::new(Namespace::new()));
 
-		match self.parse_namespace("") {
+		match self.parse_namespace() {
 			Ok(()) => {
 				
 				if !generate_ast && self.verbose {
@@ -191,7 +98,7 @@ impl Parser {
 
 
 
-	pub fn parse_namespace(&self, path: &str) -> ParseResult<()> {
+	pub fn parse_namespace(&self) -> ParseResult<()> {
 		let mut current = get_current()?;
 
 		while current != Token::EOF && current != Token::Other('}') {
@@ -243,24 +150,16 @@ impl Parser {
 								get_next()?; // Consume name
 								get_next()?; // Consume brace
 
-								let namespace_path = format!("{}::{}", path, namespace_name);
-								let new_namespace = NamespaceInfo::new();
-								let old_namespace = self.current_namespace().replace(new_namespace);
+								let dummy = Namespace::new(); // Dummy namespace
+								let old_namespace = self.current_namespace().replace(dummy);
+								let new_namespace = Namespace::from_parent(Box::new(old_namespace), namespace_name.clone());
+								self.current_namespace().replace(new_namespace);
+								self.parse_namespace()?;
 
-								self.current_namespace().borrow_mut().parent = Some(Box::new(old_namespace));
-
-								self.parse_namespace(
-									if path.is_empty() {
-										namespace_name.as_str()
-									} else {
-										namespace_path.as_str()
-									}
-								)?;
-
-								let dummy = NamespaceInfo::new();
+								let dummy = Namespace::new();
 								let mut parsed_namespace = self.current_namespace().replace(dummy);
 
-								let mut old_namespace = parsed_namespace.parent.take().unwrap();
+								let mut old_namespace = parsed_namespace.parent_temp.take().unwrap();
 								old_namespace.parsed_children.insert(namespace_name, parsed_namespace);
 								self.current_namespace().replace(*old_namespace);
 
@@ -373,13 +272,13 @@ impl Parser {
 		}
 
 		if current == Token::EOF {
-			if path == "" {
+			if self.current_namespace().borrow().parent_temp.is_none() {
 				Ok(())
 			} else {
 				Err(CMNError::UnexpectedEOF)
 			}
 		} else if current == Token::Other('}') {
-			if path != "" {
+			if self.current_namespace().borrow().parent_temp.is_some() {
 				get_next()?;
 				Ok(())
 			} else {
@@ -812,9 +711,8 @@ impl Parser {
 		}
 
 		match current {
-			// TODO: Variables and function calls
 			Token::Identifier(id) => {
-				let name = if scoped.is_some() { scoped.unwrap() } else { id };
+				let name = scoped.unwrap();
 
 				if let Token::Operator(ref op) = next {
 					match op.as_str() {
@@ -925,25 +823,25 @@ impl Parser {
 
 
 
-	fn parse_scoped_name(&self) -> ParseResult<String> {
-		let mut result = String::new();
+	fn parse_scoped_name(&self) -> ParseResult<Identifier> {
+		let mut path = ScopePath { elems: vec![], absolute: false };
 		
 		if let Token::Identifier(id) = get_current()? {
-			result.push_str(&id);
+			path.elems.push(id);
 		} else {
 			return Err(CMNError::ExpectedIdentifier);
 		}
 
 		while token_compare(&get_next()?, "::") {
 			if let Token::Identifier(id) = get_next()? {
-				result.push_str("::");
-				result.push_str(&id);
+				path.elems.push(id);
 			} else {
 				return Err(CMNError::ExpectedIdentifier);
 			}
 		}
+		let name = path.elems.pop().unwrap();
 
-		Ok(result)
+		Ok(Identifier{name, path, resolved: None})
 	}
 
 
