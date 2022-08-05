@@ -123,7 +123,6 @@ impl ModuleJobManager {
 			return Err(CMNError::LLVMError);
 		};
 		
-		backend.module.print_to_file("tempout.ll").unwrap();
 		// Optimization passes
 
 		let mpm = PassManager::<Module>::create(());
@@ -146,8 +145,8 @@ impl ModuleJobManager {
 			self.register_namespace(backend, child.1);
 		}
 
-		for (sym_name, (sym_type, _)) in &namespace.symbols {
-			let name_mangled = namespace.get_mangled_name(sym_name);
+		for (sym_name, (sym_type, _, attributes)) in &namespace.symbols {
+			let name_mangled = namespace.get_mangled_name(sym_name, attributes);
 			println!("registering {}", name_mangled);
 			backend.register_fn(name_mangled, sym_type).unwrap();
 		}
@@ -160,8 +159,8 @@ impl ModuleJobManager {
 			self.compile_namespace(backend, child.1);
 		}
 		// Generate function bodies
-		for (sym_name, (sym_type, sym_elem)) in &namespace.symbols {
-			backend.generate_fn(namespace.get_mangled_name(sym_name), sym_type, sym_elem).unwrap();
+		for (sym_name, (sym_type, sym_elem, attributes)) in &namespace.symbols {
+			backend.generate_fn(namespace.get_mangled_name(sym_name, attributes), sym_type, sym_elem).unwrap();
 		}
 	}
 

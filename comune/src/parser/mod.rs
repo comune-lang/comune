@@ -7,6 +7,7 @@ use self::controlflow::ControlFlow;
 use self::errors::CMNError;
 use self::expression::{Expr, Operator, Atom};
 use self::namespace::{Namespace, Identifier, ScopePath};
+use self::semantic::Attribute;
 use self::types::{Type, InnerType, FnParamList};
 
 pub mod namespace;
@@ -100,11 +101,33 @@ impl Parser {
 
 	pub fn parse_namespace(&self) -> ParseResult<()> {
 		let mut current = get_current()?;
+		let mut current_attributes = vec![];
 
 		while current != Token::EOF && current != Token::Other('}') {
 			match current {
 				Token::EOF => {
 					return Err(CMNError::UnexpectedEOF);
+				},
+
+				Token::Other(tk) => {
+					match tk {
+						';' => {
+							get_next()?;
+						}
+
+						'}' => return Ok(()),
+
+						'@' => {
+							// Parse attributes
+							while token_compare(&get_current()?, "@") {
+								current_attributes.push(self.parse_attribute()?);
+							}
+						}
+
+						_ => {
+							return Err(CMNError::UnexpectedToken);
+						}
+					}
 				},
 
 				Token::Keyword(ref keyword) => {
@@ -245,23 +268,12 @@ impl Parser {
 						}
 
 						// Register declaration to symbol table
-						self.current_namespace().borrow_mut().symbols.insert(id, (t, ast_elem));
+						self.current_namespace().borrow_mut().symbols.insert(id, (t, ast_elem, current_attributes));
+						current_attributes = vec![];
 					}
 				}
 				
-				Token::Other(tk) => {
-					match tk {
-						';' => {
-							get_next()?;
-						}
-
-						'}' => return Ok(()),
-
-						_ => {
-							return Err(CMNError::UnexpectedToken);
-						}
-					}
-				},
+				
 
 				_ => { // Other types of tokens (literals etc) not valid at this point
 					return Err(CMNError::UnexpectedToken);
@@ -911,5 +923,43 @@ impl Parser {
 		} else {
 			Err(CMNError::ExpectedIdentifier)
 		}
+	}
+
+
+	fn parse_attribute(&self) -> ParseResult<Attribute> {
+		if !token_compare(&get_current()?, "@") {
+			return Err(CMNError::UnexpectedToken); // You called this from the wrong place lol
+		}
+		let name = get_next()?;
+		let mut result;
+		
+		if let Token::Identifier(name) = name {
+			result = Attribute { name, args: vec![] };
+		} else {
+			return Err(CMNError::ExpectedIdentifier);
+		}
+
+		let mut current = get_next()?;
+
+		if token_compare(&current, "(") {
+			if current != Token::Operator(")".to_string()) {
+				loop {									
+					result.args.push(self.parse_expression()?);
+					
+					current = get_current()?;
+
+					if let Token::Other(',') = current {
+						get_next()?;
+					} else if current == Token::Operator(")".to_string()) {
+						break;
+					} else {
+						return Err(CMNError::UnexpectedToken);
+					}
+				}
+			}
+			get_next()?;
+		}
+
+		Ok(result)
 	}
 }

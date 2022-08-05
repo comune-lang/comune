@@ -1,7 +1,7 @@
 use std::{collections::{HashMap, HashSet}, fmt::Display};
 
 use mangling::mangle;
-
+use super::semantic::{Attribute, get_attribute};
 use super::{types::{Type, Basic}, ast::ASTElem};
 
 
@@ -63,7 +63,7 @@ impl ToString for ScopePath {
 #[derive(Default)]
 pub struct Namespace {
 	pub types: HashMap<String, Type>,
-	pub symbols: HashMap<String, (Type, Option<ASTElem>)>,
+	pub symbols: HashMap<String, (Type, Option<ASTElem>, Vec<Attribute>)>,
 	pub parsed_children: HashMap<String, Namespace>,
 	pub parent_temp: Option<Box<Namespace>>,
 	pub path: ScopePath,
@@ -119,10 +119,10 @@ impl Namespace {
 		}
 	}
 
-	pub fn get_mangled_name(&self, symbol_name: &str) -> String {
+	pub fn get_mangled_name(&self, symbol_name: &str, attributes: &Vec<Attribute>) -> String {
 		if let Some(symbol) = self.symbols.get(symbol_name) {
-			// Don't mangle int main() {}
-			if symbol_name == "main" && self.path.elems.is_empty() {
+			// Don't mangle if function is root main(), or if it has a no_mangle attribute
+			if symbol_name == "main" && self.path.elems.is_empty() || get_attribute(attributes, "no_mangle").is_some() {
 				return symbol_name.to_string();
 			}
 
@@ -133,7 +133,7 @@ impl Namespace {
 	}
 
 
-	pub fn get_symbol(&self, name: &str) -> Option<&(Type, Option<ASTElem>)> {
+	pub fn get_symbol(&self, name: &str) -> Option<&(Type, Option<ASTElem>, Vec<Attribute>)> {
 		if self.symbols.contains_key(name) {
 			self.symbols.get(name)
 		} else {

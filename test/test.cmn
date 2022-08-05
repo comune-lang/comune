@@ -1,5 +1,6 @@
 
-//int printf(char* fmt);
+@no_mangle
+int printf(char* fmt);
 
 namespace cool {
 	int fib(int n) {
@@ -16,5 +17,5 @@ namespace cool {
 }
 
 int main() {
-	return cool::fib(10);
+	return printf("Hello world!\n"); // char* coercion automatically adds a null terminator
 }

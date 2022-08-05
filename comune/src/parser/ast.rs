@@ -15,7 +15,7 @@ pub type TokenData = (usize, usize); // idx, len
 #[derive(Clone, Debug)]
 pub struct ASTElem {
 	pub node: ASTNode,
-
+	
 	// For error reporting
 	pub token_data: TokenData,
 	pub type_info: RefCell<Option<Type>>,

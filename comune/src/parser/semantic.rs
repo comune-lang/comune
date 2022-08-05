@@ -7,6 +7,15 @@ use super::{types::{Type, InnerType, Basic, Typed}, CMNError, ASTResult, namespa
 // This module contains structs and impls related to AST checking, name resolution, and type validation.
 
 
+pub struct Attribute {
+	pub name: String,
+	pub args: Vec<ASTElem>,
+}
+
+pub fn get_attribute<'a>(attributes: &'a Vec<Attribute>, attr_name: &str) -> Option<&'a Attribute> {
+	attributes.iter().find(|a| a.name == attr_name.to_string())
+}
+
 
 pub struct FnScope<'ctx> {
 	context: &'ctx RefCell<Namespace>,
@@ -84,7 +93,7 @@ impl<'ctx> FnScope<'ctx> {
 		let name = &id.name;
 
 		if let Some(s) = namespace.get_symbol(name) {
-			id.resolved = Some(namespace.get_mangled_name(name));
+			id.resolved = Some(namespace.get_mangled_name(name, &s.2));
 			Some(s.0.clone())
 		} else {
 			None
@@ -139,7 +148,7 @@ pub fn parse_namespace(namespace: &RefCell<Namespace>) -> ASTResult<()> {
 		*child.1 = hack.into_inner();
 	}
 
-	for (_sym_name, (sym_type, sym_elem)) in &namespace.borrow().symbols {
+	for (_sym_name, (sym_type, sym_elem, attributes)) in &namespace.borrow().symbols {
 		let mut scope = FnScope::new(namespace, sym_type.clone());
 
 		let ret;
@@ -446,7 +455,7 @@ impl Atom {
 
 
 	// Check if we should issue any warnings or errors when casting
-	pub fn check_cast(&self, from: &Type, to: &Type, scope: &FnScope, meta: &TokenData) -> ASTResult<()> {
+	pub fn check_cast(&mut self, from: &Type, to: &Type, scope: &FnScope, meta: &TokenData) -> ASTResult<()> {
 		match &from.inner {
 
 			InnerType::Basic(b) => match b {
@@ -454,6 +463,7 @@ impl Atom {
 				Basic::STR => {
 					if let Atom::StringLit(s) = self {
 						if s.chars().last() != Some('\0') {
+							s.push('\0');
 							lexer::log_msg_at(meta.0, meta.1, CMNMessage::Warning(CMNWarning::CharPtrNoNull));
 						}
 					}
