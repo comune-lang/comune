@@ -8,3 +8,4 @@ inkwell = { git = "https://github.com/TheDan64/inkwell", branch = "master", feat
 clap = { version = "3.2.16", features = ["derive"] }
 colored = "2.0.0"
 rayon = "1.5"
+mangling = "0.2.3"

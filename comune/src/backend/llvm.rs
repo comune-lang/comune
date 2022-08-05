@@ -19,7 +19,7 @@ use inkwell::values::{AnyValueEnum, FunctionValue, BasicValue, AnyValue, Pointer
 
 type LLVMResult<T> = Result<T, String>;
 
-pub struct LLVMState<'ctx> {
+pub struct LLVMBackend<'ctx> {
 	pub context: &'ctx Context,
 	pub module: Module<'ctx>,
 	pub builder: Builder<'ctx>,
@@ -69,7 +69,7 @@ impl<'ctx, 'scope> LLVMScope<'ctx, 'scope> {
 }
 
 
-impl<'ctx> LLVMState<'ctx> {
+impl<'ctx> LLVMBackend<'ctx> {
 
 	
 	pub fn generate_libc_bindings(&self) {

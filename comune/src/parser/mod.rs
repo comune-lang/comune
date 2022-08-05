@@ -205,7 +205,29 @@ impl Parser {
 					match *keyword {
 
 						"class" | "struct" => {
-							// TODO: Register aggregate type
+							// Register aggregate type
+							let aggregate = Type::new(InnerType::Aggregate(HashMap::new()), vec![], false);
+							let name_token = get_next()?;
+							
+							if let Token::Identifier(name) = name_token {
+								let mut next = get_next()?;
+
+								if token_compare(&next, ":") {
+									// TODO: Parse base classes
+								} else if !token_compare(&next, "{") {
+									return Err(CMNError::UnexpectedToken);
+								}
+
+								next = get_next()?; // Consume brace
+
+								while !token_compare(&next, "}") {
+									let member_t = self.parse_type()?;
+
+									
+								}
+
+								self.current_namespace().borrow_mut().types.insert(name, aggregate);
+							}
 						}
 
 						"namespace" => {
@@ -325,8 +347,7 @@ impl Parser {
 						}
 
 						// Register declaration to symbol table
-						let mut ctx = self.current_namespace().borrow_mut();
-						ctx.symbols.insert(id, (t, ast_elem));
+						self.current_namespace().borrow_mut().symbols.insert(id, (t, ast_elem));
 					}
 				}
 				

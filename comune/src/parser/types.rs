@@ -65,7 +65,7 @@ impl Basic {
 		}
 	}
 
-	pub fn to_string(&self) -> &'static str {
+	pub fn as_str(&self) -> &'static str {
 		match self {
 			Basic::I64 => "i64",
 			Basic::U64 => "u64",
@@ -89,7 +89,7 @@ impl Basic {
 
 impl Display for Basic {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.to_string())
+        write!(f, "{}", self.as_str())
     }
 }
 
@@ -98,7 +98,7 @@ impl Display for Basic {
 pub enum InnerType {
 	Basic(Basic),										// Fundamental type
 	Alias(Token, TypeRef),								// Identifier + referenced type
-	Aggregate(HashMap<String, TypeRef>),				// Vector of component types
+	Aggregate(HashMap<String, TypeRef>),				// Name map of component types
 	Pointer(TypeRef),									// Pretty self-explanatory
 	Function(TypeRef, Vec<(TypeRef, Option<String>)>),	// Return type + parameter types
 	Unresolved(Token)									// Unresolved type (during parsing phase)
@@ -116,13 +116,48 @@ impl Type {
 		Type { inner, generics, is_const }
 	}
 	
-
 	pub fn from_basic(basic: Basic) -> Self {
 		Type { inner: InnerType::Basic(basic), generics: vec![], is_const: false }
 	}
 
+	
 	pub fn ptr_type(&self) -> Self {
 		Type { inner: InnerType::Pointer(Box::new(self.clone())), generics: vec![], is_const: false }
+	}
+
+
+	// Name mangling
+	pub fn mangled(&self) -> String {
+		let mut result = String::new();
+		match &self.inner {
+			InnerType::Basic(b) => {
+				// TODO: Shorten
+				result.push_str(b.as_str());
+			},
+
+			// TODO: Consider if aliased types are equivalent at the ABI stage?
+			InnerType::Alias(_, t) => return t.mangled(),
+			
+			InnerType::Aggregate(a) => {
+				for t in a {
+					result.push_str(&t.1.mangled());
+				}
+			},
+
+			InnerType::Pointer(t) => {
+				result.push_str(&t.mangled());
+				result.push_str("*");
+			},
+
+			InnerType::Function(ret, _) => {
+				result.push_str(&ret.mangled());
+			},
+
+			InnerType::Unresolved(_) => { panic!("Attempt to mangle an unresolved type!"); }, // Not supposed to happen Lol
+		}
+		// TODO: Generics
+
+		result
 	}
 
 

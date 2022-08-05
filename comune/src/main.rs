@@ -6,7 +6,7 @@ use std::{path::Path, io::{self, Write}, ffi::OsString};
 use clap::Parser;
 use colored::Colorize;
 use inkwell::{context::Context, targets::{Target, InitializationConfig, TargetTriple, FileType}, passes::PassManager, module::Module};
-use crate::{parser::{semantic, errors::CMNMessage}, parser::lexer::Lexer, backend::llvm::LLVMState};
+use crate::{parser::{semantic, errors::CMNMessage}, parser::lexer::Lexer, backend::llvm::LLVMBackend};
 use std::process::Command;
 
 
@@ -45,11 +45,27 @@ fn main() {
 		.build_global()
 		.unwrap();
 
+
+	Target::initialize_x86(&InitializationConfig::default());
+	let target = Target::from_name("x86-64").unwrap();
+
+	let target_machine = target.create_target_machine(
+		&TargetTriple::create("x86_64-pc-linux-gnu"), 
+		"x86-64", 
+		"+avx2", 
+		inkwell::OptimizationLevel::Aggressive, 
+		inkwell::targets::RelocMode::Default, 
+		inkwell::targets::CodeModel::Default
+	).unwrap();
+
 	let manager = modules::ModuleJobManager::new("test/".into(), vec![], args.num_jobs, args.verbose);
 
 	let state = manager.start_module_compilation(args.input_file).unwrap(); // TODO: Handle error
-	manager.continue_module_compilation(state);
+	let context = Context::create();
+	let result = manager.continue_module_compilation(state, &context).unwrap();
+	target_machine.write_to_file(&result.module, FileType::Object, &Path::new("out.o")).unwrap();
 
+	
 	// Extremely basic, needs parallelization and linking modules together
 	/*for file in args.input_files.iter() {
 	

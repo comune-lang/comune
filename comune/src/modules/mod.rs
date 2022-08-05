@@ -3,8 +3,7 @@ use std::{ffi::OsString, sync::Arc};
 use colored::Colorize;
 use inkwell::{targets::{Target, InitializationConfig, TargetTriple}, context::Context, module::Module, passes::PassManager};
 
-use crate::{parser::{NamespaceInfo, errors::{CMNMessage, CMNError}, self, lexer::{Lexer, log_msg_at, log_msg}, Parser, semantic}, backend::llvm::LLVMState};
-
+use crate::{parser::{NamespaceInfo, errors::{CMNMessage, CMNError}, self, lexer::{Lexer, log_msg_at, log_msg}, Parser, semantic}, backend::llvm::LLVMBackend};
 
 pub struct ManagerState {
 	import_paths: Vec<OsString>,
@@ -72,7 +71,7 @@ impl ModuleJobManager {
 
 
 
-	pub fn continue_module_compilation(&self, mut mod_state: ModuleCompileState) -> Result<LLVMState, CMNError> {
+	pub fn continue_module_compilation<'ctx>(&self, mut mod_state: ModuleCompileState, context: &'ctx Context) -> Result<LLVMBackend<'ctx>, CMNError> {
 		
 		// Generative pass
 		// TODO: This completely re-tokenizes the module, which is useless
@@ -91,27 +90,12 @@ impl ModuleJobManager {
 		}
 
 		// Generate code
-	
-		Target::initialize_x86(&InitializationConfig::default());
-		let target = Target::from_name("x86-64").unwrap();
-
-		let target_machine = target.create_target_machine(
-			&TargetTriple::create("x86_64-pc-linux-gnu"), 
-			"x86-64", 
-			"+avx2", 
-			inkwell::OptimizationLevel::Aggressive, 
-			inkwell::targets::RelocMode::Default, 
-			inkwell::targets::CodeModel::Default
-		).unwrap();
-
-		// Create LLVM generator
-		let context = Context::create();
 		let module = context.create_module("test");
 		let builder = context.create_builder();
 
 
-		let mut backend = LLVMState {
-			context: &context,
+		let mut backend = LLVMBackend {
+			context,
 			module,
 			builder,
 			fpm: None,
