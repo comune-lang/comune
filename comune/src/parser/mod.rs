@@ -618,16 +618,18 @@ impl Parser {
 	// Basic pratt parser, nothing too fancy
 	fn parse_expression_bp(&self, min_bp: u8) -> ParseResult<Expr> {
 		let mut current = get_current()?;
-		let meta = (get_current_start_index(), current.len());
+		let begin_lhs = get_current_start_index();
 
 		// Get initial part of expression, could be an Atom or the operator of a unary Cons
 		let lhs = match current {
-
-			Token::Identifier(_) | Token::StringLiteral(_) | Token::NumLiteral(_) | Token::BoolLiteral(_) => 
-				Expr::Atom(self.parse_atom()?, meta),
 			
+			// Parse atom
+			Token::Identifier(_) | Token::StringLiteral(_) | Token::NumLiteral(_) | Token::BoolLiteral(_) => 
+				Expr::Atom(self.parse_atom()?, (begin_lhs, get_current_start_index() - begin_lhs)),
+			
+			
+			// Handle unary prefix operators
 			Token::Operator(tk) => {
-				// Handle unary prefix operators
 				match Operator::get_operator(&tk, false) {
 					Some(op) => {
 						get_next()?;
@@ -647,25 +649,24 @@ impl Parser {
 							} else {
 								return Err(CMNError::UnexpectedToken);
 							}
+
 						} else {
-							let begin_index = get_current_start_index();
-
 							let rhs = self.parse_expression_bp(op.get_binding_power())?;
+							
+							let end_index = get_current_start_index();
 
-							let end_index = get_current_start_index() - 1;
-							return Ok(Expr::Cons(op, vec![rhs], (end_index, end_index - begin_index)));
+							let meta = (begin_lhs, end_index - begin_lhs);
+							return Ok(Expr::Cons(op, vec![(rhs,meta)], meta));
 						}
 					},
 					None => return Err(CMNError::UnexpectedToken)
-				};
-				
-				
+				};		
 			}
 			
 			_ => { return Err(CMNError::UnexpectedToken); }
-
 		};
 
+		let end_lhs = get_current_start_index();
 
 		loop {
 			let tk = get_current()?;
@@ -698,33 +699,25 @@ impl Parser {
 			
 			get_next()?;
 
-			let begin_index = get_current_start_index();
+			let begin_rhs = get_current_start_index();
 			let result;
 
 			if op == Operator::Cast {
 				let goal_t = self.parse_type()?;
 
 				let end_index = get_current_start_index();
-				let meta = (begin_index, end_index - begin_index);
+				let meta = (begin_rhs, end_index - begin_rhs);
 				
-				result = Ok(
-					Expr::Atom(
-						Atom::Cast(
-							Box::new(
-								ASTElem {
-									node: ASTNode::Expression(RefCell::new(lhs)),
-									type_info: RefCell::new(None),
-									token_data: meta
-								}
-							), goal_t
-						), meta)
-					);
+				result = Ok(Expr::create_cast(lhs, None, goal_t, meta));
 			} else {
 
 				let rhs = self.parse_expression_bp(rbp)?;
 
-				let end_index = get_current_start_index();
-				result = Ok(Expr::Cons(op, vec![lhs, rhs], (begin_index, end_index - begin_index)));
+				let end_rhs = get_current_start_index();
+				let lhs_meta = (begin_lhs, end_lhs - begin_lhs);
+				let rhs_meta = (begin_rhs, end_rhs - begin_rhs);
+				
+				result = Ok(Expr::Cons(op, vec![(lhs, lhs_meta), (rhs, rhs_meta)], (begin_rhs, end_rhs - begin_rhs)));
 			}
 			
 			return result;

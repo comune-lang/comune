@@ -173,10 +173,6 @@ impl Type {
 			if self.is_numeric() {
 				if let InnerType::Basic(b) = target.inner {
 					match b {
-
-						// Numeric types are coercable to bool
-						Basic::BOOL => true,
-
 						_ => false, //TODO
 
 					}
@@ -230,7 +226,7 @@ impl Type {
 		} else {
 
 			if self.is_numeric() {
-				if target.is_numeric() {
+				if target.is_numeric() || target.is_boolean() {
 					return true;
 				}
 			}
@@ -261,6 +257,18 @@ impl Type {
 				}
 			
 			_ => false
+		}
+	}
+
+
+	pub fn is_boolean(&self) -> bool {
+		match self.inner {
+			InnerType::Basic(b) => 
+				match b {
+					Basic::BOOL => true,
+					_ => false,
+				}
+			_ => false,
 		}
 	}
 

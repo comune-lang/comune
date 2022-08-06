@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::HashMap, borrow::BorrowMut};
+use std::{cell::RefCell, collections::HashMap};
 
 use super::{types::{Type, InnerType, Basic, Typed}, CMNError, ASTResult, namespace::{Namespace, Identifier}, ast::{ASTElem, ASTNode, TokenData}, controlflow::ControlFlow, expression::{Expr, Operator, Atom}, lexer, errors::{CMNMessage, CMNWarning}};
 
@@ -184,6 +184,9 @@ pub fn parse_namespace(namespace: &RefCell<Namespace>) -> ASTResult<()> {
 
 
 
+
+
+
 impl ASTElem {
 		// Recursively validate ASTNode types and check if blocks have matching return types
 		pub fn validate(&self, scope: &mut FnScope, ret: &Type) -> ASTResult<Option<Type>> {
@@ -233,9 +236,12 @@ impl ASTElem {
 						let cond_type = cond.get_type(scope)?;
 						let bool_t = Type::from_basic(Basic::BOOL);
 	
-						if !cond_type.coercable_to(&bool_t) {
+						if !cond_type.castable_to(&bool_t) {
 							return Err((CMNError::TypeMismatch(cond_type, bool_t), self.token_data));
 						}
+
+						cond.wrap_expr_in_cast(Some(cond_type), bool_t);
+
 						let t = body.validate(scope, ret)?;
 	
 						if let Some(else_body) = else_body {
@@ -250,10 +256,12 @@ impl ASTElem {
 						let cond_type = cond.get_type(scope)?;
 						let bool_t = Type::from_basic(Basic::BOOL);
 	
-						if !cond_type.coercable_to(&bool_t) {
+						if !cond_type.castable_to(&bool_t) {
 							return Err((CMNError::TypeMismatch(cond_type, bool_t), self.token_data));
 						}
-	
+
+						cond.wrap_expr_in_cast(Some(cond_type), bool_t);
+
 						let t = body.validate(scope, ret)?;
 						Ok(t)
 					} 
@@ -267,12 +275,13 @@ impl ASTElem {
 						if let Some(cond) = cond {
 							let bool_t = Type::from_basic(Basic::BOOL);
 							
-							cond.type_info.replace(Some(bool_t.clone()));
 							let cond_type = cond.get_type(&mut subscope)?;
 							
-							if !cond_type.coercable_to(&bool_t) {
-								return Err((CMNError::TypeMismatch(cond_type, bool_t), self.token_data));
+							if !cond_type.castable_to(&bool_t) {
+								return Err((CMNError::TypeMismatch(bool_t, cond_type), cond.token_data));
 							}
+							
+							cond.wrap_expr_in_cast(Some(cond_type), bool_t);
 						}
 						
 						if let Some(iter) = iter { iter.validate(&mut subscope, ret)?; }
@@ -323,18 +332,35 @@ impl ASTElem {
 
 
 impl Expr {
+	pub fn create_cast(expr: Expr, from: Option<Type>, to: Type, meta: TokenData) -> Expr {
+		Expr::Atom(Atom::Cast(Box::new(
+			ASTElem { 
+				node: ASTNode::Expression(RefCell::new(expr)), 
+				type_info: RefCell::new(from), 
+				token_data: meta
+			}), 
+			to.clone()
+		), meta)
+	}
+
 	pub fn validate<'ctx>(&mut self, scope: &'ctx FnScope<'ctx>, goal_t: Option<&Type>, meta: TokenData) -> ASTResult<Type> {
 
 		let this_t = match self {
 
-			Expr::Atom(a, _) => a.validate(scope, meta)?,
+			Expr::Atom(a, _) => a.validate(scope, goal_t, meta)?,
 
 			Expr::Cons(op, elems, meta) => {
 				let mut iter = elems.iter_mut();
-				let mut last = iter.next().unwrap().validate(scope, None, *meta)?;
+				let first = iter.next().unwrap();
+				let mut last = first.0.validate(scope, None, first.1)?;
 				
 				while let Some(item) = iter.next() {
-					let current = item.validate(scope, None, *meta)?;
+
+					let current = match &mut item.0 {
+						Expr::Atom(a, _) => a.validate(scope, None, item.1)?,
+						Expr::Cons(_, _, _) => item.0.validate(scope, None, item.1)?,
+					};
+
 					if last != current {
 						return Err((CMNError::TypeMismatch(last, current), *meta))
 					}
@@ -377,14 +403,7 @@ impl Expr {
 					swap = std::mem::replace(self, swap); // swap now contains old Atom
 					
 					// Construct a new Atom to cast the containing Expr to the goal type 
-					let cast = Expr::Atom(Atom::Cast(Box::new(
-						ASTElem { 
-							node: ASTNode::Expression(RefCell::new(swap)), 
-							type_info: RefCell::new(Some(this_t)), 
-							token_data: meta
-						}), 
-						goal_t.clone()
-					), meta);
+					let cast = Expr::create_cast(swap, Some(this_t), goal_t.clone(), meta);
 
 					*self = cast;
 
@@ -406,9 +425,15 @@ impl Expr {
 
 
 impl Atom {
-	pub fn validate<'ctx>(&mut self, scope: &'ctx FnScope<'ctx>, meta: TokenData) -> ASTResult<Type> {
+	pub fn validate<'ctx>(&mut self, scope: &'ctx FnScope<'ctx>, goal_t: Option<&Type>, meta: TokenData) -> ASTResult<Type> {
 		match self {
-			Atom::IntegerLit(_) => Ok(Type::from_basic(Basic::I32)),
+			Atom::IntegerLit(_) => 
+				if goal_t.is_some() && goal_t.unwrap().is_integral() { 
+					Ok(goal_t.unwrap().clone()) 
+				} else { 
+					Ok(Type::from_basic(Basic::I32)) 
+				},
+			
 			Atom::FloatLit(_) => Ok(Type::from_basic(Basic::F32)),
 			Atom::BoolLit(_) => Ok(Type::from_basic(Basic::BOOL)),
 			Atom::StringLit(_) => Ok(Type::from_basic(Basic::STR)),

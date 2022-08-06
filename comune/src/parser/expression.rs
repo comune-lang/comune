@@ -174,7 +174,7 @@ impl Operator {
 #[derive(Clone, Debug)]
 pub enum Expr {
 	Atom(Atom, TokenData),
-	Cons(Operator, Vec<Expr>, TokenData)
+	Cons(Operator, Vec<(Expr, TokenData)>, TokenData)
 }
 
 
@@ -190,7 +190,7 @@ impl Display for Expr {
 				write!(f, "({:?}", op)?;
 
 				for param in params {
-					write!(f, " {}", param)?;
+					write!(f, " {}", param.0)?;
 				}
 				
 				write!(f, ")")

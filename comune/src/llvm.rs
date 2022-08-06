@@ -356,7 +356,13 @@ impl<'ctx> LLVMBackend<'ctx> {
 		match expr {
 			Expr::Atom(a, _meta) => {
 				match a {
-					Atom::IntegerLit(i) => Box::new(self.context.i32_type().const_int(*i as u64, false)),
+					Atom::IntegerLit(i) => {
+						match self.get_llvm_type(t).as_any_type_enum() {
+							AnyTypeEnum::IntType(i_t) => return Box::new(i_t.const_int(*i as u64, false)),
+							_ => panic!(),
+						}
+					}
+
 					Atom::BoolLit(b) => Box::new(self.context.bool_type().const_int(if *b { 1 } else { 0 }, false)),
 					Atom::FloatLit(f) => Box::new(self.context.f32_type().const_float(*f)),
 					Atom::Identifier(v) => Box::new(self.builder.build_load(scope.get_variable(v.resolved.as_ref().unwrap()).unwrap().clone(), "vload")),
@@ -411,7 +417,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 				if elems.len() == 1 {
 					match op {
 						Operator::Ref => {
-							if let Expr::Atom(a, _) = &elems[0] {
+							if let Expr::Atom(a, _) = &elems[0].0 {
 								if let Atom::Identifier(v) = &a {						
 									return Box::new(scope.get_variable(v.resolved.as_ref().unwrap()).unwrap().clone());
 								}
@@ -420,7 +426,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 						}
 
 						Operator::Deref => {
-							if let Expr::Atom(a, _) = &elems[0] {
+							if let Expr::Atom(a, _) = &elems[0].0 {
 								if let Atom::Identifier(v) = &a {
 									let ptr = self.builder.build_load(*scope.get_variable(v.resolved.as_ref().unwrap()).unwrap(), "loadptr").as_basic_value_enum().into_pointer_value();
 									return Box::new(self.builder.build_load(ptr, "deref"));
@@ -441,8 +447,8 @@ impl<'ctx> LLVMBackend<'ctx> {
 							match b { //self.builder.build_int_add(lhs, rhs, name)
 								
 								Basic::ISIZE | Basic::USIZE | Basic::I64 | Basic::U64 | Basic::I32 | Basic::U32 | Basic::I16 | Basic::U16 | Basic::I8 | Basic::U8 | Basic::CHAR => {
-									let lhs_i = self.generate_expr(lhs, t, scope).as_any_value_enum().into_int_value();
-									let rhs_i = self.generate_expr(rhs, t, scope).as_any_value_enum().into_int_value();
+									let lhs_i = self.generate_expr(&lhs.0, t, scope).as_any_value_enum().into_int_value();
+									let rhs_i = self.generate_expr(&rhs.0, t, scope).as_any_value_enum().into_int_value();
 
 									Box::new(
 										match op {
@@ -452,7 +458,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 											Operator::Div => self.builder.build_int_signed_div(lhs_i, rhs_i, "idiv"), // TODO: Add unsigned
 
 											Operator::Assign => {
-												if let Expr::Atom(a, _) = &lhs {
+												if let Expr::Atom(a, _) = &lhs.0 {
 													if let Atom::Identifier(v) = &a {						
 														self.builder.build_store(*scope.get_variable(v.resolved.as_ref().unwrap()).unwrap(), rhs_i);
 														return Box::new(rhs_i);
@@ -471,8 +477,8 @@ impl<'ctx> LLVMBackend<'ctx> {
 								},
 
 								Basic::F64 | Basic::F32 => {
-									let lhs = self.generate_expr(lhs, t, scope).as_any_value_enum().into_float_value();
-									let rhs = self.generate_expr(rhs, t, scope).as_any_value_enum().into_float_value();
+									let lhs = self.generate_expr(&lhs.0, t, scope).as_any_value_enum().into_float_value();
+									let rhs = self.generate_expr(&rhs.0, t, scope).as_any_value_enum().into_float_value();
 
 									Box::new(
 										match op {
@@ -537,7 +543,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 							}
 						},
 
-						AnyValueEnum::FloatValue(f) => todo!(),
+						AnyValueEnum::FloatValue(_) => todo!(),
 
 						_ => panic!(),
 					}

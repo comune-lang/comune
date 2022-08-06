@@ -5,7 +5,7 @@ use super::lexer::Token;
 use super::ASTResult;
 use super::semantic::FnScope;
 use super::types::{Type, Basic, Typed};
-use super::expression::Expr;
+use super::expression::{Expr, Atom};
 use super::controlflow::ControlFlow;
 
 
@@ -84,7 +84,16 @@ impl ASTElem {
 		ASTElem { node: ASTNode::Block(vec![self]), token_data: meta, type_info: RefCell::new(None) }
 	}
 
-
+	pub fn wrap_expr_in_cast(&self, from: Option<Type>, to: Type) {
+		if let ASTNode::Expression(e) = &self.node {
+			let dummy = Expr::Atom(Atom::IntegerLit(0), self.token_data);
+			let expr = e.replace(dummy);
+			e.replace(Expr::create_cast(expr, from, to.clone(), self.token_data));
+			self.type_info.replace(Some(to));
+		} else {
+			panic!();
+		}
+	}
 }
 
 
