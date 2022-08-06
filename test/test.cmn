@@ -2,7 +2,6 @@
 @no_mangle
 int printf(char* fmt);
 
-namespace cool {
 	
 	u64 fib(u64 n) {
 		u64 a = 0;
@@ -12,12 +11,13 @@ namespace cool {
 			c = a + b;
 			a = b;
 			b = c;
+			printf("loop!\n\0");
 		}
 		return c;
 	}
-}
+
 
 int main() {
 	printf("Hello world!\n\0");
-	return cool::fib(32 as u64) as i32;
+	return fib(32) as i32; // Throws internal compiler error rn, int coercion is allowed by semantic phase but no cast is created
 }

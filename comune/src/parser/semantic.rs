@@ -354,12 +354,16 @@ impl Expr {
 				let first = iter.next().unwrap();
 				let mut last = first.0.validate(scope, None, first.1)?;
 				
-				while let Some(item) = iter.next() {
+				if let Some(item) = iter.next() {
 
-					let current = match &mut item.0 {
-						Expr::Atom(a, _) => a.validate(scope, None, item.1)?,
-						Expr::Cons(_, _, _) => item.0.validate(scope, None, item.1)?,
-					};
+					//let current = match &mut item.0 {
+						// Validate Atom directly
+					//	Expr::Atom(a, _) => a.validate(scope, None, item.1)?,
+						
+						// Validate Cons as a whole
+					//	Expr::Cons(_, _, _) => item.0.validate(scope, None, item.1)?,
+					//};
+					let current = item.0.validate(scope, None, item.1)?;
 
 					if last != current {
 						return Err((CMNError::TypeMismatch(last, current), *meta))
