@@ -42,9 +42,9 @@ impl Typed for ControlFlow {
 					let body_type = body.get_type(scope)?;
 					let else_type = else_body.get_type(scope)?;
 
-					if else_type.coercable_to(&body_type) {
+					if else_body.get_expr().borrow().coercable_to(&body_type, scope) {
 						Ok(body_type)
-					} else if body_type.coercable_to(&else_type) {
+					} else if body.get_expr().borrow().coercable_to(&else_type, scope) {
 						Ok(else_type)
 					} else {
 						Err((CMNError::TypeMismatch(body_type, else_type), else_body.token_data))

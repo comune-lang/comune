@@ -94,6 +94,13 @@ impl ASTElem {
 			panic!();
 		}
 	}
+
+	pub fn get_expr(&self) -> &RefCell<Expr> {
+		match &self.node {
+    		ASTNode::Expression(e) => e,
+			_ => panic!(),
+		}
+	}
 }
 
 

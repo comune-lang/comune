@@ -49,16 +49,16 @@ impl<'ctx> FnScope<'ctx> {
 		}
 	}
 
-	pub fn resolve_symbol(&self, id: &mut Identifier) -> Option<Type> {
+
+	pub fn find_symbol(&self, id: &Identifier) -> Option<(String, Type)> {
 		if id.path.elems.is_empty() {
 			// Unqualified name, perform scope-level lookup first
 			let local_lookup;
 			
 			if self.variables.contains_key(&id.name) {
-				local_lookup = self.variables.get(&id.name).cloned();
-				id.resolved = Some(id.name.clone());
+				local_lookup = Some((id.name.clone(), self.variables.get(&id.name).cloned().unwrap()));
 			} else if let Some(parent) = self.parent {
-				local_lookup = parent.resolve_symbol(id);
+				local_lookup = parent.find_symbol(id);
 			} else {
 				local_lookup = None;
 			}
@@ -89,12 +89,22 @@ impl<'ctx> FnScope<'ctx> {
 				return None; // TODO: Return a Result instead
 			}
 		}
+
+		match namespace.get_symbol(&id.name) {
+			Some((t, _, a)) => Some((namespace.get_mangled_name(&id.name, a), t.clone())),
+			None => None,
+		}
+	}
+
+
+	pub fn resolve_identifier(&self, id: &mut Identifier) -> Option<Type> {
+		
 		// Found the namespace, resolve the name
 		let name = &id.name;
 
-		if let Some(s) = namespace.get_symbol(name) {
-			id.resolved = Some(namespace.get_mangled_name(name, &s.2));
-			Some(s.0.clone())
+		if let Some(s) = self.find_symbol(id) {
+			id.resolved = Some(s.0);
+			Some(s.1.clone())
 		} else {
 			None
 		}
@@ -172,7 +182,7 @@ pub fn parse_namespace(namespace: &RefCell<Namespace>) -> ASTResult<()> {
 			if ret_type.is_none() && ret.inner != void.inner {
 				// No returns in non-void function
 				return Err((CMNError::ReturnTypeMismatch { expected: ret.clone(), got: void }, elem.token_data));
-			} else if ret_type.is_some() && !ret_type.as_ref().unwrap().coercable_to(&ret) {
+			} else if ret_type.is_some() && !ret_type.as_ref().unwrap().castable_to(&ret) {
 				return Err((CMNError::ReturnTypeMismatch { expected: ret.clone(), got: ret_type.unwrap() }, elem.token_data));
 			}
 		}
@@ -202,9 +212,9 @@ impl ASTElem {
 						if let Some(t) = t {
 							// Only compare against return type for control flow nodes
 							if let ASTNode::ControlFlow(_) = elem.node {
-								if !t.coercable_to(ret) {
-									return Err((CMNError::TypeMismatch(t, ret.clone()), elem.token_data))
-								}
+								//if !t.coercable_to(ret) {
+								//	return Err((CMNError::TypeMismatch(t, ret.clone()), elem.token_data))
+								//}
 								last_ret = Some(t);
 							}
 						}
@@ -219,7 +229,7 @@ impl ASTElem {
 					if let Some(expr) = e {
 						expr.type_info.replace(Some(t.clone()));
 						let expr_type = expr.get_type(scope)?;
-						if !expr_type.coercable_to(t) {
+						if !expr.get_expr().borrow().coercable_to(t, scope) {
 							return Err((CMNError::TypeMismatch(t.clone(), expr_type), self.token_data));
 						}
 					}
@@ -299,7 +309,7 @@ impl ASTElem {
 							let t = expr.validate(scope, ret)?;
 	
 							if let Some(t) = t {
-								if t.coercable_to(ret) {
+								if expr.get_expr().borrow().coercable_to(ret, scope) {
 									Ok(Some(t))
 								} else {
 									Err((CMNError::ReturnTypeMismatch { expected: ret.clone(), got: t }, self.token_data))
@@ -388,7 +398,7 @@ impl Expr {
 
 		if let Some(goal_t) = goal_t {
 			if this_t != *goal_t {
-				if this_t.coercable_to(goal_t) {
+				if self.coercable_to(goal_t, scope) {
 					let meta;
 
 					match self { 
@@ -421,7 +431,91 @@ impl Expr {
 		} else {
 			return Ok(this_t);
 		}
+	}
 
+	// Check whether an Expr is coercable to a type
+
+	pub fn coercable_to(&self, target: &Type, scope: &FnScope) -> bool {
+		match self {
+			Expr::Atom(a, _) => {
+				match a {
+					Atom::IntegerLit(_) => target.is_numeric(),	// Integer literal is coercable to any numeric type
+					Atom::FloatLit(_) => target.is_numeric(),	// Ditto
+					Atom::BoolLit(_) => target.is_boolean(),
+
+					Atom::StringLit(s) => {
+						if let InnerType::Pointer(other_p) = &target.inner {
+							if let InnerType::Basic(other_b) = other_p.inner {
+								if let Basic::CHAR = other_b {
+									return true;
+								} 
+							}
+						}
+
+						false
+					},
+					
+					Atom::Identifier(i) => scope.find_symbol(i).unwrap().1 == *target,
+					Atom::FnCall { name, args: _ } => match scope.find_symbol(name).unwrap().1.inner {
+						InnerType::Function(ret, _) => *ret == *target,
+						_ => panic!(),
+					},
+
+					Atom::Cast(_, cast_t) => *target == *cast_t,
+					Atom::ArrayLit(_) => todo!(),
+				}
+			},
+			Expr::Cons(_, _, _) => todo!(),
+		}
+		/*if *self == *target {
+			true
+		} else {
+
+			if self.is_numeric() {
+				if let InnerType::Basic(b) = target.inner {
+					match b {
+						_ => false, //TODO
+
+					}
+				} else { // Other type is not Basic, can't coerce a numeric type to it
+					false
+				}
+			} else {
+				match &self.inner {
+					InnerType::Basic(b) => {
+						match b {
+
+							Basic::STR => {
+								// Abusing the hell outta `if let` here lol
+								// Allow coercion from str to char*, for compatibility with C 
+								// For string literals, emits a warning during semantic analysis if it doesn't end with a null byte	
+								if let InnerType::Pointer(other_p) = &target.inner {
+									if let InnerType::Basic(other_b) = other_p.inner {
+										if let Basic::CHAR = other_b {
+											return true;
+										}
+									}
+								} 
+								false
+							}
+
+							Basic::VOID => { // Void is not coercable to any other type
+								false
+							}
+							
+							_ => {
+								false
+							}
+						}
+					},
+					InnerType::Alias(_, _) => todo!(),
+					InnerType::Aggregate(_) => todo!(),
+					InnerType::Pointer(_) => todo!(),
+					InnerType::Function(_, _) => todo!(),
+					InnerType::Unresolved(_) => todo!(),
+				}
+			}
+		}*/
 	}
 }
 
@@ -442,7 +536,7 @@ impl Atom {
 			Atom::BoolLit(_) => Ok(Type::from_basic(Basic::BOOL)),
 			Atom::StringLit(_) => Ok(Type::from_basic(Basic::STR)),
 
-			Atom::Identifier(name) => scope.resolve_symbol(name).ok_or((CMNError::UndeclaredIdentifier(name.to_string()), meta)),
+			Atom::Identifier(name) => scope.resolve_identifier(name).ok_or((CMNError::UndeclaredIdentifier(name.to_string()), meta)),
 			
 			Atom::Cast(a, t) => {
 				if let ASTNode::Expression(expr) = &a.node {
@@ -461,7 +555,7 @@ impl Atom {
 
 			Atom::FnCall { name, args } => {
 				
-				if let Some(t) = scope.resolve_symbol(name) {
+				if let Some(t) = scope.resolve_identifier(name) {
 					if let InnerType::Function(ret, params) = t.inner {
 
 						// Identifier is a function, check parameter types
@@ -469,9 +563,14 @@ impl Atom {
 
 							for i in 0..args.len() {
 								args[i].type_info.replace(Some(*params[i].0.clone()));
-								let arg_type = args[i].get_type(scope)?;
-								if !arg_type.coercable_to(params[i].0.as_ref()) {
+								let arg_type = args[i].get_expr().borrow_mut().validate(scope, None, meta)?;
+
+								if !args[i].get_expr().borrow().coercable_to(params[i].0.as_ref(), scope) {
 									return Err((CMNError::TypeMismatch(arg_type, params[i].0.as_ref().clone()), args[i].token_data));
+								}
+
+								if arg_type != *params[i].0 {
+									args[i].wrap_expr_in_cast(Some(arg_type), *params[i].0.clone());
 								}
 							}
 							// All good, return function's return type

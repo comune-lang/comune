@@ -165,63 +165,8 @@ impl Type {
 	}
 
 
-	pub fn coercable_to(&self, target: &Type) -> bool {
-		if *self == *target {
-			true
-		} else {
-
-			if self.is_numeric() {
-				if let InnerType::Basic(b) = target.inner {
-					match b {
-						_ => false, //TODO
-
-					}
-				} else { // Other type is not Basic, can't coerce a numeric type to it
-					false
-				}
-			} else {
-				match &self.inner {
-					InnerType::Basic(b) => {
-						match b {
-
-							Basic::STR => {
-								// Abusing the hell outta `if let` here lol
-								// Allow coercion from str to char*, for compatibility with C 
-								// For string literals, emits a warning during semantic analysis if it doesn't end with a null byte	
-								if let InnerType::Pointer(other_p) = &target.inner {
-									if let InnerType::Basic(other_b) = other_p.inner {
-										if let Basic::CHAR = other_b {
-											return true;
-										}
-									}
-								} 
-								false
-							}
-
-							Basic::VOID => { // Void is not coercable to any other type
-								false
-							}
-							
-							_ => {
-								false
-							}
-						}
-					},
-					InnerType::Alias(_, _) => todo!(),
-					InnerType::Aggregate(_) => todo!(),
-					InnerType::Pointer(_) => todo!(),
-					InnerType::Function(_, _) => todo!(),
-					InnerType::Unresolved(_) => todo!(),
-				}
-			}
-		}
-	}
-
-
 	pub fn castable_to(&self, target: &Type) -> bool {
 		if *self == *target {
-			true
-		} else if self.coercable_to(target) {
 			true
 		} else {
 
