@@ -16,6 +16,7 @@ int printf(char* fmt);
 
 
 int main() {
+	float a = 0.0 + 23.;
 	printf("Hello world!\n\0");
 	return fib(32) as i32; // Throws internal compiler error rn, int coercion is allowed by semantic phase but no cast is created
 }

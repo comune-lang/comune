@@ -323,9 +323,6 @@ impl Lexer {
 						result.push(next);
 						next = self.get_next_char()?;
 					}
-					if next == 'f' { 
-						result.push(next); next = self.get_next_char()?; 
-					}
 				}
 				// Parse suffix
 				while next.is_alphanumeric() {

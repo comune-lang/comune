@@ -6,6 +6,7 @@ use std::{path::Path, io::{self, Write}, ffi::OsString};
 use clap::Parser;
 use colored::Colorize;
 use inkwell::{context::Context, targets::{Target, InitializationConfig, TargetTriple, FileType}};
+use parser::types;
 use std::process::Command;
 
 
@@ -56,6 +57,10 @@ fn main() {
 		inkwell::targets::RelocMode::Default, 
 		inkwell::targets::CodeModel::Default
 	).unwrap();
+
+
+	types::PTR_SIZE_BYTES.set(target_machine.get_target_data().get_pointer_byte_size(None)).unwrap();
+	
 
 	let manager = modules::ModuleJobManager::new("test/".into(), vec![], args.num_jobs, args.verbose);
 

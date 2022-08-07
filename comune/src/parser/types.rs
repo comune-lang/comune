@@ -1,5 +1,7 @@
 use std::{fmt::Display, collections::HashMap};
 
+use once_cell::sync::OnceCell;
+
 use super::lexer::{Token};
 
 use super::{semantic::FnScope, ASTResult};
@@ -7,6 +9,9 @@ use super::{semantic::FnScope, ASTResult};
 type TypeRef = Box<Type>;
 
 pub type FnParamList = Vec<(Box<Type>, Option<String>)>;
+
+
+pub(crate) static PTR_SIZE_BYTES: OnceCell<u32> = OnceCell::new();
 
 
 pub trait Typed {
@@ -235,7 +240,7 @@ impl Type {
 
 
 	pub fn get_size_bytes(&self) -> usize {
-		let PTR_SIZE = 8;
+		let ptr_size = *PTR_SIZE_BYTES.get().unwrap() as usize;
 
 		match &self.inner {
 			InnerType::Basic(b) => match b {
@@ -245,8 +250,8 @@ impl Type {
 				Basic::I8 | Basic::U8 => 1,
 
 				// TODO: Actually implement based on target ptr size
-				Basic::ISIZE | Basic::USIZE => PTR_SIZE,
-				Basic::STR => PTR_SIZE + PTR_SIZE, // sizeof(char*) + sizeof(usize)
+				Basic::ISIZE | Basic::USIZE => ptr_size,
+				Basic::STR => ptr_size + ptr_size, // sizeof(char*) + sizeof(usize)
 
 				Basic::BOOL => 1,
 				Basic::VOID => 0,
@@ -264,7 +269,7 @@ impl Type {
 				result
 			},
 
-			InnerType::Pointer(_) => PTR_SIZE,
+			InnerType::Pointer(_) => ptr_size,
 			
 			_ => 0,
 		}

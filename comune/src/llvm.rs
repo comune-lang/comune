@@ -683,7 +683,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 				Basic::I8 | Basic::U8 | Basic::CHAR =>	Box::new(self.context.i8_type()),
 				Basic::ISIZE | Basic::USIZE => 			Box::new(self.context.i64_type()),
 				Basic::F64 => 							Box::new(self.context.f64_type()),
-				Basic::F32 => 							Box::new(self.context.f64_type()),
+				Basic::F32 => 							Box::new(self.context.f32_type()),
 				Basic::BOOL => 							Box::new(self.context.bool_type()),
 				Basic::VOID => 							Box::new(self.context.void_type()),
 

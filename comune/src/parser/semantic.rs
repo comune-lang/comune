@@ -194,143 +194,143 @@ pub fn parse_namespace(namespace: &RefCell<Namespace>) -> ASTResult<()> {
 
 
 impl ASTElem {
-		// Recursively validate ASTNode types and check if blocks have matching return types
-		pub fn validate(&self, scope: &mut FnScope, ret: &Type) -> ASTResult<Option<Type>> {
-			let result = match &self.node {
-	
-				ASTNode::Block(elems) => {
-					let mut subscope = FnScope::from_parent(scope);
-					let mut last_ret = None;
-	
-					for elem in elems {
-						let t = elem.validate(&mut subscope, ret)?;
-	
-						if let Some(t) = t {
-							// Only compare against return type for control flow nodes
-							if let ASTNode::ControlFlow(_) = elem.node {
-								//if !t.coercable_to(ret) {
-								//	return Err((CMNError::TypeMismatch(t, ret.clone()), elem.token_data))
-								//}
-								last_ret = Some(t);
-							}
+	// Recursively validate ASTNode types and check if blocks have matching return types
+	pub fn validate(&self, scope: &mut FnScope, ret: &Type) -> ASTResult<Option<Type>> {
+		let result = match &self.node {
+
+			ASTNode::Block(elems) => {
+				let mut subscope = FnScope::from_parent(scope);
+				let mut last_ret = None;
+
+				for elem in elems {
+					let t = elem.validate(&mut subscope, ret)?;
+
+					if let Some(t) = t {
+						// Only compare against return type for control flow nodes
+						if let ASTNode::ControlFlow(_) = elem.node {
+							//if !t.coercable_to(ret) {
+							//	return Err((CMNError::TypeMismatch(t, ret.clone()), elem.token_data))
+							//}
+							last_ret = Some(t);
 						}
 					}
-					Ok(last_ret)
-				},
-				
-				ASTNode::Expression(e) => Ok(Some(e.borrow_mut().validate(scope, None, self.token_data)?)),
-				
-				ASTNode::Declaration(t, n, e) => {
-	
-					if let Some(expr) = e {
-						expr.type_info.replace(Some(t.clone()));
-						let expr_type = expr.get_type(scope)?;
-						if !expr.get_expr().borrow().coercable_to(t, scope) {
-							return Err((CMNError::TypeMismatch(t.clone(), expr_type), self.token_data));
-						}
+				}
+				Ok(last_ret)
+			},
+			
+			ASTNode::Expression(e) => Ok(Some(e.borrow_mut().validate(scope, None, self.token_data)?)),
+			
+			ASTNode::Declaration(t, n, e) => {
+
+				if let Some(expr) = e {
+					expr.type_info.replace(Some(t.clone()));
+					let expr_type = expr.get_type(scope)?;
+					if !expr.get_expr().borrow().coercable_to(&expr_type, t, scope) {
+						return Err((CMNError::TypeMismatch(t.clone(), expr_type), self.token_data));
 					}
-	
-					scope.add_variable(t.clone(), n.to_string());
-	
-					Ok(None)	
-				},
-	
-				ASTNode::ControlFlow(ctrl) => match ctrl.as_ref() {
-	
-					ControlFlow::If { cond, body, else_body } => {
-						cond.type_info.replace(Some(Type::from_basic(Basic::BOOL)));
-						let cond_type = cond.get_type(scope)?;
+				}
+
+				scope.add_variable(t.clone(), n.to_string());
+
+				Ok(None)	
+			},
+
+			ASTNode::ControlFlow(ctrl) => match ctrl.as_ref() {
+
+				ControlFlow::If { cond, body, else_body } => {
+					cond.type_info.replace(Some(Type::from_basic(Basic::BOOL)));
+					let cond_type = cond.get_type(scope)?;
+					let bool_t = Type::from_basic(Basic::BOOL);
+
+					if !cond_type.castable_to(&bool_t) {
+						return Err((CMNError::TypeMismatch(cond_type, bool_t), self.token_data));
+					}
+
+					cond.wrap_expr_in_cast(Some(cond_type), bool_t);
+
+					let t = body.validate(scope, ret)?;
+
+					if let Some(else_body) = else_body {
+						else_body.validate(scope, ret)?;
+					}
+
+					Ok(t)
+				}
+
+				ControlFlow::While { cond, body } => {
+					cond.type_info.replace(Some(Type::from_basic(Basic::BOOL)));
+					let cond_type = cond.get_type(scope)?;
+					let bool_t = Type::from_basic(Basic::BOOL);
+
+					if !cond_type.castable_to(&bool_t) {
+						return Err((CMNError::TypeMismatch(cond_type, bool_t), self.token_data));
+					}
+
+					cond.wrap_expr_in_cast(Some(cond_type), bool_t);
+
+					let t = body.validate(scope, ret)?;
+					Ok(t)
+				} 
+
+				ControlFlow::For { cond, body, init, iter } => {
+					let mut subscope = FnScope::from_parent(&scope);	
+
+					if let Some(init) = init { init.validate(&mut subscope, ret)?; }
+
+					// Check if condition is coercable to bool
+					if let Some(cond) = cond {
 						let bool_t = Type::from_basic(Basic::BOOL);
-	
+						
+						let cond_type = cond.get_type(&mut subscope)?;
+						
 						if !cond_type.castable_to(&bool_t) {
-							return Err((CMNError::TypeMismatch(cond_type, bool_t), self.token_data));
-						}
-
-						cond.wrap_expr_in_cast(Some(cond_type), bool_t);
-
-						let t = body.validate(scope, ret)?;
-	
-						if let Some(else_body) = else_body {
-							else_body.validate(scope, ret)?;
-						}
-	
-						Ok(t)
-					}
-	
-					ControlFlow::While { cond, body } => {
-						cond.type_info.replace(Some(Type::from_basic(Basic::BOOL)));
-						let cond_type = cond.get_type(scope)?;
-						let bool_t = Type::from_basic(Basic::BOOL);
-	
-						if !cond_type.castable_to(&bool_t) {
-							return Err((CMNError::TypeMismatch(cond_type, bool_t), self.token_data));
-						}
-
-						cond.wrap_expr_in_cast(Some(cond_type), bool_t);
-
-						let t = body.validate(scope, ret)?;
-						Ok(t)
-					} 
-	
-					ControlFlow::For { cond, body, init, iter } => {
-						let mut subscope = FnScope::from_parent(&scope);	
-	
-						if let Some(init) = init { init.validate(&mut subscope, ret)?; }
-	
-						// Check if condition is coercable to bool
-						if let Some(cond) = cond {
-							let bool_t = Type::from_basic(Basic::BOOL);
-							
-							let cond_type = cond.get_type(&mut subscope)?;
-							
-							if !cond_type.castable_to(&bool_t) {
-								return Err((CMNError::TypeMismatch(bool_t, cond_type), cond.token_data));
-							}
-							
-							cond.wrap_expr_in_cast(Some(cond_type), bool_t);
+							return Err((CMNError::TypeMismatch(bool_t, cond_type), cond.token_data));
 						}
 						
-						if let Some(iter) = iter { iter.validate(&mut subscope, ret)?; }
-	
-						let t = body.validate(&mut subscope, ret)?;
-						if t.is_some() {
-							Ok(t)
+						cond.wrap_expr_in_cast(Some(cond_type), bool_t);
+					}
+					
+					if let Some(iter) = iter { iter.validate(&mut subscope, ret)?; }
+
+					let t = body.validate(&mut subscope, ret)?;
+					if t.is_some() {
+						Ok(t)
+					} else {
+						Ok(None)
+					}
+				}
+
+				ControlFlow::Return { expr } => {
+					if let Some(expr) = expr {
+						let t = expr.validate(scope, ret)?;
+
+						if let Some(t) = t {
+							if expr.get_expr().borrow().coercable_to(&t, ret, scope) {
+								Ok(Some(t))
+							} else {
+								Err((CMNError::ReturnTypeMismatch { expected: ret.clone(), got: t }, self.token_data))
+							}
 						} else {
 							Ok(None)
 						}
+
+
+					} else {
+						Ok(Some(Type::from_basic(Basic::VOID))) // Return with no expression is of type void 
 					}
-	
-					ControlFlow::Return { expr } => {
-						if let Some(expr) = expr {
-							let t = expr.validate(scope, ret)?;
-	
-							if let Some(t) = t {
-								if expr.get_expr().borrow().coercable_to(ret, scope) {
-									Ok(Some(t))
-								} else {
-									Err((CMNError::ReturnTypeMismatch { expected: ret.clone(), got: t }, self.token_data))
-								}
-							} else {
-								Ok(None)
-							}
-	
-	
-						} else {
-							Ok(Some(Type::from_basic(Basic::VOID))) // Return with no expression is of type void 
-						}
-					
-					},
-					
-					_ => Ok(None)
+				
 				},
-			};
-	
-			match result {
-				Ok(ref r) => self.type_info.replace(r.clone()),
-				Err(e) => return Err(e),
-			};
-			result
-		}
+				
+				_ => Ok(None)
+			},
+		};
+
+		match result {
+			Ok(ref r) => self.type_info.replace(r.clone()),
+			Err(e) => return Err(e),
+		};
+		result
+	}
 }
 
 
@@ -351,6 +351,7 @@ impl Expr {
 
 	pub fn validate<'ctx>(&mut self, scope: &'ctx FnScope<'ctx>, goal_t: Option<&Type>, meta: TokenData) -> ASTResult<Type> {
 
+		// Validate Atom or sub-expressions
 		let this_t = match self {
 
 			Expr::Atom(a, _) => a.validate(scope, goal_t, meta)?,
@@ -386,7 +387,7 @@ impl Expr {
 
 		if let Some(goal_t) = goal_t {
 			if this_t != *goal_t {
-				if self.coercable_to(goal_t, scope) {
+				if self.coercable_to(&this_t, goal_t, scope) {
 					let meta;
 
 					match self { 
@@ -423,12 +424,19 @@ impl Expr {
 
 	// Check whether an Expr is coercable to a type
 
-	pub fn coercable_to(&self, target: &Type, scope: &FnScope) -> bool {
+	pub fn coercable_to(&self, from: &Type, target: &Type, scope: &FnScope) -> bool {
 		match self {
 			Expr::Atom(a, _) => {
 				match a {
-					Atom::IntegerLit(_, t) => target.is_numeric(),	// Integer literal is coercable to any numeric type
-					Atom::FloatLit(_, t) => target.is_numeric(),	// Ditto
+
+					Atom::IntegerLit(_, t) | Atom::FloatLit(_, t) => {
+						if t.is_some() {
+							*target == Type::from_basic(t.unwrap())
+						} else {
+							target.is_numeric() 
+						}
+					},
+
 					Atom::BoolLit(_) => target.is_boolean(),
 
 					Atom::StringLit(_) => {
@@ -455,7 +463,8 @@ impl Expr {
 					Atom::Dummy => true,
 				}
 			},
-			Expr::Cons(_, _, _) => todo!(),
+
+			Expr::Cons(_, _, _) => from == target,
 		}
 	}
 }
@@ -486,7 +495,7 @@ impl Atom {
 					Ok(Type::from_basic(Basic::F32)) 
 				}
 			},
-			
+
 			Atom::BoolLit(_) => Ok(Type::from_basic(Basic::BOOL)),
 			Atom::StringLit(_) => Ok(Type::from_basic(Basic::STR)),
 
@@ -519,7 +528,7 @@ impl Atom {
 								args[i].type_info.replace(Some(*params[i].0.clone()));
 								let arg_type = args[i].get_expr().borrow_mut().validate(scope, None, meta)?;
 
-								if !args[i].get_expr().borrow().coercable_to(params[i].0.as_ref(), scope) {
+								if !args[i].get_expr().borrow().coercable_to(&arg_type, params[i].0.as_ref(), scope) {
 									return Err((CMNError::TypeMismatch(arg_type, params[i].0.as_ref().clone()), args[i].token_data));
 								}
 

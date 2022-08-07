@@ -135,6 +135,7 @@ dependencies = [
  "colored",
  "inkwell",
  "mangling",
+ "once_cell",
  "rayon",
 ]
 
