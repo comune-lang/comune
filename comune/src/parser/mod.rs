@@ -8,7 +8,7 @@ use self::errors::CMNError;
 use self::expression::{Expr, Operator, Atom};
 use self::namespace::{Namespace, Identifier, ScopePath};
 use self::semantic::Attribute;
-use self::types::{Type, InnerType, FnParamList, Basic};
+use self::types::{Type, InnerType, FnParamList, Basic, AggregateType, Visibility};
 
 pub mod namespace;
 pub mod lexer;
@@ -135,8 +135,11 @@ impl Parser {
 					match *keyword {
 
 						"class" | "struct" => {
+							let mut current_visibility = if *keyword == "struct" { Visibility::Public } else { Visibility::Private };
+
 							// Register aggregate type
-							let aggregate = Type::new(InnerType::Aggregate(HashMap::new()), vec![]);
+							let mut aggregate = AggregateType::new();
+
 							let name_token = get_next()?;
 							
 							if let Token::Identifier(name) = name_token {
@@ -149,13 +152,35 @@ impl Parser {
 								}
 
 								next = get_next()?; // Consume brace
-
+								
 								while !token_compare(&next, "}") {
-									let member_t = self.parse_type()?;
 
-									
+									match next { 
+										Token::Identifier(_) => {
+											let result = self.parse_fn_or_declaration()?;
+
+											aggregate.members.insert(result.0, (result.1, result.2, current_visibility.clone()));
+											next = get_current()?;
+										} 
+
+										Token::Keyword(k) => {
+											match k {
+												"public" => { current_visibility = Visibility::Public; }
+												"private" => { current_visibility = Visibility::Private; }
+												"protected" => { current_visibility = Visibility::Protected; }
+												_ => return Err(CMNError::UnexpectedKeyword),
+											}
+											get_next()?;
+											next = get_next()?;
+										}
+
+										_ => return Err(CMNError::ExpectedIdentifier),
+									}
 								}
 
+								get_next()?; // Consume closing brace
+
+								let aggregate = Type::new(InnerType::Aggregate(Box::new(aggregate)), vec![]);
 								self.current_namespace().borrow_mut().types.insert(name, aggregate);
 							}
 						}
@@ -216,61 +241,9 @@ impl Parser {
 
 				Token::Identifier(_) => {
 					// Parse declaration/definition
-					let mut t = self.parse_type()?;
-					let mut next = get_current()?;
-					
-					if let Token::Identifier(id) = next {
-						
-						next = get_next()?;
-
-						let mut ast_elem = None;
-
-						if let Token::Operator(op) = next {
-							match op.as_str() {
-								
-								// Function declaration
-								"(" => {	
-									t = Type::new(
-										InnerType::Function(
-											Box::new(t), 
-											self.parse_parameter_list()?
-										), 
-										vec![], // TODO: Generics in function declarations 
-									);
-									
-									// Past the parameter list, check if we're at a function body or not
-									current = get_current()?;
-									
-									if current == Token::Other('{') {
-										// Are we generating the AST? If not, skip the function body
-										if self.generate_ast {
-											ast_elem = Some(self.parse_block()?);
-										} else {
-											self.skip_block()?;
-										}
-									} else if current == Token::Other(';') {
-										// No function body, just a semicolon
-										get_next()?;
-									} else {
-										// Expected a function body or semicolon!
-										return Err(CMNError::UnexpectedToken);
-									}
-								}
-
-								"=" => {
-									// Variable declaration
-								}
-								
-								_ => {
-									return Err(CMNError::UnexpectedToken);
-								}
-							}
-						}
-
-						// Register declaration to symbol table
-						self.current_namespace().borrow_mut().symbols.insert(id, (t, ast_elem, current_attributes));
-						current_attributes = vec![];
-					}
+					let result = self.parse_fn_or_declaration()?;
+					self.current_namespace().borrow_mut().symbols.insert(result.0, (result.1, result.2, current_attributes));
+					current_attributes = vec![];
 				}
 				
 				
@@ -595,6 +568,7 @@ impl Parser {
 	}
 
 
+
 	fn check_semicolon(&self) -> ParseResult<()> {
 		if token_compare(&get_current()?, ";") {
 			get_next()?;
@@ -603,6 +577,79 @@ impl Parser {
 			Err(CMNError::UnexpectedToken)
 		}
 	}
+
+
+
+	fn parse_fn_or_declaration(&self) -> ParseResult<(String, Type, Option<ASTElem>)> {
+		let mut t = self.parse_type()?;
+		let mut next = get_current()?;
+		
+		if let Token::Identifier(id) = next {
+			
+			next = get_next()?;
+
+			let mut ast_elem = None;
+
+			if let Token::Operator(op) = next {
+				match op.as_str() {
+					
+					// Function declaration
+					"(" => {	
+						t = Type::new(
+							InnerType::Function(
+								Box::new(t), 
+								self.parse_parameter_list()?
+							), 
+							vec![], // TODO: Generics in function declarations 
+						);
+						
+						// Past the parameter list, check if we're at a function body or not
+						let current = get_current()?;
+						
+						if current == Token::Other('{') {
+							
+							if self.generate_ast {
+								ast_elem = Some(self.parse_block()?);
+							} else {
+								self.skip_block()?;
+							}
+						} else if current == Token::Other(';') {
+							// No function body, just a semicolon
+							get_next()?;
+						} else {
+							// Expected a function body or semicolon!
+							return Err(CMNError::UnexpectedToken);
+						}
+					}
+
+					"=" => {
+						get_next()?;
+						ast_elem = match self.parse_expression()?.node {
+							ASTNode::Expression(expr) => Some(
+								ASTElem { 
+									node: ASTNode::Expression(RefCell::new(expr.into_inner())), 
+									type_info: RefCell::new(None),
+									token_data: (0, 0) // TODO: Add
+								}),
+							_ => panic!(), // TODO: Error handling
+						};
+					
+						self.check_semicolon()?;
+					}
+					
+					_ => {
+						return Err(CMNError::UnexpectedToken);
+					}
+				}
+			}
+
+			//// Register declaration to symbol table
+			Ok((id, t, ast_elem))
+		} else {
+			Err(CMNError::ExpectedIdentifier)
+		}
+	}
+
 
 
 

@@ -12,7 +12,7 @@ use super::controlflow::ControlFlow;
 pub type TokenData = (usize, usize); // idx, len
 
 // ASTElem contains metadata for an ASTNode, used for error reporting and stuff
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ASTElem {
 	pub node: ASTNode,
 	
@@ -22,7 +22,7 @@ pub struct ASTElem {
 }
 
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum ASTNode {
 	Block(
 		Vec<ASTElem>			// Statements (doesnt need to be ASTChild because Vec is already dynamic)

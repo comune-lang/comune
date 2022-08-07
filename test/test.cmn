@@ -1,8 +1,16 @@
 
+class Test {
+	int a = 0;
+	int b = 0;
+public:
+	int doFunnyThing() {
+		cool();
+	}
+}
+
 @no_mangle
 int printf(char* fmt);
 	u64 fib(u64 n) {
-		/*
 		u64 a = 0;
 		u64 b = 1;
 		u64 c = 0;
@@ -12,8 +20,7 @@ int printf(char* fmt);
 			b = c;
 			printf("loop!\n\0");
 		}
-		return c;*/
-		return 0;
+		return c;
 	}
 
 

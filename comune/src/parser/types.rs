@@ -2,11 +2,13 @@ use std::{fmt::Display, collections::HashMap};
 
 use once_cell::sync::OnceCell;
 
+use super::ast::ASTElem;
+use super::expression::Expr;
 use super::lexer::{Token};
 
 use super::{semantic::FnScope, ASTResult};
 
-type TypeRef = Box<Type>;
+type BoxedType = Box<Type>;
 
 pub type FnParamList = Vec<(Box<Type>, Option<String>)>;
 
@@ -99,17 +101,17 @@ impl Display for Basic {
 }
 
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum InnerType {
-	Basic(Basic),										// Fundamental type
-	Alias(Token, TypeRef),								// Identifier + referenced type
-	Aggregate(HashMap<String, TypeRef>),				// Name map of component types
-	Pointer(TypeRef),									// Pretty self-explanatory
-	Function(TypeRef, Vec<(TypeRef, Option<String>)>),	// Return type + parameter types
-	Unresolved(Token)									// Unresolved type (during parsing phase)
+	Basic(Basic),											// Fundamental type
+	Alias(String, BoxedType),								// Identifier + referenced type
+	Aggregate(Box<AggregateType>),								// Guess.
+	Pointer(BoxedType),										// Pointer-to-<BoxedType>
+	Function(BoxedType, Vec<(BoxedType, Option<String>)>),	// Return type + parameter types
+	Unresolved(Token)										// Unresolved type (during parsing phase)
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Type {
 	pub inner: InnerType,
 	pub generics: Vec<Type>,
@@ -143,8 +145,8 @@ impl Type {
 			InnerType::Alias(_, t) => return t.serialize(),
 			
 			InnerType::Aggregate(a) => {
-				for t in a {
-					result.push_str(&t.1.serialize());
+				for t in &a.members {
+					result.push_str(&t.1.0.serialize());
 				}
 			},
 
@@ -263,8 +265,8 @@ impl Type {
 			InnerType::Aggregate(ts) => {
 				let mut result: usize = 0;
 
-				for t in ts.iter() {
-					result += t.1.get_size_bytes();
+				for t in ts.members.iter() {
+					result += t.1.0.get_size_bytes();
 				}
 				result
 			},
@@ -290,12 +292,8 @@ impl Display for Type {
 				write!(f, "{} ({})", a, t)?;
 			},
 
-			InnerType::Aggregate(types) => {
-				write!(f, "{{ ")?;
-				for t in types {
-					write!(f, "{} {}, ", t.1, t.0)?;
-				}
-				write!(f, "}}")?;
+			InnerType::Aggregate(agg) => {
+				write!(f, "{:?}", agg)?;
 			},
 
 			InnerType::Pointer(t) => {
@@ -325,4 +323,31 @@ impl Display for Type {
 
 		Ok(())
     }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct AggregateType {
+	pub members: HashMap<String, (Type, Option<ASTElem>, Visibility)>,
+	pub constructors: Vec<Type>,
+	pub destructor: Option<Type>,
+	pub inherits: Vec<Type>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Visibility {
+	Public,
+	Private,
+	Protected,
+}
+
+impl AggregateType {
+	pub fn new() -> Self {
+		AggregateType { 
+			members: HashMap::new(),
+			//methods: HashMap::new(),
+			constructors: vec![],
+			destructor: None,
+			inherits: vec![],
+		}
+	}
 }

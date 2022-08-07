@@ -698,9 +698,9 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 			InnerType::Alias(_id, t) => self.get_llvm_type(t.as_ref()),
 
-			InnerType::Aggregate(types) => {
-				let types_mapped : Vec<_> = types.values().map(
-					|t| Self::to_basic_type(self.get_llvm_type(t.as_ref())).as_basic_type_enum()
+			InnerType::Aggregate(aggregate) => {
+				let types_mapped : Vec<_> = aggregate.members.iter().map(
+					|t| Self::to_basic_type(self.get_llvm_type(&t.1.0)).as_basic_type_enum()
 				).collect();
 
 				Box::new(self.context.struct_type(&types_mapped, false))

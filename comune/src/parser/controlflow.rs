@@ -3,7 +3,7 @@ use std::fmt::Display;
 use super::{ast::ASTElem, types::{Typed, Type, Basic}, CMNError, semantic::FnScope};
 
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum ControlFlow {
 	If {
 		cond: ASTElem,

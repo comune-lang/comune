@@ -62,7 +62,7 @@ impl ModuleJobManager {
 			// Declarative pass
 			return match state.parser.parse_module(false) {
 				Ok(_) => { Ok(state) },
-				Err(e) => { Err(e) },
+				Err(e) => { log_msg(CMNMessage::Error(e.clone())); Err(e) },
 			};
 		});
 

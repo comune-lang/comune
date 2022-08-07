@@ -60,12 +60,17 @@ fn main() {
 
 
 	types::PTR_SIZE_BYTES.set(target_machine.get_target_data().get_pointer_byte_size(None)).unwrap();
-	
+
 
 	let manager = modules::ModuleJobManager::new("test/".into(), vec![], args.num_jobs, args.verbose);
 
-	let state = manager.start_module_compilation(args.input_file).unwrap(); // TODO: Handle error
+	let state = match manager.start_module_compilation(args.input_file) {
+		Ok(r) => r,
+		Err(_) => return,
+	};
+	
 	let context = Context::create();
+	
 	let result = match manager.continue_module_compilation(state, &context) {
 		Ok(r) => r,
 		Err(_) => return,

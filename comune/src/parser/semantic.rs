@@ -392,42 +392,6 @@ impl Expr {
 			}
 		};
 
-		/*if let Some(goal_t) = goal_t {
-			if this_t != *goal_t {
-				if self.coercable_to(&this_t, goal_t, scope) {
-					let meta;
-
-					match self { 
-						Expr::Atom(a, m) => {
-							// If self is an atom, we perform extra diagnostics for the cast here
-							meta = *m;
-							a.check_cast(&this_t, goal_t, scope, &meta)?;
-						}
-
-						Expr::Cons(_, _, m) => {
-							meta = *m;
-						}
-					}
-
-					let mut swap = Expr::Atom(Atom::IntegerLit(0, None), meta); //dummy Expr
-					swap = std::mem::replace(self, swap); // swap now contains old Atom
-					
-					// Construct a new Atom to cast the containing Expr to the goal type 
-					let cast = Expr::create_cast(swap, Some(this_t), goal_t.clone(), meta);
-
-					*self = cast;
-
-					return Ok(goal_t.clone());
-				} else {
-					// Type is not coercable to goal type, but we return it anyway so the caller can issue a more descriptive error message
-					return Ok(this_t);
-				}
-			} else {
-				return Ok(this_t);
-			}
-		} else {
-			return Ok(this_t);
-		}*/
 		return Ok(this_t);
 	}
 

@@ -171,7 +171,7 @@ impl Operator {
 }
 
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Expr {
 	Atom(Atom, TokenData),
 	Cons(Operator, Vec<(Expr, TokenData)>, TokenData)
@@ -203,7 +203,7 @@ impl Display for Expr {
 
 
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Atom {
 	IntegerLit(isize, Option<Basic>),
 	FloatLit(f64, Option<Basic>),
