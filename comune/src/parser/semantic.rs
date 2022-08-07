@@ -225,8 +225,12 @@ impl ASTElem {
 				if let Some(expr) = e {
 					expr.type_info.replace(Some(t.clone()));
 					let expr_type = expr.get_type(scope)?;
-					if !expr.get_expr().borrow().coercable_to(&expr_type, t, scope) {
-						return Err((CMNError::TypeMismatch(t.clone(), expr_type), self.token_data));
+					if expr_type != *t {
+						if expr.get_expr().borrow().coercable_to(&expr_type, t, scope) {
+							expr.wrap_expr_in_cast(Some(expr_type), t.clone());
+						} else {
+							return Err((CMNError::AssignTypeMismatch(expr_type, t.clone()), self.token_data));
+						}
 					}
 				}
 
@@ -243,7 +247,7 @@ impl ASTElem {
 					let bool_t = Type::from_basic(Basic::BOOL);
 
 					if !cond_type.castable_to(&bool_t) {
-						return Err((CMNError::TypeMismatch(cond_type, bool_t), self.token_data));
+						return Err((CMNError::InvalidCast{ from: cond_type, to: bool_t}, self.token_data));
 					}
 
 					cond.wrap_expr_in_cast(Some(cond_type), bool_t);
@@ -263,7 +267,7 @@ impl ASTElem {
 					let bool_t = Type::from_basic(Basic::BOOL);
 
 					if !cond_type.castable_to(&bool_t) {
-						return Err((CMNError::TypeMismatch(cond_type, bool_t), self.token_data));
+						return Err((CMNError::InvalidCast{ from: cond_type, to: bool_t}, self.token_data));
 					}
 
 					cond.wrap_expr_in_cast(Some(cond_type), bool_t);
@@ -284,7 +288,7 @@ impl ASTElem {
 						let cond_type = cond.get_type(&mut subscope)?;
 						
 						if !cond_type.castable_to(&bool_t) {
-							return Err((CMNError::TypeMismatch(bool_t, cond_type), cond.token_data));
+							return Err((CMNError::InvalidCast{ from: cond_type, to: bool_t}, cond.token_data));
 						}
 						
 						cond.wrap_expr_in_cast(Some(cond_type), bool_t);
@@ -305,8 +309,11 @@ impl ASTElem {
 						let t = expr.validate(scope, ret)?;
 
 						if let Some(t) = t {
-							if expr.get_expr().borrow().coercable_to(&t, ret, scope) {
+							if t == *ret {
 								Ok(Some(t))
+							} else if expr.get_expr().borrow().coercable_to(&t, ret, scope) {
+								expr.wrap_expr_in_cast(Some(t), ret.clone());
+								Ok(Some(ret.clone()))
 							} else {
 								Err((CMNError::ReturnTypeMismatch { expected: ret.clone(), got: t }, self.token_data))
 							}
@@ -365,7 +372,7 @@ impl Expr {
 					let current = item.0.validate(scope, None, item.1)?;
 
 					if last != current {
-						return Err((CMNError::TypeMismatch(last, current), *meta))
+						return Err((CMNError::ExprTypeMismatch(last, current, op.clone()), *meta))
 					}
 					last = current;
 				}
@@ -385,7 +392,7 @@ impl Expr {
 			}
 		};
 
-		if let Some(goal_t) = goal_t {
+		/*if let Some(goal_t) = goal_t {
 			if this_t != *goal_t {
 				if self.coercable_to(&this_t, goal_t, scope) {
 					let meta;
@@ -412,14 +419,16 @@ impl Expr {
 
 					return Ok(goal_t.clone());
 				} else {
-					return Err((CMNError::TypeMismatch(this_t, goal_t.clone()), meta));
+					// Type is not coercable to goal type, but we return it anyway so the caller can issue a more descriptive error message
+					return Ok(this_t);
 				}
 			} else {
 				return Ok(this_t);
 			}
 		} else {
 			return Ok(this_t);
-		}
+		}*/
+		return Ok(this_t);
 	}
 
 	// Check whether an Expr is coercable to a type
@@ -509,7 +518,7 @@ impl Atom {
 						a.type_info.replace(Some(t.clone()));
 						Ok(t.clone())
 					} else {
-						Err((CMNError::TypeMismatch(a_t, t.clone()), meta))
+						Err((CMNError::InvalidCast{ from: a_t, to: t.clone()}, meta))
 					}
 				} else { 
 					panic!(); 
@@ -529,7 +538,7 @@ impl Atom {
 								let arg_type = args[i].get_expr().borrow_mut().validate(scope, None, meta)?;
 
 								if !args[i].get_expr().borrow().coercable_to(&arg_type, params[i].0.as_ref(), scope) {
-									return Err((CMNError::TypeMismatch(arg_type, params[i].0.as_ref().clone()), args[i].token_data));
+									return Err((CMNError::InvalidCoercion{ from: arg_type, to: params[i].0.as_ref().clone()}, args[i].token_data));
 								}
 
 								if arg_type != *params[i].0 {
@@ -540,7 +549,7 @@ impl Atom {
 							Ok(*ret.clone())
 
 						} else {
-							Err((CMNError::ParameterCountMismatch{expected: params.len(), got: args.len()}, meta))
+							Err((CMNError::ParamCountMismatch{expected: params.len(), got: args.len()}, meta))
 						}
 						
 					} else {

@@ -2,6 +2,7 @@
 @no_mangle
 int printf(char* fmt);
 	u64 fib(u64 n) {
+		/*
 		u64 a = 0;
 		u64 b = 1;
 		u64 c = 0;
@@ -11,12 +12,13 @@ int printf(char* fmt);
 			b = c;
 			printf("loop!\n\0");
 		}
-		return c;
+		return c;*/
+		return 0;
 	}
 
 
 int main() {
-	float a = 0.0 + 23.;
+	f64 a = 23.0;
 	printf("Hello world!\n\0");
-	return fib(32) as i32; // Throws internal compiler error rn, int coercion is allowed by semantic phase but no cast is created
+	return fib(32) as i32;
 }

@@ -244,12 +244,30 @@ impl Lexer {
 		}
 	}
 
-	fn skip_comment(&mut self) -> io::Result<()> {
+	fn skip_single_line_comment(&mut self) -> io::Result<()> {
 		if let Some(mut token) = self.char_buffer {
 			while token == '/' && self.peek_next_char()? == '/' {
 				while token != '\n' && !self.eof_reached() {
 					token = self.get_next_char()?;
 				}
+				token = self.get_next_char()?;
+			}
+			Ok(())
+		} else {
+			Err(Error::new(io::ErrorKind::UnexpectedEof, "file buffer exhausted"))
+		}
+	}
+
+	fn skip_multi_line_comment(&mut self) -> io::Result<()> {
+		if let Some(mut token) = self.char_buffer {
+			while token == '/' && self.peek_next_char()? == '*' {
+				while !self.eof_reached() {
+					token = self.get_next_char()?;
+					if token == '*' && self.peek_next_char()? == '/' {
+						break;
+					}
+				}
+				self.get_next_char()?;
 				token = self.get_next_char()?;
 			}
 			Ok(())
@@ -265,9 +283,14 @@ impl Lexer {
 		if let Some(mut token) = self.char_buffer {
 
 			// skip whitespace and comments
-			while !self.eof_reached() && (token.is_whitespace() || (token == '/' && self.peek_next_char()? == '/')) {
+			while !self.eof_reached() && (
+				token.is_whitespace() || 
+				(token == '/' && self.peek_next_char()? == '/') ||
+				(token == '/' && self.peek_next_char()? == '*') 
+			) {
 				self.skip_whitespace()?;
-				self.skip_comment()?;
+				self.skip_single_line_comment()?;
+				self.skip_multi_line_comment()?;
 				token = self.char_buffer.unwrap();
 			}
 

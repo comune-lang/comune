@@ -363,8 +363,14 @@ impl<'ctx> LLVMBackend<'ctx> {
 						}
 					}
 
+					Atom::FloatLit(f, _) => {
+						match self.get_llvm_type(t).as_any_type_enum() {
+							AnyTypeEnum::FloatType(f_t) => return Box::new(f_t.const_float(*f)),
+							_ => panic!(),
+						}
+					}
+
 					Atom::BoolLit(b) => Box::new(self.context.bool_type().const_int(if *b { 1 } else { 0 }, false)),
-					Atom::FloatLit(f, _) => Box::new(self.context.f32_type().const_float(*f)),
 					Atom::Identifier(v) => Box::new(self.builder.build_load(scope.get_variable(v.resolved.as_ref().unwrap()).unwrap().clone(), "vload")),
 					Atom::ArrayLit(_) => todo!(),
 

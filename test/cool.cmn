@@ -3,3 +3,5 @@
 u64 cool_cast_fn(u64 blah) {
 	return blah;
 }
+
+
