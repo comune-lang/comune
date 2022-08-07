@@ -21,6 +21,7 @@ pub enum CMNError {
 	UnexpectedToken,
 	UnexpectedKeyword,
 	ExpectedIdentifier,
+	InvalidSuffix,
 
 	// Semantic errors
 	UndeclaredIdentifier(String),
@@ -69,6 +70,7 @@ impl Display for CMNError {
 			CMNError::UnexpectedToken => 							write!(f, "unexpected token"),
 			CMNError::UnexpectedKeyword => 							write!(f, "unexpected keyword"),
 			CMNError::ExpectedIdentifier => 						write!(f, "expected identifier"),
+			CMNError::InvalidSuffix => 								write!(f, "invalid suffix"),
 			
 			CMNError::UndeclaredIdentifier(id) =>					write!(f, "undeclared identifier `{}`", id),
 			CMNError::TypeMismatch(a, b) => 						write!(f, "type mismatch; expected {}, got {}", a, b),

@@ -98,10 +98,6 @@ impl<'ctx> FnScope<'ctx> {
 
 
 	pub fn resolve_identifier(&self, id: &mut Identifier) -> Option<Type> {
-		
-		// Found the namespace, resolve the name
-		let name = &id.name;
-
 		if let Some(s) = self.find_symbol(id) {
 			id.resolved = Some(s.0);
 			Some(s.1.clone())
@@ -365,14 +361,6 @@ impl Expr {
 				let mut last = first.0.validate(scope, None, first.1)?;
 				
 				if let Some(item) = iter.next() {
-
-					//let current = match &mut item.0 {
-						// Validate Atom directly
-					//	Expr::Atom(a, _) => a.validate(scope, None, item.1)?,
-						
-						// Validate Cons as a whole
-					//	Expr::Cons(_, _, _) => item.0.validate(scope, None, item.1)?,
-					//};
 					let current = item.0.validate(scope, None, item.1)?;
 
 					if last != current {
@@ -413,7 +401,7 @@ impl Expr {
 						}
 					}
 
-					let mut swap = Expr::Atom(Atom::IntegerLit(0), meta); //dummy Expr
+					let mut swap = Expr::Atom(Atom::IntegerLit(0, None), meta); //dummy Expr
 					swap = std::mem::replace(self, swap); // swap now contains old Atom
 					
 					// Construct a new Atom to cast the containing Expr to the goal type 
@@ -439,11 +427,11 @@ impl Expr {
 		match self {
 			Expr::Atom(a, _) => {
 				match a {
-					Atom::IntegerLit(_) => target.is_numeric(),	// Integer literal is coercable to any numeric type
-					Atom::FloatLit(_) => target.is_numeric(),	// Ditto
+					Atom::IntegerLit(_, t) => target.is_numeric(),	// Integer literal is coercable to any numeric type
+					Atom::FloatLit(_, t) => target.is_numeric(),	// Ditto
 					Atom::BoolLit(_) => target.is_boolean(),
 
-					Atom::StringLit(s) => {
+					Atom::StringLit(_) => {
 						if let InnerType::Pointer(other_p) = &target.inner {
 							if let InnerType::Basic(other_b) = other_p.inner {
 								if let Basic::CHAR = other_b {
@@ -463,59 +451,12 @@ impl Expr {
 
 					Atom::Cast(_, cast_t) => *target == *cast_t,
 					Atom::ArrayLit(_) => todo!(),
+
+					Atom::Dummy => true,
 				}
 			},
 			Expr::Cons(_, _, _) => todo!(),
 		}
-		/*if *self == *target {
-			true
-		} else {
-
-			if self.is_numeric() {
-				if let InnerType::Basic(b) = target.inner {
-					match b {
-						_ => false, //TODO
-
-					}
-				} else { // Other type is not Basic, can't coerce a numeric type to it
-					false
-				}
-			} else {
-				match &self.inner {
-					InnerType::Basic(b) => {
-						match b {
-
-							Basic::STR => {
-								// Abusing the hell outta `if let` here lol
-								// Allow coercion from str to char*, for compatibility with C 
-								// For string literals, emits a warning during semantic analysis if it doesn't end with a null byte	
-								if let InnerType::Pointer(other_p) = &target.inner {
-									if let InnerType::Basic(other_b) = other_p.inner {
-										if let Basic::CHAR = other_b {
-											return true;
-										}
-									}
-								} 
-								false
-							}
-
-							Basic::VOID => { // Void is not coercable to any other type
-								false
-							}
-							
-							_ => {
-								false
-							}
-						}
-					},
-					InnerType::Alias(_, _) => todo!(),
-					InnerType::Aggregate(_) => todo!(),
-					InnerType::Pointer(_) => todo!(),
-					InnerType::Function(_, _) => todo!(),
-					InnerType::Unresolved(_) => todo!(),
-				}
-			}
-		}*/
 	}
 }
 
@@ -525,14 +466,27 @@ impl Expr {
 impl Atom {
 	pub fn validate<'ctx>(&mut self, scope: &'ctx FnScope<'ctx>, goal_t: Option<&Type>, meta: TokenData) -> ASTResult<Type> {
 		match self {
-			Atom::IntegerLit(_) => 
-				if goal_t.is_some() && goal_t.unwrap().is_integral() { 
-					Ok(goal_t.unwrap().clone()) 
-				} else { 
-					Ok(Type::from_basic(Basic::I32)) 
+			Atom::IntegerLit(_, t) =>
+				if let Some(t) = t { 
+					Ok(Type::from_basic(t.clone())) 
+				} else {
+					if goal_t.is_some() && goal_t.unwrap().is_integral() { 
+						Ok(goal_t.unwrap().clone()) 
+					} else { 
+						Ok(Type::from_basic(Basic::I32)) 
+					}
 				},
 			
-			Atom::FloatLit(_) => Ok(Type::from_basic(Basic::F32)),
+			Atom::FloatLit(_, t) => if let Some(t) = t { 
+				Ok(Type::from_basic(t.clone())) 
+			} else {
+				if goal_t.is_some() && goal_t.unwrap().is_floating_point() { 
+					Ok(goal_t.unwrap().clone()) 
+				} else { 
+					Ok(Type::from_basic(Basic::F32)) 
+				}
+			},
+			
 			Atom::BoolLit(_) => Ok(Type::from_basic(Basic::BOOL)),
 			Atom::StringLit(_) => Ok(Type::from_basic(Basic::STR)),
 
@@ -590,6 +544,8 @@ impl Atom {
 			},
 
 			Atom::ArrayLit(_) => todo!(),
+
+			Atom::Dummy => panic!(),
 		}
 	}
 

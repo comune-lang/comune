@@ -97,7 +97,7 @@ pub enum Token {
 	StringLiteral(String),
 	BoolLiteral(bool),
 	Keyword(&'static str),
-	NumLiteral(String),
+	NumLiteral(String, String), // Optional suffix
 	Operator(String),
 	Other(char),
 }
@@ -106,7 +106,7 @@ impl Token {
 	pub fn len(&self) -> usize {
 		match self {
 			
-			Token::Identifier(x) | Token::StringLiteral(x) | Token::NumLiteral(x) | Token::Operator(x)
+			Token::Identifier(x) | Token::StringLiteral(x) | Token::NumLiteral(x, _) | Token::Operator(x)
 				=> x.len(),
 
 			Token::Keyword(x) => x.len(),
@@ -124,7 +124,7 @@ impl Display for Token {
 		
 		match self {
 		
-			Token::Identifier(x) | Token::StringLiteral(x) | Token::NumLiteral(x) | Token::Operator(x) => 
+			Token::Identifier(x) | Token::StringLiteral(x) | Token::NumLiteral(x, _) | Token::Operator(x) => 
 				x.clone(),
 
 			Token::Keyword(x) => x.to_string(),
@@ -307,6 +307,7 @@ impl Lexer {
 				// Numeric literal
 				
 				let mut result = String::from(token);
+				let mut suffix = String::new();
 				let mut next = self.get_next_char()?;
 
 				while next.is_numeric() {
@@ -314,7 +315,25 @@ impl Lexer {
 					next = self.get_next_char()?;
 				}
 
-				result_token = Ok(Token::NumLiteral(result));
+				// Parse decimal stuff
+				if next == '.' {
+					result.push(next);
+					next = self.get_next_char()?;
+					while next.is_numeric() {
+						result.push(next);
+						next = self.get_next_char()?;
+					}
+					if next == 'f' { 
+						result.push(next); next = self.get_next_char()?; 
+					}
+				}
+				// Parse suffix
+				while next.is_alphanumeric() {
+					suffix.push(next);
+					next = self.get_next_char()?;
+				}
+
+				result_token = Ok(Token::NumLiteral(result, suffix));
 
 			} else if OPERATORS.iter().find(|x| { x.chars().next().unwrap() == token }).is_some() {
 				// Operator

@@ -1,13 +1,11 @@
 
 @no_mangle
 int printf(char* fmt);
-
-	
 	u64 fib(u64 n) {
 		u64 a = 0;
 		u64 b = 1;
 		u64 c = 0;
-		for (u64 i = 1; i < n; i = i + 1 as u64) {
+		for (u64 i = 1; i < n; i = i + 1u64) {
 			c = a + b;
 			a = b;
 			b = c;

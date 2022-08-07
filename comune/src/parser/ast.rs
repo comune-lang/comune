@@ -86,7 +86,7 @@ impl ASTElem {
 
 	pub fn wrap_expr_in_cast(&self, from: Option<Type>, to: Type) {
 		if let ASTNode::Expression(e) = &self.node {
-			let dummy = Expr::Atom(Atom::IntegerLit(0), self.token_data);
+			let dummy = Expr::Atom(Atom::IntegerLit(0, None), self.token_data);
 			let expr = e.replace(dummy);
 			e.replace(Expr::create_cast(expr, from, to.clone(), self.token_data));
 			self.type_info.replace(Some(to));

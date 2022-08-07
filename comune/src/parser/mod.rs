@@ -8,7 +8,7 @@ use self::errors::CMNError;
 use self::expression::{Expr, Operator, Atom};
 use self::namespace::{Namespace, Identifier, ScopePath};
 use self::semantic::Attribute;
-use self::types::{Type, InnerType, FnParamList};
+use self::types::{Type, InnerType, FnParamList, Basic};
 
 pub mod namespace;
 pub mod lexer;
@@ -624,7 +624,7 @@ impl Parser {
 		let lhs = match current {
 			
 			// Parse atom
-			Token::Identifier(_) | Token::StringLiteral(_) | Token::NumLiteral(_) | Token::BoolLiteral(_) => 
+			Token::Identifier(_) | Token::StringLiteral(_) | Token::NumLiteral(_, _) | Token::BoolLiteral(_) => 
 				Expr::Atom(self.parse_atom()?, (begin_lhs, get_current_start_index() - begin_lhs)),
 			
 			
@@ -716,7 +716,7 @@ impl Parser {
 				let end_rhs = get_current_start_index();
 				let lhs_meta = (begin_lhs, end_lhs - begin_lhs);
 				let rhs_meta = (begin_rhs, end_rhs - begin_rhs);
-				
+
 				result = Ok(Expr::Cons(op, vec![(lhs, lhs_meta), (rhs, rhs_meta)], (begin_rhs, end_rhs - begin_rhs)));
 			}
 			
@@ -731,7 +731,6 @@ impl Parser {
 	fn parse_atom(&self) -> ParseResult<Atom> {
 		let mut current = get_current()?;
 		let mut scoped = None;
-		let start = get_current_start_index();
 		let mut next;
 
 		if let Token::Identifier(_) = current {
@@ -771,7 +770,7 @@ impl Parser {
 									}
 								}
 							}
-							next = get_next()?;
+							get_next()?;
 
 							result = Atom::FnCall{name: name.clone(), args};
 							break;
@@ -794,8 +793,24 @@ impl Parser {
 
 			Token::StringLiteral(s) => result = Atom::StringLit(s),
 			
-			// TODO: Separate NumLiteral into float and int?
-			Token::NumLiteral(i) => result = Atom::IntegerLit(i.parse::<isize>().unwrap()),
+			Token::NumLiteral(s, suffix) => result = {
+				let suffix_b = Basic::get_basic_type(suffix.as_str());
+				
+				let atom = if s.find('.').is_some() {
+					Atom::FloatLit(s.parse::<f64>().unwrap(), suffix_b)			
+				} else {
+					Atom::IntegerLit(s.parse::<isize>().unwrap(), suffix_b)
+				};
+				let suffix_t;
+				if suffix_b.is_some() {
+					suffix_t = Type::from_basic(suffix_b.unwrap());
+					
+				} else if !suffix.is_empty() {
+					return Err(CMNError::InvalidSuffix);
+				}
+
+				atom
+			},
 
 			Token::BoolLiteral(b) => result = Atom::BoolLit(b),
 

@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use super::{types::Type, ast::{TokenData, ASTElem}, namespace::Identifier};
+use super::{types::{Type, Basic}, ast::{TokenData, ASTElem}, namespace::Identifier};
 
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -205,13 +205,15 @@ impl Display for Expr {
 
 #[derive(Clone, Debug)]
 pub enum Atom {
-	IntegerLit(isize),
+	IntegerLit(isize, Option<Basic>),
+	FloatLit(f64, Option<Basic>),
 	BoolLit(bool),
-	FloatLit(f64),
 	StringLit(String),
 	Identifier(Identifier),
 	ArrayLit(Vec<ASTElem>),
 	Cast(Box<ASTElem>, Type),
+
+	Dummy,
 
 	FnCall{
 		name: Identifier, 
@@ -225,9 +227,9 @@ pub enum Atom {
 impl Display for Atom {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-			Atom::IntegerLit(i) => write!(f, "{}", i),
+			Atom::IntegerLit(i, _) => write!(f, "{}", i),
 			
-            Atom::FloatLit(fl) => write!(f, "{}", fl),
+            Atom::FloatLit(fl, _) => write!(f, "{}", fl),
 
             Atom::StringLit(s) => write!(f, "\"{}\"", s.escape_default()),
 
@@ -252,6 +254,8 @@ impl Display for Atom {
             Atom::Identifier(var) => write!(f, "{}", var),
 			
             Atom::ArrayLit(_elems) => todo!(),
+
+			Atom::Dummy => write!(f, "(dummy)"),
 		}
     }
 }
