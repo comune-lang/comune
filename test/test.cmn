@@ -10,22 +10,26 @@ public:
 
 @no_mangle
 int printf(char* fmt);
-	u64 fib(u64 n) {
-		u64 a = 0;
-		u64 b = 1;
-		u64 c = 0;
-		for (u64 i = 1; i < n; i = i + 1u64) {
-			c = a + b;
-			a = b;
-			b = c;
-			printf("loop!\n\0");
-		}
-		return c;
+
+namespace cool {
+u64 fib(u64 n) {
+	u64 a = 0;
+	u64 b = 1;
+	u64 c = 0;
+	for (u64 i = 1; i < n; i = i + 1u64) {
+		c = a + b;
+		a = b;
+		b = c;
+		//printf("loop!\n\0");
 	}
+	return c;
+}
+}
 
 
 int main() {
-	f64 a = 23.0;
+	Test test;
+	test.a = "this shouldn't work lol";
 	printf("Hello world!\n\0");
-	return fib(32) as i32;
+	return cool::fib(10) as i32;
 }

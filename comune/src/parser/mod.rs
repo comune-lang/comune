@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::cell::RefCell;
 
 use self::lexer::Token;
@@ -165,9 +164,9 @@ impl Parser {
 
 										Token::Keyword(k) => {
 											match k {
-												"public" => { current_visibility = Visibility::Public; }
-												"private" => { current_visibility = Visibility::Private; }
-												"protected" => { current_visibility = Visibility::Protected; }
+												"public" =>		{ current_visibility = Visibility::Public; }
+												"private" =>	{ current_visibility = Visibility::Private; }
+												"protected" =>	{ current_visibility = Visibility::Protected; }
 												_ => return Err(CMNError::UnexpectedKeyword),
 											}
 											get_next()?;
@@ -668,7 +667,7 @@ impl Parser {
 		let begin_lhs = get_current_start_index();
 
 		// Get initial part of expression, could be an Atom or the operator of a unary Cons
-		let lhs = match current {
+		let mut lhs = match current {
 			
 			// Parse atom
 			Token::Identifier(_) | Token::StringLiteral(_) | Token::NumLiteral(_, _) | Token::BoolLiteral(_) => 
@@ -705,7 +704,8 @@ impl Parser {
 							let meta = (begin_lhs, end_index - begin_lhs);
 							return Ok(Expr::Cons(op, vec![(rhs,meta)], meta));
 						}
-					},
+					}
+
 					None => return Err(CMNError::UnexpectedToken)
 				};		
 			}
@@ -747,27 +747,23 @@ impl Parser {
 			get_next()?;
 
 			let begin_rhs = get_current_start_index();
-			let result;
 
 			if op == Operator::Cast {
 				let goal_t = self.parse_type()?;
 
 				let end_index = get_current_start_index();
-				let meta = (begin_rhs, end_index - begin_rhs);
+				let meta = (begin_lhs, end_index - begin_lhs);
 				
-				result = Ok(Expr::create_cast(lhs, None, goal_t, meta));
+				lhs = Expr::create_cast(lhs, None, goal_t, meta);
 			} else {
-
 				let rhs = self.parse_expression_bp(rbp)?;
 
 				let end_rhs = get_current_start_index();
 				let lhs_meta = (begin_lhs, end_lhs - begin_lhs);
 				let rhs_meta = (begin_rhs, end_rhs - begin_rhs);
 
-				result = Ok(Expr::Cons(op, vec![(lhs, lhs_meta), (rhs, rhs_meta)], (begin_rhs, end_rhs - begin_rhs)));
+				lhs = Expr::Cons(op, vec![(lhs, lhs_meta), (rhs, rhs_meta)], (begin_rhs, end_rhs - begin_rhs));
 			}
-			
-			return result;
 		}
 
 		Ok(lhs)
@@ -842,19 +838,16 @@ impl Parser {
 			
 			Token::NumLiteral(s, suffix) => result = {
 				let suffix_b = Basic::get_basic_type(suffix.as_str());
-				
+		
+				if suffix_b.is_none() && !suffix.is_empty() {
+					return Err(CMNError::InvalidSuffix);
+				}
+
 				let atom = if s.find('.').is_some() {
 					Atom::FloatLit(s.parse::<f64>().unwrap(), suffix_b)			
 				} else {
 					Atom::IntegerLit(s.parse::<isize>().unwrap(), suffix_b)
 				};
-				let suffix_t;
-				if suffix_b.is_some() {
-					suffix_t = Type::from_basic(suffix_b.unwrap());
-					
-				} else if !suffix.is_empty() {
-					return Err(CMNError::InvalidSuffix);
-				}
 
 				atom
 			},
@@ -863,6 +856,7 @@ impl Parser {
 
 			_ => return Err(CMNError::UnexpectedToken),
 		};
+
 		Ok(result)
 	}
 
@@ -922,24 +916,34 @@ impl Parser {
 
 
 	fn parse_scoped_name(&self) -> ParseResult<Identifier> {
-		let mut path = ScopePath { elems: vec![], absolute: false };
+		let mut path = ScopePath { scopes: vec![], members: vec![], absolute: false };
 		
 		if let Token::Identifier(id) = get_current()? {
-			path.elems.push(id);
+			path.scopes.push(id);
 		} else {
 			return Err(CMNError::ExpectedIdentifier);
 		}
 
 		while token_compare(&get_next()?, "::") {
 			if let Token::Identifier(id) = get_next()? {
-				path.elems.push(id);
+				path.scopes.push(id);
 			} else {
 				return Err(CMNError::ExpectedIdentifier);
 			}
 		}
-		let name = path.elems.pop().unwrap();
 
-		Ok(Identifier{name, path, resolved: None})
+		while token_compare(&get_current()?, ".") {
+			if let Token::Identifier(id) = get_next()? {
+				path.members.push(id);
+			} else {
+				return Err(CMNError::ExpectedIdentifier);
+			}
+			get_next()?;
+		}
+
+		let name = path.scopes.pop().unwrap();
+
+		Ok(Identifier{ name, path, resolved: None })
 	}
 
 

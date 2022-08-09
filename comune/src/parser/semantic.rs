@@ -1,6 +1,6 @@
 use std::{cell::RefCell, collections::HashMap};
 
-use super::{types::{Type, InnerType, Basic, Typed}, CMNError, ASTResult, namespace::{Namespace, Identifier}, ast::{ASTElem, ASTNode, TokenData}, controlflow::ControlFlow, expression::{Expr, Operator, Atom}, lexer, errors::{CMNMessage, CMNWarning}};
+use super::{types::{Type, InnerType, Basic, Typed}, CMNError, ASTResult, namespace::{Namespace, Identifier, ScopePath}, ast::{ASTElem, ASTNode, TokenData}, controlflow::ControlFlow, expression::{Expr, Operator, Atom}, lexer, errors::{CMNMessage, CMNWarning}};
 
 
 // SEMANTIC ANALYSIS
@@ -51,7 +51,8 @@ impl<'ctx> FnScope<'ctx> {
 
 
 	pub fn find_symbol(&self, id: &Identifier) -> Option<(String, Type)> {
-		if id.path.elems.is_empty() {
+		let mut result = None;
+		if id.path.scopes.is_empty() {
 			// Unqualified name, perform scope-level lookup first
 			let local_lookup;
 			
@@ -65,35 +66,54 @@ impl<'ctx> FnScope<'ctx> {
 
 			if local_lookup.is_some() {
 				// Identifier refers to a non-namespace variable, so resolve it to the plain name
-				return local_lookup;
+				result = local_lookup;
 			}
-
 		}
 		
-		// Oh boy it's name resolution time
-		
-		// Traverse the namespace tree, from either our current namespace or root
-		let root;
-		if id.path.absolute {
-			root = &self.root_namespace;
-		} else {
-			root = &self.context;
-		}
-
-		let mut namespace : &Namespace = &root.borrow();
-		for sub_ns in &id.path.elems {
-			let child = namespace.parsed_children.get(sub_ns);
-			if let Some(child) = child {
-				namespace = child;
+		if result.is_none() {
+			// Oh boy it's name resolution time
+			
+			// Traverse the namespace tree, from either our current namespace or root
+			let root;
+			if id.path.absolute {
+				root = &self.root_namespace;
 			} else {
-				return None; // TODO: Return a Result instead
+				root = &self.context;
+			}
+
+			let mut namespace : &Namespace = &root.borrow();
+			for sub_ns in &id.path.scopes {
+				let child = namespace.parsed_children.get(sub_ns);
+				if let Some(child) = child {
+					namespace = child;
+				} else {
+					return None; // TODO: Return a Result instead
+				}
+			}
+
+			match namespace.get_symbol(&id.name) {
+				Some((t, _, a)) => result = Some((namespace.get_mangled_name(&id.name, a), t.clone())),
+				None => result = None,
 			}
 		}
 
-		match namespace.get_symbol(&id.name) {
-			Some((t, _, a)) => Some((namespace.get_mangled_name(&id.name, a), t.clone())),
-			None => None,
+		if result.is_some() {
+			// Resolve member access
+			for mem in &id.path.members {
+				match result.unwrap().1.inner {
+					InnerType::Aggregate(ref agg) => {
+						let member = agg.members.get(mem);
+						if let Some(member) = member {
+							result = Some((mem.clone(), member.0.clone()));
+						} else {
+							return None;
+						}
+					}
+					_ => return None,
+				}
+			}
 		}
+		return result;
 	}
 
 
@@ -119,7 +139,7 @@ impl<'ctx> FnScope<'ctx> {
 		}
 
 		let mut namespace : &Namespace = &root.borrow();
-		for sub_ns in &id.path.elems {
+		for sub_ns in &id.path.scopes {
 			let child = namespace.parsed_children.get(sub_ns);
 			if let Some(child) = child {
 				namespace = child;
@@ -288,7 +308,7 @@ impl ASTElem {
 						let cond_type = cond.get_type(&mut subscope)?;
 						
 						if !cond_type.castable_to(&bool_t) {
-							return Err((CMNError::InvalidCast{ from: cond_type, to: bool_t}, cond.token_data));
+							return Err((CMNError::InvalidCast{ from: cond_type, to: bool_t }, cond.token_data));
 						}
 						
 						cond.wrap_expr_in_cast(Some(cond_type), bool_t);
@@ -320,13 +340,11 @@ impl ASTElem {
 						} else {
 							Ok(None)
 						}
-
-
 					} else {
 						Ok(Some(Type::from_basic(Basic::VOID))) // Return with no expression is of type void 
 					}
 				
-				},
+				}
 				
 				_ => Ok(None)
 			},
@@ -364,30 +382,60 @@ impl Expr {
 			Expr::Atom(a, _) => a.validate(scope, goal_t, meta)?,
 
 			Expr::Cons(op, elems, meta) => {
-				let mut iter = elems.iter_mut();
-				let first = iter.next().unwrap();
-				let mut last = first.0.validate(scope, None, first.1)?;
-				
-				if let Some(item) = iter.next() {
-					let current = item.0.validate(scope, None, item.1)?;
+				let first = elems.get_mut(0).unwrap();
+				let first_t = first.0.validate(scope, None, first.1)?;
+				let mut second_t = None;
 
-					if last != current {
-						return Err((CMNError::ExprTypeMismatch(last, current, op.clone()), *meta))
+				if let Some(item) = elems.get_mut(1) {
+					second_t = Some(item.0.validate(scope, None, item.1)?);
+
+					if first_t != *second_t.as_ref().unwrap() {
+						return Err((CMNError::ExprTypeMismatch(first_t, second_t.unwrap(), op.clone()), *meta))
 					}
-					last = current;
 				}
 
 				// Handle operators that change the expression's type here
 				match op {
-					Operator::Ref => last.ptr_type(),
+					Operator::Ref => second_t.unwrap().ptr_type(),
 
 					Operator::Deref => {
-						match last.inner {
+						match second_t.unwrap().inner {
 							InnerType::Pointer(t) => *t.clone(),
 							_ => return Err((CMNError::NonPtrDeref, *meta)),
 						}
 					}
-					_ => last
+
+					/*Operator::ScopeRes => {
+						if second_t.is_some() {
+							let lhs = if let Expr::Atom(Atom::Identifier(id), _) = elems[0].0.clone() { id } else { return Err((CMNError::ExpectedIdentifier, *meta)); };
+
+							let mut rhs = if let Expr::Atom(Atom::Identifier(id), _) = &mut elems[1].0 { id } else { return Err((CMNError::ExpectedIdentifier, *meta)); };
+
+							rhs.path = ScopePath::from_parent(&lhs.path, lhs.name.clone());
+							
+							second_t.unwrap()
+						} else {
+							let rhs = if let Expr::Atom(Atom::Identifier(id), _) = &mut elems[0].0 { id } else { return Err((CMNError::ExpectedIdentifier, *meta)); };
+
+							rhs.path = ScopePath::new(true);
+
+							first_t
+						}
+					}
+
+					Operator::MemberAccess => {
+						if let Expr::Atom(Atom::Identifier(id), _) = &elems[1].0 {
+							match first_t.inner {
+								InnerType::Aggregate(agg) => agg.members.get(&id.name).unwrap().0.clone(),
+
+								_ => return Err((CMNError::InvalidMemberAccess{t: first_t, idx: id.name.clone()}, *meta))
+							}
+						} else {
+							return Err((CMNError::InvalidMemberAccess { t: first_t, idx: "(not an identifier)".to_string() }, *meta))
+						}
+					}*/
+
+					_ => second_t.unwrap()
 				}
 			}
 		};
@@ -479,6 +527,10 @@ impl Atom {
 					let a_t = expr.borrow_mut().validate(scope, None, meta)?;
 
 					if a_t.castable_to(t) {
+						if let Expr::Atom(a, _) = &mut *expr.borrow_mut() {
+							a.check_cast(&a_t, t, scope, &meta)?;
+						}
+
 						a.type_info.replace(Some(t.clone()));
 						Ok(t.clone())
 					} else {

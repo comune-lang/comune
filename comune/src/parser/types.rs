@@ -3,8 +3,7 @@ use std::{fmt::Display, collections::HashMap};
 use once_cell::sync::OnceCell;
 
 use super::ast::ASTElem;
-use super::expression::Expr;
-use super::lexer::{Token};
+use super::lexer::Token;
 
 use super::{semantic::FnScope, ASTResult};
 

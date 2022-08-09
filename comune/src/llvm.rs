@@ -692,16 +692,23 @@ impl<'ctx> LLVMBackend<'ctx> {
 				Basic::F32 => 							Box::new(self.context.f32_type()),
 				Basic::BOOL => 							Box::new(self.context.bool_type()),
 				Basic::VOID => 							Box::new(self.context.void_type()),
-
 				Basic::STR => 							Box::new(self.str_type()),
 			},
 
 			InnerType::Alias(_id, t) => self.get_llvm_type(t.as_ref()),
 
 			InnerType::Aggregate(aggregate) => {
-				let types_mapped : Vec<_> = aggregate.members.iter().map(
-					|t| Self::to_basic_type(self.get_llvm_type(&t.1.0)).as_basic_type_enum()
-				).collect();
+				let mut types_mapped = vec![];
+				types_mapped.reserve(aggregate.members.len());
+				
+				for m in aggregate.members.iter() {
+					match m.1.0.inner {
+						InnerType::Function(_, _) => { 
+							self.module.add_function(m.0, self.generate_prototype(&m.1.0).unwrap(), None); 
+						},
+						_ => types_mapped.push(Self::to_basic_type(self.get_llvm_type(&m.1.0)).as_basic_type_enum()) 
+					}
+				}
 
 				Box::new(self.context.struct_type(&types_mapped, false))
 			},

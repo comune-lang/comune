@@ -29,6 +29,7 @@ pub enum CMNError {
 	AssignTypeMismatch(Type, Type),
 	InvalidCast{from: Type, to: Type},
 	InvalidCoercion{from: Type, to: Type},
+	InvalidMemberAccess{t: Type, idx: String},
 	ReturnTypeMismatch{expected: Type, got: Type},
 	ParamCountMismatch{expected: usize, got: usize},
 	NotCallable(String),
@@ -83,6 +84,7 @@ impl Display for CMNError {
 		CMNError::InvalidCoercion{from, to} =>				write!(f, "cannot coerce from {} to {}", from, to),
 		CMNError::ReturnTypeMismatch { expected, got } =>	write!(f, "return type mismatch; expected {}, got {}", expected, got),
 		CMNError::ParamCountMismatch{ expected, got } =>	write!(f, "parameter count mismatch; expected {}, got {}", expected, got),
+		CMNError::InvalidMemberAccess{ t, idx } =>			write!(f, "variable of type {} has no member '{}'", t, idx),
 		CMNError::NotCallable(id) => 						write!(f, "{} is not callable", id),
 		CMNError::NonPtrDeref =>							write!(f, "attempt to dereference a non-pointer value"),
 

@@ -16,7 +16,7 @@ pub struct Identifier {
 
 impl Display for Identifier {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", if self.path.elems.is_empty() {
+        write!(f, "{}", if self.path.scopes.is_empty() {
 			self.name.clone()
 		} else {
 			let mut result = self.path.to_string();
@@ -30,18 +30,19 @@ impl Display for Identifier {
 
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
 pub struct ScopePath {
-	pub elems: Vec<String>,
+	pub scopes: Vec<String>,
+	pub members: Vec<String>,
 	pub absolute: bool,
 }
 
 impl ScopePath {
-	fn new(absolute: bool) -> Self {
-		ScopePath { elems: vec![], absolute }
+	pub fn new(absolute: bool) -> Self {
+		ScopePath { scopes: vec![], members: vec![], absolute }
 	}
 
-	fn from_parent(parent: &ScopePath, name: String) -> Self {
-		let mut result = ScopePath { elems: parent.elems.clone(), absolute: parent.absolute };
-		result.elems.push(name);
+	pub fn from_parent(parent: &ScopePath, name: String) -> Self {
+		let mut result = ScopePath { scopes: parent.scopes.clone(), members: vec![], absolute: parent.absolute };
+		result.scopes.push(name);
 		result
 	}
 }
@@ -49,12 +50,20 @@ impl ScopePath {
 
 impl ToString for ScopePath {
     fn to_string(&self) -> String {
-		if self.elems.is_empty() { return String::new(); }
-		let mut iter = self.elems.iter();
+		if self.scopes.is_empty() { return String::new(); }
+		let mut iter = self.scopes.iter();
         let mut result = iter.next().unwrap().clone();
 		for scope in iter {
 			result.push_str("::");
 			result.push_str(scope);
+		}
+		if !self.members.is_empty() {
+			let mut mem_iter = self.members.iter();
+			result.push_str(mem_iter.next().unwrap());
+			for member in mem_iter {
+				result.push_str(".");
+				result.push_str(member);
+			}
 		}
 		result
     }
@@ -122,7 +131,7 @@ impl Namespace {
 	pub fn get_mangled_name(&self, symbol_name: &str, attributes: &Vec<Attribute>) -> String {
 		if let Some(symbol) = self.symbols.get(symbol_name) {
 			// Don't mangle if function is root main(), or if it has a no_mangle attribute
-			if symbol_name == "main" && self.path.elems.is_empty() || get_attribute(attributes, "no_mangle").is_some() {
+			if symbol_name == "main" && self.path.scopes.is_empty() || get_attribute(attributes, "no_mangle").is_some() {
 				return symbol_name.to_string();
 			}
 
