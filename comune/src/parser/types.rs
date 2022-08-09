@@ -5,6 +5,7 @@ use once_cell::sync::OnceCell;
 use super::ast::ASTElem;
 use super::lexer::Token;
 
+use super::semantic::Attribute;
 use super::{semantic::FnScope, ASTResult};
 
 type BoxedType = Box<Type>;
@@ -326,7 +327,8 @@ impl Display for Type {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct AggregateType {
-	pub members: HashMap<String, (Type, Option<ASTElem>, Visibility)>,
+	pub members: Vec<(String, (Type, Option<ASTElem>, Visibility))>,
+	pub methods: HashMap<String, (Type, Option<ASTElem>, Vec<Attribute>)>,
 	pub constructors: Vec<Type>,
 	pub destructor: Option<Type>,
 	pub inherits: Vec<Type>,
@@ -342,8 +344,8 @@ pub enum Visibility {
 impl AggregateType {
 	pub fn new() -> Self {
 		AggregateType { 
-			members: HashMap::new(),
-			//methods: HashMap::new(),
+			members: vec![],
+			methods: HashMap::new(),
 			constructors: vec![],
 			destructor: None,
 			inherits: vec![],

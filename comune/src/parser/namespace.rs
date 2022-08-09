@@ -32,16 +32,17 @@ impl Display for Identifier {
 pub struct ScopePath {
 	pub scopes: Vec<String>,
 	pub members: Vec<String>,
+	pub member_indices: Vec<u32>, // The indices of the members in their respective base classes, for compilation
 	pub absolute: bool,
 }
 
 impl ScopePath {
 	pub fn new(absolute: bool) -> Self {
-		ScopePath { scopes: vec![], members: vec![], absolute }
+		ScopePath { scopes: vec![], members: vec![], member_indices: vec![], absolute }
 	}
 
 	pub fn from_parent(parent: &ScopePath, name: String) -> Self {
-		let mut result = ScopePath { scopes: parent.scopes.clone(), members: vec![], absolute: parent.absolute };
+		let mut result = ScopePath { scopes: parent.scopes.clone(), members: vec![], member_indices: vec![], absolute: parent.absolute };
 		result.scopes.push(name);
 		result
 	}

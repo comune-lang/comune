@@ -1,17 +1,9 @@
 
-class Test {
-	int a = 0;
-	int b = 0;
-public:
-	int doFunnyThing() {
-		cool();
-	}
-}
 
 @no_mangle
 int printf(char* fmt);
 
-namespace cool {
+/*namespace cool {
 u64 fib(u64 n) {
 	u64 a = 0;
 	u64 b = 1;
@@ -24,12 +16,15 @@ u64 fib(u64 n) {
 	}
 	return c;
 }
-}
+}*/
 
+struct Test {
+	int a;
+	int b;
+}
 
 int main() {
 	Test test;
-	test.a = "this shouldn't work lol";
-	printf("Hello world!\n\0");
-	return cool::fib(10) as i32;
+	test.a = 32;
+	return test.b;
 }

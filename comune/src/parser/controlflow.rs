@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use super::{ast::ASTElem, types::{Typed, Type, Basic}, CMNError, semantic::FnScope};
+use super::{ast::ASTElem, types::{Typed, Type, Basic}, semantic::FnScope};
 
 
 #[derive(Clone, Debug, PartialEq)]

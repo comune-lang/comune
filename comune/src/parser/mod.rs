@@ -158,7 +158,7 @@ impl Parser {
 										Token::Identifier(_) => {
 											let result = self.parse_fn_or_declaration()?;
 
-											aggregate.members.insert(result.0, (result.1, result.2, current_visibility.clone()));
+											aggregate.members.push((result.0, (result.1, result.2, current_visibility.clone())));
 											next = get_current()?;
 										} 
 
@@ -635,11 +635,13 @@ impl Parser {
 					
 						self.check_semicolon()?;
 					}
-					
+
 					_ => {
 						return Err(CMNError::UnexpectedToken);
 					}
 				}
+			} else {
+				self.check_semicolon()?;
 			}
 
 			//// Register declaration to symbol table
@@ -916,7 +918,7 @@ impl Parser {
 
 
 	fn parse_scoped_name(&self) -> ParseResult<Identifier> {
-		let mut path = ScopePath { scopes: vec![], members: vec![], absolute: false };
+		let mut path = ScopePath { scopes: vec![], members: vec![], member_indices: vec![], absolute: false };
 		
 		if let Token::Identifier(id) = get_current()? {
 			path.scopes.push(id);

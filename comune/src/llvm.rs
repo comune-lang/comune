@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use crate::parser::ast::{ASTElem, ASTNode};
 use crate::parser::controlflow::ControlFlow;
 use crate::parser::expression::{Expr, Atom, Operator};
+use crate::parser::namespace::Identifier;
 use crate::parser::types::{Type, Basic, InnerType};
 
 use inkwell::{IntPredicate, AddressSpace};
@@ -371,7 +372,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 					}
 
 					Atom::BoolLit(b) => Box::new(self.context.bool_type().const_int(if *b { 1 } else { 0 }, false)),
-					Atom::Identifier(v) => Box::new(self.builder.build_load(scope.get_variable(v.resolved.as_ref().unwrap()).unwrap().clone(), "vload")),
+					Atom::Identifier(v) => Box::new(self.builder.build_load(self.resolve_identifier(scope, v), "vload")),
 					Atom::ArrayLit(_) => todo!(),
 
 					Atom::Cast(elem, to) => {
@@ -426,7 +427,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 						Operator::Ref => {
 							if let Expr::Atom(a, _) = &elems[0].0 {
 								if let Atom::Identifier(v) = &a {						
-									return Box::new(scope.get_variable(v.resolved.as_ref().unwrap()).unwrap().clone());
+									return Box::new(self.resolve_identifier(scope, v));
 								}
 							}
 							panic!()
@@ -435,7 +436,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 						Operator::Deref => {
 							if let Expr::Atom(a, _) = &elems[0].0 {
 								if let Atom::Identifier(v) = &a {
-									let ptr = self.builder.build_load(*scope.get_variable(v.resolved.as_ref().unwrap()).unwrap(), "loadptr").as_basic_value_enum().into_pointer_value();
+									let ptr = self.builder.build_load(self.resolve_identifier(scope, v), "loadptr").as_basic_value_enum().into_pointer_value();
 									return Box::new(self.builder.build_load(ptr, "deref"));
 								}
 							}
@@ -467,7 +468,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 											Operator::Assign => {
 												if let Expr::Atom(a, _) = &lhs.0 {
 													if let Atom::Identifier(v) = &a {						
-														self.builder.build_store(*scope.get_variable(v.resolved.as_ref().unwrap()).unwrap(), rhs_i);
+														self.builder.build_store(self.resolve_identifier(scope, v), rhs_i);
 														return Box::new(rhs_i);
 													}
 												}
@@ -603,6 +604,20 @@ impl<'ctx> LLVMBackend<'ctx> {
 	}
 
 
+	
+	fn resolve_identifier(&self, scope: &LLVMScope<'ctx, '_>, id: &Identifier) -> PointerValue<'ctx> {
+		let base = *scope.get_variable(id.resolved.as_ref().unwrap()).unwrap();
+		if id.path.members.is_empty() {
+			base
+		} else {
+			let mut current_mem = base;
+			for idx in id.path.member_indices.iter() {
+				current_mem = self.builder.build_struct_gep(current_mem, *idx, "memberaccess").unwrap();
+			}
+
+			current_mem
+		}
+	}
 
 
 
@@ -704,7 +719,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 				for m in aggregate.members.iter() {
 					match m.1.0.inner {
 						InnerType::Function(_, _) => { 
-							self.module.add_function(m.0, self.generate_prototype(&m.1.0).unwrap(), None); 
+							self.module.add_function(&m.0, self.generate_prototype(&m.1.0).unwrap(), None); 
 						},
 						_ => types_mapped.push(Self::to_basic_type(self.get_llvm_type(&m.1.0)).as_basic_type_enum()) 
 					}

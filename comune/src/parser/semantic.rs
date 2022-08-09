@@ -6,7 +6,7 @@ use super::{types::{Type, InnerType, Basic, Typed}, CMNError, ASTResult, namespa
 // SEMANTIC ANALYSIS
 // This module contains structs and impls related to AST checking, name resolution, and type validation.
 
-
+#[derive(PartialEq, Clone, Debug)]
 pub struct Attribute {
 	pub name: String,
 	pub args: Vec<ASTElem>,
@@ -97,14 +97,19 @@ impl<'ctx> FnScope<'ctx> {
 			}
 		}
 
-		if result.is_some() {
-			// Resolve member access
+		return result;
+	}
+	pub fn get_identifier_type(&self, id: &Identifier) -> Option<Type> {
+		if let Some(result) = self.find_symbol(id) {
+			let mut result_t = None;
+
+			// Resolve member type
 			for mem in &id.path.members {
-				match result.unwrap().1.inner {
+				match result.1.inner {
 					InnerType::Aggregate(ref agg) => {
-						let member = agg.members.get(mem);
+						let member = agg.members.iter().find(|elem| elem.0 == *mem);
 						if let Some(member) = member {
-							result = Some((mem.clone(), member.0.clone()));
+							result_t = Some(member.1.0.clone());
 						} else {
 							return None;
 						}
@@ -112,15 +117,33 @@ impl<'ctx> FnScope<'ctx> {
 					_ => return None,
 				}
 			}
+			result_t
+		} else {
+			None
 		}
-		return result;
 	}
 
-
 	pub fn resolve_identifier(&self, id: &mut Identifier) -> Option<Type> {
-		if let Some(s) = self.find_symbol(id) {
-			id.resolved = Some(s.0);
-			Some(s.1.clone())
+		if let Some(result) = self.find_symbol(id) {
+			id.resolved = Some(result.0);
+			let mut result_t = None;
+
+			// Resolve member access again but different this time (ffs)
+			for mem in &id.path.members {
+				match result.1.inner {
+					InnerType::Aggregate(ref agg) => {
+						let member_idx = agg.members.iter().position(|elem| elem.0 == *mem);
+						if let Some(member) = agg.members.get(member_idx.unwrap()) {
+							id.path.member_indices.push(member_idx.unwrap() as u32);
+							result_t = Some(member.1.0.clone());
+						} else {
+							return None;
+						}
+					}
+					_ => return None,
+				}
+			}
+			result_t
 		} else {
 			None
 		}
@@ -472,7 +495,7 @@ impl Expr {
 						false
 					},
 					
-					Atom::Identifier(i) => scope.find_symbol(i).unwrap().1 == *target,
+					Atom::Identifier(i) => scope.get_identifier_type(i).unwrap() == *target,
 					Atom::FnCall { name, args: _ } => match scope.find_symbol(name).unwrap().1.inner {
 						InnerType::Function(ret, _) => *ret == *target,
 						_ => panic!(),
