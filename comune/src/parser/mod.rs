@@ -223,7 +223,7 @@ impl Parser {
 							if let Token::Identifier(name) = name_token {
 								self.current_namespace().borrow_mut().referenced_modules.insert(name);
 						
-								let scoped_name = self.parse_scoped_name()?;
+								//let scoped_name = self.parse_scoped_name()?;
 
 								
 							} else {
@@ -693,7 +693,7 @@ impl Parser {
 									return Err(CMNError::UnexpectedToken);
 								}
 								get_next()?;
-								return Ok(sub);
+								sub
 							} else {
 								return Err(CMNError::UnexpectedToken);
 							}
@@ -704,12 +704,12 @@ impl Parser {
 							let end_index = get_current_start_index();
 
 							let meta = (begin_lhs, end_index - begin_lhs);
-							return Ok(Expr::Cons(op, vec![(rhs,meta)], meta));
+							Expr::Cons(op, vec![(rhs,meta)], meta)
 						}
 					}
 
 					None => return Err(CMNError::UnexpectedToken)
-				};		
+				}		
 			}
 			
 			_ => { return Err(CMNError::UnexpectedToken); }

@@ -19,12 +19,12 @@ u64 fib(u64 n) {
 }*/
 
 struct Test {
-	int a;
-	int b;
+	int a = 0;
 }
 
 int main() {
 	Test test;
-	test.a = 32;
-	return test.b;
+	Test* testptr = &test;
+	*testptr.a = 32;
+	return test.a;
 }
