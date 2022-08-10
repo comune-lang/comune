@@ -124,18 +124,20 @@ impl<'ctx> FnScope<'ctx> {
 	}
 
 	pub fn resolve_identifier(&self, id: &mut Identifier) -> Option<Type> {
-		if let Some(result) = self.find_symbol(id) {
-			id.resolved = Some(result.0);
-			let mut result_t = None;
+		if let Some(find_result) = self.find_symbol(id) {
+			id.resolved = Some(find_result.0);
+			let mut result = find_result.1.clone();
 
 			// Resolve member access again but different this time (ffs)
 			for mem in &id.path.members {
-				match result.1.inner {
+
+				match result.inner {
 					InnerType::Aggregate(ref agg) => {
 						let member_idx = agg.members.iter().position(|elem| elem.0 == *mem);
+
 						if let Some(member) = agg.members.get(member_idx.unwrap()) {
 							id.path.member_indices.push(member_idx.unwrap() as u32);
-							result_t = Some(member.1.0.clone());
+							result = member.1.0.clone();
 						} else {
 							return None;
 						}
@@ -143,7 +145,7 @@ impl<'ctx> FnScope<'ctx> {
 					_ => return None,
 				}
 			}
-			result_t
+			Some(result)
 		} else {
 			None
 		}
@@ -405,60 +407,50 @@ impl Expr {
 			Expr::Atom(a, _) => a.validate(scope, goal_t, meta)?,
 
 			Expr::Cons(op, elems, meta) => {
-				let first = elems.get_mut(0).unwrap();
-				let first_t = first.0.validate(scope, None, first.1)?;
-				let mut second_t = None;
-
-				if let Some(item) = elems.get_mut(1) {
-					second_t = Some(item.0.validate(scope, None, item.1)?);
-
-					if first_t != *second_t.as_ref().unwrap() {
-						return Err((CMNError::ExprTypeMismatch(first_t, second_t.unwrap(), op.clone()), *meta))
-					}
-				}
-
-				// Handle operators that change the expression's type here
 				match op {
-					Operator::Ref => second_t.unwrap().ptr_type(),
-
-					Operator::Deref => {
-						match second_t.unwrap().inner {
-							InnerType::Pointer(t) => *t.clone(),
-							_ => return Err((CMNError::NonPtrDeref, *meta)),
-						}
-					}
-
-					/*Operator::ScopeRes => {
-						if second_t.is_some() {
-							let lhs = if let Expr::Atom(Atom::Identifier(id), _) = elems[0].0.clone() { id } else { return Err((CMNError::ExpectedIdentifier, *meta)); };
-
-							let mut rhs = if let Expr::Atom(Atom::Identifier(id), _) = &mut elems[1].0 { id } else { return Err((CMNError::ExpectedIdentifier, *meta)); };
-
-							rhs.path = ScopePath::from_parent(&lhs.path, lhs.name.clone());
-							
-							second_t.unwrap()
-						} else {
-							let rhs = if let Expr::Atom(Atom::Identifier(id), _) = &mut elems[0].0 { id } else { return Err((CMNError::ExpectedIdentifier, *meta)); };
-
-							rhs.path = ScopePath::new(true);
-
-							first_t
-						}
-					}
-
+					// Special cases for member access and scope resolution
 					Operator::MemberAccess => {
-						if let Expr::Atom(Atom::Identifier(id), _) = &elems[1].0 {
-							match first_t.inner {
-								InnerType::Aggregate(agg) => agg.members.get(&id.name).unwrap().0.clone(),
+						let mut iter = elems.iter_mut();
+						let lhs = iter.next().unwrap();
+						let rhs = iter.next().unwrap();
 
-								_ => return Err((CMNError::InvalidMemberAccess{t: first_t, idx: id.name.clone()}, *meta))
-							}
+						let lhs_type = lhs.0.validate(scope, goal_t, lhs.1)?;
+
+						if let Expr::Atom(Atom::Identifier(id), _) = &mut rhs.0 {
+							rhs.0.validate(scope, goal_t, rhs.1)?
 						} else {
-							return Err((CMNError::InvalidMemberAccess { t: first_t, idx: "(not an identifier)".to_string() }, *meta))
+							return Err((CMNError::ExpectedIdentifier, *meta));
 						}
-					}*/
+					}
 
-					_ => second_t.unwrap()
+					// General case for unary & binary expressions
+					_ => {
+						let first = elems.get_mut(0).unwrap();
+						let first_t = first.0.validate(scope, None, first.1)?;
+						let mut second_t = None;
+
+						if let Some(item) = elems.get_mut(1) {
+							second_t = Some(item.0.validate(scope, None, item.1)?);
+
+							if first_t != *second_t.as_ref().unwrap() {
+								return Err((CMNError::ExprTypeMismatch(first_t, second_t.unwrap(), op.clone()), *meta))
+							}
+						}
+
+						// Handle operators that change the expression's type here
+						match op {
+							Operator::Ref => first_t.ptr_type(),
+
+							Operator::Deref => {
+								match first_t.inner {
+									InnerType::Pointer(t) => *t.clone(),
+									_ => return Err((CMNError::NonPtrDeref, *meta)),
+								}
+							}
+
+							_ => second_t.unwrap()
+						}
+					}
 				}
 			}
 		};
