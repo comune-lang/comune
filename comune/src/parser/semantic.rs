@@ -39,12 +39,12 @@ impl<'ctx> FnScope<'ctx> {
 		}
 	}
 
-	pub fn new(context: &'ctx RefCell<Namespace>, return_type: Type) -> Self {
+	pub fn new(context: &'ctx RefCell<Namespace>, root_namespace: &'ctx RefCell<Namespace>, return_type: Type) -> Self {
 		FnScope {
 			context, 
 			parent: None,
 			fn_return_type: return_type,
-			root_namespace: context,
+			root_namespace,
 			variables: HashMap::new(),
 		}
 	}
@@ -65,34 +65,21 @@ impl<'ctx> FnScope<'ctx> {
 			}
 
 			if local_lookup.is_some() {
-				// Identifier refers to a non-namespace variable, so resolve it to the plain name
+				// Identifier refers to a local variable, so resolve it to the plain name
 				result = local_lookup;
 			}
 		}
 		
 		if result.is_none() {
-			// Oh boy it's name resolution time
-			
-			// Traverse the namespace tree, from either our current namespace or root
-			let root;
-			if id.path.absolute {
-				root = &self.root_namespace;
-			} else {
-				root = &self.context;
-			}
+			// Look for it in the namespace tree			
+			let namespace = self.context.borrow();
+			let root = self.root_namespace.borrow();
 
-			let mut namespace : &Namespace = &root.borrow();
-			for sub_ns in &id.path.scopes {
-				let child = namespace.parsed_children.get(sub_ns);
-				if let Some(child) = child {
-					namespace = child;
-				} else {
-					return None; // TODO: Return a Result instead
-				}
-			}
-
-			match namespace.get_symbol(&id.name) {
-				Some((t, _, a)) => result = Some((namespace.get_mangled_name(&id.name, a), t.clone())),
+			match namespace.get_symbol_namespace(&id, if &root as *const _ != &namespace as *const _ { Some(&root) } else { None }) {
+				Some(ns) => {
+					let symbol = ns.symbols.get(&id.name).unwrap();
+					result = Some((ns.get_mangled_name(&id.name, &symbol.2), symbol.0.clone()))
+				},
 				None => result = None,
 			}
 		}
@@ -157,15 +144,18 @@ impl<'ctx> FnScope<'ctx> {
 
 
 
-pub fn parse_namespace(namespace: &RefCell<Namespace>) -> ASTResult<()> {
-	for child in namespace.borrow_mut().parsed_children.iter_mut() {
-		let hack = RefCell::new(std::mem::take(child.1));
-		parse_namespace(&hack)?;
-		*child.1 = hack.into_inner();
+pub fn parse_namespace(namespace: &RefCell<Namespace>, root_namespace: &RefCell<Namespace>) -> ASTResult<()> {
+	// Wasteful hack but god i am so tired
+	let keys: Vec<String> = namespace.borrow().parsed_children.keys().map(|k| k.clone()).collect();
+
+	for k in keys {
+		let hack = RefCell::new(std::mem::take(namespace.borrow_mut().parsed_children.get_mut(&k).unwrap()));
+		parse_namespace(&hack, root_namespace)?;
+		namespace.borrow_mut().parsed_children.insert(k.clone(), hack.into_inner());
 	}
 
 	for (_sym_name, (sym_type, sym_elem, _)) in &namespace.borrow().symbols {
-		let mut scope = FnScope::new(namespace, sym_type.clone());
+		let mut scope = FnScope::new(namespace, root_namespace, sym_type.clone());
 
 		let ret;
 		if let InnerType::Function(fn_ret, args) = &sym_type.inner {

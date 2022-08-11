@@ -13,7 +13,7 @@ namespace cool {
 			c = a + b;
 			a = b;
 			b = c;
-			//printf("loop!\n\0");
+			printf("loop!\n");
 		}
 		return c;
 	}

@@ -84,7 +84,7 @@ impl ModuleJobManager {
 		};
 
 		// Resolve types
-		match semantic::parse_namespace(namespace) {
+		match semantic::parse_namespace(namespace, namespace) {
 			Ok(()) => {	if self.state.verbose_output { println!("generating code..."); } },
 			Err(e) => { log_msg_at(e.1.0, e.1.1, CMNMessage::Error(e.0.clone())); return Err(e.0); },
 		}
@@ -106,8 +106,8 @@ impl ModuleJobManager {
 		// Generate LLVM IR
 
 		// Register function prototypes
-		self.register_namespace(&mut backend, &namespace.borrow());
-		self.compile_namespace(&mut backend, &namespace.borrow());
+		self.register_namespace(&mut backend, &namespace.borrow(), None);
+		self.compile_namespace(&mut backend, &namespace.borrow(), None);
 
 		backend.generate_libc_bindings();
 
@@ -140,9 +140,13 @@ impl ModuleJobManager {
 		Ok(backend)
 	}
 	
-	fn register_namespace(&self, backend: &mut LLVMBackend, namespace: &Namespace) {
+	fn register_namespace(&self, backend: &mut LLVMBackend, namespace: &Namespace, root: Option<&Namespace>) {
+		if root.is_some() {
+			assert!(namespace as *const _ != root.unwrap() as *const _);
+		}
+
 		for child in namespace.parsed_children.iter() {
-			self.register_namespace(backend, child.1);
+			self.register_namespace(backend, child.1, root);
 		}
 
 		for (sym_name, (sym_type, _, attributes)) in &namespace.symbols {
@@ -153,9 +157,13 @@ impl ModuleJobManager {
 		
 	}
 
-	fn compile_namespace(&self, backend: &mut LLVMBackend, namespace: &Namespace) {
+	fn compile_namespace(&self, backend: &mut LLVMBackend, namespace: &Namespace, root: Option<&Namespace>) {
+		if root.is_some() {
+			assert!(namespace as *const _ != root.unwrap() as *const _);
+		}
+		
 		for child in namespace.parsed_children.iter() {
-			self.compile_namespace(backend, child.1);
+			self.compile_namespace(backend, child.1, root);
 		}
 		// Generate function bodies
 		for (sym_name, (sym_type, sym_elem, attributes)) in &namespace.symbols {
