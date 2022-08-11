@@ -16,7 +16,8 @@ use inkwell::types::{AnyTypeEnum, BasicTypeEnum, FunctionType, BasicMetadataType
 use inkwell::values::{AnyValueEnum, FunctionValue, BasicValue, AnyValue, PointerValue, BasicMetadataValueEnum, BasicValueEnum};
 
 
-// This shit is a mess of enum conversions. hat  it
+// This shit is a mess of enum conversions. hate it
+
 
 type LLVMResult<T> = Result<T, String>;
 
@@ -452,37 +453,49 @@ impl<'ctx> LLVMBackend<'ctx> {
 					// Type of cons
 					match &t.inner {
 						crate::parser::types::InnerType::Basic(b) => {
-							match b { //self.builder.build_int_add(lhs, rhs, name)
+							match b {
 								
 								Basic::ISIZE | Basic::USIZE | Basic::I64 | Basic::U64 | Basic::I32 | Basic::U32 | Basic::I16 | Basic::U16 | Basic::I8 | Basic::U8 | Basic::CHAR => {
-									let lhs_i = self.generate_expr(&lhs.0, t, scope).as_any_value_enum().into_int_value();
-									let rhs_i = self.generate_expr(&rhs.0, t, scope).as_any_value_enum().into_int_value();
-
-									Box::new(
-										match op {
-											Operator::Add => self.builder.build_int_add(lhs_i, rhs_i, "iadd"),
-											Operator::Sub => self.builder.build_int_sub(lhs_i, rhs_i, "isub"),
-											Operator::Mult => self.builder.build_int_mul(lhs_i, rhs_i, "imul"),
-											Operator::Div => self.builder.build_int_signed_div(lhs_i, rhs_i, "idiv"), // TODO: Add unsigned
-
-											Operator::Assign => {
-												if let Expr::Atom(a, _) = &lhs.0 {
-													if let Atom::Identifier(v) = &a {						
-														self.builder.build_store(self.resolve_identifier(scope, v), rhs_i);
-														return Box::new(rhs_i);
-													}
-												}
+									match op {
+										// Member read
+										Operator::MemberAccess => {
+											if let Expr::Atom(Atom::Identifier(id), _) = &rhs.0 {
+												let lhs_s = self.generate_expr(&lhs.0, t, scope).as_any_value_enum().into_struct_value();
+												Box::new(self.builder.build_extract_value(lhs_s, id.mem_idx, "memberaccess").unwrap())
+											} else {
 												panic!();
 											}
-
-											// TODO: Add compound assignment
-
-											// Relational operators
-											_ => self.builder.build_int_compare(Self::to_int_predicate(op, true), lhs_i, rhs_i, "icomp")
-											
 										}
-									)
-								},
+										//Operator::ScopeRes => {
+
+										//}
+										_ => {
+									
+											let lhs_i = self.generate_expr(&lhs.0, t, scope).as_any_value_enum().into_int_value();
+											let rhs_i = self.generate_expr(&rhs.0, t, scope).as_any_value_enum().into_int_value();
+
+											Box::new(
+												match op {
+													Operator::Add => self.builder.build_int_add(lhs_i, rhs_i, "iadd"),
+													Operator::Sub => self.builder.build_int_sub(lhs_i, rhs_i, "isub"),
+													Operator::Mult => self.builder.build_int_mul(lhs_i, rhs_i, "imul"),
+													Operator::Div => self.builder.build_int_signed_div(lhs_i, rhs_i, "idiv"), // TODO: Add unsigned
+
+													Operator::Assign => {
+														self.builder.build_store(self.generate_lvalue_expr(&lhs.0, t, scope), rhs_i);
+														return Box::new(rhs_i);	
+													}
+
+													// TODO: Add compound assignment
+
+													// Relational operators
+													_ => self.builder.build_int_compare(Self::to_int_predicate(op, true), lhs_i, rhs_i, "icomp")
+													
+												}
+											)
+										},
+									}
+								}
 
 								Basic::F64 | Basic::F32 => {
 									let lhs = self.generate_expr(&lhs.0, t, scope).as_any_value_enum().into_float_value();
@@ -513,6 +526,43 @@ impl<'ctx> LLVMBackend<'ctx> {
 					}
 				}
 			},
+		}
+	}
+
+	// an lvalue expression is an expression that is assignable
+	fn generate_lvalue_expr(&self, expr: &Expr, t: &Type, scope: &LLVMScope<'ctx, '_>) -> PointerValue<'ctx> {
+		match expr {
+			Expr::Atom(Atom::Identifier(id), _) => self.resolve_identifier(scope, id),
+			
+			Expr::Cons(op, elems, _) => {
+				match op {
+
+					Operator::Deref => {
+						if let Expr::Atom(Atom::Identifier(id), _) = &elems[0].0 {
+							// In LLVM, pointers are really pointers-to-pointers, so for lvalue expressions we only 
+							// load through the pointer to get the pointer it points to. are ya confused yet
+							self.builder.build_load(self.resolve_identifier(scope, id), "loadptr")
+								.as_basic_value_enum()
+								.into_pointer_value()
+
+						} else {
+							panic!()
+						}
+					}
+
+					Operator::MemberAccess => {
+						let lhs = self.generate_lvalue_expr(&elems[0].0, t, scope);
+						
+						if let Expr::Atom(Atom::Identifier(id), _) = &elems[1].0 {
+							self.builder.build_struct_gep(lhs, id.mem_idx, "memberaccess").unwrap()
+						} else { 
+							panic!(); 
+						}
+					}
+					_ => panic!(),
+				}
+			}
+			_ => panic!(),
 		}
 	}
 
@@ -606,17 +656,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 	
 	fn resolve_identifier(&self, scope: &LLVMScope<'ctx, '_>, id: &Identifier) -> PointerValue<'ctx> {
-		let base = *scope.get_variable(id.resolved.as_ref().unwrap()).unwrap();
-		if id.path.members.is_empty() {
-			base
-		} else {
-			let mut current_mem = base;
-			for idx in id.path.member_indices.iter() {
-				current_mem = self.builder.build_struct_gep(current_mem, *idx, "memberaccess").unwrap();
-			}
-
-			current_mem
-		}
+		*scope.get_variable(id.resolved.as_ref().unwrap()).unwrap()
 	}
 
 

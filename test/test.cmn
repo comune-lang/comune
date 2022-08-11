@@ -25,6 +25,6 @@ struct Test {
 int main() {
 	Test test;
 	Test* testptr = &test;
-	*testptr.a = 32;
+	(*testptr).a = 32;
 	return test.a;
 }

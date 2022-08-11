@@ -10,6 +10,7 @@ use super::{types::{Type, Basic}, ast::ASTElem};
 pub struct Identifier {
 	pub name: String,
 	pub path: ScopePath,
+	pub mem_idx: u32,
 	pub resolved: Option<String> // Mangled name, resolved during semantic analysis
 }
 

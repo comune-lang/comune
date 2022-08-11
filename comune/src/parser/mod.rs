@@ -663,7 +663,7 @@ impl Parser {
 
 
 
-	// Basic pratt parser, nothing too fancy
+	// World's most hacked-together pratt parser (tm)
 	fn parse_expression_bp(&self, min_bp: u8) -> ParseResult<Expr> {
 		let mut current = get_current()?;
 		let begin_lhs = get_current_start_index();
@@ -717,6 +717,7 @@ impl Parser {
 
 		let end_lhs = get_current_start_index();
 
+		// Parse RHS
 		loop {
 			let tk = get_current()?;
 
@@ -775,21 +776,12 @@ impl Parser {
 
 	fn parse_atom(&self) -> ParseResult<Atom> {
 		let mut current = get_current()?;
-		let mut scoped = None;
-		let mut next;
-
-		if let Token::Identifier(_) = current {
-			scoped = Some(self.parse_scoped_name()?);
-			next = get_current()?;	
-		} else {
-			next = get_next()?;
-		}
+		let mut next = get_next()?;
 
 		let mut result;
 		match current {
-			Token::Identifier(_id) => {
-				let name = scoped.unwrap();
-
+			Token::Identifier(id) => {
+				let name = Identifier { name: id, path: ScopePath::new(false), mem_idx: 0, resolved: None };
 				result = Atom::Identifier(name.clone());
 
 				while let Token::Operator(ref op) = next {
@@ -945,7 +937,7 @@ impl Parser {
 
 		let name = path.scopes.pop().unwrap();
 
-		Ok(Identifier{ name, path, resolved: None })
+		Ok(Identifier{ name, path, mem_idx: 0, resolved: None })
 	}
 
 

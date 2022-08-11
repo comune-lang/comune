@@ -402,25 +402,16 @@ impl Expr {
 	pub fn validate<'ctx>(&mut self, scope: &'ctx FnScope<'ctx>, goal_t: Option<&Type>, meta: TokenData) -> ASTResult<Type> {
 
 		// Validate Atom or sub-expressions
-		let this_t = match self {
+		match self {
 
-			Expr::Atom(a, _) => a.validate(scope, goal_t, meta)?,
+			Expr::Atom(a, _) => a.validate(scope, goal_t, meta),
 
 			Expr::Cons(op, elems, meta) => {
 				match op {
 					// Special cases for member access and scope resolution
 					Operator::MemberAccess => {
-						let mut iter = elems.iter_mut();
-						let lhs = iter.next().unwrap();
-						let rhs = iter.next().unwrap();
-
-						let lhs_type = lhs.0.validate(scope, goal_t, lhs.1)?;
-
-						if let Expr::Atom(Atom::Identifier(id), _) = &mut rhs.0 {
-							rhs.0.validate(scope, goal_t, rhs.1)?
-						} else {
-							return Err((CMNError::ExpectedIdentifier, *meta));
-						}
+						let meta = meta.clone();
+						self.get_lvalue_type(scope, meta).ok_or((CMNError::ExpectedIdentifier, meta))
 					}
 
 					// General case for unary & binary expressions
@@ -439,23 +430,21 @@ impl Expr {
 
 						// Handle operators that change the expression's type here
 						match op {
-							Operator::Ref => first_t.ptr_type(),
+							Operator::Ref => Ok(first_t.ptr_type()),
 
 							Operator::Deref => {
 								match first_t.inner {
-									InnerType::Pointer(t) => *t.clone(),
+									InnerType::Pointer(t) => Ok(*t.clone()),
 									_ => return Err((CMNError::NonPtrDeref, *meta)),
 								}
 							}
 
-							_ => second_t.unwrap()
+							_ => Ok(second_t.unwrap())
 						}
 					}
 				}
 			}
-		};
-
-		return Ok(this_t);
+		}
 	}
 
 	// Check whether an Expr is coercable to a type
@@ -501,6 +490,38 @@ impl Expr {
 			},
 
 			Expr::Cons(_, _, _) => from == target,
+		}
+	}
+
+
+	pub fn get_lvalue_type<'ctx>(&mut self, scope: &'ctx FnScope<'ctx>, meta: TokenData) -> Option<Type> {
+		match self {
+			Expr::Atom(a, _) => a.get_lvalue_type(scope),
+			Expr::Cons(op, elems, _) => {
+				// Only these operators can result in lvalues
+				match op {
+					Operator::Deref => {
+						match elems[0].0.validate(scope, None, meta).unwrap().inner {
+							InnerType::Pointer(t) => Some(*t),
+							_ => None,
+						}
+					}
+
+					Operator::MemberAccess => {
+						if let Expr::Atom(Atom::Identifier(ref id), _) = elems[1].0 {
+							let id = id.clone();
+							match elems[0].0.validate(scope, None, meta).unwrap().inner {
+								InnerType::Aggregate(t) => Some(t.members.iter().find(|mem| mem.0 == id.name).unwrap().1.0.clone()),
+								_ => None,
+							}
+						} else {
+							None
+						}
+					}
+
+					_ => None,
+				}
+			},
 		}
 	}
 }
@@ -627,6 +648,18 @@ impl Atom {
 			InnerType::Pointer(_) => todo!(),
 			InnerType::Function(_, _) => todo!(),
 			InnerType::Unresolved(_) => todo!(),
+		}
+	}
+
+
+
+	pub fn get_lvalue_type<'ctx>(&self, scope: &'ctx FnScope<'ctx>) -> Option<Type> {
+		match self {
+			Atom::Identifier(id) => match scope.find_symbol(id){
+				Some((_, t)) => Some(t),
+				None => None,
+			},
+			_ => None,
 		}
 	}
 }
