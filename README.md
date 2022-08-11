@@ -58,3 +58,7 @@ simply make sure Rust and LLVM 12 are installed on your WSL distro, run `cargo b
 ### linux
 
 ditto, just make sure you've got Rust and LLVM 12 set up properly and you oughta be fine.
+
+## documentation
+
+the comune documentation is built with mdBook, and it is not even remotely presentable right now. frankly i'm mostly using it as a way of keeping notes about design ideas so please don't take any of it as definitive or factual right now
