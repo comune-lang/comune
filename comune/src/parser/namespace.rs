@@ -32,18 +32,16 @@ impl Display for Identifier {
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
 pub struct ScopePath {
 	pub scopes: Vec<String>,
-	pub members: Vec<String>,
-	pub member_indices: Vec<u32>, // The indices of the members in their respective base classes, for compilation
 	pub absolute: bool,
 }
 
 impl ScopePath {
 	pub fn new(absolute: bool) -> Self {
-		ScopePath { scopes: vec![], members: vec![], member_indices: vec![], absolute }
+		ScopePath { scopes: vec![], absolute }
 	}
 
 	pub fn from_parent(parent: &ScopePath, name: String) -> Self {
-		let mut result = ScopePath { scopes: parent.scopes.clone(), members: vec![], member_indices: vec![], absolute: parent.absolute };
+		let mut result = ScopePath { scopes: parent.scopes.clone(), absolute: parent.absolute };
 		result.scopes.push(name);
 		result
 	}
@@ -58,14 +56,6 @@ impl ToString for ScopePath {
 		for scope in iter {
 			result.push_str("::");
 			result.push_str(scope);
-		}
-		if !self.members.is_empty() {
-			let mut mem_iter = self.members.iter();
-			result.push_str(mem_iter.next().unwrap());
-			for member in mem_iter {
-				result.push_str(".");
-				result.push_str(member);
-			}
 		}
 		result
     }

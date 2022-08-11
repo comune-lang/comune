@@ -1,22 +1,23 @@
 
 
+
 @no_mangle
 int printf(char* fmt);
 
-/*namespace cool {
-u64 fib(u64 n) {
-	u64 a = 0;
-	u64 b = 1;
-	u64 c = 0;
-	for (u64 i = 1; i < n; i = i + 1u64) {
-		c = a + b;
-		a = b;
-		b = c;
-		//printf("loop!\n\0");
+namespace cool {
+	u64 fib(u64 n) {
+		u64 a = 0; // Literals can be coerced to any numeric type
+		u64 b = 1;
+		u64 c = 0;
+		for (u64 i = 1; i < n; i = i + 1u64) {
+			c = a + b;
+			a = b;
+			b = c;
+			//printf("loop!\n\0");
+		}
+		return c;
 	}
-	return c;
 }
-}*/
 
 struct Test {
 	int a = 0;
@@ -25,6 +26,6 @@ struct Test {
 int main() {
 	Test test;
 	Test* testptr = &test;
-	(*testptr).a = 32;
-	return test.a;
+	(*testptr).a = cool::fib(10) as i32; // Strong typing for integers; try removing the cast
+	return (*testptr).a;
 }

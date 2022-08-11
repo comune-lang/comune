@@ -776,12 +776,21 @@ impl Parser {
 
 	fn parse_atom(&self) -> ParseResult<Atom> {
 		let mut current = get_current()?;
-		let mut next = get_next()?;
-
 		let mut result;
+		let mut name = None;
+		let mut next;
+		
+		// If we're parsing an Identifier, parse the whole scoped name
+		if let Token::Identifier(_) = current {
+			name = Some(self.parse_scoped_name()?);
+			next = get_current()?;
+		} else {
+			next = get_next()?;
+		}
+
 		match current {
-			Token::Identifier(id) => {
-				let name = Identifier { name: id, path: ScopePath::new(false), mem_idx: 0, resolved: None };
+			Token::Identifier(_) => {
+				let name = name.unwrap();
 				result = Atom::Identifier(name.clone());
 
 				while let Token::Operator(ref op) = next {
@@ -809,19 +818,19 @@ impl Parser {
 							}
 							get_next()?;
 
-							result = Atom::FnCall{name: name.clone(), args};
+							result = Atom::FnCall{name, args};
 							break;
 						}
 
 						"<" => {
 							// TODO: Disambiguate between type parameter list or LT operator 
-							result = Atom::Identifier(name.clone());
+							result = Atom::Identifier(name);
 							break;
 						}
 
 						_ => {
 							// Just a variable
-							result = Atom::Identifier(name.clone());
+							result = Atom::Identifier(name);
 							break;
 						}
 					} 
@@ -910,7 +919,7 @@ impl Parser {
 
 
 	fn parse_scoped_name(&self) -> ParseResult<Identifier> {
-		let mut path = ScopePath { scopes: vec![], members: vec![], member_indices: vec![], absolute: false };
+		let mut path = ScopePath { scopes: vec![], absolute: false };
 		
 		if let Token::Identifier(id) = get_current()? {
 			path.scopes.push(id);
@@ -925,16 +934,6 @@ impl Parser {
 				return Err(CMNError::ExpectedIdentifier);
 			}
 		}
-
-		while token_compare(&get_current()?, ".") {
-			if let Token::Identifier(id) = get_next()? {
-				path.members.push(id);
-			} else {
-				return Err(CMNError::ExpectedIdentifier);
-			}
-			get_next()?;
-		}
-
 		let name = path.scopes.pop().unwrap();
 
 		Ok(Identifier{ name, path, mem_idx: 0, resolved: None })

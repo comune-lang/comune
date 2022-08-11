@@ -101,23 +101,7 @@ impl<'ctx> FnScope<'ctx> {
 	}
 	pub fn get_identifier_type(&self, id: &Identifier) -> Option<Type> {
 		if let Some(result) = self.find_symbol(id) {
-			let mut result_t = None;
-
-			// Resolve member type
-			for mem in &id.path.members {
-				match result.1.inner {
-					InnerType::Aggregate(ref agg) => {
-						let member = agg.members.iter().find(|elem| elem.0 == *mem);
-						if let Some(member) = member {
-							result_t = Some(member.1.0.clone());
-						} else {
-							return None;
-						}
-					}
-					_ => return None,
-				}
-			}
-			result_t
+			Some(result.1)
 		} else {
 			None
 		}
@@ -126,26 +110,7 @@ impl<'ctx> FnScope<'ctx> {
 	pub fn resolve_identifier(&self, id: &mut Identifier) -> Option<Type> {
 		if let Some(find_result) = self.find_symbol(id) {
 			id.resolved = Some(find_result.0);
-			let mut result = find_result.1.clone();
-
-			// Resolve member access again but different this time (ffs)
-			for mem in &id.path.members {
-
-				match result.inner {
-					InnerType::Aggregate(ref agg) => {
-						let member_idx = agg.members.iter().position(|elem| elem.0 == *mem);
-
-						if let Some(member) = agg.members.get(member_idx.unwrap()) {
-							id.path.member_indices.push(member_idx.unwrap() as u32);
-							result = member.1.0.clone();
-						} else {
-							return None;
-						}
-					}
-					_ => return None,
-				}
-			}
-			Some(result)
+			Some(find_result.1.clone())
 		} else {
 			None
 		}
@@ -500,6 +465,7 @@ impl Expr {
 			Expr::Cons(op, elems, _) => {
 				// Only these operators can result in lvalues
 				match op {
+
 					Operator::Deref => {
 						match elems[0].0.validate(scope, None, meta).unwrap().inner {
 							InnerType::Pointer(t) => Some(*t),
