@@ -48,6 +48,8 @@ the modules feature, like the rest of the build system, is highly influenced by 
 
 ## compiling
 
+> note: i really oughta get around to making the build work with more than one version of LLVM soon. in the meantime, there aren't any LLVM-12-exclusive features in the codebase AFAIK, so modifying the version number in Cargo.toml should work fine? your mileage may vary.
+
 ### windows
 
 on windows, compiling using WSL2 is ***highly*** recommended, unless you want to go through the trouble of compiling LLVM yourself (you don't).
