@@ -5,7 +5,7 @@ use crate::parser::ast::{ASTElem, ASTNode};
 use crate::parser::controlflow::ControlFlow;
 use crate::parser::expression::{Expr, Atom, Operator};
 use crate::parser::namespace::Identifier;
-use crate::parser::types::{Type, Basic, InnerType};
+use crate::parser::types::{Type, Basic};
 
 use inkwell::{IntPredicate, AddressSpace};
 use inkwell::builder::Builder;
@@ -99,7 +99,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 			let mut scope = LLVMScope::new();
 	
 			// Add parameters to variable list
-			if let InnerType::Function(_ret, args) = &t.inner {
+			if let Type::Function(_ret, args) = &t {
 				for (i, param) in fn_v.get_param_iter().enumerate() {
 
 					// Only add parameter to scope is it is named
@@ -125,7 +125,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 
 	fn generate_prototype(&self, t: &Type) -> LLVMResult<FunctionType<'ctx>> {
-		if let InnerType::Function(ret, args) = &t.inner {
+		if let Type::Function(ret, args) = &t {
 
 			let types_mapped: Vec<_> = args.iter().map(
 				|t| Self::to_basic_metadata_enum(self.get_llvm_type(t.0.as_ref())).unwrap()
@@ -203,7 +203,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 				let expr;
 				if let ASTNode::Expression(e) = &cond.node { expr = e; } else { unreachable!(); }
 
-				let cond = self.generate_expr(&expr.borrow(), cond.type_info.borrow().as_ref().unwrap_or(&Type::from_basic(Basic::VOID)), scope);
+				let cond = self.generate_expr(&expr.borrow(), cond.type_info.borrow().as_ref().unwrap_or(&Type::Basic(Basic::VOID)), scope);
 				
 				let cond = self.builder.build_int_compare(
 					IntPredicate::NE, 
@@ -251,7 +251,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 				self.builder.build_unconditional_branch(cond_bb);
 				self.builder.position_at_end(cond_bb);
 
-				let cond = self.generate_expr(&expr.borrow(), cond.type_info.borrow().as_ref().unwrap_or(&Type::from_basic(Basic::VOID)), scope);
+				let cond = self.generate_expr(&expr.borrow(), cond.type_info.borrow().as_ref().unwrap_or(&Type::Basic(Basic::VOID)), scope);
 				
 				let cond = self.builder.build_int_compare(
 					IntPredicate::NE, 
@@ -451,8 +451,8 @@ impl<'ctx> LLVMBackend<'ctx> {
 					let rhs = &elems[1];
 
 					// Type of cons
-					match &t.inner {
-						crate::parser::types::InnerType::Basic(b) => {
+					match &t {
+						Type::Basic(b) => {
 							match b {
 								
 								Basic::ISIZE | Basic::USIZE | Basic::I64 | Basic::U64 | Basic::I32 | Basic::U32 | Basic::I16 | Basic::U16 | Basic::I8 | Basic::U8 | Basic::CHAR => {
@@ -518,11 +518,11 @@ impl<'ctx> LLVMBackend<'ctx> {
 								Basic::STR => todo!(),
 							}
 						},
-						InnerType::Alias(_, _) => todo!(),
-						InnerType::Aggregate(_) => todo!(),
-						InnerType::Pointer(_) => todo!(),
-						InnerType::Function(_, _) => todo!(),
-						InnerType::Unresolved(_) => todo!(),
+						Type::Alias(_, _) => todo!(),
+						Type::Aggregate(_) => todo!(),
+						Type::Pointer(_) => todo!(),
+						Type::Function(_, _) => todo!(),
+						Type::Unresolved(_) => todo!(),
 					}
 				}
 			},
@@ -568,15 +568,15 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 
 	fn generate_cast(&self, expr: &Expr, from: &Type, to: &Type, scope: &LLVMScope<'ctx, '_>) -> Box<dyn AnyValue<'ctx> + 'ctx> {
-		match from.inner {
-			InnerType::Basic(b) => {
+		match from {
+			Type::Basic(b) => {
 				
 				if from.is_numeric() {
 					let val = self.generate_expr(expr, from, scope);
 					match val.as_any_value_enum() {
 									
 						AnyValueEnum::IntValue(i) => {
-							if let InnerType::Basic(b) = &to.inner {
+							if let Type::Basic(b) = &to {
 								match b {
 
 									Basic::BOOL => 
@@ -612,8 +612,8 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 					match b {
 						Basic::STR => {
-							if let InnerType::Pointer(other_p) = &to.inner {
-								if let InnerType::Basic(other_b) = other_p.inner {
+							if let Type::Pointer(other_p) = &to {
+								if let Type::Basic(other_b) = **other_p {
 									if let Basic::CHAR = other_b {
 										// Cast from `str` to char*
 										let val = self.generate_expr(expr, from, scope);
@@ -645,11 +645,11 @@ impl<'ctx> LLVMBackend<'ctx> {
 					}
 				}
 			},
-			InnerType::Alias(_, _) => todo!(),
-			InnerType::Aggregate(_) => todo!(),
-			InnerType::Pointer(_) => todo!(),
-			InnerType::Function(_, _) => todo!(),
-			InnerType::Unresolved(_) => todo!(),
+			Type::Alias(_, _) => todo!(),
+			Type::Aggregate(_) => todo!(),
+			Type::Pointer(_) => todo!(),
+			Type::Function(_, _) => todo!(),
+			Type::Unresolved(_) => todo!(),
 		}
 	}
 
@@ -736,8 +736,8 @@ impl<'ctx> LLVMBackend<'ctx> {
 	}
 	
 	fn get_llvm_type(&self, t: &Type) -> Box<dyn AnyType<'ctx> + 'ctx> {
-		match &t.inner {
-			InnerType::Basic(b) => match b {
+		match &t {
+			Type::Basic(b) => match b {
 				Basic::I64 | Basic::U64 =>				Box::new(self.context.i64_type()),
 				Basic::I32 | Basic::U32 =>				Box::new(self.context.i32_type()),
 				Basic::I16 | Basic::U16 =>				Box::new(self.context.i16_type()),
@@ -750,15 +750,15 @@ impl<'ctx> LLVMBackend<'ctx> {
 				Basic::STR => 							Box::new(self.str_type()),
 			},
 
-			InnerType::Alias(_id, t) => self.get_llvm_type(t.as_ref()),
+			Type::Alias(_id, t) => self.get_llvm_type(t.as_ref()),
 
-			InnerType::Aggregate(aggregate) => {
+			Type::Aggregate(aggregate) => {
 				let mut types_mapped = vec![];
 				types_mapped.reserve(aggregate.members.len());
 				
 				for m in aggregate.members.iter() {
-					match m.1.0.inner {
-						InnerType::Function(_, _) => { 
+					match m.1.0 {
+						Type::Function(_, _) => { 
 							self.module.add_function(&m.0, self.generate_prototype(&m.1.0).unwrap(), None); 
 						},
 						_ => types_mapped.push(Self::to_basic_type(self.get_llvm_type(&m.1.0)).as_basic_type_enum()) 
@@ -768,9 +768,9 @@ impl<'ctx> LLVMBackend<'ctx> {
 				Box::new(self.context.struct_type(&types_mapped, false))
 			},
 
-			InnerType::Pointer(t_sub) => Box::new(Self::to_basic_type(self.get_llvm_type(t_sub)).ptr_type(AddressSpace::Generic)),
-			InnerType::Function(_, _) => todo!(),
-			InnerType::Unresolved(_) => panic!(),
+			Type::Pointer(t_sub) => Box::new(Self::to_basic_type(self.get_llvm_type(t_sub)).ptr_type(AddressSpace::Generic)),
+			Type::Function(_, _) => todo!(),
+			Type::Unresolved(_) => panic!(),
 		}
 	}
 

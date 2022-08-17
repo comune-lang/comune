@@ -104,7 +104,7 @@ impl Namespace {
 
 	pub fn get_type(&self, name: &str) -> Option<Type> {
 		if let Some(basic) = Basic::get_basic_type(name) {
-			Some(Type::from_basic(basic))
+			Some(Type::Basic(basic))
 		} else if self.types.contains_key(name) {
 			self.types.get(name).cloned()
 		} else {

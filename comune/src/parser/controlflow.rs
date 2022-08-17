@@ -54,19 +54,19 @@ impl Typed for ControlFlow {
 
 				} else {
 					// No else branch, evaluates to void
-					Ok(Type::from_basic(Basic::VOID))
+					Ok(Type::Basic(Basic::VOID))
 				}
 			},
 
 			// Loops are always of type void
             ControlFlow::While { cond: _, body: _ } | ControlFlow::For { init: _, cond: _, iter: _, body: _} => 
-				Ok(Type::from_basic(Basic::VOID)),
+				Ok(Type::Basic(Basic::VOID)),
 
             ControlFlow::Return { expr } => { 
 				if let Some(expr) = expr { 
 					expr.get_type(scope)
 				} else {
-					Ok(Type::from_basic(Basic::VOID))
+					Ok(Type::Basic(Basic::VOID))
 				}},
 
             ControlFlow::Break => todo!(),

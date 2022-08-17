@@ -1,6 +1,6 @@
 use std::{cell::RefCell, collections::HashMap};
 
-use super::{types::{Type, InnerType, Basic, Typed}, CMNError, ASTResult, namespace::{Namespace, Identifier, ScopePath}, ast::{ASTElem, ASTNode, TokenData}, controlflow::ControlFlow, expression::{Expr, Operator, Atom}, lexer, errors::{CMNMessage, CMNWarning}};
+use super::{types::{Type, Basic, Typed}, CMNError, ASTResult, namespace::{Namespace, Identifier, ScopePath}, ast::{ASTElem, ASTNode, TokenData}, controlflow::ControlFlow, expression::{Expr, Operator, Atom}, lexer, errors::{CMNMessage, CMNWarning}};
 
 
 // SEMANTIC ANALYSIS
@@ -158,7 +158,7 @@ pub fn parse_namespace(namespace: &RefCell<Namespace>, root_namespace: &RefCell<
 		let mut scope = FnScope::new(namespace, root_namespace, sym_type.clone());
 
 		let ret;
-		if let InnerType::Function(fn_ret, args) = &sym_type.inner {
+		if let Type::Function(fn_ret, args) = &sym_type {
 			ret = fn_ret.as_ref().clone();
 			for arg in args.iter() {
 				scope.add_variable(arg.0.as_ref().clone(), arg.1.clone().unwrap())
@@ -172,10 +172,10 @@ pub fn parse_namespace(namespace: &RefCell<Namespace>, root_namespace: &RefCell<
 		if let Some(elem) = sym_elem {
 			
 			// Validate function block & get return type, make sure it matches the signature
-			let void = Type::from_basic(Basic::VOID);
+			let void = Type::Basic(Basic::VOID);
 			let ret_type = elem.validate(&mut scope, &ret)?;
 			
-			if ret_type.is_none() && ret.inner != void.inner {
+			if ret_type.is_none() && ret != void {
 				// No returns in non-void function
 				return Err((CMNError::ReturnTypeMismatch { expected: ret.clone(), got: void }, elem.token_data));
 			} else if ret_type.is_some() && !ret_type.as_ref().unwrap().castable_to(&ret) {
@@ -242,9 +242,9 @@ impl ASTElem {
 			ASTNode::ControlFlow(ctrl) => match ctrl.as_ref() {
 
 				ControlFlow::If { cond, body, else_body } => {
-					cond.type_info.replace(Some(Type::from_basic(Basic::BOOL)));
+					cond.type_info.replace(Some(Type::Basic(Basic::BOOL)));
 					let cond_type = cond.get_type(scope)?;
-					let bool_t = Type::from_basic(Basic::BOOL);
+					let bool_t = Type::Basic(Basic::BOOL);
 
 					if !cond_type.castable_to(&bool_t) {
 						return Err((CMNError::InvalidCast{ from: cond_type, to: bool_t}, self.token_data));
@@ -262,9 +262,9 @@ impl ASTElem {
 				}
 
 				ControlFlow::While { cond, body } => {
-					cond.type_info.replace(Some(Type::from_basic(Basic::BOOL)));
+					cond.type_info.replace(Some(Type::Basic(Basic::BOOL)));
 					let cond_type = cond.get_type(scope)?;
-					let bool_t = Type::from_basic(Basic::BOOL);
+					let bool_t = Type::Basic(Basic::BOOL);
 
 					if !cond_type.castable_to(&bool_t) {
 						return Err((CMNError::InvalidCast{ from: cond_type, to: bool_t}, self.token_data));
@@ -283,7 +283,7 @@ impl ASTElem {
 
 					// Check if condition is coercable to bool
 					if let Some(cond) = cond {
-						let bool_t = Type::from_basic(Basic::BOOL);
+						let bool_t = Type::Basic(Basic::BOOL);
 						
 						let cond_type = cond.get_type(&mut subscope)?;
 						
@@ -321,7 +321,7 @@ impl ASTElem {
 							Ok(None)
 						}
 					} else {
-						Ok(Some(Type::from_basic(Basic::VOID))) // Return with no expression is of type void 
+						Ok(Some(Type::Basic(Basic::VOID))) // Return with no expression is of type void 
 					}
 				
 				}
@@ -388,8 +388,8 @@ impl Expr {
 							Operator::Ref => Ok(first_t.ptr_type()),
 
 							Operator::Deref => {
-								match first_t.inner {
-									InnerType::Pointer(t) => Ok(*t.clone()),
+								match first_t {
+									Type::Pointer(t) => Ok(*t.clone()),
 									_ => return Err((CMNError::NonPtrDeref, *meta)),
 								}
 							}
@@ -411,7 +411,7 @@ impl Expr {
 
 					Atom::IntegerLit(_, t) | Atom::FloatLit(_, t) => {
 						if t.is_some() {
-							*target == Type::from_basic(t.unwrap())
+							*target == Type::Basic(t.unwrap())
 						} else {
 							target.is_numeric() 
 						}
@@ -420,8 +420,8 @@ impl Expr {
 					Atom::BoolLit(_) => target.is_boolean(),
 
 					Atom::StringLit(_) => {
-						if let InnerType::Pointer(other_p) = &target.inner {
-							if let InnerType::Basic(other_b) = other_p.inner {
+						if let Type::Pointer(other_p) = &target {
+							if let Type::Basic(other_b) = **other_p {
 								if let Basic::CHAR = other_b {
 									return true;
 								} 
@@ -432,8 +432,8 @@ impl Expr {
 					},
 					
 					Atom::Identifier(i) => scope.get_identifier_type(i).unwrap() == *target,
-					Atom::FnCall { name, args: _ } => match scope.find_symbol(name).unwrap().1.inner {
-						InnerType::Function(ret, _) => *ret == *target,
+					Atom::FnCall { name, args: _ } => match scope.find_symbol(name).unwrap().1 {
+						Type::Function(ret, _) => *ret == *target,
 						_ => panic!(),
 					},
 
@@ -457,8 +457,8 @@ impl Expr {
 				match op {
 
 					Operator::Deref => {
-						match elems[0].0.validate(scope, None, meta).unwrap().inner {
-							InnerType::Pointer(t) => Some(*t),
+						match elems[0].0.validate(scope, None, meta).unwrap() {
+							Type::Pointer(t) => Some(*t),
 							_ => None,
 						}
 					}
@@ -466,8 +466,8 @@ impl Expr {
 					Operator::MemberAccess => {
 						if let Expr::Atom(Atom::Identifier(ref id), _) = elems[1].0 {
 							let id = id.clone();
-							match elems[0].0.validate(scope, None, meta).unwrap().inner {
-								InnerType::Aggregate(t) => Some(t.members.iter().find(|mem| mem.0 == id.name).unwrap().1.0.clone()),
+							match elems[0].0.validate(scope, None, meta).unwrap() {
+								Type::Aggregate(t) => Some(t.members.iter().find(|mem| mem.0 == id.name).unwrap().1.0.clone()),
 								_ => None,
 							}
 						} else {
@@ -490,27 +490,27 @@ impl Atom {
 		match self {
 			Atom::IntegerLit(_, t) =>
 				if let Some(t) = t { 
-					Ok(Type::from_basic(t.clone())) 
+					Ok(Type::Basic(t.clone())) 
 				} else {
 					if goal_t.is_some() && goal_t.unwrap().is_integral() { 
 						Ok(goal_t.unwrap().clone()) 
 					} else { 
-						Ok(Type::from_basic(Basic::I32)) 
+						Ok(Type::Basic(Basic::I32)) 
 					}
 				},
 			
 			Atom::FloatLit(_, t) => if let Some(t) = t { 
-				Ok(Type::from_basic(t.clone())) 
+				Ok(Type::Basic(t.clone())) 
 			} else {
 				if goal_t.is_some() && goal_t.unwrap().is_floating_point() { 
 					Ok(goal_t.unwrap().clone()) 
 				} else { 
-					Ok(Type::from_basic(Basic::F32)) 
+					Ok(Type::Basic(Basic::F32)) 
 				}
 			},
 
-			Atom::BoolLit(_) => Ok(Type::from_basic(Basic::BOOL)),
-			Atom::StringLit(_) => Ok(Type::from_basic(Basic::STR)),
+			Atom::BoolLit(_) => Ok(Type::Basic(Basic::BOOL)),
+			Atom::StringLit(_) => Ok(Type::Basic(Basic::STR)),
 
 			Atom::Identifier(name) => scope.resolve_identifier(name).ok_or((CMNError::UndeclaredIdentifier(name.to_string()), meta)),
 			
@@ -536,7 +536,7 @@ impl Atom {
 			Atom::FnCall { name, args } => {
 				
 				if let Some(t) = scope.resolve_identifier(name) {
-					if let InnerType::Function(ret, params) = t.inner {
+					if let Type::Function(ret, params) = t {
 
 						// Identifier is a function, check parameter types
 						if args.len() == params.len() {
@@ -578,9 +578,9 @@ impl Atom {
 
 	// Check if we should issue any warnings or errors when casting
 	pub fn check_cast(&mut self, from: &Type, to: &Type, scope: &FnScope, meta: &TokenData) -> ASTResult<()> {
-		match &from.inner {
+		match &from {
 
-			InnerType::Basic(b) => match b {
+			Type::Basic(b) => match b {
 
 				Basic::STR => {
 					if let Atom::StringLit(s) = self {
@@ -596,14 +596,14 @@ impl Atom {
 				_ => Ok(())
 			},
 
-			InnerType::Alias(_, t) => {
+			Type::Alias(_, t) => {
 				self.check_cast(t.as_ref(), to, scope, meta)
 			},
 			
-			InnerType::Aggregate(_) => todo!(),
-			InnerType::Pointer(_) => todo!(),
-			InnerType::Function(_, _) => todo!(),
-			InnerType::Unresolved(_) => todo!(),
+			Type::Aggregate(_) => todo!(),
+			Type::Pointer(_) => todo!(),
+			Type::Function(_, _) => todo!(),
+			Type::Unresolved(_) => todo!(),
 		}
 	}
 

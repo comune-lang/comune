@@ -7,7 +7,7 @@ use self::errors::CMNError;
 use self::expression::{Expr, Operator, Atom};
 use self::namespace::{Namespace, Identifier, ScopePath};
 use self::semantic::Attribute;
-use self::types::{Type, InnerType, FnParamList, Basic, AggregateType, Visibility};
+use self::types::{Type, FnParamList, Basic, AggregateType, Visibility};
 
 pub mod namespace;
 pub mod lexer;
@@ -179,7 +179,7 @@ impl Parser {
 
 								get_next()?; // Consume closing brace
 
-								let aggregate = Type::new(InnerType::Aggregate(Box::new(aggregate)), vec![]);
+								let aggregate = Type::Aggregate(Box::new(aggregate));
 								self.current_namespace().borrow_mut().types.insert(name, aggregate);
 							}
 						}
@@ -578,7 +578,7 @@ impl Parser {
 
 
 	fn parse_fn_or_declaration(&self) -> ParseResult<(String, Type, Option<ASTElem>)> {
-		let mut t = Type::unresolved(self.parse_scoped_name()?);
+		let mut t = Type::Unresolved(self.parse_scoped_name()?);
 		let mut next = get_current()?;
 		
 		if let Token::Identifier(id) = next {
@@ -592,13 +592,10 @@ impl Parser {
 					
 					// Function declaration
 					"(" => {	
-						t = Type::new(
-							InnerType::Function(
+						t = Type::Function(
 								Box::new(t), 
 								self.parse_parameter_list()?
-							), 
-							vec![], // TODO: Generics in function declarations 
-						);
+							);
 						
 						// Past the parameter list, check if we're at a function body or not
 						let current = get_current()?;
@@ -966,7 +963,7 @@ impl Parser {
 					match op.as_str() {
 						"*" => {
 							while token_compare(&next, "*") {
-								result = Type::new(InnerType::Pointer(Box::new(result)), vec![]);
+								result = Type::Pointer(Box::new(result));
 								next = get_next()?;
 							}
 						}
@@ -975,13 +972,13 @@ impl Parser {
 							get_next()?;
 							
 							let generic = self.parse_type()?;
-							result.generics.push(generic);
+							//result.generics.push(generic);
 							
 							while get_current()? == Token::Other(',') {
 								get_next()?;
 								
 								let generic = self.parse_type()?;
-								result.generics.push(generic);
+								//result.generics.push(generic);
 							}
 
 							// assert token == '>'

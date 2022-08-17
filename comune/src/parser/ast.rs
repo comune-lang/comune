@@ -129,7 +129,7 @@ impl ASTNode {
 		match self {
 			ASTNode::Block(elems) => {
 				let subscope = FnScope::from_parent(scope);
-				let mut result = Type::from_basic(Basic::VOID);
+				let mut result = Type::Basic(Basic::VOID);
 				for elem in elems {
 					result = elem.node.get_type(&subscope, t, meta)?;
 				}
