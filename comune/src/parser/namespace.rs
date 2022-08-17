@@ -134,13 +134,6 @@ impl Namespace {
 	}
 
 
-	pub fn get_symbol<'a>(&'a self, id: &Identifier, root_namespace: Option<&'a Namespace>) -> Option<&(Type, Option<ASTElem>, Vec<Attribute>)> {
-		match self.get_symbol_namespace(id, root_namespace) {
-			Some(ns) => ns.symbols.get(&id.name),
-			None => None,
-		}
-	}
-
 	// Get namespace that contains the symbol identified by `name`
 	pub fn get_symbol_namespace<'a>(&'a self, name: &Identifier, root_namespace: Option<&'a Namespace>) -> Option<&'a Namespace> {
 		if name.path.absolute && root_namespace.is_some() {
@@ -159,6 +152,28 @@ impl Namespace {
 			let mut child_path = name.clone();
 			child_path.path.scopes.remove(0);
 			child.get_symbol_namespace(&child_path, root_namespace)
+		} else {
+			None
+		}
+	}
+
+	pub fn get_type_namespace<'a>(&'a self, name: &Identifier, root_namespace: Option<&'a Namespace>) -> Option<&'a Namespace> {
+		if name.path.absolute && root_namespace.is_some() {
+			return root_namespace.unwrap().get_type_namespace(name, None);
+		}
+		
+		if name.path.scopes.is_empty() {
+			if self.types.contains_key(&name.name) {
+				Some(self)
+			} else if root_namespace.is_some() && root_namespace.unwrap().types.contains_key(&name.name) {
+				root_namespace
+			} else {
+				None
+			}
+		} else if let Some(child) = self.parsed_children.get(&name.path.scopes[0]) {
+			let mut child_path = name.clone();
+			child_path.path.scopes.remove(0);
+			child.get_type_namespace(&child_path, root_namespace)
 		} else {
 			None
 		}

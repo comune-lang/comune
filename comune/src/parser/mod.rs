@@ -225,11 +225,9 @@ impl Parser {
 						
 								//let scoped_name = self.parse_scoped_name()?;
 
-								
 							} else {
 								return Err(CMNError::ExpectedIdentifier);
 							}
-
 						}
 
 						_ => {
@@ -580,7 +578,7 @@ impl Parser {
 
 
 	fn parse_fn_or_declaration(&self) -> ParseResult<(String, Type, Option<ASTElem>)> {
-		let mut t = self.parse_type()?;
+		let mut t = Type::unresolved(self.parse_scoped_name()?);
 		let mut next = get_current()?;
 		
 		if let Token::Identifier(id) = next {
@@ -945,18 +943,19 @@ impl Parser {
 		let mut result : Type;
 		let current = get_current()?;
 
-		if let Token::Identifier(ref id) = current {
+		if let Token::Identifier(_) = current {
 			// Typename
-			let typename = id.clone();
+			let typename = self.parse_scoped_name()?;
 
-			let found_type;
 			{
 				let ctx = self.current_namespace().borrow_mut();
-				found_type = ctx.get_type(&typename);
-
-				result = match found_type { 
-					Some(t) => t.clone(),
-					None => Type::new(InnerType::Unresolved(current.clone()), vec![])
+				if let Some(found_namespace) = ctx.get_type_namespace(&typename, None) {
+					result = match found_namespace.get_type(&typename.name) { 
+						Some(t) => t.clone(),
+						None => return Err(CMNError::UndeclaredIdentifier(typename.to_string()))
+					}
+				} else { 
+					return Err(CMNError::UndeclaredIdentifier(typename.to_string())); 
 				}
 			}
 

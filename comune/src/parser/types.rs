@@ -5,6 +5,7 @@ use once_cell::sync::OnceCell;
 use super::ast::ASTElem;
 use super::lexer::Token;
 
+use super::namespace::Identifier;
 use super::semantic::Attribute;
 use super::{semantic::FnScope, ASTResult};
 
@@ -105,10 +106,10 @@ impl Display for Basic {
 pub enum InnerType {
 	Basic(Basic),											// Fundamental type
 	Alias(String, BoxedType),								// Identifier + referenced type
-	Aggregate(Box<AggregateType>),								// Guess.
+	Aggregate(Box<AggregateType>),							// Guess.
 	Pointer(BoxedType),										// Pointer-to-<BoxedType>
 	Function(BoxedType, Vec<(BoxedType, Option<String>)>),	// Return type + parameter types
-	Unresolved(Token)										// Unresolved type (during parsing phase)
+	Unresolved(Identifier)									// Unresolved type (during parsing phase)
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -129,6 +130,10 @@ impl Type {
 	
 	pub fn ptr_type(&self) -> Self {
 		Type { inner: InnerType::Pointer(Box::new(self.clone())), generics: vec![] }
+	}
+
+	pub fn unresolved(id: Identifier) -> Self {
+		Type { inner: InnerType::Unresolved(id), generics: vec![] }
 	}
 
 

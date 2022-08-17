@@ -1,6 +1,3 @@
-
-
-
 @no_mangle
 int printf(char* fmt);
 
@@ -9,7 +6,7 @@ namespace cool {
 		u64 a = 0; // Literals can be coerced to any numeric type
 		u64 b = 1;
 		u64 c = 0;
-		for (u64 i = 1; i < n; i = i + 1u64) {
+		for (u64 i = 1; i < n; i += 1u64) {
 			c = a + b;
 			a = b;
 			b = c;
@@ -17,15 +14,21 @@ namespace cool {
 		}
 		return c;
 	}
+
+	struct Test {
+		int a = 0;
+	}
 }
 
-struct Test {
-	int a = 0;
+cool::Test testFn() {
+	cool::Test test;
+	test.a = 69;
+	return test;
 }
 
 int main() {
-	Test test;
-	Test* testptr = &test;
-	(*testptr).a = cool::fib(10) as i32; // Strong typing for integers; try removing the cast
+	cool::Test test 	= testFn();
+	cool::Test* testptr = &testFn();
+	(*testptr).a 		= cool::fib(10) as i32; // Strong typing for integers; try removing the cast
 	return (*testptr).a;
 }
