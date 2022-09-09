@@ -76,7 +76,7 @@ pub struct Namespace {
 impl Namespace {
 	pub fn new() -> Self {
 		Namespace { 
-			types: HashMap::new(), 
+			types: Basic::hashmap(),
 			symbols: HashMap::new(),
 			parsed_children: HashMap::new(),
 			parent_temp: None,
@@ -98,25 +98,6 @@ impl Namespace {
 
 			referenced_modules: HashSet::new(),
 			imported: Box::new(None),
-		}
-	}
-
-
-	pub fn get_type(&self, name: &str) -> Option<Type> {
-		if let Some(basic) = Basic::get_basic_type(name) {
-			Some(Type::Basic(basic))
-		} else if self.types.contains_key(name) {
-			self.types.get(name).cloned()
-		} else {
-			let scope_op_idx = name.find("::");
-			
-			if let Some(idx) = scope_op_idx {
-				if self.parsed_children.contains_key(&name[..idx]) {
-					return self.parsed_children.get(&name[..idx]).unwrap().get_type(&name[idx+2..]);
-				}
-			}
-
-			None
 		}
 	}
 

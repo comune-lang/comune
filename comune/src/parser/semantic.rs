@@ -1,6 +1,6 @@
 use std::{cell::RefCell, collections::HashMap};
 
-use super::{types::{Type, Basic, Typed}, CMNError, ASTResult, namespace::{Namespace, Identifier, ScopePath}, ast::{ASTElem, ASTNode, TokenData}, controlflow::ControlFlow, expression::{Expr, Operator, Atom}, lexer, errors::{CMNMessage, CMNWarning}};
+use super::{types::{Type, Basic, Typed}, CMNError, ASTResult, namespace::{Namespace, Identifier}, ast::{ASTElem, ASTNode, TokenData}, controlflow::ControlFlow, expression::{Expr, Operator, Atom}, lexer, errors::{CMNMessage, CMNWarning}};
 
 
 // SEMANTIC ANALYSIS
@@ -101,40 +101,6 @@ impl<'ctx> FnScope<'ctx> {
 		} else {
 			None
 		}
-	}
-
-	// Make this a parse-time thing
-	pub fn resolve_type(&self, id: &mut Identifier) -> Option<Type> {		
-		// Oh boy it's name resolution time again
-		
-		// Traverse the namespace tree, from either our current namespace or root
-		let root;
-		if id.path.absolute {
-			root = &self.root_namespace;
-		} else {
-			root = &self.context;
-		}
-
-		let mut namespace : &Namespace = &root.borrow();
-		for sub_ns in &id.path.scopes {
-			let child = namespace.parsed_children.get(sub_ns);
-			if let Some(child) = child {
-				namespace = child;
-			} else {
-				return None; // TODO: Return a Result instead
-			}
-		}
-
-		// Found the namespace, resolve the name
-		let name = &id.name;
-
-		if let Some(s) = namespace.get_type(name) {
-			id.resolved = Some("mangled here lol".to_string());
-			Some(s.clone())
-		} else {
-			None
-		}
-	
 	}
 
 	pub fn add_variable(&mut self, t: Type, n: String) {
@@ -439,8 +405,6 @@ impl Expr {
 
 					Atom::Cast(_, cast_t) => *target == *cast_t,
 					Atom::ArrayLit(_) => todo!(),
-
-					Atom::Dummy => true,
 				}
 			},
 
@@ -570,8 +534,6 @@ impl Atom {
 			},
 
 			Atom::ArrayLit(_) => todo!(),
-
-			Atom::Dummy => panic!(),
 		}
 	}
 

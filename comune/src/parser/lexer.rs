@@ -221,10 +221,6 @@ impl Lexer {
 		self.file_buffer.lines().nth(line).unwrap()
 	}
 
-	pub fn get_index(&self) -> usize {
-		self.file_index
-	}
-	
 	pub fn current(&self) -> &Option<Token> {
 		&self.token_buffer
 	}

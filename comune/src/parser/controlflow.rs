@@ -38,7 +38,7 @@ impl Typed for ControlFlow {
             ControlFlow::If { cond: _, body, else_body } => {
 
 				if let Some(else_body) = else_body {
-					// Has an else branch, so evaluates to a type both bodies are coercable to				
+					// Has an else branch, so evaluates to a type both bodies are coercable to
 					let body_type = body.get_type(scope)?;
 					let else_type = else_body.get_type(scope)?;
 
@@ -59,7 +59,7 @@ impl Typed for ControlFlow {
 			},
 
 			// Loops are always of type void
-            ControlFlow::While { cond: _, body: _ } | ControlFlow::For { init: _, cond: _, iter: _, body: _} => 
+            ControlFlow::While { cond: _, body: _ } | ControlFlow::For { init: _, cond: _, iter: _, body: _ } => 
 				Ok(Type::Basic(Basic::VOID)),
 
             ControlFlow::Return { expr } => { 

@@ -67,7 +67,7 @@ impl Parser {
 		result
 	}
 
-	fn current_namespace(& self) -> &RefCell<Namespace> {
+	pub fn current_namespace(& self) -> &RefCell<Namespace> {
 		self.active_namespace.as_ref().unwrap()
 	}
 
@@ -347,12 +347,12 @@ impl Parser {
 		
 			Token::Identifier(id) => {
 				// Might be a declaration, check if identifier is a type
-				let decl_type = self.current_namespace().borrow().get_type(&id);
+				let scoped_name = self.parse_scoped_name()?;
 
 				if decl_type.is_some() {
 					// Parse variable declaration
 					
-					let t = self.parse_type()?;
+					let t = self.parse_type(true)?;
 					let name = get_current()?;
 					let mut expr = None;
 					
@@ -747,7 +747,7 @@ impl Parser {
 			let begin_rhs = get_current_start_index();
 
 			if op == Operator::Cast {
-				let goal_t = self.parse_type()?;
+				let goal_t = self.parse_type(false)?;
 
 				let end_index = get_current_start_index();
 				let meta = (begin_lhs, end_index - begin_lhs);
@@ -865,7 +865,7 @@ impl Parser {
 		let mut result = vec![];
 
 		while let Token::Identifier(_) = next {
-			let mut param = (Box::new(self.parse_type()?), None);
+			let mut param = (Box::new(self.parse_type(false)?), None);
 			
 			
 			// Check for param name
@@ -936,7 +936,7 @@ impl Parser {
 
 
 
-	fn parse_type(&self) -> ParseResult<Type> {
+	fn parse_type(&self, immediate_resolve: bool) -> ParseResult<Type> {
 		let mut result : Type;
 		let current = get_current()?;
 
@@ -944,16 +944,18 @@ impl Parser {
 			// Typename
 			let typename = self.parse_scoped_name()?;
 
-			{
+			if immediate_resolve {
 				let ctx = self.current_namespace().borrow_mut();
 				if let Some(found_namespace) = ctx.get_type_namespace(&typename, None) {
 					result = match found_namespace.get_type(&typename.name) { 
 						Some(t) => t.clone(),
-						None => return Err(CMNError::UndeclaredIdentifier(typename.to_string()))
+						None => return Err(CMNError::UnresolvedTypename(typename.to_string()))
 					}
 				} else { 
-					return Err(CMNError::UndeclaredIdentifier(typename.to_string())); 
+					return Err(CMNError::UnresolvedTypename(typename.to_string())); 
 				}
+			} else {
+				result = Type::Unresolved(typename);
 			}
 
 			let mut next = get_next()?;
@@ -971,13 +973,13 @@ impl Parser {
 						"<" => {
 							get_next()?;
 							
-							let generic = self.parse_type()?;
+							//let generic = self.parse_type()?;
 							//result.generics.push(generic);
 							
 							while get_current()? == Token::Other(',') {
 								get_next()?;
 								
-								let generic = self.parse_type()?;
+								//let generic = self.parse_type()?;
 								//result.generics.push(generic);
 							}
 

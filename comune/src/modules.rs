@@ -3,7 +3,7 @@ use std::{ffi::OsString, sync::Arc};
 use colored::Colorize;
 use inkwell::{context::Context, module::Module, passes::PassManager};
 
-use crate::{parser::{errors::{CMNMessage, CMNError}, self, lexer::{Lexer, log_msg_at, log_msg}, Parser, semantic, namespace::Namespace}, llvm::LLVMBackend};
+use crate::{parser::{errors::{CMNMessage, CMNError}, lexer::{Lexer, log_msg_at, log_msg, self}, Parser, semantic, namespace::Namespace, types::Type}, llvm::LLVMBackend};
 
 pub struct ManagerState {
 	import_paths: Vec<OsString>,
@@ -33,15 +33,15 @@ impl ModuleJobManager {
 		}
 	}
 	
-	pub fn start_module_compilation(&self, module: OsString) -> Result<ModuleCompileState, CMNError> {
+	pub fn parse_api(&self, module: OsString) -> Result<ModuleCompileState, CMNError> {
 		// Okay, here's how we're going about this
 		// Step 1a. Check if NamespaceInfo cache exists (Add this once modular compiling works in general lol)
 		// Step 1b. Parse namespace level
 		// Step 2. Resolve module imports, wait till done (this uses rayon)
-		// Step 3. Return module compilation state, to be passed to continue_module_compilation
+		// Step 3. Return module compilation state, to be passed to resolve_types
 
 		// Parse namespace level
-		let mod_state = parser::lexer::CURRENT_LEXER.with(|lexer| { 
+		let mod_state = lexer::CURRENT_LEXER.with(|lexer| { 
 
 			lexer.replace(match Lexer::new(module.clone()) { // TODO: Take module name instead of filename 
 				Ok(f) => f,
@@ -69,9 +69,25 @@ impl ModuleJobManager {
 		mod_state
 	}
 
+	
+	pub fn resolve_types(&self, mod_state: ModuleCompileState, context: &Context) -> Result<ModuleCompileState, CMNError> {
+		// At this point, all imports have been resolved, so validate namespace-level types
+		{
+			let namespace = mod_state.parser.current_namespace().borrow();
+			for symbol in namespace.symbols.iter() {
+				if let Type::Unresolved(ret) = &symbol.1.0 {
+					
+				}
+				
+			}
+
+		}
+
+		Ok(mod_state)
+	}
 
 
-	pub fn continue_module_compilation<'ctx>(&self, mut mod_state: ModuleCompileState, context: &'ctx Context) -> Result<LLVMBackend<'ctx>, CMNError> {
+	pub fn generate_code<'ctx>(&self, mut mod_state: ModuleCompileState, context: &'ctx Context) -> Result<LLVMBackend<'ctx>, CMNError> {
 		
 		// Generative pass
 		// TODO: This completely re-tokenizes the module, which is useless
@@ -79,11 +95,11 @@ impl ModuleJobManager {
 		// A) cache the tokenization in the first phase
 		// B) store the relevant token sequences in the mod state to avoid redundant namespace parsing
 		let namespace = match mod_state.parser.parse_module(true) {
-			Ok(ctx) => { if self.state.verbose_output { println!("\nresolving types..."); } ctx },
+			Ok(ctx) => { if self.state.verbose_output { println!("\nvalidating..."); } ctx },
 			Err(e) => { log_msg(CMNMessage::Error(e.clone())); return Err(e); },
 		};
 
-		// Resolve types
+		// Validate code
 		match semantic::parse_namespace(namespace, namespace) {
 			Ok(()) => {	if self.state.verbose_output { println!("generating code..."); } },
 			Err(e) => { log_msg_at(e.1.0, e.1.1, CMNMessage::Error(e.0.clone())); return Err(e.0); },
@@ -148,14 +164,14 @@ impl ModuleJobManager {
 		for child in namespace.parsed_children.iter() {
 			self.register_namespace(backend, child.1, root);
 		}
+				
 
 		for (sym_name, (sym_type, _, attributes)) in &namespace.symbols {
 			let name_mangled = namespace.get_mangled_name(sym_name, attributes);
 			backend.register_fn(name_mangled, sym_type).unwrap();
 		}
-
-		
 	}
+
 
 	fn compile_namespace(&self, backend: &mut LLVMBackend, namespace: &Namespace, root: Option<&Namespace>) {
 		if root.is_some() {

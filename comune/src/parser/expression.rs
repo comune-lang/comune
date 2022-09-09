@@ -213,8 +213,6 @@ pub enum Atom {
 	ArrayLit(Vec<ASTElem>),
 	Cast(Box<ASTElem>, Type),
 
-	Dummy,
-
 	FnCall{
 		name: Identifier, 
 		args: Vec<ASTElem>
@@ -254,8 +252,6 @@ impl Display for Atom {
             Atom::Identifier(var) => write!(f, "{}", var),
 			
             Atom::ArrayLit(_elems) => todo!(),
-
-			Atom::Dummy => write!(f, "(dummy)"),
 		}
     }
 }

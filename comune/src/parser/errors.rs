@@ -25,6 +25,7 @@ pub enum CMNError {
 
 	// Semantic errors
 	UndeclaredIdentifier(String),
+	UnresolvedTypename(String),
 	ExprTypeMismatch(Type, Type, Operator),
 	AssignTypeMismatch(Type, Type),
 	InvalidCast{from: Type, to: Type},
@@ -78,6 +79,7 @@ impl Display for CMNError {
 		CMNError::InvalidSuffix => 							write!(f, "invalid suffix"),
 		
 		CMNError::UndeclaredIdentifier(id) =>				write!(f, "undeclared identifier `{}`", id),
+		CMNError::UnresolvedTypename(id) =>					write!(f, "unresolved typename `{}`", id),
 		CMNError::ExprTypeMismatch(a, b, op) => 			write!(f, "type mismatch; cannot apply operator {:?} to {} and {}", op, a, b),
 		CMNError::AssignTypeMismatch(e, v) =>				write!(f, "cannot assign value of type {} to variable of type {}", e, v),
 		CMNError::InvalidCast{from, to} =>					write!(f, "cannot cast from {} to {}", from, to),

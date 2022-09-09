@@ -20,15 +20,10 @@ namespace cool {
 	}
 }
 
-cool::Test testFn() {
-	cool::Test test;
-	test.a = 69;
-	return test;
-}
 
 int main() {
-	cool::Test test 	= testFn();
-	cool::Test* testptr = &testFn();
-	(*testptr).a 		= cool::fib(10) as i32; // Strong typing for integers; try removing the cast
+	cool::Test test;
+	cool::Test* testptr = &test;
+	(*testptr).a = cool::fib(10) as i32;
 	return (*testptr).a;
 }

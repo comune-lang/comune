@@ -66,14 +66,20 @@ fn main() -> color_eyre::eyre::Result<()> {
 
 	let manager = modules::ModuleJobManager::new("test/".into(), vec![], args.num_jobs, args.verbose);
 
-	let state = match manager.start_module_compilation(args.input_file) {
+	let mut state = match manager.parse_api(args.input_file) {
 		Ok(r) => r,
 		Err(_) => return Ok(()),
 	};
-	
+
 	let context = Context::create();
 
-	let result = match manager.continue_module_compilation(state, &context) {
+	state = match manager.resolve_types(state, &context) {
+		Ok(r) => r,
+		Err(_) => return Ok(()),
+	};
+
+
+	let result = match manager.generate_code(state, &context) {
 		Ok(r) => r,
 		Err(_) => return Ok(()),
 	};

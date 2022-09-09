@@ -3,8 +3,6 @@ use std::{fmt::Display, collections::HashMap};
 use once_cell::sync::OnceCell;
 
 use super::ast::ASTElem;
-use super::lexer::Token;
-
 use super::namespace::Identifier;
 use super::semantic::Attribute;
 use super::{semantic::FnScope, ASTResult};
@@ -41,6 +39,7 @@ pub enum Basic {
 	VOID,
 	STR,
 }
+
 
 impl Basic {
 	pub fn get_basic_type(name: &str) -> Option<Self> {
@@ -93,7 +92,38 @@ impl Basic {
 			Basic::VOID => "void",
 		}
 	}
+
+	// this is a stupid amount of manual fucking repetition but w/e
+	pub fn hashmap() -> HashMap<String, Type> {
+		HashMap::from(
+			[
+				("i64", Basic::I64),
+				("u64", Basic::U64),
+				("i32", Basic::I32),
+				("u32", Basic::U32),
+				("i16", Basic::I16),
+				("u16", Basic::U16),
+				("i8", Basic::I8),
+				("u8", Basic::U8),
+				("char", Basic::CHAR),
+				("str", Basic::STR),
+				("f64", Basic::F64),
+				("f32", Basic::F32),
+				("isize", Basic::ISIZE),
+				("usize", Basic::USIZE),
+				("bool", Basic::BOOL),
+				("void", Basic::VOID),
+
+				("int", Basic::I32),
+				("uint", Basic::U32),
+				("float", Basic::F32),
+				("double", Basic::F64),
+			
+			].map(|(a, b)| (a.to_string(), Type::Basic(b))
+		))
+	}
 }
+
 
 impl Display for Basic {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -111,6 +141,7 @@ pub enum Type {
 	Function(BoxedType, Vec<(BoxedType, Option<String>)>),	// Return type + parameter types
 	Unresolved(Identifier)									// Unresolved type (during parsing phase)
 }
+
 
 impl Display for Type {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -148,11 +179,8 @@ impl Display for Type {
     }
 }
 
-
-
  
 impl Type {
-
 	pub fn ptr_type(&self) -> Self {
 		Type::Pointer(Box::new(self.clone()))
 	}
@@ -303,53 +331,6 @@ impl Type {
 	}
 }
 
-/*
-
-
-impl Display for Type {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		match &self.inner {
-			InnerType::Basic(t) => {
-				write!(f, "{}", t)?;
-			},
-
-			InnerType::Alias(a, t) => {
-				write!(f, "{} ({})", a, t)?;
-			},
-
-			InnerType::Aggregate(agg) => {
-				write!(f, "{:?}", agg)?;
-			},
-
-			InnerType::Pointer(t) => {
-				write!(f, "{}*", t)?;
-			},
-
-			InnerType::Function(ret, params) => {
-				write!(f, "{}(", ret)?;
-				for param in params {
-					write!(f, "{}, ", param.0)?;
-				}
-				write!(f, ")")?;
-			},
-
-			InnerType::Unresolved(t) => {
-				write!(f, "\"{}\"", t)?;
-			},
-		}
-
-		if !self.generics.is_empty() {
-			write!(f, "<")?;
-			for t in &self.generics {
-				write!(f, "{}, ", t)?;
-			}
-			write!(f, ">")?;
-		}
-
-		Ok(())
-    }
-}
-*/
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct AggregateType {
@@ -360,12 +341,14 @@ pub struct AggregateType {
 	pub inherits: Vec<Type>,
 }
 
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Visibility {
 	Public,
 	Private,
 	Protected,
 }
+
 
 impl AggregateType {
 	pub fn new() -> Self {

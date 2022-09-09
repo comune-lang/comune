@@ -416,7 +416,6 @@ impl<'ctx> LLVMBackend<'ctx> {
 							)
 						)
 					}
-        			Atom::Dummy => panic!(),
 				}
 
 			},
