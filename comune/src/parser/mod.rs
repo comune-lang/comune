@@ -5,7 +5,7 @@ use self::ast::{ASTNode, ASTElem, TokenData};
 use self::controlflow::ControlFlow;
 use self::errors::CMNError;
 use self::expression::{Expr, Operator, Atom};
-use self::namespace::{Namespace, Identifier, ScopePath};
+use self::namespace::{Namespace, NamespaceItem};
 use self::semantic::Attribute;
 use self::types::{Type, FnParamList, Basic, AggregateType, Visibility};
 
@@ -50,6 +50,7 @@ pub type ASTResult<T> = Result<T, (CMNError, TokenData)>;
 
 pub struct Parser {
 	active_namespace: Option<RefCell<Namespace>>,
+	root_namespace: Option<RefCell<Namespace>>,
 	generate_ast: bool,
 	verbose: bool,
 }
@@ -60,14 +61,15 @@ impl Parser {
 	pub fn new(verbose: bool) -> Parser {
 		let result = Parser { 
 			active_namespace: None,
+    		root_namespace: None,
 			generate_ast: false,
-			verbose
+			verbose,
 		};
 
 		result
 	}
 
-	pub fn current_namespace(& self) -> &RefCell<Namespace> {
+	pub fn current_namespace(&self) -> &RefCell<Namespace> {
 		self.active_namespace.as_ref().unwrap()
 	}
 
@@ -79,7 +81,6 @@ impl Parser {
 		});
 
 		self.active_namespace = Some(RefCell::new(Namespace::new()));
-
 		match self.parse_namespace() {
 			Ok(()) => {
 				
@@ -98,7 +99,7 @@ impl Parser {
 
 
 
-	pub fn parse_namespace(&self) -> ParseResult<()> {
+	pub fn parse_namespace(&mut self) -> ParseResult<()> {
 		let mut current = get_current()?;
 		let mut current_attributes = vec![];
 
@@ -180,36 +181,46 @@ impl Parser {
 								get_next()?; // Consume closing brace
 
 								let aggregate = Type::Aggregate(Box::new(aggregate));
-								self.current_namespace().borrow_mut().types.insert(name, aggregate);
+								
+								self.current_namespace().borrow_mut().children.insert(
+									name.expect_scopeless()?, (NamespaceItem::Type(aggregate), current_attributes)
+								);
+								current_attributes = vec![];
 							}
 						}
 
 						"namespace" => {
 							let name_token = get_next()?;
 
-							if let Token::Identifier(namespace_name) = name_token {
-								// We do some serious bullshit here to avoid lifetime hell
-								// Children namespaces take temporary ownership of their parents,
-								// and instead of having an explicit namespace stack, the parent values just live... here.
-								// In the call stack. We use the stack to make a stack.
-								// God I hate Rust so fucking much sometimes
-								
-								get_next()?; // Consume name
+							if let Token::Identifier(namespace_name) = name_token {								
 								get_next()?; // Consume brace
 
-								let dummy = Namespace::new(); // Dummy namespace
-								let old_namespace = self.current_namespace().replace(dummy);
-								let new_namespace = Namespace::from_parent(Box::new(old_namespace), namespace_name.clone());
-								self.current_namespace().replace(new_namespace);
-								self.parse_namespace()?;
+								let self_is_root = self.root_namespace.is_none();
 
-								let dummy = Namespace::new();
-								let mut parsed_namespace = self.current_namespace().replace(dummy);
+								let new_namespace = Namespace::from_parent(
+									&self.current_namespace().borrow().path, 
+									namespace_name.expect_scopeless()?
+								);
 
-								let mut old_namespace = parsed_namespace.parent_temp.take().unwrap();
-								old_namespace.parsed_children.insert(namespace_name, parsed_namespace);
-								self.current_namespace().replace(*old_namespace);
+								let mut old_namespace = self.current_namespace().replace(new_namespace);
+								let parsed_namespace;
 
+								if self_is_root {
+									self.root_namespace.replace(RefCell::new(old_namespace));
+									self.parse_namespace()?;
+									old_namespace = self.root_namespace.as_mut().unwrap().take();
+								} else {
+									self.parse_namespace()?;
+								}
+
+								parsed_namespace = self.current_namespace().replace(old_namespace);
+
+								self.current_namespace().borrow_mut().children.insert(
+									namespace_name.name, 
+									(NamespaceItem::Namespace(Box::new(RefCell::new(parsed_namespace))), current_attributes)
+								);
+
+								current_attributes = vec![];
 							} else {
 								return Err(CMNError::ExpectedIdentifier);
 							}
@@ -221,8 +232,8 @@ impl Parser {
 							let name_token = get_next()?;
 
 							if let Token::Identifier(name) = name_token {
-								self.current_namespace().borrow_mut().referenced_modules.insert(name);
-						
+								self.current_namespace().borrow_mut().referenced_modules.insert(name.path.scopes[0].clone());
+								// TODO: Implement
 								//let scoped_name = self.parse_scoped_name()?;
 
 							} else {
@@ -239,7 +250,12 @@ impl Parser {
 				Token::Identifier(_) => {
 					// Parse declaration/definition
 					let result = self.parse_fn_or_declaration()?;
-					self.current_namespace().borrow_mut().symbols.insert(result.0, (result.1, result.2, current_attributes));
+
+					self.current_namespace().borrow_mut().children.insert(
+						result.0, 
+						(NamespaceItem::Function(result.1, result.2), current_attributes)
+					);
+					
 					current_attributes = vec![];
 				}
 				
@@ -254,18 +270,18 @@ impl Parser {
 		}
 
 		if current == Token::EOF {
-			if self.current_namespace().borrow().parent_temp.is_none() {
+			//if self.current_namespace().borrow().parent_temp.is_none() {
 				Ok(())
-			} else {
-				Err(CMNError::UnexpectedEOF)
-			}
+			//} else {
+			//	Err(CMNError::UnexpectedEOF)
+			//}
 		} else if current == Token::Other('}') {
-			if self.current_namespace().borrow().parent_temp.is_some() {
+			//if self.current_namespace().borrow().parent_temp.is_some() {
 				get_next()?;
 				Ok(())
-			} else {
-				Err(CMNError::UnexpectedToken)
-			}
+			//} else {
+			//	Err(CMNError::UnexpectedToken)
+			//}
 		}
 		else {
 			get_next()?;
@@ -347,7 +363,9 @@ impl Parser {
 		
 			Token::Identifier(id) => {
 				// Might be a declaration, check if identifier is a type
-				let scoped_name = self.parse_scoped_name()?;
+				let ns = self.current_namespace().borrow();
+				let root = &self.root_namespace.as_ref().unwrap_or(self.current_namespace()).borrow();
+				let decl_type = ns.find_item(id, root);
 
 				if decl_type.is_some() {
 					// Parse variable declaration
@@ -369,7 +387,6 @@ impl Parser {
 			Token::Keyword(keyword) => {
 				match *keyword {
 					
-
 					// Parse return statement
 					"return" => {
 						let next = get_next()?;
@@ -578,11 +595,10 @@ impl Parser {
 
 
 	fn parse_fn_or_declaration(&self) -> ParseResult<(String, Type, Option<ASTElem>)> {
-		let mut t = Type::Unresolved(self.parse_scoped_name()?);
-		let mut next = get_current()?;
+		let mut t = Type::Unresolved(match get_current()? { Token::Identifier(id) => id, _ => panic!() });
+		let mut next = get_next()?;
 		
 		if let Token::Identifier(id) = next {
-			
 			next = get_next()?;
 
 			let mut ast_elem = None;
@@ -639,8 +655,9 @@ impl Parser {
 				self.check_semicolon()?;
 			}
 
-			//// Register declaration to symbol table
-			Ok((id, t, ast_elem))
+			// Register declaration to symbol table
+			// TODO: Figure out what to do if the identifier has scopes
+			Ok((id.name, t, ast_elem))
 		} else {
 			Err(CMNError::ExpectedIdentifier)
 		}
@@ -776,8 +793,8 @@ impl Parser {
 		let mut next;
 		
 		// If we're parsing an Identifier, parse the whole scoped name
-		if let Token::Identifier(_) = current {
-			name = Some(self.parse_scoped_name()?);
+		if let Token::Identifier(id) = current.clone() {
+			name = Some(id);
 			next = get_current()?;
 		} else {
 			next = get_next()?;
@@ -813,19 +830,19 @@ impl Parser {
 							}
 							get_next()?;
 
-							result = Atom::FnCall{name, args};
+							result = Atom::FnCall{name: name.clone(), args};
 							break;
 						}
 
 						"<" => {
 							// TODO: Disambiguate between type parameter list or LT operator 
-							result = Atom::Identifier(name);
+							result = Atom::Identifier(name.clone());
 							break;
 						}
 
 						_ => {
 							// Just a variable
-							result = Atom::Identifier(name);
+							result = Atom::Identifier(name.clone());
 							break;
 						}
 					} 
@@ -871,7 +888,8 @@ impl Parser {
 			// Check for param name
 			let mut current = get_current()?;
 			if let Token::Identifier(id) = current {
-				param.1 = Some(id);
+				// TODO: Add check for scopes here (illegal in param list)
+				param.1 = Some(id.name);
 				get_next()?;
 			}
 			
@@ -913,7 +931,7 @@ impl Parser {
 
 
 
-	fn parse_scoped_name(&self) -> ParseResult<Identifier> {
+	/*fn parse_scoped_name(&self) -> ParseResult<Identifier> {
 		let mut path = ScopePath { scopes: vec![], absolute: false };
 		
 		if let Token::Identifier(id) = get_current()? {
@@ -932,7 +950,7 @@ impl Parser {
 		let name = path.scopes.pop().unwrap();
 
 		Ok(Identifier{ name, path, mem_idx: 0, resolved: None })
-	}
+	}*/
 
 
 
@@ -940,20 +958,22 @@ impl Parser {
 		let mut result : Type;
 		let current = get_current()?;
 
-		if let Token::Identifier(_) = current {
+		if let Token::Identifier(typename) = current {
 			// Typename
-			let typename = self.parse_scoped_name()?;
 
 			if immediate_resolve {
 				let ctx = self.current_namespace().borrow_mut();
-				if let Some(found_namespace) = ctx.get_type_namespace(&typename, None) {
-					result = match found_namespace.get_type(&typename.name) { 
-						Some(t) => t.clone(),
-						None => return Err(CMNError::UnresolvedTypename(typename.to_string()))
+				let root = &self.root_namespace.as_ref().unwrap_or(self.current_namespace()).borrow();
+
+				if let Some(found_namespace) = ctx.find_item_namespace(&typename, root) {
+					result = match found_namespace.children.get(&typename.name) { 
+						Some((NamespaceItem::Type(t), _)) => t.clone(),
+						_ => return Err(CMNError::UnresolvedTypename(typename.to_string()))
 					}
 				} else { 
 					return Err(CMNError::UnresolvedTypename(typename.to_string())); 
 				}
+
 			} else {
 				result = Type::Unresolved(typename);
 			}
@@ -1016,7 +1036,7 @@ impl Parser {
 		let mut result;
 		
 		if let Token::Identifier(name) = name {
-			result = Attribute { name, args: vec![] };
+			result = Attribute { name: name.expect_scopeless()?, args: vec![] };
 		} else {
 			return Err(CMNError::ExpectedIdentifier);
 		}

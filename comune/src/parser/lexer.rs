@@ -9,6 +9,9 @@ use colored::Colorize;
 
 use crate::parser::errors::CMNMessage;
 
+use super::expression::Operator;
+use super::namespace::{Identifier, ScopePath};
+
 thread_local! {
 	pub(crate) static CURRENT_LEXER: RefCell<Lexer> = RefCell::new(Lexer::dummy());
 }
@@ -93,7 +96,7 @@ const OPERATORS: &[&str] = &[
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Token {
 	EOF,
-	Identifier(String),
+	Identifier(Identifier),
 	StringLiteral(String),
 	BoolLiteral(bool),
 	Keyword(&'static str),
@@ -105,8 +108,9 @@ pub enum Token {
 impl Token {
 	pub fn len(&self) -> usize {
 		match self {
-			
-			Token::Identifier(x) | Token::StringLiteral(x) | Token::NumLiteral(x, _) | Token::Operator(x)
+			Token::Identifier(x) => x.name.len(), // Incorrect, TODO: Actually implement this
+
+			Token::StringLiteral(x) | Token::NumLiteral(x, _) | Token::Operator(x)
 				=> x.len(),
 
 			Token::Keyword(x) => x.len(),
@@ -123,9 +127,9 @@ impl Display for Token {
         write!(f, "{}", 
 		
 		match self {
-		
-			Token::Identifier(x) | Token::StringLiteral(x) | Token::NumLiteral(x, _) | Token::Operator(x) => 
-				x.clone(),
+			Token::Identifier(x) => x.to_string(),
+
+			Token::StringLiteral(x) | Token::NumLiteral(x, _) | Token::Operator(x) => x.clone(),
 
 			Token::Keyword(x) => x.to_string(),
 			
@@ -317,9 +321,31 @@ impl Lexer {
 					}
 				} else if OPERATORS.contains(&result.as_str()) {
 					result_token = Ok(Token::Operator(result));
-				}
-				else {				
-					result_token = Ok(Token::Identifier(result));
+				} else {
+					// Result is not a keyword or an operator, so parse an Identifier
+					// This is a mess i sure hope it works
+					let mut path = ScopePath { scopes: vec![result.clone()], absolute: false };
+
+					// Recursively get next scope members
+					if let Token::Operator(op) = self.next()? {
+						if op.as_str() == "::" {
+							if let Token::Identifier(mut id) = self.next()? {
+								// If path is empty, we've reached the final part of the Identifier,
+								// so take the name and push it onto the scopes vec to pop it back later
+								// (TODO: why the fuck are we doing it this way)
+								if id.path.scopes.is_empty() {
+									path.scopes.push(id.name);
+								} else {
+									path.scopes.append(&mut id.path.scopes);
+								}
+							}
+							let name = path.scopes.pop().unwrap();
+							result_token = Ok(Token::Identifier(Identifier{ name, path, mem_idx: 0, resolved: None }));
+						}
+					} else {
+						// No scope res operator after this, return unscoped Identifier
+						result_token = Ok(Token::Identifier(Identifier{name: result, path: ScopePath::new(false), mem_idx: 0, resolved: None}));
+					}
 				}
 
 			} else if token.is_numeric() { 

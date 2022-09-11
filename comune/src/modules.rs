@@ -3,7 +3,7 @@ use std::{ffi::OsString, sync::Arc};
 use colored::Colorize;
 use inkwell::{context::Context, module::Module, passes::PassManager};
 
-use crate::{parser::{errors::{CMNMessage, CMNError}, lexer::{Lexer, log_msg_at, log_msg, self}, Parser, semantic, namespace::Namespace, types::Type}, llvm::LLVMBackend};
+use crate::{parser::{errors::{CMNMessage, CMNError}, lexer::{Lexer, log_msg_at, log_msg, self}, Parser, semantic, namespace::{Namespace, NamespaceItem}, types::Type}, llvm::LLVMBackend};
 
 pub struct ManagerState {
 	import_paths: Vec<OsString>,
@@ -74,11 +74,17 @@ impl ModuleJobManager {
 		// At this point, all imports have been resolved, so validate namespace-level types
 		{
 			let namespace = mod_state.parser.current_namespace().borrow();
-			for symbol in namespace.symbols.iter() {
-				if let Type::Unresolved(ret) = &symbol.1.0 {
-					
+
+			for child in &namespace.children {
+				match &child.1.0 {
+					NamespaceItem::Function(fn_ret, fn_ast) => {
+						if let Type::Unresolved(id) = fn_ret {
+							todo!();
+						}
+					}
+
+					_ => todo!(),
 				}
-				
 			}
 
 		}
@@ -100,7 +106,7 @@ impl ModuleJobManager {
 		};
 
 		// Validate code
-		match semantic::parse_namespace(namespace, namespace) {
+		match semantic::validate_namespace(namespace, namespace) {
 			Ok(()) => {	if self.state.verbose_output { println!("generating code..."); } },
 			Err(e) => { log_msg_at(e.1.0, e.1.1, CMNMessage::Error(e.0.clone())); return Err(e.0); },
 		}
@@ -161,14 +167,18 @@ impl ModuleJobManager {
 			assert!(namespace as *const _ != root.unwrap() as *const _);
 		}
 
-		for child in namespace.parsed_children.iter() {
-			self.register_namespace(backend, child.1, root);
+		for child in &namespace.children {
+			if let NamespaceItem::Namespace(namespace) = &child.1.0 {
+				self.register_namespace(backend, &namespace.borrow(), root);
+			}
 		}
 				
 
-		for (sym_name, (sym_type, _, attributes)) in &namespace.symbols {
-			let name_mangled = namespace.get_mangled_name(sym_name, attributes);
-			backend.register_fn(name_mangled, sym_type).unwrap();
+		for child in &namespace.children {
+			if let NamespaceItem::Function(sym_type, _) = &child.1.0 {
+				let name_mangled = namespace.get_mangled_name(&child.0);
+				backend.register_fn(name_mangled, sym_type).unwrap();
+			}
 		}
 	}
 
@@ -178,12 +188,17 @@ impl ModuleJobManager {
 			assert!(namespace as *const _ != root.unwrap() as *const _);
 		}
 		
-		for child in namespace.parsed_children.iter() {
-			self.compile_namespace(backend, child.1, root);
+		for child in &namespace.children {
+			if let NamespaceItem::Namespace(namespace) = &child.1.0 {
+				self.compile_namespace(backend, &namespace.borrow(), root);
+			}
 		}
+
 		// Generate function bodies
-		for (sym_name, (sym_type, sym_elem, attributes)) in &namespace.symbols {
-			backend.generate_fn(namespace.get_mangled_name(sym_name, attributes), sym_type, sym_elem).unwrap();
+		for child in &namespace.children {
+			if let NamespaceItem::Function(sym_type, sym_elem) = &child.1.0 {
+				backend.generate_fn(namespace.get_mangled_name(&child.0), sym_type, sym_elem).unwrap();
+			}
 		}
 	}
 

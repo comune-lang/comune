@@ -1,6 +1,6 @@
 use std::{cell::RefCell, collections::HashMap};
 
-use super::{types::{Type, Basic, Typed}, CMNError, ASTResult, namespace::{Namespace, Identifier}, ast::{ASTElem, ASTNode, TokenData}, controlflow::ControlFlow, expression::{Expr, Operator, Atom}, lexer, errors::{CMNMessage, CMNWarning}};
+use super::{types::{Type, Basic, Typed}, CMNError, ASTResult, namespace::{Namespace, Identifier, NamespaceItem}, ast::{ASTElem, ASTNode, TokenData}, controlflow::ControlFlow, expression::{Expr, Operator, Atom}, lexer, errors::{CMNMessage, CMNWarning}};
 
 
 // SEMANTIC ANALYSIS
@@ -13,7 +13,7 @@ pub struct Attribute {
 }
 
 pub fn get_attribute<'a>(attributes: &'a Vec<Attribute>, attr_name: &str) -> Option<&'a Attribute> {
-	attributes.iter().find(|a| a.name == attr_name.to_string())
+	attributes.iter().find(|a| a.name.as_str() == attr_name)
 }
 
 
@@ -75,13 +75,14 @@ impl<'ctx> FnScope<'ctx> {
 			let namespace = self.context.borrow();
 			let root = self.root_namespace.borrow();
 
-			match namespace.get_symbol_namespace(&id, if &root as *const _ != &namespace as *const _ { Some(&root) } else { None }) {
-				Some(ns) => {
-					let symbol = ns.symbols.get(&id.name).unwrap();
-					result = Some((ns.get_mangled_name(&id.name, &symbol.2), symbol.0.clone()))
-				},
-				None => result = None,
+			if let Some(ns) = namespace.find_item_namespace(&id, &root) {
+				if let Some((NamespaceItem::Function(fn_type, _), _)) = ns.children.get(&id.name) {
+					result = Some((ns.get_mangled_name(&id.name), fn_type.clone()))
+				}
+			} else { 
+				result = None 
 			}
+		
 		}
 
 		return result;
@@ -110,46 +111,45 @@ impl<'ctx> FnScope<'ctx> {
 
 
 
-pub fn parse_namespace(namespace: &RefCell<Namespace>, root_namespace: &RefCell<Namespace>) -> ASTResult<()> {
-	// Wasteful hack but god i am so tired
-	let keys: Vec<String> = namespace.borrow().parsed_children.keys().map(|k| k.clone()).collect();
-
-	for k in keys {
-		let hack = RefCell::new(std::mem::take(namespace.borrow_mut().parsed_children.get_mut(&k).unwrap()));
-		parse_namespace(&hack, root_namespace)?;
-		namespace.borrow_mut().parsed_children.insert(k.clone(), hack.into_inner());
-	}
-
-	for (_sym_name, (sym_type, sym_elem, _)) in &namespace.borrow().symbols {
-		let mut scope = FnScope::new(namespace, root_namespace, sym_type.clone());
-
-		let ret;
-		if let Type::Function(fn_ret, args) = &sym_type {
-			ret = fn_ret.as_ref().clone();
-			for arg in args.iter() {
-				scope.add_variable(arg.0.as_ref().clone(), arg.1.clone().unwrap())
-			}
+pub fn validate_namespace(namespace: &RefCell<Namespace>, root_namespace: &RefCell<Namespace>) -> ASTResult<()> {
+	for c in &namespace.borrow().children {
+		match &c.1.0 {
+			// Validate child namespace
+			NamespaceItem::Namespace(ns) => validate_namespace(&ns, root_namespace)?,
 			
-		} else { 
-			panic!()
-		}
-
+			// Validate function
+			NamespaceItem::Function(sym_type, sym_elem) => {
+				let mut scope = FnScope::new(namespace, root_namespace, sym_type.clone());
 		
-		if let Some(elem) = sym_elem {
-			
-			// Validate function block & get return type, make sure it matches the signature
-			let void = Type::Basic(Basic::VOID);
-			let ret_type = elem.validate(&mut scope, &ret)?;
-			
-			if ret_type.is_none() && ret != void {
-				// No returns in non-void function
-				return Err((CMNError::ReturnTypeMismatch { expected: ret.clone(), got: void }, elem.token_data));
-			} else if ret_type.is_some() && !ret_type.as_ref().unwrap().castable_to(&ret) {
-				return Err((CMNError::ReturnTypeMismatch { expected: ret.clone(), got: ret_type.unwrap() }, elem.token_data));
+				let ret;
+				if let Type::Function(fn_ret, args) = &sym_type {
+					ret = fn_ret.as_ref().clone();
+					for arg in args.iter() {
+						scope.add_variable(arg.0.as_ref().clone(), arg.1.clone().unwrap())
+					}
+					
+				} else { 
+					panic!()
+				}
+				
+				if let Some(elem) = sym_elem {
+					// Validate function block & get return type, make sure it matches the signature
+					let void = Type::Basic(Basic::VOID);
+					let ret_type = elem.validate(&mut scope, &ret)?;
+					
+					if ret_type.is_none() && ret != void {
+						// No returns in non-void function
+						return Err((CMNError::ReturnTypeMismatch { expected: ret.clone(), got: void }, elem.token_data));
+					} else if ret_type.is_some() && !ret_type.as_ref().unwrap().castable_to(&ret) {
+						return Err((CMNError::ReturnTypeMismatch { expected: ret.clone(), got: ret_type.unwrap() }, elem.token_data));
+					}
+				}
 			}
-		}
 
+			_ => todo!(),
+		}
 	}
+
 	Ok(())
 }
 
