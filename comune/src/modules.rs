@@ -72,22 +72,7 @@ impl ModuleJobManager {
 	
 	pub fn resolve_types(&self, mod_state: ModuleCompileState, context: &Context) -> Result<ModuleCompileState, CMNError> {
 		// At this point, all imports have been resolved, so validate namespace-level types
-		{
-			let namespace = mod_state.parser.current_namespace().borrow();
-
-			for child in &namespace.children {
-				match &child.1.0 {
-					NamespaceItem::Function(fn_ret, fn_ast) => {
-						if let Type::Unresolved(id) = fn_ret {
-							todo!();
-						}
-					}
-
-					_ => todo!(),
-				}
-			}
-
-		}
+		semantic::resolve_types(mod_state.parser.current_namespace());
 
 		Ok(mod_state)
 	}

@@ -81,7 +81,7 @@ impl<'ctx> FnScope<'ctx> {
 				}
 			} else { 
 				result = None 
-			}
+			};
 		
 		}
 
@@ -115,7 +115,7 @@ pub fn validate_namespace(namespace: &RefCell<Namespace>, root_namespace: &RefCe
 	for c in &namespace.borrow().children {
 		match &c.1.0 {
 			// Validate child namespace
-			NamespaceItem::Namespace(ns) => validate_namespace(&ns, root_namespace)?,
+			NamespaceItem::Namespace(ns) => validate_namespace(ns, root_namespace)?,
 			
 			// Validate function
 			NamespaceItem::Function(sym_type, sym_elem) => {
@@ -153,7 +153,31 @@ pub fn validate_namespace(namespace: &RefCell<Namespace>, root_namespace: &RefCe
 	Ok(())
 }
 
+pub fn resolve_types(namespace: &RefCell<Namespace>) -> ASTResult<()> {
+	let namespace = namespace.borrow();
 
+	for child in &namespace.children {
+		match &child.1.0 {
+			NamespaceItem::Function(fn_ret, fn_ast) => {
+				if let Type::Unresolved(id) = fn_ret {
+					todo!();
+				}
+			}
+
+			NamespaceItem::Namespace(ns) => {
+				resolve_types(ns)?;
+			}
+
+			NamespaceItem::Type(t) => {
+				
+			}
+
+			_ => todo!(),
+		}
+	}
+
+	Ok(())
+}
 
 
 

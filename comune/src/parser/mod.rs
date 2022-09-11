@@ -81,6 +81,7 @@ impl Parser {
 		});
 
 		self.active_namespace = Some(RefCell::new(Namespace::new()));
+		self.root_namespace = None;
 		match self.parse_namespace() {
 			Ok(()) => {
 				
@@ -366,23 +367,23 @@ impl Parser {
 				// Might be a declaration, check if identifier is a type
 				let ns = self.current_namespace().borrow();
 				let root = &self.root_namespace.as_ref().unwrap_or(self.current_namespace()).borrow();
-				let decl_type = ns.find_item(id, root);
 
-				if decl_type.is_some() {
-					// Parse variable declaration
-					
-					let t = self.parse_type(true)?;
-					let name = get_current()?;
-					let mut expr = None;
-					
-					if token_compare(&get_next()?, "=") {
-						get_next()?;
-						expr = Some(Box::new(self.parse_expression()?));
+				if let Some(found_ns) = ns.find_item_namespace(id, root) {
+					if let Some((NamespaceItem::Type(_), _)) = found_ns.children.get(&id.name) {
+						// Found a type that matches, so parse variable declaration
+						
+						let t = self.parse_type(true)?;
+						let name = get_current()?;
+						let mut expr = None;
+						
+						if token_compare(&get_next()?, "=") {
+							get_next()?;
+							expr = Some(Box::new(self.parse_expression()?));
+						}
+						self.check_semicolon()?;
+						result = Some(ASTNode::Declaration(t, name, expr));
 					}
-					self.check_semicolon()?;
-					result = Some(ASTNode::Declaration(t, name, expr));
-					
-				}
+				};
 			},
 
 			Token::Keyword(keyword) => {
@@ -790,20 +791,10 @@ impl Parser {
 	fn parse_atom(&self) -> ParseResult<Atom> {
 		let mut current = get_current()?;
 		let mut result;
-		let mut name = None;
-		let mut next;
-		
-		// If we're parsing an Identifier, parse the whole scoped name
-		if let Token::Identifier(id) = current.clone() {
-			name = Some(id);
-			next = get_current()?;
-		} else {
-			next = get_next()?;
-		}
+		let mut next = get_next()?;
 
 		match current {
-			Token::Identifier(_) => {
-				let name = name.unwrap();
+			Token::Identifier(name) => {
 				result = Atom::Identifier(name.clone());
 
 				while let Token::Operator(ref op) = next {
@@ -963,7 +954,7 @@ impl Parser {
 			// Typename
 
 			if immediate_resolve {
-				let ctx = self.current_namespace().borrow_mut();
+				let ctx = self.current_namespace().borrow();
 				let root = &self.root_namespace.as_ref().unwrap_or(self.current_namespace()).borrow();
 
 				if let Some(found_namespace) = ctx.find_item_namespace(&typename, root) {
@@ -973,7 +964,7 @@ impl Parser {
 					}
 				} else { 
 					return Err(CMNError::UnresolvedTypename(typename.to_string())); 
-				}
+				};
 
 			} else {
 				result = Type::Unresolved(typename);

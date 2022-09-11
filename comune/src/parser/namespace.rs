@@ -1,4 +1,4 @@
-use std::{collections::{HashMap, HashSet}, fmt::Display, cell::RefCell};
+use std::{collections::{HashMap, HashSet}, fmt::Display, cell::RefCell, ops::Deref};
 
 use inkwell::attributes;
 use mangling::mangle;
@@ -96,10 +96,11 @@ pub struct Namespace {
 	//pub parsed_children: HashMap<String, Namespace>,
 }
 
-impl Namespace {
+impl<'root: 'this, 'this> Namespace {
 	pub fn new() -> Self {
 		Namespace { 
-			children: HashMap::new(),
+			// Initialize root namespace with basic types
+			children: Basic::hashmap().into_iter().map(|(key, val)| (key, (NamespaceItem::Type(val), vec![]))).collect(),
 			path: ScopePath::new(true),
 
 			referenced_modules: HashSet::new(),
@@ -132,31 +133,38 @@ impl Namespace {
 	}
 
 	// Try to find a namespace item based on the current namespace visibility 
-	pub fn find_item_namespace<'root>(&'root self, name: &Identifier, root: &'root Namespace) -> Option<&'root Namespace> {
-		let self_is_root = root as *const _ != self as *const _;
+	pub fn find_item_namespace(&'this self, name: &Identifier, root: &'root Namespace) -> Option<impl Deref<Target = Namespace> + 'this> {
+		let self_is_root = root as *const _ == self as *const _;
 
-		if !self_is_root || name.path.absolute {
-
+		// If name is an absolute path, look in root
+		if name.path.absolute && !self_is_root {
+			return root.find_item_namespace(name, root);
+		}
+		
+		
+		if name.path.scopes.is_empty() {
+			if self.children.contains_key(&name.name) {
+				return Some(self);
+			}
+		} else {
+			//if let Some((NamespaceItem::Namespace(child), _)) = self.children.get(&name.path.scopes[0]) {
+			//	return child.borrow().find_item_namespace(name, root);
+			//}
 		}
 
-		// Didn't find it in our own namespace, or it's an absolute path
+		// Didn't find it in our own namespace
 
 		if !self_is_root {
 			// We're not root, so search there
 			root.find_item_namespace(name, root)
 		} else {
-			// We are root, so return None
 			None
 		}
 	}
 
-	pub fn find_item<'root>(&'root self, name: &Identifier, root: &'root Namespace) -> Option<&'root (NamespaceItem, Vec<Attribute>)> {
-		if let Some(namespace) = self.find_item_namespace(name, root) {
-			namespace.children.get(&name.name)
-		} else {
-			None
-		}
-	}
+	//pub fn find_item(&'this self, name: &Identifier, root: &'root Namespace) -> Option<&'this (NamespaceItem, Vec<Attribute>)> {
+	//	self.find_item_namespace(name, root)?.children.get(&name.name)
+	//}
 
 
 	// Get namespace that contains the symbol identified by `name`
