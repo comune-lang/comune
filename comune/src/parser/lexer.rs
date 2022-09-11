@@ -327,8 +327,8 @@ impl Lexer {
 					let mut path = ScopePath { scopes: vec![result.clone()], absolute: false };
 
 					// Recursively get next scope members
-					if let Token::Operator(op) = self.next()? {
-						if op.as_str() == "::" {
+ 					if self.char_buffer.unwrap() == ':' && self.peek_next_char()? == ':' {
+							self.advance_char()?; self.advance_char()?; 
 							if let Token::Identifier(mut id) = self.next()? {
 								// If path is empty, we've reached the final part of the Identifier,
 								// so take the name and push it onto the scopes vec to pop it back later
@@ -341,7 +341,7 @@ impl Lexer {
 							}
 							let name = path.scopes.pop().unwrap();
 							result_token = Ok(Token::Identifier(Identifier{ name, path, mem_idx: 0, resolved: None }));
-						}
+						
 					} else {
 						// No scope res operator after this, return unscoped Identifier
 						result_token = Ok(Token::Identifier(Identifier{name: result, path: ScopePath::new(false), mem_idx: 0, resolved: None}));

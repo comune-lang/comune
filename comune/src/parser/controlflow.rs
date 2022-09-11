@@ -39,8 +39,8 @@ impl Typed for ControlFlow {
 
 				if let Some(else_body) = else_body {
 					// Has an else branch, so evaluates to a type both bodies are coercable to
-					let body_type = body.get_type(scope)?;
-					let else_type = else_body.get_type(scope)?;
+					let _body_type = body.get_type(scope)?;
+					let _else_type = else_body.get_type(scope)?;
 
 					//if else_body.get_expr().borrow().coercable_to(&else_type, &body_type, scope) {
 					//	Ok(body_type)

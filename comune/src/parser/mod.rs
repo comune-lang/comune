@@ -193,6 +193,7 @@ impl Parser {
 							let name_token = get_next()?;
 
 							if let Token::Identifier(namespace_name) = name_token {								
+								get_next()?; // Consume name
 								get_next()?; // Consume brace
 
 								let self_is_root = self.root_namespace.is_none();
