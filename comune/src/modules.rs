@@ -72,14 +72,17 @@ impl ModuleJobManager {
 	
 	pub fn resolve_types(&self, mod_state: ModuleCompileState, context: &Context) -> Result<ModuleCompileState, CMNError> {
 		// At this point, all imports have been resolved, so validate namespace-level types
-		semantic::resolve_types(mod_state.parser.current_namespace());
-
+		semantic::resolve_types(mod_state.parser.current_namespace(), mod_state.parser.current_namespace()).unwrap();
 		Ok(mod_state)
 	}
 
 
 	pub fn generate_code<'ctx>(&self, mut mod_state: ModuleCompileState, context: &'ctx Context) -> Result<LLVMBackend<'ctx>, CMNError> {
 		
+		if self.state.verbose_output {
+			println!("\ntype resolution output:\n\n{}", mod_state.parser.current_namespace().borrow());
+		}
+
 		// Generative pass
 		// TODO: This completely re-tokenizes the module, which is useless
 		// We oughta:
@@ -162,7 +165,7 @@ impl ModuleJobManager {
 		for child in &namespace.children {
 			if let NamespaceItem::Function(sym_type, _) = &child.1.0 {
 				let name_mangled = namespace.get_mangled_name(&child.0);
-				backend.register_fn(name_mangled, sym_type).unwrap();
+				backend.register_fn(name_mangled, &sym_type.borrow()).unwrap();
 			}
 		}
 	}
@@ -182,7 +185,7 @@ impl ModuleJobManager {
 		// Generate function bodies
 		for child in &namespace.children {
 			if let NamespaceItem::Function(sym_type, sym_elem) = &child.1.0 {
-				backend.generate_fn(namespace.get_mangled_name(&child.0), sym_type, sym_elem).unwrap();
+				backend.generate_fn(namespace.get_mangled_name(&child.0), &sym_type.borrow(), sym_elem).unwrap();
 			}
 		}
 	}

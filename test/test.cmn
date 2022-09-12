@@ -1,6 +1,6 @@
 @no_mangle
 int printf(char* fmt);
-
+/*
 namespace cool {
 	u64 fib(u64 n) {
 		u64 a = 0; // Literals can be coerced to any numeric type
@@ -20,10 +20,14 @@ namespace cool {
 	}
 }
 
-
 int main() {
 	cool::Test test;
 	cool::Test* testptr = &test;
 	(*testptr).a = cool::fib(10) as i32;
 	return (*testptr).a;
+}
+*/
+
+int main() {
+	printf("hello world!");
 }

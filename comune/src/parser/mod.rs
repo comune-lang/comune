@@ -184,7 +184,7 @@ impl Parser {
 								let aggregate = Type::Aggregate(Box::new(aggregate));
 								
 								self.current_namespace().borrow_mut().children.insert(
-									name.expect_scopeless()?, (NamespaceItem::Type(aggregate), current_attributes)
+									name.expect_scopeless()?, (NamespaceItem::Type(RefCell::new(aggregate)), current_attributes)
 								);
 								current_attributes = vec![];
 							}
@@ -255,7 +255,7 @@ impl Parser {
 
 					self.current_namespace().borrow_mut().children.insert(
 						result.0, 
-						(NamespaceItem::Function(result.1, result.2), current_attributes)
+						(NamespaceItem::Function(RefCell::new(result.1), result.2), current_attributes)
 					);
 					
 					current_attributes = vec![];
@@ -959,7 +959,7 @@ impl Parser {
 
 				if let Some(found_namespace) = ctx.find_item_namespace(&typename, root) {
 					result = match found_namespace.children.get(&typename.name) { 
-						Some((NamespaceItem::Type(t), _)) => t.clone(),
+						Some((NamespaceItem::Type(t), _)) => t.borrow().clone(),
 						_ => return Err(CMNError::UnresolvedTypename(typename.to_string()))
 					}
 				} else { 

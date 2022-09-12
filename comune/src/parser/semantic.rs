@@ -1,6 +1,6 @@
 use std::{cell::RefCell, collections::HashMap};
 
-use super::{types::{Type, Basic, Typed}, CMNError, ASTResult, namespace::{Namespace, Identifier, NamespaceItem}, ast::{ASTElem, ASTNode, TokenData}, controlflow::ControlFlow, expression::{Expr, Operator, Atom}, lexer, errors::{CMNMessage, CMNWarning}};
+use super::{types::{Type, Basic, Typed}, CMNError, ASTResult, namespace::{Namespace, Identifier, NamespaceItem}, ast::{ASTElem, ASTNode, TokenData}, controlflow::ControlFlow, expression::{Expr, Operator, Atom}, lexer, errors::{CMNMessage, CMNWarning}, ParseResult};
 
 
 // SEMANTIC ANALYSIS
@@ -77,7 +77,7 @@ impl<'ctx> FnScope<'ctx> {
 
 			if let Some(ns) = namespace.find_item_namespace(&id, &root) {
 				if let Some((NamespaceItem::Function(fn_type, _), _)) = ns.children.get(&id.name) {
-					result = Some((ns.get_mangled_name(&id.name), fn_type.clone()))
+					result = Some((ns.get_mangled_name(&id.name), fn_type.borrow().clone()))
 				}
 			} else { 
 				result = None 
@@ -98,6 +98,7 @@ impl<'ctx> FnScope<'ctx> {
 	pub fn resolve_identifier(&self, id: &mut Identifier) -> Option<Type> {
 		if let Some(find_result) = self.find_symbol(id) {
 			id.resolved = Some(find_result.0);
+			println!("RESOLVED TO {}", find_result.1);
 			Some(find_result.1.clone())
 		} else {
 			None
@@ -119,10 +120,10 @@ pub fn validate_namespace(namespace: &RefCell<Namespace>, root_namespace: &RefCe
 			
 			// Validate function
 			NamespaceItem::Function(sym_type, sym_elem) => {
-				let mut scope = FnScope::new(namespace, root_namespace, sym_type.clone());
+				let mut scope = FnScope::new(namespace, root_namespace, sym_type.borrow().clone());
 		
 				let ret;
-				if let Type::Function(fn_ret, args) = &sym_type {
+				if let Type::Function(fn_ret, args) = &*sym_type.borrow() {
 					ret = fn_ret.as_ref().clone();
 					for arg in args.iter() {
 						scope.add_variable(arg.0.as_ref().clone(), arg.1.clone().unwrap())
@@ -146,31 +147,70 @@ pub fn validate_namespace(namespace: &RefCell<Namespace>, root_namespace: &RefCe
 				}
 			}
 
-			_ => todo!(),
+			_ => {},
 		}
 	}
 
 	Ok(())
 }
 
-pub fn resolve_types(namespace: &RefCell<Namespace>) -> ASTResult<()> {
+
+pub fn resolve_type(ty: Type, namespace: &Namespace, root: &RefCell<Namespace>) -> ParseResult<Type> {
+	match ty {
+		Type::Pointer(pointee) => Ok(Type::Pointer(Box::new(resolve_type(*pointee, namespace, root)?))),
+		
+		Type::Unresolved(ref id) => {
+			let root = root.borrow();
+			let found_ns = namespace.find_item_namespace(&id, &root);
+
+			if let Some(found_ns) = found_ns {
+				if let Some((NamespaceItem::Type(ty), _)) = found_ns.children.get(&id.name) {
+					Ok(ty.borrow().clone())
+				} else {
+					Err(CMNError::UnresolvedTypename(id.to_string()))
+				}
+			} else {
+				Err(CMNError::UnresolvedTypename(id.to_string()))
+			}
+
+			
+		},
+		
+		Type::Basic(_) => Ok(ty),
+		
+		_ => todo!(),
+	}
+}
+
+
+pub fn resolve_types(namespace: &RefCell<Namespace>, root: &RefCell<Namespace>) -> ASTResult<()> {
+	
+	for child in &namespace.borrow().children {
+		if let NamespaceItem::Namespace(ref ns) = child.1.0 { 
+			resolve_types(ns, root)?;
+		}
+	}
+
 	let namespace = namespace.borrow();
 
 	for child in &namespace.children {
 		match &child.1.0 {
-			NamespaceItem::Function(fn_ret, fn_ast) => {
-				if let Type::Unresolved(id) = fn_ret {
-					todo!();
+			NamespaceItem::Function(ty, _fn_ast) => {
+				if let Type::Function(ret, args) = &mut *ty.borrow_mut() {
+					**ret = resolve_type(*ret.clone(), &namespace, root).unwrap();
+
+					for arg in args {
+						*arg.0 = resolve_type(*arg.0.clone(), &namespace, root).unwrap();
+					}
 				}
 			}
 
-			NamespaceItem::Namespace(ns) => {
-				resolve_types(ns)?;
-			}
+			NamespaceItem::Namespace(ns) => {}
 
 			NamespaceItem::Type(t) => {
-				
-			}
+				let ty = t.borrow().clone();
+				*t.borrow_mut() = resolve_type(ty, &namespace, root).unwrap();
+			},
 
 			_ => todo!(),
 		}

@@ -74,9 +74,9 @@ impl ToString for ScopePath {
 
 
 pub enum NamespaceItem {
-	Type(Type),
-	Function(Type, Option<ASTElem>),
-	Variable(Type, Option<ASTElem>),
+	Type(RefCell<Type>),
+	Function(RefCell<Type>, Option<ASTElem>),
+	Variable(RefCell<Type>, Option<ASTElem>),
 	Namespace(Box<RefCell<Namespace>>),
 }
 
@@ -100,7 +100,7 @@ impl<'root: 'this, 'this> Namespace {
 	pub fn new() -> Self {
 		Namespace { 
 			// Initialize root namespace with basic types
-			children: Basic::hashmap().into_iter().map(|(key, val)| (key, (NamespaceItem::Type(val), vec![]))).collect(),
+			children: Basic::hashmap().into_iter().map(|(key, val)| (key, (NamespaceItem::Type(RefCell::new(val)), vec![]))).collect(),
 			path: ScopePath::new(true),
 
 			referenced_modules: HashSet::new(),
@@ -126,7 +126,7 @@ impl<'root: 'this, 'this> Namespace {
 				return symbol_name.to_string();
 			}
 
-			mangle(format!("{}::{}({})", self.path.to_string(), symbol_name, symbol_type.serialize()).as_bytes())
+			mangle(format!("{}::{}({})", self.path.to_string(), symbol_name, symbol_type.borrow().serialize()).as_bytes())
 		} else {
 			panic!("Invalid symbol name");
 		}
@@ -221,8 +221,8 @@ impl Display for Namespace {
 		
 		for c in &self.children {
 			match &c.1.0 {
-				NamespaceItem::Type(t) => write!(f, "\t[type] {}: {}\n", c.0, t)?,
-				NamespaceItem::Function(t, _) => write!(f, "\t[func] {}: {}\n", c.0, t)?,
+				NamespaceItem::Type(t) => write!(f, "\t[type] {}: {}\n", c.0, t.borrow())?,
+				NamespaceItem::Function(t, _) => write!(f, "\t[func] {}: {}\n", c.0, t.borrow())?,
 				NamespaceItem::Variable(_, _) => todo!(),
 				NamespaceItem::Namespace(_) => todo!(),
 			}
