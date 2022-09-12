@@ -1,4 +1,4 @@
-use std::{collections::{HashMap, HashSet}, fmt::Display, cell::RefCell, ops::Deref};
+use std::{collections::{HashMap, HashSet}, fmt::Display, cell::RefCell, ops::Deref, borrow::Borrow};
 
 use inkwell::attributes;
 use mangling::mangle;
@@ -223,15 +223,14 @@ impl<'root: 'this, 'this> Namespace {
 
 
 impl Display for Namespace {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		write!(f, "children:\n")?;
-		
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {		
 		for c in &self.children {
 			match &c.1.0 {
 				NamespaceItem::Type(t) => write!(f, "\t[type] {}: {}\n", c.0, t.borrow())?,
 				NamespaceItem::Function(t, _) => write!(f, "\t[func] {}: {}\n", c.0, t.borrow())?,
 				NamespaceItem::Variable(_, _) => todo!(),
-				NamespaceItem::Namespace(_) => todo!(),
+				NamespaceItem::Namespace(ns) => write!(f, "\n[[sub-namespace]]\n\n{}\n[[end sub-namespace]]\n\n", &ns.as_ref().borrow())?
+				,
 			}
 		}
 

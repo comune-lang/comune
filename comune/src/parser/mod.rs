@@ -260,6 +260,7 @@ impl Parser {
 									self.root_namespace.replace(RefCell::new(old_namespace));
 									self.parse_namespace()?;
 									old_namespace = self.root_namespace.as_mut().unwrap().take();
+									self.root_namespace = None;
 								} else {
 									self.parse_namespace()?;
 								}
