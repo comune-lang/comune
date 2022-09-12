@@ -110,8 +110,9 @@ impl Token {
 		match self {
 			Token::Identifier(x) => x.name.len(), // Incorrect, TODO: Actually implement this
 
-			Token::StringLiteral(x) | Token::NumLiteral(x, _) | Token::Operator(x)
-				=> x.len(),
+			Token::NumLiteral(x, _) | Token::Operator(x) => x.len(),
+
+			Token::StringLiteral(x) => x.len() + 2,
 
 			Token::Keyword(x) => x.len(),
 
