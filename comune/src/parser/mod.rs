@@ -21,15 +21,21 @@ pub mod controlflow;
 // Utility functions to make the code a bit cleaner
 
 fn get_current() -> ParseResult<Token> {
-	lexer::CURRENT_LEXER.with(|lexer| lexer.borrow().current().clone().ok_or(CMNError::UnexpectedEOF))
+	lexer::CURRENT_LEXER.with(|lexer| match lexer.borrow().current() {
+		Some((_, tk)) => Ok(tk.clone()),
+		None => Err(CMNError::UnexpectedEOF),
+	})
 }
 
 fn get_next() -> ParseResult<Token> {
-	lexer::CURRENT_LEXER.with(|lexer| lexer.borrow_mut().next().or(Err(CMNError::UnexpectedEOF)))
+	lexer::CURRENT_LEXER.with(|lexer| match lexer.borrow_mut().next() {
+		Some((_, tk)) => Ok(tk.clone()),
+		None => Err(CMNError::UnexpectedEOF),
+	})
 }
 
 fn get_current_start_index() -> usize {
-	lexer::CURRENT_LEXER.with(|lexer| lexer.borrow().get_current_start_index())
+	lexer::CURRENT_LEXER.with(|lexer| lexer.borrow().current().unwrap().0)
 }
 
 // Convenience function that matches a &str against various token kinds
@@ -77,7 +83,7 @@ impl Parser {
 		self.generate_ast = generate_ast;
 
 		lexer::CURRENT_LEXER.with(|lexer| {
-			lexer.borrow_mut().reset().unwrap();
+			lexer.borrow_mut().tokenize_file().unwrap();
 		});
 
 		self.active_namespace = Some(RefCell::new(Namespace::new()));

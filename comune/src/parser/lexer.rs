@@ -149,7 +149,8 @@ pub struct Lexer {
 	file_buffer: String,
 	file_index: usize, // must be on a valid utf-8 character boundary
 	char_buffer: Option<char>,
-	token_buffer: Option<Token>,
+	token_buffer: Vec<(usize, Token)>,
+	token_index: usize,
 	pub file_name: OsString,
 }
 
@@ -159,7 +160,8 @@ impl Lexer {
 			file_buffer: String::new(),
 			file_index: 0usize,
 			char_buffer: None,
-			token_buffer: None,
+			token_buffer: vec![],
+			token_index: 0usize,
 			file_name: OsString::new(),
 		}
 	}
@@ -169,7 +171,8 @@ impl Lexer {
 			file_buffer: String::new(), 
 			file_index: 0usize,
 			char_buffer: None,
-			token_buffer: None,
+			token_buffer: vec![],
+			token_index: 0usize,
 			file_name: path.as_ref().file_name().unwrap().to_os_string()
 		};
 	
@@ -180,20 +183,26 @@ impl Lexer {
 		// Tabs fuck up the visual error reporting and making it Really Work is a nightmare because Unicode
 		// So here's this hack lol
 		result.file_buffer = result.file_buffer.replace("\t", "    ");
-
-		result.advance_char()?; // Populate char buffer
-		result.next()?; 		// Populate token buffer
+		result.tokenize_file()?;
 
 		Ok(result)
 	}
 
-	pub fn reset(&mut self) -> io::Result<()> {
+	pub fn tokenize_file(&mut self) -> io::Result<()> {
 		self.file_index = 0usize;
 		self.char_buffer = None;
-		self.token_buffer = None;
+		self.token_buffer = vec![];
+		self.token_index = 0;
 		
 		self.advance_char()?;
-		self.next()?;
+		loop {
+			match self.parse_next() {
+				Ok((idx, Token::EOF)) => {self.token_buffer.push((idx, Token::EOF)); break},
+				Ok(tk) => self.token_buffer.push(tk),
+				Err(_) => panic!() // Shouldn't happen?
+			}
+		}
+		self.file_index = 0usize;
 
 		Ok(())
 	}
@@ -222,17 +231,16 @@ impl Lexer {
 		}
 	}
 
+
 	pub fn get_line(&self, line: usize) -> &str {
 		self.file_buffer.lines().nth(line).unwrap()
 	}
 
-	pub fn current(&self) -> &Option<Token> {
-		&self.token_buffer
+
+	pub fn current(&self) -> Option<&(usize, Token)> {
+		self.token_buffer.get(self.token_index) 
 	}
 
-	pub fn get_current_start_index(&self) -> usize {
-		self.file_index - self.token_buffer.as_ref().unwrap().len()
-	}
 
 	fn skip_whitespace(&mut self) -> io::Result<()> {
 		if let Some(mut token) = self.char_buffer {
@@ -244,6 +252,7 @@ impl Lexer {
 			Err(Error::new(io::ErrorKind::UnexpectedEof, "file buffer exhausted"))
 		}
 	}
+
 
 	fn skip_single_line_comment(&mut self) -> io::Result<()> {
 		if let Some(mut token) = self.char_buffer {
@@ -258,6 +267,7 @@ impl Lexer {
 			Err(Error::new(io::ErrorKind::UnexpectedEof, "file buffer exhausted"))
 		}
 	}
+
 
 	fn skip_multi_line_comment(&mut self) -> io::Result<()> {
 		if let Some(mut token) = self.char_buffer {
@@ -277,9 +287,19 @@ impl Lexer {
 		}
 	}
 
+
+	pub fn next(&mut self) -> Option<&(usize, Token)> {
+		self.token_index += 1;
+		if let Some(current) = self.current() { 
+			self.file_index = current.0; 
+		}
+		self.current() 
+	}
+
 	
-	pub fn next(&mut self) -> io::Result<Token> {
+	pub fn parse_next(&mut self) -> io::Result<(usize, Token)> {
 		let mut result_token = Ok(Token::EOF);
+		let start = self.file_index;
 
 		if let Some(mut token) = self.char_buffer {
 
@@ -330,7 +350,7 @@ impl Lexer {
 					// Recursively get next scope members
  					if self.char_buffer.unwrap() == ':' && self.peek_next_char()? == ':' {
 							self.advance_char()?; self.advance_char()?; 
-							if let Token::Identifier(mut id) = self.next()? {
+							if let Token::Identifier(mut id) = self.parse_next()?.1 {
 								// If path is empty, we've reached the final part of the Identifier,
 								// so take the name and push it onto the scopes vec to pop it back later
 								// (TODO: why the fuck are we doing it this way)
@@ -438,14 +458,10 @@ impl Lexer {
 			}
 		}
 
-		if result_token.is_ok() {
-		//	println!("{:?}", result_token.as_ref().unwrap());
-			self.token_buffer = Some(result_token.as_ref().unwrap().clone());
-		} else {
-			self.token_buffer = None;
+		match result_token {
+			Ok(tk) => Ok((start, tk)),
+			Err(e) => Err(e),
 		}
-
-		result_token
 	}
 
 	
@@ -527,7 +543,11 @@ impl Lexer {
 	}
 
 	pub fn log_msg(&self, e: CMNMessage) {
-		let len = self.current().as_ref().unwrap().len();
-		self.log_msg_at(self.file_index - len, len, e)
+		if let Some(current) = self.current() {
+			let len = current.1.len();
+			self.log_msg_at(self.file_index - len, len, e)
+		} else {
+			self.log_msg_at(0, 0, e)
+		}
 	}
 }

@@ -73,15 +73,18 @@ impl ModuleJobManager {
 	pub fn resolve_types(&self, mod_state: ModuleCompileState, context: &Context) -> Result<ModuleCompileState, CMNError> {
 		// At this point, all imports have been resolved, so validate namespace-level types
 		semantic::resolve_types(mod_state.parser.current_namespace(), mod_state.parser.current_namespace()).unwrap();
+		
+		if self.state.verbose_output {
+			println!("\ntype resolution output:\n\n{}", mod_state.parser.current_namespace().borrow());
+		}
+	
 		Ok(mod_state)
 	}
 
 
 	pub fn generate_code<'ctx>(&self, mut mod_state: ModuleCompileState, context: &'ctx Context) -> Result<LLVMBackend<'ctx>, CMNError> {
 		
-		if self.state.verbose_output {
-			println!("\ntype resolution output:\n\n{}", mod_state.parser.current_namespace().borrow());
-		}
+
 
 		// Generative pass
 		// TODO: This completely re-tokenizes the module, which is useless
