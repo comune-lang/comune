@@ -1,6 +1,3 @@
-
-
-
 @no_mangle
 int printf(char* fmt);
 
@@ -19,13 +16,7 @@ namespace cool {
 	}
 }
 
-struct Test {
-	int a = 0;
-}
-
 int main() {
-	Test test;
-	Test* testptr = &test;
-	(*testptr).a = cool::fib(10) as i32; // Strong typing for integers; try removing the cast
-	return (*testptr).a;
+	int a = cool::fib(10) as i32;
+	return a;
 }

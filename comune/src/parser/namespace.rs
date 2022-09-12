@@ -1,7 +1,7 @@
-use std::{collections::{HashMap, HashSet}, fmt::Display};
+use std::{collections::{HashMap, HashSet}, fmt::Display, cell::RefCell};
 
 use mangling::mangle;
-use super::semantic::{Attribute, get_attribute};
+use super::{semantic::{Attribute, get_attribute}, errors::CMNError, ParseResult};
 use super::{types::{Type, Basic}, ast::ASTElem};
 
 
@@ -12,6 +12,16 @@ pub struct Identifier {
 	pub path: ScopePath,
 	pub mem_idx: u32,
 	pub resolved: Option<String> // Mangled name, resolved during semantic analysis
+}
+
+impl Identifier {
+	pub fn expect_scopeless(&self) -> ParseResult<String> {
+		if self.path.scopes.is_empty() && !self.path.absolute {
+			Ok(self.name.clone())
+		} else {
+			Err(CMNError::ExpectedIdentifier) // TODO: Give appropriate error
+		}
+	}
 }
 
 
@@ -61,26 +71,47 @@ impl ToString for ScopePath {
     }
 }
 
-#[derive(Default)]
-pub struct Namespace {
-	pub types: HashMap<String, Type>,
-	pub symbols: HashMap<String, (Type, Option<ASTElem>, Vec<Attribute>)>,
-	pub parsed_children: HashMap<String, Namespace>,
-	pub parent_temp: Option<Box<Namespace>>,
-	pub path: ScopePath,
-
-	pub referenced_modules: HashSet<String>,
-	pub imported: Box<Option<Namespace>>,
+#[derive(Clone, Debug, PartialEq)]
+pub enum NamespaceASTElem {
+	Parsed(ASTElem),
+	Unparsed(usize), // Token index
+	NoElem,
 }
 
-impl Namespace {
+// refcell hell
+pub enum NamespaceItem {
+	Type(RefCell<Type>),
+	Function(RefCell<Type>, RefCell<NamespaceASTElem>),
+	Variable(RefCell<Type>, RefCell<NamespaceASTElem>),
+	Namespace(Box<RefCell<Namespace>>),
+}
+
+type NamespaceEntry = (NamespaceItem, Vec<Attribute>, Option<String>);
+
+
+#[derive(Default)]
+pub struct Namespace {
+	pub path: ScopePath,
+	pub referenced_modules: HashSet<String>,
+	pub imported: Box<Option<Namespace>>,
+	pub children: HashMap<String, NamespaceEntry>,
+}
+
+impl<'root: 'this, 'this> Namespace {
 	pub fn new() -> Self {
+		let mangle_path = ScopePath::new(true);
 		Namespace { 
-			types: HashMap::new(), 
-			symbols: HashMap::new(),
-			parsed_children: HashMap::new(),
-			parent_temp: None,
+			// Initialize root namespace with basic types
 			path: ScopePath::new(true),
+			children: Basic::hashmap().into_iter().map(|(key, val)| 
+			(
+				key.clone(), 
+				(
+					NamespaceItem::Type(RefCell::new(val.clone())), 
+					vec![], 
+					Some(Self::mangle_name(&mangle_path, &key, &val))
+				)
+			)).collect(),
 
 			referenced_modules: HashSet::new(),
 			imported: Box::new(None),
@@ -88,96 +119,79 @@ impl Namespace {
 	}
 
 	// Children take temporary ownership of their parent to avoid lifetime hell
-	pub fn from_parent(parent: Box<Namespace>, name: String) -> Self {
+	pub fn from_parent(parent: &ScopePath, name: String) -> Self {
 		Namespace { 
-			types: HashMap::new(), 
-			symbols: HashMap::new(),
-			parsed_children: HashMap::new(),
-			path: ScopePath::from_parent(&parent.path.clone(), name),
-			parent_temp: Some(parent),
+			children: HashMap::new(),
+			path: ScopePath::from_parent(parent, name),
 
 			referenced_modules: HashSet::new(),
 			imported: Box::new(None),
 		}
 	}
 
-
-	pub fn get_type(&self, name: &str) -> Option<Type> {
-		if let Some(basic) = Basic::get_basic_type(name) {
-			Some(Type::from_basic(basic))
-		} else if self.types.contains_key(name) {
-			self.types.get(name).cloned()
-		} else {
-			let scope_op_idx = name.find("::");
-			
-			if let Some(idx) = scope_op_idx {
-				if self.parsed_children.contains_key(&name[..idx]) {
-					return self.parsed_children.get(&name[..idx]).unwrap().get_type(&name[idx+2..]);
-				}
-			}
-
-			None
-		}
+	pub fn mangle_name(path: &ScopePath, name: &str, ty: &Type) -> String {
+		mangle(format!("{}::{}({})", path.to_string(), name, ty.serialize()).as_bytes())
 	}
 
-	pub fn get_mangled_name(&self, symbol_name: &str, attributes: &Vec<Attribute>) -> String {
-		if let Some(symbol) = self.symbols.get(symbol_name) {
+
+	pub fn get_symbol_name_mangled(&self, symbol_name: &str) -> String {
+		if let Some((NamespaceItem::Function(symbol_type, _), attributes, _)) = self.children.get(symbol_name) {
 			// Don't mangle if function is root main(), or if it has a no_mangle attribute
 			if symbol_name == "main" && self.path.scopes.is_empty() || get_attribute(attributes, "no_mangle").is_some() {
 				return symbol_name.to_string();
 			}
 
-			mangle(format!("{}::{}({})", self.path.to_string(), symbol_name, symbol.0.serialize()).as_bytes())
+			Self::mangle_name(&self.path, symbol_name, &symbol_type.borrow())
 		} else {
 			panic!("Invalid symbol name");
 		}
 	}
 
 
-	pub fn get_symbol<'a>(&'a self, id: &Identifier, root_namespace: Option<&'a Namespace>) -> Option<&(Type, Option<ASTElem>, Vec<Attribute>)> {
-		match self.get_symbol_namespace(id, root_namespace) {
-			Some(ns) => ns.symbols.get(&id.name),
-			None => None,
-		}
-	}
+	pub fn with_item(&'this self, name: &Identifier, root: &'root Namespace, mut closure: impl FnMut(&NamespaceEntry) -> ()) -> bool {
+		let self_is_root = root as *const _ == self as *const _;
 
-	// Get namespace that contains the symbol identified by `name`
-	pub fn get_symbol_namespace<'a>(&'a self, name: &Identifier, root_namespace: Option<&'a Namespace>) -> Option<&'a Namespace> {
-		if name.path.absolute && root_namespace.is_some() {
-			return root_namespace.unwrap().get_symbol_namespace(name, None);
+		// If name is an absolute path, look in root
+		if name.path.absolute && !self_is_root {
+			return root.with_item(name, root, closure);
 		}
 		
+		
 		if name.path.scopes.is_empty() {
-			if self.symbols.contains_key(&name.name) {
-				Some(self)
-			} else if root_namespace.is_some() && root_namespace.unwrap().symbols.contains_key(&name.name) {
-				root_namespace
-			} else {
-				None
+			if self.children.contains_key(&name.name) {
+				closure(&self.children.get(&name.name).unwrap());
+				return true;
 			}
-		} else if let Some(child) = self.parsed_children.get(&name.path.scopes[0]) {
-			let mut child_path = name.clone();
-			child_path.path.scopes.remove(0);
-			child.get_symbol_namespace(&child_path, root_namespace)
 		} else {
-			None
+			if let Some((NamespaceItem::Namespace(child), _, _)) = self.children.get(&name.path.scopes[0]) {
+				let mut name_clone = name.clone();
+				name_clone.path.scopes.remove(0);
+				return child.as_ref().borrow().with_item(&name_clone, root, closure);
+			}
+		}
+
+		// Didn't find it in our own namespace
+
+		if !self_is_root {
+			// We're not root, so search there
+			root.with_item(name, root, closure)
+		} else {
+			false
 		}
 	}
 }
 
 
 impl Display for Namespace {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		write!(f, "types:\n")?;
-		
-		for t in &self.types {
-			write!(f, "\t{}: {}\n", t.0, t.1)?;
-		}
-		
-		write!(f, "\nsymbols:\n")?;
-		
-		for t in &self.symbols {
-			write!(f, "\t{}: {}\n", t.0, t.1.0)?;
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {		
+		for c in &self.children {
+			match &c.1.0 {
+				NamespaceItem::Type(t) => write!(f, "\t[type] {}: {}\n", c.0, t.borrow())?,
+				NamespaceItem::Function(t, _) => write!(f, "\t[func] {}: {}\n", c.0, t.borrow())?,
+				NamespaceItem::Variable(_, _) => todo!(),
+				NamespaceItem::Namespace(ns) => write!(f, "\n[[sub-namespace]]\n\n{}\n[[end sub-namespace]]\n\n", &ns.as_ref().borrow())?
+				,
+			}
 		}
 
 		Ok(())

@@ -1,6 +1,6 @@
-use std::{cell::RefCell, collections::HashMap};
+use std::{cell::RefCell, collections::HashMap, borrow::Borrow};
 
-use super::{types::{Type, InnerType, Basic, Typed}, CMNError, ASTResult, namespace::{Namespace, Identifier, ScopePath}, ast::{ASTElem, ASTNode, TokenData}, controlflow::ControlFlow, expression::{Expr, Operator, Atom}, lexer, errors::{CMNMessage, CMNWarning}};
+use super::{types::{Type, Basic, Typed}, CMNError, ASTResult, namespace::{Namespace, Identifier, NamespaceItem, NamespaceASTElem}, ast::{ASTElem, ASTNode, TokenData}, controlflow::ControlFlow, expression::{Expr, Operator, Atom}, lexer, errors::{CMNMessage, CMNWarning}, ParseResult};
 
 
 // SEMANTIC ANALYSIS
@@ -13,7 +13,7 @@ pub struct Attribute {
 }
 
 pub fn get_attribute<'a>(attributes: &'a Vec<Attribute>, attr_name: &str) -> Option<&'a Attribute> {
-	attributes.iter().find(|a| a.name == attr_name.to_string())
+	attributes.iter().find(|a| a.name.as_str() == attr_name)
 }
 
 
@@ -75,13 +75,11 @@ impl<'ctx> FnScope<'ctx> {
 			let namespace = self.context.borrow();
 			let root = self.root_namespace.borrow();
 
-			match namespace.get_symbol_namespace(&id, if &root as *const _ != &namespace as *const _ { Some(&root) } else { None }) {
-				Some(ns) => {
-					let symbol = ns.symbols.get(&id.name).unwrap();
-					result = Some((ns.get_mangled_name(&id.name, &symbol.2), symbol.0.clone()))
-				},
-				None => result = None,
-			}
+			namespace.with_item(&id, &root, |item| {
+				if let NamespaceItem::Function(fn_type, _) = &item.0 {
+					result = Some((item.2.as_ref().unwrap().clone(), fn_type.borrow().clone()));
+				}
+			});
 		}
 
 		return result;
@@ -103,40 +101,6 @@ impl<'ctx> FnScope<'ctx> {
 		}
 	}
 
-	// Make this a parse-time thing
-	pub fn resolve_type(&self, id: &mut Identifier) -> Option<Type> {		
-		// Oh boy it's name resolution time again
-		
-		// Traverse the namespace tree, from either our current namespace or root
-		let root;
-		if id.path.absolute {
-			root = &self.root_namespace;
-		} else {
-			root = &self.context;
-		}
-
-		let mut namespace : &Namespace = &root.borrow();
-		for sub_ns in &id.path.scopes {
-			let child = namespace.parsed_children.get(sub_ns);
-			if let Some(child) = child {
-				namespace = child;
-			} else {
-				return None; // TODO: Return a Result instead
-			}
-		}
-
-		// Found the namespace, resolve the name
-		let name = &id.name;
-
-		if let Some(s) = namespace.get_type(name) {
-			id.resolved = Some("mangled here lol".to_string());
-			Some(s.clone())
-		} else {
-			None
-		}
-	
-	}
-
 	pub fn add_variable(&mut self, t: Type, n: String) {
 		self.variables.insert(n, t);
 	}
@@ -144,50 +108,135 @@ impl<'ctx> FnScope<'ctx> {
 
 
 
-pub fn parse_namespace(namespace: &RefCell<Namespace>, root_namespace: &RefCell<Namespace>) -> ASTResult<()> {
-	// Wasteful hack but god i am so tired
-	let keys: Vec<String> = namespace.borrow().parsed_children.keys().map(|k| k.clone()).collect();
-
-	for k in keys {
-		let hack = RefCell::new(std::mem::take(namespace.borrow_mut().parsed_children.get_mut(&k).unwrap()));
-		parse_namespace(&hack, root_namespace)?;
-		namespace.borrow_mut().parsed_children.insert(k.clone(), hack.into_inner());
-	}
-
-	for (_sym_name, (sym_type, sym_elem, _)) in &namespace.borrow().symbols {
-		let mut scope = FnScope::new(namespace, root_namespace, sym_type.clone());
-
-		let ret;
-		if let InnerType::Function(fn_ret, args) = &sym_type.inner {
-			ret = fn_ret.as_ref().clone();
-			for arg in args.iter() {
-				scope.add_variable(arg.0.as_ref().clone(), arg.1.clone().unwrap())
-			}
+pub fn validate_namespace(namespace: &RefCell<Namespace>, root_namespace: &RefCell<Namespace>) -> ASTResult<()> {
+	for c in &namespace.borrow().children {
+		match &c.1.0 {
+			// Validate child namespace
+			NamespaceItem::Namespace(ns) => validate_namespace(ns, root_namespace)?,
 			
-		} else { 
-			panic!()
-		}
-
+			// Validate function
+			NamespaceItem::Function(sym_type, sym_elem) => {
+				let mut scope = FnScope::new(namespace, root_namespace, sym_type.borrow().clone());
 		
-		if let Some(elem) = sym_elem {
-			
-			// Validate function block & get return type, make sure it matches the signature
-			let void = Type::from_basic(Basic::VOID);
-			let ret_type = elem.validate(&mut scope, &ret)?;
-			
-			if ret_type.is_none() && ret.inner != void.inner {
-				// No returns in non-void function
-				return Err((CMNError::ReturnTypeMismatch { expected: ret.clone(), got: void }, elem.token_data));
-			} else if ret_type.is_some() && !ret_type.as_ref().unwrap().castable_to(&ret) {
-				return Err((CMNError::ReturnTypeMismatch { expected: ret.clone(), got: ret_type.unwrap() }, elem.token_data));
+				let ret;
+				if let Type::Function(fn_ret, args) = &*sym_type.borrow() {
+					ret = fn_ret.as_ref().clone();
+					for arg in args.iter() {
+						scope.add_variable(arg.0.as_ref().clone(), arg.1.clone().unwrap())
+					}
+					
+				} else { 
+					panic!()
+				}
+				
+				if let NamespaceASTElem::Parsed(elem) = &*sym_elem.borrow() {
+					// Validate function block & get return type, make sure it matches the signature
+					let void = Type::Basic(Basic::VOID);
+					let ret_type = elem.validate(&mut scope, &ret)?;
+					
+					if ret_type.is_none() && ret != void {
+						// No returns in non-void function
+						return Err((CMNError::ReturnTypeMismatch { expected: ret.clone(), got: void }, elem.token_data));
+					} else if ret_type.is_some() && !ret_type.as_ref().unwrap().castable_to(&ret) {
+						return Err((CMNError::ReturnTypeMismatch { expected: ret.clone(), got: ret_type.unwrap() }, elem.token_data));
+					}
+				}
 			}
-		}
 
+			_ => {},
+		}
 	}
+
 	Ok(())
 }
 
 
+pub fn resolve_type(ty: Type, namespace: &Namespace, root: &RefCell<Namespace>) -> ParseResult<Type> {
+	match ty {
+		Type::Pointer(pointee) => Ok(Type::Pointer(Box::new(resolve_type(*pointee, namespace, root)?))),
+		
+		Type::Unresolved(ref id) => {
+			let root = root.borrow();
+			let mut result = Err(CMNError::UnresolvedTypename(id.to_string()));
+
+			namespace.with_item(id, &root.borrow(), |item| {
+				if let NamespaceItem::Type(t) = &item.0 {
+					result = Ok(t.borrow().clone());
+				}
+			});
+
+			result
+			
+		},
+		
+		Type::Basic(_) => Ok(ty),
+		
+		_ => todo!(),
+	}
+}
+
+
+pub fn resolve_types(namespace: &RefCell<Namespace>, root: &RefCell<Namespace>) -> ASTResult<()> {
+	
+	for child in &namespace.borrow().children {
+		if let NamespaceItem::Namespace(ref ns) = child.1.0 { 
+			resolve_types(ns, root)?;
+		}
+	}
+
+	// Resolve types
+	{
+		let namespace = namespace.borrow();
+		
+		for child in &namespace.children {
+			match &child.1.0 {
+				NamespaceItem::Function(ty, _fn_ast) => {
+					if let Type::Function(ret, args) = &mut *ty.borrow_mut() {
+						**ret = resolve_type(*ret.clone(), &namespace, root).unwrap();
+
+						for arg in args {
+							*arg.0 = resolve_type(*arg.0.clone(), &namespace, root).unwrap();
+						}
+					}
+				}
+
+				NamespaceItem::Namespace(ns) => {}
+
+				NamespaceItem::Type(t) => {
+					let ty = t.borrow().clone();
+					*t.borrow_mut() = resolve_type(ty, &namespace, root).unwrap();
+				},
+
+				_ => todo!(),
+			};
+		}
+	}
+
+	// Generate mangled names
+	{
+		let path = { namespace.borrow().path.clone() };
+		let mut namespace = namespace.borrow_mut();
+
+		for child in &mut namespace.children {
+
+			if get_attribute(&child.1.1, "no_mangle").is_some() || (child.0 == "main" && path.scopes.is_empty()) {
+				child.1.2 = Some(child.0.clone());
+			} else {
+				// Mangle name
+				child.1.2 = match &child.1.0 {
+					
+					NamespaceItem::Function(ty, _) | NamespaceItem::Type(ty) 
+						=> Some(Namespace::mangle_name(&path, child.0, &ty.borrow())),
+					
+					_ => None,
+				}
+			}
+		}
+	}
+
+
+	Ok(())
+}
 
 
 
@@ -242,9 +291,9 @@ impl ASTElem {
 			ASTNode::ControlFlow(ctrl) => match ctrl.as_ref() {
 
 				ControlFlow::If { cond, body, else_body } => {
-					cond.type_info.replace(Some(Type::from_basic(Basic::BOOL)));
+					cond.type_info.replace(Some(Type::Basic(Basic::BOOL)));
 					let cond_type = cond.get_type(scope)?;
-					let bool_t = Type::from_basic(Basic::BOOL);
+					let bool_t = Type::Basic(Basic::BOOL);
 
 					if !cond_type.castable_to(&bool_t) {
 						return Err((CMNError::InvalidCast{ from: cond_type, to: bool_t}, self.token_data));
@@ -262,9 +311,9 @@ impl ASTElem {
 				}
 
 				ControlFlow::While { cond, body } => {
-					cond.type_info.replace(Some(Type::from_basic(Basic::BOOL)));
+					cond.type_info.replace(Some(Type::Basic(Basic::BOOL)));
 					let cond_type = cond.get_type(scope)?;
-					let bool_t = Type::from_basic(Basic::BOOL);
+					let bool_t = Type::Basic(Basic::BOOL);
 
 					if !cond_type.castable_to(&bool_t) {
 						return Err((CMNError::InvalidCast{ from: cond_type, to: bool_t}, self.token_data));
@@ -283,7 +332,7 @@ impl ASTElem {
 
 					// Check if condition is coercable to bool
 					if let Some(cond) = cond {
-						let bool_t = Type::from_basic(Basic::BOOL);
+						let bool_t = Type::Basic(Basic::BOOL);
 						
 						let cond_type = cond.get_type(&mut subscope)?;
 						
@@ -321,7 +370,7 @@ impl ASTElem {
 							Ok(None)
 						}
 					} else {
-						Ok(Some(Type::from_basic(Basic::VOID))) // Return with no expression is of type void 
+						Ok(Some(Type::Basic(Basic::VOID))) // Return with no expression is of type void 
 					}
 				
 				}
@@ -388,8 +437,8 @@ impl Expr {
 							Operator::Ref => Ok(first_t.ptr_type()),
 
 							Operator::Deref => {
-								match first_t.inner {
-									InnerType::Pointer(t) => Ok(*t.clone()),
+								match first_t {
+									Type::Pointer(t) => Ok(*t.clone()),
 									_ => return Err((CMNError::NonPtrDeref, *meta)),
 								}
 							}
@@ -411,7 +460,7 @@ impl Expr {
 
 					Atom::IntegerLit(_, t) | Atom::FloatLit(_, t) => {
 						if t.is_some() {
-							*target == Type::from_basic(t.unwrap())
+							*target == Type::Basic(t.unwrap())
 						} else {
 							target.is_numeric() 
 						}
@@ -420,8 +469,8 @@ impl Expr {
 					Atom::BoolLit(_) => target.is_boolean(),
 
 					Atom::StringLit(_) => {
-						if let InnerType::Pointer(other_p) = &target.inner {
-							if let InnerType::Basic(other_b) = other_p.inner {
+						if let Type::Pointer(other_p) = &target {
+							if let Type::Basic(other_b) = **other_p {
 								if let Basic::CHAR = other_b {
 									return true;
 								} 
@@ -432,15 +481,13 @@ impl Expr {
 					},
 					
 					Atom::Identifier(i) => scope.get_identifier_type(i).unwrap() == *target,
-					Atom::FnCall { name, args: _ } => match scope.find_symbol(name).unwrap().1.inner {
-						InnerType::Function(ret, _) => *ret == *target,
+					Atom::FnCall { name, args: _ } => match scope.find_symbol(name).unwrap().1 {
+						Type::Function(ret, _) => *ret == *target,
 						_ => panic!(),
 					},
 
 					Atom::Cast(_, cast_t) => *target == *cast_t,
 					Atom::ArrayLit(_) => todo!(),
-
-					Atom::Dummy => true,
 				}
 			},
 
@@ -457,8 +504,8 @@ impl Expr {
 				match op {
 
 					Operator::Deref => {
-						match elems[0].0.validate(scope, None, meta).unwrap().inner {
-							InnerType::Pointer(t) => Some(*t),
+						match elems[0].0.validate(scope, None, meta).unwrap() {
+							Type::Pointer(t) => Some(*t),
 							_ => None,
 						}
 					}
@@ -466,8 +513,8 @@ impl Expr {
 					Operator::MemberAccess => {
 						if let Expr::Atom(Atom::Identifier(ref id), _) = elems[1].0 {
 							let id = id.clone();
-							match elems[0].0.validate(scope, None, meta).unwrap().inner {
-								InnerType::Aggregate(t) => Some(t.members.iter().find(|mem| mem.0 == id.name).unwrap().1.0.clone()),
+							match elems[0].0.validate(scope, None, meta).unwrap() {
+								Type::Aggregate(t) => Some(t.members.iter().find(|mem| mem.0 == id.name).unwrap().1.0.clone()),
 								_ => None,
 							}
 						} else {
@@ -490,27 +537,27 @@ impl Atom {
 		match self {
 			Atom::IntegerLit(_, t) =>
 				if let Some(t) = t { 
-					Ok(Type::from_basic(t.clone())) 
+					Ok(Type::Basic(t.clone())) 
 				} else {
 					if goal_t.is_some() && goal_t.unwrap().is_integral() { 
 						Ok(goal_t.unwrap().clone()) 
 					} else { 
-						Ok(Type::from_basic(Basic::I32)) 
+						Ok(Type::Basic(Basic::I32)) 
 					}
 				},
 			
 			Atom::FloatLit(_, t) => if let Some(t) = t { 
-				Ok(Type::from_basic(t.clone())) 
+				Ok(Type::Basic(t.clone())) 
 			} else {
 				if goal_t.is_some() && goal_t.unwrap().is_floating_point() { 
 					Ok(goal_t.unwrap().clone()) 
 				} else { 
-					Ok(Type::from_basic(Basic::F32)) 
+					Ok(Type::Basic(Basic::F32)) 
 				}
 			},
 
-			Atom::BoolLit(_) => Ok(Type::from_basic(Basic::BOOL)),
-			Atom::StringLit(_) => Ok(Type::from_basic(Basic::STR)),
+			Atom::BoolLit(_) => Ok(Type::Basic(Basic::BOOL)),
+			Atom::StringLit(_) => Ok(Type::Basic(Basic::STR)),
 
 			Atom::Identifier(name) => scope.resolve_identifier(name).ok_or((CMNError::UndeclaredIdentifier(name.to_string()), meta)),
 			
@@ -536,7 +583,7 @@ impl Atom {
 			Atom::FnCall { name, args } => {
 				
 				if let Some(t) = scope.resolve_identifier(name) {
-					if let InnerType::Function(ret, params) = t.inner {
+					if let Type::Function(ret, params) = t {
 
 						// Identifier is a function, check parameter types
 						if args.len() == params.len() {
@@ -570,17 +617,15 @@ impl Atom {
 			},
 
 			Atom::ArrayLit(_) => todo!(),
-
-			Atom::Dummy => panic!(),
 		}
 	}
 
 
 	// Check if we should issue any warnings or errors when casting
 	pub fn check_cast(&mut self, from: &Type, to: &Type, scope: &FnScope, meta: &TokenData) -> ASTResult<()> {
-		match &from.inner {
+		match &from {
 
-			InnerType::Basic(b) => match b {
+			Type::Basic(b) => match b {
 
 				Basic::STR => {
 					if let Atom::StringLit(s) = self {
@@ -596,14 +641,14 @@ impl Atom {
 				_ => Ok(())
 			},
 
-			InnerType::Alias(_, t) => {
+			Type::Alias(_, t) => {
 				self.check_cast(t.as_ref(), to, scope, meta)
 			},
 			
-			InnerType::Aggregate(_) => todo!(),
-			InnerType::Pointer(_) => todo!(),
-			InnerType::Function(_, _) => todo!(),
-			InnerType::Unresolved(_) => todo!(),
+			Type::Aggregate(_) => todo!(),
+			Type::Pointer(_) => todo!(),
+			Type::Function(_, _) => todo!(),
+			Type::Unresolved(_) => todo!(),
 		}
 	}
 

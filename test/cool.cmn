@@ -5,3 +5,37 @@ u64 cool_cast_fn(u64 blah) {
 }
 
 
+// Comune has enums. Unlike in Rust, every enum variant is a full type in its own right.
+enum EnumExample {
+	SomeVariant(u8),
+	AnotherVariant(i64),
+}
+
+
+// Structs can contain enums, in which case they can be matched against, and their shared fields still accessed plainly
+struct EnumStructExample {
+	int sharedField;
+
+	enum {
+		SomeVariant(u8, u8),
+		AnotherVariant(i64),
+	}
+}
+
+// (In C++ code, this would be represented as:)
+struct EnumStructExample {
+	int sharedField;
+
+	union {
+		struct SomeVariant { uint8_t e0, uint8_t e1 },
+		int64_t AnotherVariant,
+	}
+
+	enum Variant {
+		SomeVariant,
+		AnotherVariant
+	}
+	
+	Variant tag;
+}
+

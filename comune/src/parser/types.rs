@@ -3,8 +3,7 @@ use std::{fmt::Display, collections::HashMap};
 use once_cell::sync::OnceCell;
 
 use super::ast::ASTElem;
-use super::lexer::Token;
-
+use super::namespace::{Identifier, NamespaceASTElem};
 use super::semantic::Attribute;
 use super::{semantic::FnScope, ASTResult};
 
@@ -40,6 +39,7 @@ pub enum Basic {
 	VOID,
 	STR,
 }
+
 
 impl Basic {
 	pub fn get_basic_type(name: &str) -> Option<Self> {
@@ -92,7 +92,38 @@ impl Basic {
 			Basic::VOID => "void",
 		}
 	}
+
+	// this is a stupid amount of manual fucking repetition but w/e
+	pub fn hashmap() -> HashMap<String, Type> {
+		HashMap::from(
+			[
+				("i64", Basic::I64),
+				("u64", Basic::U64),
+				("i32", Basic::I32),
+				("u32", Basic::U32),
+				("i16", Basic::I16),
+				("u16", Basic::U16),
+				("i8", Basic::I8),
+				("u8", Basic::U8),
+				("char", Basic::CHAR),
+				("str", Basic::STR),
+				("f64", Basic::F64),
+				("f32", Basic::F32),
+				("isize", Basic::ISIZE),
+				("usize", Basic::USIZE),
+				("bool", Basic::BOOL),
+				("void", Basic::VOID),
+
+				("int", Basic::I32),
+				("uint", Basic::U32),
+				("float", Basic::F32),
+				("double", Basic::F64),
+			
+			].map(|(a, b)| (a.to_string(), Type::Basic(b))
+		))
+	}
 }
+
 
 impl Display for Basic {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -102,60 +133,82 @@ impl Display for Basic {
 
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum InnerType {
+pub enum Type {
 	Basic(Basic),											// Fundamental type
 	Alias(String, BoxedType),								// Identifier + referenced type
-	Aggregate(Box<AggregateType>),								// Guess.
+	Aggregate(Box<AggregateType>),							// Guess.
 	Pointer(BoxedType),										// Pointer-to-<BoxedType>
 	Function(BoxedType, Vec<(BoxedType, Option<String>)>),	// Return type + parameter types
-	Unresolved(Token)										// Unresolved type (during parsing phase)
+	Unresolved(Identifier)									// Unresolved type (during parsing phase)
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct Type {
-	pub inner: InnerType,
-	pub generics: Vec<Type>,
+
+impl Display for Type {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		match &self {
+			Type::Basic(t) => {
+				write!(f, "{}", t)?;
+			},
+
+			Type::Alias(a, t) => {
+				write!(f, "{} ({})", a, t)?;
+			},
+
+			Type::Aggregate(agg) => {
+				write!(f, "{:?}", agg)?;
+			},
+
+			Type::Pointer(t) => {
+				write!(f, "{}*", t)?;
+			},
+
+			Type::Function(ret, params) => {
+				write!(f, "{}(", ret)?;
+				for param in params {
+					write!(f, "{}, ", param.0)?;
+				}
+				write!(f, ")")?;
+			},
+
+			Type::Unresolved(t) => {
+				write!(f, "\"{}\"", t)?;
+			},
+		}
+
+		Ok(())
+    }
 }
 
+ 
 impl Type {
-	pub fn new(inner: InnerType, generics: Vec<Type>) -> Self {
-		Type { inner, generics }
-	}
-	
-	pub fn from_basic(basic: Basic) -> Self {
-		Type { inner: InnerType::Basic(basic), generics: vec![] }
-	}
-
-	
 	pub fn ptr_type(&self) -> Self {
-		Type { inner: InnerType::Pointer(Box::new(self.clone())), generics: vec![] }
+		Type::Pointer(Box::new(self.clone()))
 	}
-
 
 	// Name mangling
 	pub fn serialize(&self) -> String {
 		let mut result = String::new();
-		match &self.inner {
-			InnerType::Basic(b) => {
+		match &self {
+			Type::Basic(b) => {
 				// TODO: Shorten
 				result.push_str(b.as_str());
 			},
 
 			// TODO: Consider if aliased types are equivalent at the ABI stage?
-			InnerType::Alias(_, t) => return t.serialize(),
+			Type::Alias(_, t) => return t.serialize(),
 			
-			InnerType::Aggregate(a) => {
+			Type::Aggregate(a) => {
 				for t in &a.members {
 					result.push_str(&t.1.0.serialize());
 				}
 			},
 
-			InnerType::Pointer(t) => {
+			Type::Pointer(t) => {
 				result.push_str(&t.serialize());
 				result.push_str("*");
 			},
 
-			InnerType::Function(ret, args) => {
+			Type::Function(ret, args) => {
 				result.push_str("?");
 				for arg in args {
 					result.push_str(&arg.0.serialize());
@@ -164,7 +217,7 @@ impl Type {
 				result.push_str(&ret.serialize());
 			},
 
-			InnerType::Unresolved(_) => { panic!("Attempt to serialize an unresolved type!"); }, // Not supposed to happen Lol
+			Type::Unresolved(_) => { panic!("Attempt to serialize an unresolved type!"); }, // Not supposed to happen Lol
 		}
 		// TODO: Generics
 
@@ -193,8 +246,8 @@ impl Type {
 
 
 	pub fn is_integral(&self) -> bool {
-		match self.inner {
-			InnerType::Basic(b) =>
+		match self {
+			Type::Basic(b) =>
 				match b {
 					Basic::ISIZE | Basic::USIZE | 
 					Basic::I64 | Basic::U64 | 
@@ -214,8 +267,8 @@ impl Type {
 
 
 	pub fn is_boolean(&self) -> bool {
-		match self.inner {
-			InnerType::Basic(b) => 
+		match self {
+			Type::Basic(b) => 
 				match b {
 					Basic::BOOL => true,
 					_ => false,
@@ -226,8 +279,8 @@ impl Type {
 
 
 	pub fn is_floating_point(&self) -> bool {
-		match self.inner {
-			InnerType::Basic(b) =>
+		match self {
+			Type::Basic(b) =>
 				match b {
 					Basic::F32 | Basic::F64 => 
 						true,
@@ -244,8 +297,8 @@ impl Type {
 	pub fn get_size_bytes(&self) -> usize {
 		let ptr_size = *PTR_SIZE_BYTES.get().unwrap() as usize;
 
-		match &self.inner {
-			InnerType::Basic(b) => match b {
+		match &self {
+			Type::Basic(b) => match b {
 				Basic::I64 | Basic::U64 | Basic::F64 => 8,
 				Basic::I32 | Basic::U32 | Basic::F32 | Basic::CHAR => 4, // Chars in a string are variable-width, lone char is 4 bytes
 				Basic::I16 | Basic::U16 => 2,
@@ -260,9 +313,9 @@ impl Type {
 				
 			},
 			
-			InnerType::Alias(_, t) => t.get_size_bytes(),
+			Type::Alias(_, t) => t.get_size_bytes(),
 
-			InnerType::Aggregate(ts) => {
+			Type::Aggregate(ts) => {
 				let mut result: usize = 0;
 
 				for t in ts.members.iter() {
@@ -271,7 +324,7 @@ impl Type {
 				result
 			},
 
-			InnerType::Pointer(_) => ptr_size,
+			Type::Pointer(_) => ptr_size,
 			
 			_ => 0,
 		}
@@ -279,60 +332,15 @@ impl Type {
 }
 
 
-
-
-impl Display for Type {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		match &self.inner {
-			InnerType::Basic(t) => {
-				write!(f, "{}", t)?;
-			},
-
-			InnerType::Alias(a, t) => {
-				write!(f, "{} ({})", a, t)?;
-			},
-
-			InnerType::Aggregate(agg) => {
-				write!(f, "{:?}", agg)?;
-			},
-
-			InnerType::Pointer(t) => {
-				write!(f, "{}*", t)?;
-			},
-
-			InnerType::Function(ret, params) => {
-				write!(f, "{}(", ret)?;
-				for param in params {
-					write!(f, "{}, ", param.0)?;
-				}
-				write!(f, ")")?;
-			},
-
-			InnerType::Unresolved(t) => {
-				write!(f, "\"{}\"", t)?;
-			},
-		}
-
-		if !self.generics.is_empty() {
-			write!(f, "<")?;
-			for t in &self.generics {
-				write!(f, "{}, ", t)?;
-			}
-			write!(f, ">")?;
-		}
-
-		Ok(())
-    }
-}
-
 #[derive(Clone, Debug, PartialEq)]
 pub struct AggregateType {
-	pub members: Vec<(String, (Type, Option<ASTElem>, Visibility))>,
-	pub methods: HashMap<String, (Type, Option<ASTElem>, Vec<Attribute>)>,
+	pub members: Vec<(String, (Type, NamespaceASTElem, Vec<Attribute>, Visibility))>,
+	pub methods: HashMap<String, (Type, NamespaceASTElem, Vec<Attribute>)>,
 	pub constructors: Vec<Type>,
 	pub destructor: Option<Type>,
 	pub inherits: Vec<Type>,
 }
+
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Visibility {
@@ -340,6 +348,7 @@ pub enum Visibility {
 	Private,
 	Protected,
 }
+
 
 impl AggregateType {
 	pub fn new() -> Self {
