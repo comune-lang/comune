@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::HashMap};
+use std::{cell::RefCell, collections::HashMap, borrow::Borrow};
 
 use super::{types::{Type, Basic, Typed}, CMNError, ASTResult, namespace::{Namespace, Identifier, NamespaceItem, NamespaceASTElem}, ast::{ASTElem, ASTNode, TokenData}, controlflow::ControlFlow, expression::{Expr, Operator, Atom}, lexer, errors::{CMNMessage, CMNWarning}, ParseResult};
 
@@ -75,14 +75,11 @@ impl<'ctx> FnScope<'ctx> {
 			let namespace = self.context.borrow();
 			let root = self.root_namespace.borrow();
 
-			if let Some(ns) = namespace.find_item_namespace(&id, &root) {
-				if let Some((NamespaceItem::Function(fn_type, _), _)) = ns.children.get(&id.name) {
-					result = Some((ns.get_mangled_name(&id.name), fn_type.borrow().clone()))
+			namespace.with_item(&id, &root, |item| {
+				if let NamespaceItem::Function(fn_type, _) = &item.0 {
+					result = Some((item.2.as_ref().unwrap().clone(), fn_type.borrow().clone()));
 				}
-			} else { 
-				result = None 
-			};
-		
+			});
 		}
 
 		return result;
@@ -160,18 +157,15 @@ pub fn resolve_type(ty: Type, namespace: &Namespace, root: &RefCell<Namespace>) 
 		
 		Type::Unresolved(ref id) => {
 			let root = root.borrow();
-			let found_ns = namespace.find_item_namespace(&id, &root);
+			let mut result = Err(CMNError::UnresolvedTypename(id.to_string()));
 
-			if let Some(found_ns) = found_ns {
-				if let Some((NamespaceItem::Type(ty), _)) = found_ns.children.get(&id.name) {
-					Ok(ty.borrow().clone())
-				} else {
-					Err(CMNError::UnresolvedTypename(id.to_string()))
+			namespace.with_item(id, &root.borrow(), |item| {
+				if let NamespaceItem::Type(t) = &item.0 {
+					result = Ok(t.borrow().clone());
 				}
-			} else {
-				Err(CMNError::UnresolvedTypename(id.to_string()))
-			}
+			});
 
+			result
 			
 		},
 		
@@ -190,30 +184,56 @@ pub fn resolve_types(namespace: &RefCell<Namespace>, root: &RefCell<Namespace>) 
 		}
 	}
 
-	let namespace = namespace.borrow();
+	// Resolve types
+	{
+		let namespace = namespace.borrow();
+		
+		for child in &namespace.children {
+			match &child.1.0 {
+				NamespaceItem::Function(ty, _fn_ast) => {
+					if let Type::Function(ret, args) = &mut *ty.borrow_mut() {
+						**ret = resolve_type(*ret.clone(), &namespace, root).unwrap();
 
-	for child in &namespace.children {
-		match &child.1.0 {
-			NamespaceItem::Function(ty, _fn_ast) => {
-				if let Type::Function(ret, args) = &mut *ty.borrow_mut() {
-					**ret = resolve_type(*ret.clone(), &namespace, root).unwrap();
-
-					for arg in args {
-						*arg.0 = resolve_type(*arg.0.clone(), &namespace, root).unwrap();
+						for arg in args {
+							*arg.0 = resolve_type(*arg.0.clone(), &namespace, root).unwrap();
+						}
 					}
 				}
-			}
 
-			NamespaceItem::Namespace(ns) => {}
+				NamespaceItem::Namespace(ns) => {}
 
-			NamespaceItem::Type(t) => {
-				let ty = t.borrow().clone();
-				*t.borrow_mut() = resolve_type(ty, &namespace, root).unwrap();
-			},
+				NamespaceItem::Type(t) => {
+					let ty = t.borrow().clone();
+					*t.borrow_mut() = resolve_type(ty, &namespace, root).unwrap();
+				},
 
-			_ => todo!(),
+				_ => todo!(),
+			};
 		}
 	}
+
+	// Generate mangled names
+	{
+		let path = { namespace.borrow().path.clone() };
+		let mut namespace = namespace.borrow_mut();
+
+		for child in &mut namespace.children {
+
+			if get_attribute(&child.1.1, "no_mangle").is_some() || (child.0 == "main" && path.scopes.is_empty()) {
+				child.1.2 = Some(child.0.clone());
+			} else {
+				// Mangle name
+				child.1.2 = match &child.1.0 {
+					
+					NamespaceItem::Function(ty, _) | NamespaceItem::Type(ty) 
+						=> Some(Namespace::mangle_name(&path, child.0, &ty.borrow())),
+					
+					_ => None,
+				}
+			}
+		}
+	}
+
 
 	Ok(())
 }

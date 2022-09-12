@@ -6,7 +6,7 @@ use self::ast::{ASTNode, ASTElem, TokenData};
 use self::controlflow::ControlFlow;
 use self::errors::CMNError;
 use self::expression::{Expr, Operator, Atom};
-use self::namespace::{Namespace, NamespaceItem, NamespaceASTElem};
+use self::namespace::{Namespace, NamespaceItem, NamespaceASTElem, Identifier, ScopePath};
 use self::semantic::Attribute;
 use self::types::{Type, FnParamList, Basic, AggregateType, Visibility};
 
@@ -231,9 +231,13 @@ impl Parser {
 								get_next()?; // Consume closing brace
 
 								let aggregate = Type::Aggregate(Box::new(aggregate));
-								
+
 								self.current_namespace().borrow_mut().children.insert(
-									name.expect_scopeless()?, (NamespaceItem::Type(RefCell::new(aggregate)), current_attributes)
+									name.expect_scopeless()?, (
+										NamespaceItem::Type(RefCell::new(aggregate)), 
+										current_attributes,
+										None
+									)
 								);
 								current_attributes = vec![];
 							}
@@ -269,7 +273,11 @@ impl Parser {
 
 								self.current_namespace().borrow_mut().children.insert(
 									namespace_name.name, 
-									(NamespaceItem::Namespace(Box::new(RefCell::new(parsed_namespace))), current_attributes)
+									(
+										NamespaceItem::Namespace(Box::new(RefCell::new(parsed_namespace))), 
+										current_attributes,
+										None
+									)
 								);
 
 								current_attributes = vec![];
@@ -301,12 +309,18 @@ impl Parser {
 				Token::Identifier(_) => {
 					// Parse declaration/definition
 					let result = self.parse_fn_or_declaration()?;
+
 					match result.1 {
-						Type::Function(_, _) => 
+						Type::Function(_, _) => {
 							self.current_namespace().borrow_mut().children.insert(
 								result.0, 
-								(NamespaceItem::Function(RefCell::new(result.1), RefCell::new(result.2)), current_attributes)
-							),
+								(
+									NamespaceItem::Function(RefCell::new(result.1), RefCell::new(result.2)), 
+									current_attributes,
+									None	
+								)
+							)
+						},
 
 						_ => todo!(),
 					};
@@ -421,21 +435,22 @@ impl Parser {
 				let ns = self.current_namespace().borrow();
 				let root = &self.root_namespace.as_ref().unwrap_or(self.current_namespace()).borrow();
 
-				if let Some(found_ns) = ns.find_item_namespace(id, root) {
-					if let Some((NamespaceItem::Type(_), _)) = found_ns.children.get(&id.name) {
-						// Found a type that matches, so parse variable declaration
-						
-						let t = self.parse_type(true)?;
-						let name = get_current()?;
-						let mut expr = None;
-						
-						if token_compare(&get_next()?, "=") {
-							get_next()?;
-							expr = Some(Box::new(self.parse_expression()?));
-						}
-						self.check_semicolon()?;
-						result = Some(ASTNode::Declaration(t, name, expr));
+				let mut type_found = false;
+				ns.with_item(id, root, |item| type_found = matches!(item.0, NamespaceItem::Type(_)));
+				
+				if type_found {
+					// Found a type that matches, so parse variable declaration
+					
+					let t = self.parse_type(true)?;
+					let name = get_current()?;
+					let mut expr = None;
+					
+					if token_compare(&get_next()?, "=") {
+						get_next()?;
+						expr = Some(Box::new(self.parse_expression()?));
 					}
+					self.check_semicolon()?;
+					result = Some(ASTNode::Declaration(t, name, expr));
 				};
 			},
 
@@ -819,7 +834,7 @@ impl Parser {
 			let begin_rhs = get_current_start_index();
 
 			if op == Operator::Cast {
-				let goal_t = self.parse_type(false)?;
+				let goal_t = self.parse_type(true)?;
 
 				let end_index = get_current_start_index();
 				let meta = (begin_lhs, end_index - begin_lhs);
@@ -1000,7 +1015,7 @@ impl Parser {
 
 
 	fn parse_type(&self, immediate_resolve: bool) -> ParseResult<Type> {
-		let mut result : Type;
+		let mut result = Type::Unresolved(Identifier {name: "(none)".to_string(), path: ScopePath::new(false), mem_idx: 0, resolved: None });
 		let current = get_current()?;
 
 		if let Token::Identifier(typename) = current {
@@ -1009,16 +1024,19 @@ impl Parser {
 			if immediate_resolve {
 				let ctx = self.current_namespace().borrow();
 				let root = &self.root_namespace.as_ref().unwrap_or(self.current_namespace()).borrow();
-
-				if let Some(found_namespace) = ctx.find_item_namespace(&typename, root) {
-					result = match found_namespace.children.get(&typename.name) { 
-						Some((NamespaceItem::Type(t), _)) => t.borrow().clone(),
-						_ => return Err(CMNError::UnresolvedTypename(typename.to_string()))
+				
+				let mut found = false;
+				ctx.with_item(&typename, root, |item| {
+					if let NamespaceItem::Type(t) = &item.0 {
+						result = t.borrow().clone();
+						found = true;
 					}
-				} else { 
-					return Err(CMNError::UnresolvedTypename(typename.to_string())); 
-				};
+				});
 
+				if !found {
+					return Err(CMNError::UnresolvedTypename(typename.to_string()));
+				}
+				
 			} else {
 				result = Type::Unresolved(typename);
 			}

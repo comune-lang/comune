@@ -79,14 +79,14 @@ impl<'ctx> LLVMBackend<'ctx> {
 		self.module.add_function("_exit", exit_t, Some(Linkage::External));		
 	}
 
-	pub fn register_fn(&mut self, name_mangled: String, t: &Type) -> LLVMResult<FunctionValue> {
+	pub fn register_fn(&mut self, name_mangled: &String, t: &Type) -> LLVMResult<FunctionValue> {
 		let fn_t = self.generate_prototype(t)?;
 		let fn_v = self.module.add_function(name_mangled.as_str(), fn_t, None);
 
 		Ok(fn_v)
 	}
 
-	pub fn generate_fn(&mut self, name_mangled: String, t: &Type, body: Option<&ASTElem>) -> LLVMResult<FunctionValue> {
+	pub fn generate_fn(&mut self, name_mangled: &String, t: &Type, body: Option<&ASTElem>) -> LLVMResult<FunctionValue> {
 		let fn_v = self.module.get_function(name_mangled.as_str()).unwrap();
 
 		self.fn_value_opt = Some(fn_v);

@@ -83,14 +83,6 @@ impl ModuleJobManager {
 
 
 	pub fn generate_code<'ctx>(&self, mut mod_state: ModuleCompileState, context: &'ctx Context) -> Result<LLVMBackend<'ctx>, CMNError> {
-		
-
-
-		// Generative pass
-		// TODO: This completely re-tokenizes the module, which is useless
-		// We oughta:
-		// A) cache the tokenization in the first phase
-		// B) store the relevant token sequences in the mod state to avoid redundant namespace parsing
 		let namespace = match mod_state.parser.generate_ast() {
 			Ok(ctx) => { if self.state.verbose_output { println!("\nvalidating..."); } ctx },
 			Err(e) => { log_msg(CMNMessage::Error(e.clone())); return Err(e); },
@@ -167,8 +159,7 @@ impl ModuleJobManager {
 
 		for child in &namespace.children {
 			if let NamespaceItem::Function(sym_type, _) = &child.1.0 {
-				let name_mangled = namespace.get_mangled_name(&child.0);
-				backend.register_fn(name_mangled, &sym_type.borrow()).unwrap();
+				backend.register_fn(child.1.2.as_ref().unwrap(), &sym_type.borrow()).unwrap();
 			}
 		}
 	}
@@ -189,7 +180,7 @@ impl ModuleJobManager {
 		for child in &namespace.children {
 			if let NamespaceItem::Function(sym_type, sym_elem) = &child.1.0 {
 				backend.generate_fn(
-					namespace.get_mangled_name(&child.0), 
+					child.1.2.as_ref().unwrap(), 
 					&sym_type.borrow(), 
 					if let NamespaceASTElem::Parsed(elem) = &*sym_elem.borrow() { Some(elem) } else { None }
 				).unwrap();
