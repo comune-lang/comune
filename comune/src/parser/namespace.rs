@@ -89,18 +89,10 @@ pub enum NamespaceItem {
 
 #[derive(Default)]
 pub struct Namespace {
-	//pub parent_temp: Option<Box<Namespace>>,
 	pub path: ScopePath,
-
 	pub referenced_modules: HashSet<String>,
 	pub imported: Box<Option<Namespace>>,
-
 	pub children: HashMap<String, (NamespaceItem, Vec<Attribute>)>,
-	
-	// Deprecated
-	//pub types: HashMap<String, Type>,
-	//pub symbols: HashMap<String, (Type, Option<ASTElem>, Vec<Attribute>)>,
-	//pub parsed_children: HashMap<String, Namespace>,
 }
 
 impl<'root: 'this, 'this> Namespace {

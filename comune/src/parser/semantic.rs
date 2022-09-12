@@ -98,7 +98,6 @@ impl<'ctx> FnScope<'ctx> {
 	pub fn resolve_identifier(&self, id: &mut Identifier) -> Option<Type> {
 		if let Some(find_result) = self.find_symbol(id) {
 			id.resolved = Some(find_result.0);
-			println!("RESOLVED TO {}", find_result.1);
 			Some(find_result.1.clone())
 		} else {
 			None
