@@ -72,11 +72,18 @@ impl ToString for ScopePath {
     }
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub enum NamespaceASTElem {
+	Parsed(ASTElem),
+	Unparsed(usize), // Token index
+	NoElem,
+}
 
+// refcell hell
 pub enum NamespaceItem {
 	Type(RefCell<Type>),
-	Function(RefCell<Type>, Option<ASTElem>),
-	Variable(RefCell<Type>, Option<ASTElem>),
+	Function(RefCell<Type>, RefCell<NamespaceASTElem>),
+	Variable(RefCell<Type>, RefCell<NamespaceASTElem>),
 	Namespace(Box<RefCell<Namespace>>),
 }
 

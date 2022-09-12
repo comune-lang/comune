@@ -86,7 +86,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 		Ok(fn_v)
 	}
 
-	pub fn generate_fn(&mut self, name_mangled: String, t: &Type, body: &Option<ASTElem>) -> LLVMResult<FunctionValue> {
+	pub fn generate_fn(&mut self, name_mangled: String, t: &Type, body: Option<&ASTElem>) -> LLVMResult<FunctionValue> {
 		let fn_v = self.module.get_function(name_mangled.as_str()).unwrap();
 
 		self.fn_value_opt = Some(fn_v);

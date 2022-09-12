@@ -188,6 +188,7 @@ impl Lexer {
 		Ok(result)
 	}
 
+
 	pub fn tokenize_file(&mut self) -> io::Result<()> {
 		self.file_index = 0usize;
 		self.char_buffer = None;
@@ -205,6 +206,11 @@ impl Lexer {
 		self.file_index = 0usize;
 
 		Ok(())
+	}
+
+	
+	pub fn seek_token_idx(&mut self, idx: usize) {
+		self.token_index = idx;
 	}
 
 	pub fn get_line_number(&self, char_idx: usize) -> usize {
@@ -239,6 +245,11 @@ impl Lexer {
 
 	pub fn current(&self) -> Option<&(usize, Token)> {
 		self.token_buffer.get(self.token_index) 
+	}
+
+
+	pub fn current_token_index(&self) -> usize {
+		self.token_index
 	}
 
 
@@ -545,7 +556,7 @@ impl Lexer {
 	pub fn log_msg(&self, e: CMNMessage) {
 		if let Some(current) = self.current() {
 			let len = current.1.len();
-			self.log_msg_at(self.file_index - len, len, e)
+			self.log_msg_at(self.token_buffer[self.token_index].0, len, e)
 		} else {
 			self.log_msg_at(0, 0, e)
 		}

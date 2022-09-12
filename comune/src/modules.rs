@@ -3,7 +3,7 @@ use std::{ffi::OsString, sync::Arc};
 use colored::Colorize;
 use inkwell::{context::Context, module::Module, passes::PassManager};
 
-use crate::{parser::{errors::{CMNMessage, CMNError}, lexer::{Lexer, log_msg_at, log_msg, self}, Parser, semantic, namespace::{Namespace, NamespaceItem}, types::Type}, llvm::LLVMBackend};
+use crate::{parser::{errors::{CMNMessage, CMNError}, lexer::{Lexer, log_msg_at, log_msg, self}, Parser, semantic, namespace::{Namespace, NamespaceItem, NamespaceASTElem}, types::Type}, llvm::LLVMBackend};
 
 pub struct ManagerState {
 	import_paths: Vec<OsString>,
@@ -60,7 +60,7 @@ impl ModuleJobManager {
 			}
 
 			// Declarative pass
-			return match state.parser.parse_module(false) {
+			return match state.parser.parse_module() {
 				Ok(_) => { Ok(state) },
 				Err(e) => { log_msg(CMNMessage::Error(e.clone())); Err(e) },
 			};
@@ -91,7 +91,7 @@ impl ModuleJobManager {
 		// We oughta:
 		// A) cache the tokenization in the first phase
 		// B) store the relevant token sequences in the mod state to avoid redundant namespace parsing
-		let namespace = match mod_state.parser.parse_module(true) {
+		let namespace = match mod_state.parser.generate_ast() {
 			Ok(ctx) => { if self.state.verbose_output { println!("\nvalidating..."); } ctx },
 			Err(e) => { log_msg(CMNMessage::Error(e.clone())); return Err(e); },
 		};
@@ -188,7 +188,11 @@ impl ModuleJobManager {
 		// Generate function bodies
 		for child in &namespace.children {
 			if let NamespaceItem::Function(sym_type, sym_elem) = &child.1.0 {
-				backend.generate_fn(namespace.get_mangled_name(&child.0), &sym_type.borrow(), sym_elem).unwrap();
+				backend.generate_fn(
+					namespace.get_mangled_name(&child.0), 
+					&sym_type.borrow(), 
+					if let NamespaceASTElem::Parsed(elem) = &*sym_elem.borrow() { Some(elem) } else { None }
+				).unwrap();
 			}
 		}
 	}

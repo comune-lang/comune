@@ -3,7 +3,7 @@ use std::{fmt::Display, collections::HashMap};
 use once_cell::sync::OnceCell;
 
 use super::ast::ASTElem;
-use super::namespace::Identifier;
+use super::namespace::{Identifier, NamespaceASTElem};
 use super::semantic::Attribute;
 use super::{semantic::FnScope, ASTResult};
 
@@ -334,8 +334,8 @@ impl Type {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct AggregateType {
-	pub members: Vec<(String, (Type, Option<ASTElem>, Visibility))>,
-	pub methods: HashMap<String, (Type, Option<ASTElem>, Vec<Attribute>)>,
+	pub members: Vec<(String, (Type, NamespaceASTElem, Vec<Attribute>, Visibility))>,
+	pub methods: HashMap<String, (Type, NamespaceASTElem, Vec<Attribute>)>,
 	pub constructors: Vec<Type>,
 	pub destructor: Option<Type>,
 	pub inherits: Vec<Type>,

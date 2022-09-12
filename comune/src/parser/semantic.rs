@@ -1,6 +1,6 @@
 use std::{cell::RefCell, collections::HashMap};
 
-use super::{types::{Type, Basic, Typed}, CMNError, ASTResult, namespace::{Namespace, Identifier, NamespaceItem}, ast::{ASTElem, ASTNode, TokenData}, controlflow::ControlFlow, expression::{Expr, Operator, Atom}, lexer, errors::{CMNMessage, CMNWarning}, ParseResult};
+use super::{types::{Type, Basic, Typed}, CMNError, ASTResult, namespace::{Namespace, Identifier, NamespaceItem, NamespaceASTElem}, ast::{ASTElem, ASTNode, TokenData}, controlflow::ControlFlow, expression::{Expr, Operator, Atom}, lexer, errors::{CMNMessage, CMNWarning}, ParseResult};
 
 
 // SEMANTIC ANALYSIS
@@ -133,7 +133,7 @@ pub fn validate_namespace(namespace: &RefCell<Namespace>, root_namespace: &RefCe
 					panic!()
 				}
 				
-				if let Some(elem) = sym_elem {
+				if let NamespaceASTElem::Parsed(elem) = &*sym_elem.borrow() {
 					// Validate function block & get return type, make sure it matches the signature
 					let void = Type::Basic(Basic::VOID);
 					let ret_type = elem.validate(&mut scope, &ret)?;

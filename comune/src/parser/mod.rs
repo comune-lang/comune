@@ -1,3 +1,4 @@
+use std::borrow::BorrowMut;
 use std::cell::RefCell;
 
 use self::lexer::Token;
@@ -5,7 +6,7 @@ use self::ast::{ASTNode, ASTElem, TokenData};
 use self::controlflow::ControlFlow;
 use self::errors::CMNError;
 use self::expression::{Expr, Operator, Atom};
-use self::namespace::{Namespace, NamespaceItem};
+use self::namespace::{Namespace, NamespaceItem, NamespaceASTElem};
 use self::semantic::Attribute;
 use self::types::{Type, FnParamList, Basic, AggregateType, Visibility};
 
@@ -38,6 +39,10 @@ fn get_current_start_index() -> usize {
 	lexer::CURRENT_LEXER.with(|lexer| lexer.borrow().current().unwrap().0)
 }
 
+fn get_current_token_index() -> usize {
+	lexer::CURRENT_LEXER.with(|lexer| lexer.borrow().current_token_index())
+}
+
 // Convenience function that matches a &str against various token kinds
 fn token_compare(token: &Token, text: &str) -> bool {
 	match token {
@@ -57,7 +62,6 @@ pub type ASTResult<T> = Result<T, (CMNError, TokenData)>;
 pub struct Parser {
 	active_namespace: Option<RefCell<Namespace>>,
 	root_namespace: Option<RefCell<Namespace>>,
-	generate_ast: bool,
 	verbose: bool,
 }
 
@@ -68,7 +72,6 @@ impl Parser {
 		let result = Parser { 
 			active_namespace: None,
     		root_namespace: None,
-			generate_ast: false,
 			verbose,
 		};
 
@@ -79,8 +82,7 @@ impl Parser {
 		self.active_namespace.as_ref().unwrap()
 	}
 
-	pub fn parse_module(&mut self, generate_ast: bool) -> ParseResult<&RefCell<Namespace>> {
-		self.generate_ast = generate_ast;
+	pub fn parse_module(&mut self) -> ParseResult<&RefCell<Namespace>> {
 
 		lexer::CURRENT_LEXER.with(|lexer| {
 			lexer.borrow_mut().tokenize_file().unwrap();
@@ -88,10 +90,11 @@ impl Parser {
 
 		self.active_namespace = Some(RefCell::new(Namespace::new()));
 		self.root_namespace = None;
+
 		match self.parse_namespace() {
 			Ok(()) => {
 				
-				if !generate_ast && self.verbose {
+				if self.verbose {
 					println!("\ngenerated namespace info:\n\n{}", self.current_namespace().borrow());
 				}
 
@@ -102,6 +105,42 @@ impl Parser {
 			}
 		}
 	
+	}
+
+
+	pub fn generate_ast(&mut self) -> ParseResult<&RefCell<Namespace>> {
+		self.generate_namespace(self.active_namespace.as_ref().unwrap())?;
+
+		Ok(self.active_namespace.as_ref().unwrap())
+	}
+
+
+	fn generate_namespace<'a>(&self, namespace: &'a RefCell<Namespace>) -> ParseResult<&'a RefCell<Namespace>> {
+		for child in &namespace.borrow().children {
+			match &child.1.0 {
+
+				NamespaceItem::Function(_, ast_elem) => {
+					let mut elem = ast_elem.borrow_mut();
+					match *elem {
+						NamespaceASTElem::Unparsed(idx) => {
+							// Parse function block
+							lexer::CURRENT_LEXER.with(|lexer| lexer.borrow_mut().seek_token_idx(idx));
+							*elem = NamespaceASTElem::Parsed(self.parse_block()?)
+						}
+
+						_ => {},
+					}
+				},
+
+				NamespaceItem::Namespace(ns) => { self.generate_namespace(ns)?; },
+
+				NamespaceItem::Type(_) => {},
+
+				_ => todo!(),
+			}
+		};
+
+		Ok(namespace)
 	}
 
 
@@ -166,8 +205,12 @@ impl Parser {
 										Token::Identifier(_) => {
 											let result = self.parse_fn_or_declaration()?;
 
-											aggregate.members.push((result.0, (result.1, result.2, current_visibility.clone())));
+											aggregate.members.push(
+												(result.0, (result.1, result.2, current_attributes, current_visibility.clone()))
+											);
+											
 											next = get_current()?;
+											current_attributes = vec![];
 										} 
 
 										Token::Keyword(k) => {
@@ -242,7 +285,6 @@ impl Parser {
 							if let Token::Identifier(name) = name_token {
 								self.current_namespace().borrow_mut().referenced_modules.insert(name.path.scopes[0].clone());
 								// TODO: Implement
-								//let scoped_name = self.parse_scoped_name()?;
 
 							} else {
 								return Err(CMNError::ExpectedIdentifier);
@@ -258,11 +300,15 @@ impl Parser {
 				Token::Identifier(_) => {
 					// Parse declaration/definition
 					let result = self.parse_fn_or_declaration()?;
+					match result.1 {
+						Type::Function(_, _) => 
+							self.current_namespace().borrow_mut().children.insert(
+								result.0, 
+								(NamespaceItem::Function(RefCell::new(result.1), RefCell::new(result.2)), current_attributes)
+							),
 
-					self.current_namespace().borrow_mut().children.insert(
-						result.0, 
-						(NamespaceItem::Function(RefCell::new(result.1), result.2), current_attributes)
-					);
+						_ => todo!(),
+					};
 					
 					current_attributes = vec![];
 				}
@@ -278,18 +324,18 @@ impl Parser {
 		}
 
 		if current == Token::EOF {
-			//if self.current_namespace().borrow().parent_temp.is_none() {
+			if self.root_namespace.is_none() {
 				Ok(())
-			//} else {
-			//	Err(CMNError::UnexpectedEOF)
-			//}
+			} else {
+				Err(CMNError::UnexpectedEOF)
+			}
 		} else if current == Token::Other('}') {
-			//if self.current_namespace().borrow().parent_temp.is_some() {
+			if self.root_namespace.is_some() {
 				get_next()?;
 				Ok(())
-			//} else {
-			//	Err(CMNError::UnexpectedToken)
-			//}
+			} else {
+				Err(CMNError::UnexpectedToken)
+			}
 		}
 		else {
 			get_next()?;
@@ -602,14 +648,14 @@ impl Parser {
 
 
 
-	fn parse_fn_or_declaration(&self) -> ParseResult<(String, Type, Option<ASTElem>)> {
+	fn parse_fn_or_declaration(&self) -> ParseResult<(String, Type, NamespaceASTElem)> {
 		let mut t = Type::Unresolved(match get_current()? { Token::Identifier(id) => id, _ => panic!() });
 		let mut next = get_next()?;
 		
 		if let Token::Identifier(id) = next {
 			next = get_next()?;
 
-			let mut ast_elem = None;
+			let mut ast_elem = NamespaceASTElem::NoElem;
 
 			if let Token::Operator(op) = next {
 				match op.as_str() {
@@ -617,7 +663,7 @@ impl Parser {
 					// Function declaration
 					"(" => {	
 						t = Type::Function(
-								Box::new(t), 
+								Box::new(t),
 								self.parse_parameter_list()?
 							);
 						
@@ -626,11 +672,9 @@ impl Parser {
 						
 						if current == Token::Other('{') {
 							
-							if self.generate_ast {
-								ast_elem = Some(self.parse_block()?);
-							} else {
-								self.skip_block()?;
-							}
+							ast_elem = NamespaceASTElem::Unparsed(get_current_token_index());
+							self.skip_block()?;
+							
 						} else if current == Token::Other(';') {
 							// No function body, just a semicolon
 							get_next()?;
@@ -642,15 +686,17 @@ impl Parser {
 
 					"=" => {
 						get_next()?;
-						ast_elem = match self.parse_expression()?.node {
-							ASTNode::Expression(expr) => Some(
-								ASTElem { 
-									node: ASTNode::Expression(RefCell::new(expr.into_inner())), 
-									type_info: RefCell::new(None),
-									token_data: (0, 0) // TODO: Add
-								}),
-							_ => panic!(), // TODO: Error handling
-						};
+						// TODO: Skip expression
+
+						//ast_elem = match self.parse_expression()?.node {
+						//	ASTNode::Expression(expr) => Some(
+						//		ASTElem { 
+						//			node: ASTNode::Expression(RefCell::new(expr.into_inner())), 
+						//			type_info: RefCell::new(None),
+						//			token_data: (0, 0) // TODO: Add
+						//		}),
+						//	_ => panic!(), // TODO: Error handling
+						//};
 					
 						self.check_semicolon()?;
 					}
