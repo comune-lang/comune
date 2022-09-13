@@ -2,7 +2,6 @@ use std::{fmt::Display, collections::HashMap};
 
 use once_cell::sync::OnceCell;
 
-use super::ast::ASTElem;
 use super::namespace::{Identifier, NamespaceASTElem};
 use super::semantic::Attribute;
 use super::{semantic::FnScope, ASTResult};

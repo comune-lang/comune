@@ -9,7 +9,6 @@ use colored::Colorize;
 
 use crate::parser::errors::CMNMessage;
 
-use super::expression::Operator;
 use super::namespace::{Identifier, ScopePath};
 
 thread_local! {

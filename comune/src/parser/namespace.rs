@@ -1,6 +1,7 @@
 use std::{collections::{HashMap, HashSet}, fmt::Display, cell::RefCell};
 
 use mangling::mangle;
+
 use super::{semantic::{Attribute, get_attribute}, errors::CMNError, ParseResult};
 use super::{types::{Type, Basic}, ast::ASTElem};
 
@@ -98,6 +99,7 @@ pub struct Namespace {
 }
 
 impl<'root: 'this, 'this> Namespace {
+	
 	pub fn new() -> Self {
 		let mangle_path = ScopePath::new(true);
 		Namespace { 
@@ -118,6 +120,7 @@ impl<'root: 'this, 'this> Namespace {
 		}
 	}
 
+
 	// Children take temporary ownership of their parent to avoid lifetime hell
 	pub fn from_parent(parent: &ScopePath, name: String) -> Self {
 		Namespace { 
@@ -129,22 +132,9 @@ impl<'root: 'this, 'this> Namespace {
 		}
 	}
 
+
 	pub fn mangle_name(path: &ScopePath, name: &str, ty: &Type) -> String {
 		mangle(format!("{}::{}({})", path.to_string(), name, ty.serialize()).as_bytes())
-	}
-
-
-	pub fn get_symbol_name_mangled(&self, symbol_name: &str) -> String {
-		if let Some((NamespaceItem::Function(symbol_type, _), attributes, _)) = self.children.get(symbol_name) {
-			// Don't mangle if function is root main(), or if it has a no_mangle attribute
-			if symbol_name == "main" && self.path.scopes.is_empty() || get_attribute(attributes, "no_mangle").is_some() {
-				return symbol_name.to_string();
-			}
-
-			Self::mangle_name(&self.path, symbol_name, &symbol_type.borrow())
-		} else {
-			panic!("Invalid symbol name");
-		}
 	}
 
 
