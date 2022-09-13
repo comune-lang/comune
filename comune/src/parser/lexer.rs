@@ -309,7 +309,7 @@ impl Lexer {
 	
 	pub fn parse_next(&mut self) -> io::Result<(usize, Token)> {
 		let mut result_token = Ok(Token::EOF);
-		let start = self.file_index;
+		let mut start = self.file_index;
 
 		if let Some(mut token) = self.char_buffer {
 
@@ -324,7 +324,8 @@ impl Lexer {
 				self.skip_multi_line_comment()?;
 				token = self.char_buffer.unwrap();
 			}
-
+			
+			start = self.file_index;
 			
 			if token.is_alphabetic() || token == '_' {	
 				// Identifier

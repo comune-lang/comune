@@ -817,11 +817,11 @@ impl Parser {
 			let (lbp, rbp);
 
 			if op.is_associative_rtl() {
-				lbp = binding_power;
-				rbp = binding_power + 1;
-			} else {
 				lbp = binding_power + 1;
 				rbp = binding_power;
+			} else {
+				lbp = binding_power;
+				rbp = binding_power + 1;
 			}
 
 			if lbp < min_bp { 
@@ -987,30 +987,6 @@ impl Parser {
 			Err(CMNError::UnexpectedToken)
 		}
 	}
-
-
-
-	/*fn parse_scoped_name(&self) -> ParseResult<Identifier> {
-		let mut path = ScopePath { scopes: vec![], absolute: false };
-		
-		if let Token::Identifier(id) = get_current()? {
-			path.scopes.push(id);
-		} else {
-			return Err(CMNError::ExpectedIdentifier);
-		}
-
-		while token_compare(&get_next()?, "::") {
-			if let Token::Identifier(id) = get_next()? {
-				path.scopes.push(id);
-			} else {
-				return Err(CMNError::ExpectedIdentifier);
-			}
-		}
-		let name = path.scopes.pop().unwrap();
-
-		Ok(Identifier{ name, path, mem_idx: 0, resolved: None })
-	}*/
-
 
 
 	fn parse_type(&self, immediate_resolve: bool) -> ParseResult<Type> {
