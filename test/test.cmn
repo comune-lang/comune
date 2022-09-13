@@ -14,9 +14,13 @@ namespace cool {
 		}
 		return c;
 	}
-}
+	struct Test {
+		int a;	
+	}
+} 
 
 int main() {
-	int a = cool::fib(10) as i32;
-	return a;
+	cool::Test test;
+	test.a = cool::fib(10) as i32;
+	return test.a;
 }

@@ -151,7 +151,7 @@ pub fn validate_namespace(namespace: &RefCell<Namespace>, root_namespace: &RefCe
 }
 
 
-pub fn resolve_type(ty: Type, namespace: &Namespace, root: &RefCell<Namespace>) -> ParseResult<Type> {
+pub fn resolve_type(mut ty: Type, namespace: &Namespace, root: &RefCell<Namespace>) -> ParseResult<Type> {
 	match ty {
 		Type::Pointer(pointee) => Ok(Type::Pointer(Box::new(resolve_type(*pointee, namespace, root)?))),
 		
@@ -170,6 +170,14 @@ pub fn resolve_type(ty: Type, namespace: &Namespace, root: &RefCell<Namespace>) 
 		},
 		
 		Type::Basic(_) => Ok(ty),
+		
+		Type::Aggregate(ref mut agg) => {
+			for mut member in agg.members.iter_mut() {
+				member.1.0 = resolve_type(member.1.0.clone(), namespace, root)?;
+			}
+
+			Ok(ty)
+		},
 		
 		_ => todo!(),
 	}
@@ -190,7 +198,7 @@ pub fn resolve_types(namespace: &RefCell<Namespace>, root: &RefCell<Namespace>) 
 		
 		for child in &namespace.children {
 			match &child.1.0 {
-				NamespaceItem::Function(ty, _fn_ast) => {
+				NamespaceItem::Function(ty, _) => {
 					if let Type::Function(ret, args) = &mut *ty.borrow_mut() {
 						**ret = resolve_type(*ret.clone(), &namespace, root).unwrap();
 
@@ -200,7 +208,7 @@ pub fn resolve_types(namespace: &RefCell<Namespace>, root: &RefCell<Namespace>) 
 					}
 				}
 
-				NamespaceItem::Namespace(ns) => {}
+				NamespaceItem::Namespace(_) => {}
 
 				NamespaceItem::Type(t) => {
 					let ty = t.borrow().clone();
@@ -218,7 +226,8 @@ pub fn resolve_types(namespace: &RefCell<Namespace>, root: &RefCell<Namespace>) 
 		let mut namespace = namespace.borrow_mut();
 
 		for child in &mut namespace.children {
-
+			
+			// Check if the function has a `no_mangle` attribute, or if it's `main`. If not, mangle the name 
 			if get_attribute(&child.1.1, "no_mangle").is_some() || (child.0 == "main" && path.scopes.is_empty()) {
 				child.1.2 = Some(child.0.clone());
 			} else {
