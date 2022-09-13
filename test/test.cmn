@@ -15,17 +15,18 @@ namespace cool {
 		return c;
 	}
 
-	struct Subtest {
-		int b;
-	}
-
 	struct Test {
 		Subtest a;	
+	}
+
+	struct Subtest {
+		int b;
 	}
 } 
 
 int main() {
 	cool::Test test;
-	test.a.b = cool::fib(10) as i32;
-	return test.a;
+	cool::Test* testptr = &test;
+	(*testptr).a.b = cool::fib(10) as i32;
+	return test.a.b;
 }

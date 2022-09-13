@@ -1,5 +1,7 @@
 use std::{cell::RefCell, collections::HashMap, borrow::Borrow};
 
+use backtrace::resolve;
+
 use super::{types::{Type, Basic, Typed}, CMNError, ASTResult, namespace::{Namespace, Identifier, NamespaceItem, NamespaceASTElem}, ast::{ASTElem, ASTNode, TokenData}, controlflow::ControlFlow, expression::{Expr, Operator, Atom}, lexer, errors::{CMNMessage, CMNWarning}, ParseResult};
 
 
@@ -75,7 +77,7 @@ impl<'ctx> FnScope<'ctx> {
 			let namespace = self.context.borrow();
 			let root = self.root_namespace.borrow();
 
-			namespace.with_item(&id, &root, |item| {
+			namespace.with_item(&id, &root, |item, _| {
 				if let NamespaceItem::Function(fn_type, _) = &item.0 {
 					result = Some((item.2.as_ref().unwrap().clone(), fn_type.borrow().clone()));
 				}
@@ -156,11 +158,14 @@ pub fn resolve_type(mut ty: Type, namespace: &Namespace, root: &RefCell<Namespac
 		Type::Pointer(pointee) => Ok(Type::Pointer(Box::new(resolve_type(*pointee, namespace, root)?))),
 		
 		Type::Unresolved(ref id) => {
-			let root = root.borrow();
 			let mut result = Err(CMNError::UnresolvedTypename(id.to_string()));
-
-			namespace.with_item(id, &root.borrow(), |item| {
+			
+			// TODO: Make sure type referenced here is resolved too
+			namespace.with_item(id, &root.borrow(), |item, ns| {
+				
 				if let NamespaceItem::Type(t) = &item.0 {
+					let resolved_t = resolve_type(t.borrow().clone(), ns, root).unwrap();
+					*t.borrow_mut() = resolved_t;
 					result = Ok(t.borrow().clone());
 				}
 			});
@@ -219,6 +224,16 @@ pub fn resolve_types(namespace: &RefCell<Namespace>, root: &RefCell<Namespace>) 
 			};
 		}
 	}
+	Ok(())
+}
+
+
+pub fn mangle_names(namespace: &RefCell<Namespace>) -> ASTResult<()> {
+	for child in &namespace.borrow().children {
+		if let NamespaceItem::Namespace(ref ns) = child.1.0 { 
+			mangle_names(ns)?;
+		}
+	}
 
 	// Generate mangled names
 	{
@@ -243,12 +258,8 @@ pub fn resolve_types(namespace: &RefCell<Namespace>, root: &RefCell<Namespace>) 
 		}
 	}
 
-
 	Ok(())
 }
-
-
-
 
 
 impl ASTElem {

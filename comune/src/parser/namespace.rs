@@ -138,7 +138,8 @@ impl<'root: 'this, 'this> Namespace {
 	}
 
 
-	pub fn with_item(&'this self, name: &Identifier, root: &'root Namespace, mut closure: impl FnMut(&NamespaceEntry) -> ()) -> bool {
+	// TODO: Replace &'this self with &'this RefCell<Namespace>?
+	pub fn with_item(&'this self, name: &Identifier, root: &'root Namespace, mut closure: impl FnMut(&NamespaceEntry, &Namespace) -> ()) -> bool {
 		let self_is_root = root as *const _ == self as *const _;
 
 		// If name is an absolute path, look in root
@@ -149,7 +150,7 @@ impl<'root: 'this, 'this> Namespace {
 		
 		if name.path.scopes.is_empty() {
 			if self.children.contains_key(&name.name) {
-				closure(&self.children.get(&name.name).unwrap());
+				closure(&self.children.get(&name.name).unwrap(), &self);
 				return true;
 			}
 		} else {

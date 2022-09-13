@@ -435,7 +435,7 @@ impl Parser {
 				let root = &self.root_namespace.as_ref().unwrap_or(self.current_namespace()).borrow();
 
 				let mut type_found = false;
-				ns.with_item(id, root, |item| type_found = matches!(item.0, NamespaceItem::Type(_)));
+				ns.with_item(id, root, |item, _| type_found = matches!(item.0, NamespaceItem::Type(_)));
 				
 				if type_found {
 					// Found a type that matches, so parse variable declaration
@@ -1001,7 +1001,7 @@ impl Parser {
 				let root = &self.root_namespace.as_ref().unwrap_or(self.current_namespace()).borrow();
 				
 				let mut found = false;
-				ctx.with_item(&typename, root, |item| {
+				ctx.with_item(&typename, root, |item, _| {
 					if let NamespaceItem::Type(t) = &item.0 {
 						result = t.borrow().clone();
 						found = true;
