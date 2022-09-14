@@ -1,8 +1,8 @@
-use std::{collections::{HashMap, HashSet}, fmt::Display, cell::RefCell};
+use std::{collections::{HashMap, HashSet}, fmt::Display, cell::RefCell, hash::Hash};
 
 use mangling::mangle;
 
-use super::{semantic::{Attribute, get_attribute}, errors::CMNError, ParseResult};
+use super::{semantic::Attribute, errors::CMNError, ParseResult};
 use super::{types::{Type, Basic}, ast::ASTElem};
 
 
@@ -26,6 +26,19 @@ impl Identifier {
 }
 
 
+impl Hash for Identifier {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+		// Absolute Identifiers are used to definitively and uniquely identify NamespaceItems in HashMaps.
+		// A relative Identifier can't be meaningfully hashed, and doing so indicates a logic error in the code.
+		assert!(self.path.absolute, "can't hash a relative ScopePath!");
+        self.name.hash(state);
+        self.path.hash(state);
+        self.mem_idx.hash(state);
+        self.resolved.hash(state);
+    }
+}
+
+
 impl Display for Identifier {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", if self.path.scopes.is_empty() {
@@ -40,11 +53,12 @@ impl Display for Identifier {
 }
 
 
-#[derive(Default, Debug, Clone, PartialEq, Eq)]
+#[derive(Default, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ScopePath {
 	pub scopes: Vec<String>,
 	pub absolute: bool,
 }
+
 
 impl ScopePath {
 	pub fn new(absolute: bool) -> Self {
@@ -71,6 +85,7 @@ impl ToString for ScopePath {
 		result
     }
 }
+
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum NamespaceASTElem {

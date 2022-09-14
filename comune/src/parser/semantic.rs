@@ -1,6 +1,4 @@
-use std::{cell::RefCell, collections::HashMap, borrow::Borrow};
-
-use backtrace::resolve;
+use std::{cell::RefCell, collections::HashMap};
 
 use super::{types::{Type, Basic, Typed}, CMNError, ASTResult, namespace::{Namespace, Identifier, NamespaceItem, NamespaceASTElem}, ast::{ASTElem, ASTNode, TokenData}, controlflow::ControlFlow, expression::{Expr, Operator, Atom}, lexer, errors::{CMNMessage, CMNWarning}, ParseResult};
 
