@@ -153,20 +153,29 @@ pub fn validate_namespace(namespace: &RefCell<Namespace>, root_namespace: &RefCe
 }
 
 
-pub fn resolve_type(mut ty: Type, namespace: &Namespace, root: &RefCell<Namespace>) -> ParseResult<Type> {
+pub fn resolve_type(ty: &mut Type, namespace: &Namespace, root: &RefCell<Namespace>) -> ParseResult<()> {
 	match ty {
-		Type::Pointer(pointee) => Ok(Type::Pointer(Box::new(resolve_type(*pointee, namespace, root)?))),
-		
+		// TODO: Make pointee an Identifier or something because recursion
+		Type::Pointer(pointee) => {
+			let mut result = Ok(());
+			
+			if let Type::Unresolved(id) = pointee.as_mut() {
+				result = Err(CMNError::UnresolvedTypename(id.to_string()));
+
+				namespace.with_item(id, &root.borrow(), |_, _| { result = Ok(()); });
+			}
+
+			result
+		},
+
 		Type::Unresolved(ref id) => {
 			let mut result = Err(CMNError::UnresolvedTypename(id.to_string()));
 			
-			// TODO: Make sure type referenced here is resolved too
-			namespace.with_item(id, &root.borrow(), |item, ns| {
-				
+			namespace.with_item(id, &root.borrow(), |item, ns| {				
 				if let NamespaceItem::Type(t) = &item.0 {
-					let resolved_t = resolve_type(t.borrow().clone(), ns, root).unwrap();
-					*t.borrow_mut() = resolved_t;
-					result = Ok(t.borrow().clone());
+					resolve_type(&mut t.borrow_mut(), ns, root).unwrap();
+
+					result = Ok(());
 				}
 			});
 
@@ -174,14 +183,14 @@ pub fn resolve_type(mut ty: Type, namespace: &Namespace, root: &RefCell<Namespac
 			
 		},
 		
-		Type::Basic(_) => Ok(ty),
+		Type::Basic(_) => Ok(()),
 		
 		Type::Aggregate(ref mut agg) => {
-			for mut member in agg.members.iter_mut() {
-				member.1.0 = resolve_type(member.1.0.clone(), namespace, root)?;
+			for member in agg.members.iter_mut() {
+				resolve_type(&mut member.1.0, namespace, root)?;
 			}
 
-			Ok(ty)
+			Ok(())
 		},
 		
 		_ => todo!(),
@@ -205,10 +214,10 @@ pub fn resolve_types(namespace: &RefCell<Namespace>, root: &RefCell<Namespace>) 
 			match &child.1.0 {
 				NamespaceItem::Function(ty, _) => {
 					if let Type::Function(ret, args) = &mut *ty.borrow_mut() {
-						**ret = resolve_type(*ret.clone(), &namespace, root).unwrap();
+						resolve_type(ret, &namespace, root).unwrap();
 
 						for arg in args {
-							*arg.0 = resolve_type(*arg.0.clone(), &namespace, root).unwrap();
+							resolve_type(&mut arg.0, &namespace, root).unwrap();
 						}
 					}
 				}
@@ -216,8 +225,7 @@ pub fn resolve_types(namespace: &RefCell<Namespace>, root: &RefCell<Namespace>) 
 				NamespaceItem::Namespace(_) => {}
 
 				NamespaceItem::Type(t) => {
-					let ty = t.borrow().clone();
-					*t.borrow_mut() = resolve_type(ty, &namespace, root).unwrap();
+					resolve_type(&mut t.borrow_mut(), &namespace, root).unwrap();
 				},
 
 				_ => todo!(),
