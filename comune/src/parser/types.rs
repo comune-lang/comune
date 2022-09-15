@@ -1,3 +1,6 @@
+use std::borrow::Borrow;
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::{fmt::Display, collections::HashMap};
 
 use once_cell::sync::OnceCell;
@@ -8,7 +11,7 @@ use super::{semantic::FnScope, ASTResult};
 
 type BoxedType = Box<Type>;
 
-pub type FnParamList = Vec<(Box<Type>, Option<String>)>;
+pub type FnParamList = Vec<(Type, Option<String>)>;
 
 
 pub(crate) static PTR_SIZE_BYTES: OnceCell<u32> = OnceCell::new();
@@ -121,6 +124,45 @@ impl Basic {
 			].map(|(a, b)| (a.to_string(), Type::Basic(b))
 		))
 	}
+
+	
+	pub fn is_numeric(&self) -> bool {
+		self.is_integral() || self.is_floating_point()
+	}
+
+
+	pub fn is_integral(&self) -> bool {
+		match self {
+			Basic::ISIZE | Basic::USIZE | 
+			Basic::I64 | Basic::U64 | 
+			Basic::I32 | Basic::U32 | 
+			Basic::I16 | Basic::U16 | 
+			Basic::I8 | Basic::U8 => 
+				true,
+			
+			_ => 
+				false
+		}
+	}
+
+
+	pub fn is_boolean(&self) -> bool {
+		match self {
+			Basic::BOOL => true,
+			_ => false,
+		}
+	}
+
+
+	pub fn is_floating_point(&self) -> bool {
+		match self {
+			Basic::F32 | Basic::F64 => 
+				true,
+			
+			_ => 
+				false
+		}
+	}
 }
 
 
@@ -134,11 +176,17 @@ impl Display for Basic {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Type {
 	Basic(Basic),											// Fundamental type
-	Alias(String, BoxedType),								// Identifier + referenced type
-	Aggregate(Box<AggregateType>),							// Guess.
 	Pointer(BoxedType),										// Pointer-to-<BoxedType>
-	Function(BoxedType, Vec<(BoxedType, Option<String>)>),	// Return type + parameter types
-	Unresolved(Identifier)									// Unresolved type (during parsing phase)
+	Unresolved(Identifier),									// Unresolved type (during parsing phase)
+	TypeRef(Rc<RefCell<TypeDef>>)							// Reference to type definition
+}
+
+
+#[derive(Debug, PartialEq)]
+pub enum TypeDef {
+	Function(Type, Vec<(Type, Option<String>)>),			// Return type + parameter types
+	Aggregate(Box<AggregateType>),							// Guess.
+	Alias(String, Type)										// Identifier + referenced type
 }
 
 
@@ -149,35 +197,46 @@ impl Display for Type {
 				write!(f, "{}", t)?;
 			},
 
-			Type::Alias(a, t) => {
-				write!(f, "{} ({})", a, t)?;
-			},
-
-			Type::Aggregate(agg) => {
-				write!(f, "{:?}", agg)?;
-			},
-
 			Type::Pointer(t) => {
 				write!(f, "{}*", t)?;
-			},
-
-			Type::Function(ret, params) => {
-				write!(f, "{}(", ret)?;
-				for param in params {
-					write!(f, "{}, ", param.0)?;
-				}
-				write!(f, ")")?;
 			},
 
 			Type::Unresolved(t) => {
 				write!(f, "\"{}\"", t)?;
 			},
+
+			Type::TypeRef(t) => {
+				t.as_ref().borrow().fmt(f)?;
+			}
 		}
 
 		Ok(())
     }
 }
 
+
+impl Display for TypeDef {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		match &self {
+			TypeDef::Alias(a, t) => {
+				write!(f, "{} ({})", a, t)?;
+			},
+
+			TypeDef::Aggregate(agg) => {
+				write!(f, "{:?}", agg)?;
+			},
+			
+			TypeDef::Function(ret, params) => {
+				write!(f, "{}(", ret)?;
+				for param in params {
+					write!(f, "{}, ", param.0)?;
+				}
+				write!(f, ")")?;
+			},
+		}
+		Ok(())
+	}
+}
  
 impl Type {
 	pub fn ptr_type(&self) -> Self {
@@ -193,30 +252,15 @@ impl Type {
 				result.push_str(b.as_str());
 			},
 
-			// TODO: Consider if aliased types are equivalent at the ABI stage?
-			Type::Alias(_, t) => return t.serialize(),
 			
-			Type::Aggregate(a) => {
-				for t in &a.members {
-					result.push_str(&t.1.0.serialize());
-				}
-			},
-
 			Type::Pointer(t) => {
 				result.push_str(&t.serialize());
 				result.push_str("*");
 			},
 
-			Type::Function(ret, args) => {
-				result.push_str("?");
-				for arg in args {
-					result.push_str(&arg.0.serialize());
-				}
-				result.push_str("!");
-				result.push_str(&ret.serialize());
-			},
+			Type::TypeRef(t) => result.push_str(&t.as_ref().borrow().serialize()),
 
-			Type::Unresolved(_) => { panic!("Attempt to serialize an unresolved type!"); }, // Not supposed to happen Lol
+			Type::Unresolved(_) => { panic!("Attempt to serialize an unresolved type!"); },
 		}
 		// TODO: Generics
 
@@ -228,68 +272,30 @@ impl Type {
 		if *self == *target {
 			true
 		} else {
-
 			if self.is_numeric() {
-				if target.is_numeric() || target.is_boolean() {
-					return true;
-				}
+				return target.is_numeric() || target.is_boolean();
 			}
-			false
+
+			return false;
 		}
 	}
+	
 
-
+	// Convenience
 	pub fn is_numeric(&self) -> bool {
-		self.is_integral() || self.is_floating_point()
+		if let Type::Basic(b) = self { b.is_numeric() } else { false }
 	}
-
 
 	pub fn is_integral(&self) -> bool {
-		match self {
-			Type::Basic(b) =>
-				match b {
-					Basic::ISIZE | Basic::USIZE | 
-					Basic::I64 | Basic::U64 | 
-					Basic::I32 | Basic::U32 | 
-					Basic::I16 | Basic::U16 | 
-					Basic::I8 | Basic::U8 | 
-					Basic::CHAR => 
-						true,
-					
-					_ => 
-						false
-				}
-			
-			_ => false
-		}
+		if let Type::Basic(b) = self { b.is_integral() } else { false }
 	}
-
 
 	pub fn is_boolean(&self) -> bool {
-		match self {
-			Type::Basic(b) => 
-				match b {
-					Basic::BOOL => true,
-					_ => false,
-				}
-			_ => false,
-		}
+		if let Type::Basic(b) = self { b.is_boolean() } else { false }
 	}
 
-
 	pub fn is_floating_point(&self) -> bool {
-		match self {
-			Type::Basic(b) =>
-				match b {
-					Basic::F32 | Basic::F64 => 
-						true,
-					
-					_ => 
-						false
-				}
-			
-			_ => false
-		}
+		if let Type::Basic(b) = self { b.is_floating_point() } else { false }
 	}
 
 
@@ -311,19 +317,10 @@ impl Type {
 				Basic::VOID => 0,
 				
 			},
-			
-			Type::Alias(_, t) => t.get_size_bytes(),
-
-			Type::Aggregate(ts) => {
-				let mut result: usize = 0;
-
-				for t in ts.members.iter() {
-					result += t.1.0.get_size_bytes();
-				}
-				result
-			},
 
 			Type::Pointer(_) => ptr_size,
+
+			Type::TypeRef(t_ref) => t_ref.as_ref().borrow().get_size_bytes(),
 			
 			_ => 0,
 		}
@@ -331,10 +328,57 @@ impl Type {
 }
 
 
+impl TypeDef {
+	pub fn serialize(&self) -> String {
+		let mut result = String::new();
+		match &self {
+			// TODO: Consider if aliased types are equivalent at the ABI stage?
+			TypeDef::Alias(_, t) => return t.serialize(),
+						
+			TypeDef::Aggregate(a) => {
+				for t in &a.members {
+					result.push_str(&t.1.0.serialize());
+				}
+			},
+
+			TypeDef::Function(ret, args) => {
+				result.push_str("?");
+				for arg in args {
+					result.push_str(&arg.0.serialize());
+				}
+				result.push_str("!");
+				result.push_str(&ret.serialize());
+			},
+		}
+		result
+	}
+
+	pub fn get_size_bytes(&self) -> usize {
+		let ptr_size = *PTR_SIZE_BYTES.get().unwrap() as usize;
+
+		match &self {
+			TypeDef::Alias(_, t) => t.get_size_bytes(),
+
+			TypeDef::Aggregate(ts) => {
+				let mut result: usize = 0;
+
+				for t in ts.members.iter() {
+					result += t.1.0.get_size_bytes();
+				}
+				result
+			},
+			
+			_ => 0,
+		}
+	}
+}
+
+
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct AggregateType {
-	pub members: Vec<(String, (Type, NamespaceASTElem, Vec<Attribute>, Visibility))>,
-	pub methods: HashMap<String, (Type, NamespaceASTElem, Vec<Attribute>)>,
+	pub members: Vec<(String, (Type, RefCell<NamespaceASTElem>, Vec<Attribute>, Visibility))>,
+	pub methods: HashMap<String, (Type, RefCell<NamespaceASTElem>, Vec<Attribute>)>,
 	pub constructors: Vec<Type>,
 	pub destructor: Option<Type>,
 	pub inherits: Vec<Type>,

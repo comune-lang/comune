@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Rc;
 
 use self::lexer::Token;
 use self::ast::{ASTNode, ASTElem, TokenData};
@@ -8,7 +9,7 @@ use self::errors::CMNError;
 use self::expression::{Expr, Operator, Atom};
 use self::namespace::{Namespace, NamespaceItem, NamespaceASTElem, Identifier, ScopePath};
 use self::semantic::Attribute;
-use self::types::{Type, FnParamList, Basic, AggregateType, Visibility};
+use self::types::{Type, FnParamList, Basic, AggregateType, Visibility, TypeDef};
 
 pub mod namespace;
 pub mod lexer;
@@ -206,10 +207,15 @@ impl Parser {
 									match next { 
 										Token::Identifier(_) => {
 											let result = self.parse_fn_or_declaration()?;
+											match result.1 {
 
-											aggregate.members.push(
-												(result.0, (result.1, result.2, current_attributes, current_visibility.clone()))
-											);
+												NamespaceItem::Variable(t, n) =>
+													aggregate.members.push(
+														(result.0, (t, n, current_attributes, current_visibility.clone()))
+													),
+
+												_ => todo!(),
+											}
 											
 											next = get_current()?;
 											current_attributes = vec![];
@@ -232,11 +238,11 @@ impl Parser {
 
 								get_next()?; // Consume closing brace
 
-								let aggregate = Type::Aggregate(Box::new(aggregate));
+								let aggregate = TypeDef::Aggregate(Box::new(aggregate));
 
 								self.current_namespace().borrow_mut().children.insert(
 									name.expect_scopeless()?, (
-										NamespaceItem::Type(RefCell::new(aggregate)), 
+										NamespaceItem::Type(Rc::new(RefCell::new(aggregate))), 
 										current_attributes,
 										None
 									)
@@ -313,11 +319,11 @@ impl Parser {
 					let result = self.parse_fn_or_declaration()?;
 
 					match result.1 {
-						Type::Function(_, _) => {
+						NamespaceItem::Function(_, _) => {
 							self.current_namespace().borrow_mut().children.insert(
 								result.0, 
 								(
-									NamespaceItem::Function(RefCell::new(result.1), RefCell::new(result.2)), 
+									result.1, 
 									current_attributes,
 									None	
 								)
@@ -330,8 +336,6 @@ impl Parser {
 					current_attributes = vec![];
 				}
 				
-				
-
 				_ => { // Other types of tokens (literals etc) not valid at this point
 					return Err(CMNError::UnexpectedToken);
 				}
@@ -436,9 +440,13 @@ impl Parser {
 				// Might be a declaration, check if identifier is a type
 				let ns = self.current_namespace().borrow();
 				let root = &self.root_namespace.as_ref().unwrap_or(self.current_namespace()).borrow();
-
 				let mut type_found = false;
-				ns.with_item(id, root, |item, _| type_found = matches!(item.0, NamespaceItem::Type(_)));
+
+				if Basic::get_basic_type(&id.name).is_some() && id.path.scopes.is_empty() {
+					type_found = true;
+				} else {
+					ns.with_item(id, root, |item, _| type_found = matches!(item.0, NamespaceItem::Type(_)));
+				}
 				
 				if type_found {
 					// Found a type that matches, so parse variable declaration
@@ -666,40 +674,41 @@ impl Parser {
 
 
 
-	fn parse_fn_or_declaration(&self) -> ParseResult<(String, Type, NamespaceASTElem)> {
-		let mut t = Type::Unresolved(match get_current()? { Token::Identifier(id) => id, _ => panic!() });
-		let mut next = get_next()?;
+	fn parse_fn_or_declaration(&self) -> ParseResult<(String, NamespaceItem)> {
+		let t = self.parse_type(false)?;
+		let item;// = Type::Unresolved(match get_current()? { Token::Identifier(id) => id, _ => panic!() });
+		let mut next = get_current()?;
 		
 		if let Token::Identifier(id) = next {
 			next = get_next()?;
 
-			let mut ast_elem = NamespaceASTElem::NoElem;
+			
 
 			if let Token::Operator(op) = next {
 				match op.as_str() {
 					
 					// Function declaration
 					"(" => {	
-						t = Type::Function(
-								Box::new(t),
+						let t = TypeDef::Function(
+								t,
 								self.parse_parameter_list()?
 							);
 						
 						// Past the parameter list, check if we're at a function body or not
 						let current = get_current()?;
-						
+						let ast_elem;
+
 						if current == Token::Other('{') {
-							
 							ast_elem = NamespaceASTElem::Unparsed(get_current_token_index());
 							self.skip_block()?;
-							
 						} else if current == Token::Other(';') {
-							// No function body, just a semicolon
+							ast_elem = NamespaceASTElem::NoElem;
 							get_next()?;
 						} else {
-							// Expected a function body or semicolon!
 							return Err(CMNError::UnexpectedToken);
 						}
+
+						item = NamespaceItem::Function(Rc::new(RefCell::new(t)), RefCell::new(ast_elem));
 					}
 
 					"=" => {
@@ -717,6 +726,7 @@ impl Parser {
 						//};
 					
 						self.check_semicolon()?;
+						todo!();
 					}
 
 					_ => {
@@ -724,12 +734,13 @@ impl Parser {
 					}
 				}
 			} else {
+				item = NamespaceItem::Variable(t, RefCell::new(NamespaceASTElem::NoElem));
 				self.check_semicolon()?;
 			}
 
 			// Register declaration to symbol table
 			// TODO: Figure out what to do if the identifier has scopes
-			Ok((id.name, t, ast_elem))
+			Ok((id.name, item))
 		} else {
 			Err(CMNError::ExpectedIdentifier)
 		}
@@ -944,7 +955,7 @@ impl Parser {
 		let mut result = vec![];
 
 		while let Token::Identifier(_) = next {
-			let mut param = (Box::new(self.parse_type(false)?), None);
+			let mut param = (self.parse_type(false)?, None);
 			
 			
 			// Check for param name
@@ -1004,12 +1015,20 @@ impl Parser {
 				let root = &self.root_namespace.as_ref().unwrap_or(self.current_namespace()).borrow();
 				
 				let mut found = false;
-				ctx.with_item(&typename, root, |item, _| {
-					if let NamespaceItem::Type(t) = &item.0 {
-						result = t.borrow().clone();
+
+				if let Some(b) = Basic::get_basic_type(&typename.name) {
+					if typename.path.scopes.is_empty() {
+						result = Type::Basic(b);
 						found = true;
 					}
-				});
+				} else {
+					ctx.with_item(&typename, root, |item, _| {
+						if let NamespaceItem::Type(t) = &item.0 {
+							result = Type::TypeRef(t.clone());
+							found = true;
+						}
+					});
+				}
 
 				if !found {
 					return Err(CMNError::UnresolvedTypename(typename.to_string()));

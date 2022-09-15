@@ -1,6 +1,6 @@
 use std::{cell::RefCell, collections::HashMap};
 
-use super::{types::{Type, Basic, Typed}, CMNError, ASTResult, namespace::{Namespace, Identifier, NamespaceItem, NamespaceASTElem}, ast::{ASTElem, ASTNode, TokenData}, controlflow::ControlFlow, expression::{Expr, Operator, Atom}, lexer, errors::{CMNMessage, CMNWarning}, ParseResult};
+use super::{types::{Type, Basic, Typed, TypeDef}, CMNError, ASTResult, namespace::{Namespace, Identifier, NamespaceItem, NamespaceASTElem}, ast::{ASTElem, ASTNode, TokenData}, controlflow::ControlFlow, expression::{Expr, Operator, Atom}, lexer, errors::{CMNMessage, CMNWarning}, ParseResult};
 
 
 // SEMANTIC ANALYSIS
@@ -77,7 +77,7 @@ impl<'ctx> FnScope<'ctx> {
 
 			namespace.with_item(&id, &root, |item, _| {
 				if let NamespaceItem::Function(fn_type, _) = &item.0 {
-					result = Some((item.2.as_ref().unwrap().clone(), fn_type.borrow().clone()));
+					result = Some((item.2.as_ref().unwrap().clone(), Type::TypeRef(fn_type.clone())));
 				}
 			});
 		}
@@ -116,13 +116,15 @@ pub fn validate_namespace(namespace: &RefCell<Namespace>, root_namespace: &RefCe
 			
 			// Validate function
 			NamespaceItem::Function(sym_type, sym_elem) => {
-				let mut scope = FnScope::new(namespace, root_namespace, sym_type.borrow().clone());
-		
+				let mut scope;
 				let ret;
-				if let Type::Function(fn_ret, args) = &*sym_type.borrow() {
-					ret = fn_ret.as_ref().clone();
+
+				if let TypeDef::Function(fn_ret, args) = &*sym_type.borrow() {
+					ret = fn_ret.clone();
+					scope = FnScope::new(namespace, root_namespace, ret.clone());
+					
 					for arg in args.iter() {
-						scope.add_variable(arg.0.as_ref().clone(), arg.1.clone().unwrap())
+						scope.add_variable(arg.0.clone(), arg.1.clone().unwrap())
 					}
 					
 				} else { 
@@ -154,53 +156,55 @@ pub fn validate_namespace(namespace: &RefCell<Namespace>, root_namespace: &RefCe
 pub fn resolve_type(ty: &mut Type, namespace: &Namespace, root: &RefCell<Namespace>) -> ParseResult<()> {
 	match ty {
 		// TODO: Make pointee an Identifier or something because recursion
-		Type::Pointer(pointee) => {
-			let mut result = Ok(());
-			
-			if let Type::Unresolved(id) = pointee.as_mut() {
-				result = Err(CMNError::UnresolvedTypename(id.to_string()));
-
-				namespace.with_item(id, &root.borrow(), |_, _| { result = Ok(()); });
-			}
-
-			result
-		},
+		Type::Pointer(ref mut pointee) => resolve_type(pointee, namespace, root),
 
 		Type::Unresolved(ref id) => {
 			let mut result = Err(CMNError::UnresolvedTypename(id.to_string()));
-			
-			namespace.with_item(id, &root.borrow(), |item, ns| {				
-				if let NamespaceItem::Type(t) = &item.0 {
-					resolve_type(&mut t.borrow_mut(), ns, root).unwrap();
 
+			if let Some(b) = Basic::get_basic_type(&id.name) {
+				if id.path.scopes.is_empty() {
+					*ty = Type::Basic(b);
 					result = Ok(());
 				}
-			});
+			} else {
+				namespace.with_item(&id.clone(), &root.borrow(), |item, _| {				
+					if let NamespaceItem::Type(t) = &item.0 {
+						*ty = Type::TypeRef(t.clone());
+						result = Ok(());
+					}
+				});
+			}
 
 			result
 			
 		},
-		
-		Type::Basic(_) => Ok(()),
-		
-		Type::Aggregate(ref mut agg) => {
-			for member in agg.members.iter_mut() {
-				resolve_type(&mut member.1.0, namespace, root)?;
-			}
 
-			Ok(())
-		},
-		
-		_ => todo!(),
+		Type::TypeRef(_) | Type::Basic(_) => Ok(()),
 	}
 }
 
 
-pub fn resolve_types(namespace: &RefCell<Namespace>, root: &RefCell<Namespace>) -> ASTResult<()> {
+pub fn resolve_type_def(ty: &mut TypeDef, namespace: &Namespace, root: &RefCell<Namespace>) -> ParseResult<()> {
+	match ty {
+
+		TypeDef::Aggregate(ref mut agg) => { 
+			for member in &mut agg.members {
+				resolve_type(&mut member.1.0, &namespace, root).unwrap();
+			}
+		}
+
+		_ => todo!(),
+	}
+	
+	Ok(())
+}
+
+
+pub fn resolve_namespace_types(namespace: &RefCell<Namespace>, root: &RefCell<Namespace>) -> ASTResult<()> {
 	
 	for child in &namespace.borrow().children {
 		if let NamespaceItem::Namespace(ref ns) = child.1.0 { 
-			resolve_types(ns, root)?;
+			resolve_namespace_types(ns, root)?;
 		}
 	}
 
@@ -211,7 +215,7 @@ pub fn resolve_types(namespace: &RefCell<Namespace>, root: &RefCell<Namespace>) 
 		for child in &namespace.children {
 			match &child.1.0 {
 				NamespaceItem::Function(ty, _) => {
-					if let Type::Function(ret, args) = &mut *ty.borrow_mut() {
+					if let TypeDef::Function(ret, args) = &mut *ty.borrow_mut() {
 						resolve_type(ret, &namespace, root).unwrap();
 
 						for arg in args {
@@ -222,9 +226,7 @@ pub fn resolve_types(namespace: &RefCell<Namespace>, root: &RefCell<Namespace>) 
 
 				NamespaceItem::Namespace(_) => {}
 
-				NamespaceItem::Type(t) => {
-					resolve_type(&mut t.borrow_mut(), &namespace, root).unwrap();
-				},
+				NamespaceItem::Type(t) => resolve_type_def(&mut *t.borrow_mut(), &namespace, root).unwrap(),
 
 				_ => todo!(),
 			};
@@ -255,8 +257,7 @@ pub fn mangle_names(namespace: &RefCell<Namespace>) -> ASTResult<()> {
 				// Mangle name
 				child.1.2 = match &child.1.0 {
 					
-					NamespaceItem::Function(ty, _) | NamespaceItem::Type(ty) 
-						=> Some(Namespace::mangle_name(&path, child.0, &ty.borrow())),
+					NamespaceItem::Function(ty, _) | NamespaceItem::Type(ty) => Some(Namespace::mangle_name(&path, child.0, &ty.borrow())),
 					
 					_ => None,
 				}
@@ -507,9 +508,20 @@ impl Expr {
 					},
 					
 					Atom::Identifier(i) => scope.get_identifier_type(i).unwrap() == *target,
-					Atom::FnCall { name, args: _ } => match scope.find_symbol(name).unwrap().1 {
-						Type::Function(ret, _) => *ret == *target,
-						_ => panic!(),
+
+					Atom::FnCall { name, args: _ } => {
+						match scope.find_symbol(name).unwrap().1 {
+
+							Type::TypeRef(r) => {
+								if let TypeDef::Function(ret, _) = &*r.borrow() { 
+									*ret == *target
+								} else {
+									false
+								}
+							}
+
+							_ => panic!(),
+						}
 					},
 
 					Atom::Cast(_, cast_t) => *target == *cast_t,
@@ -525,6 +537,7 @@ impl Expr {
 	pub fn get_lvalue_type<'ctx>(&mut self, scope: &'ctx FnScope<'ctx>, meta: TokenData) -> Option<Type> {
 		match self {
 			Expr::Atom(a, _) => a.get_lvalue_type(scope),
+
 			Expr::Cons(op, elems, _) => {
 				// Only these operators can result in lvalues
 				match op {
@@ -539,13 +552,23 @@ impl Expr {
 					Operator::MemberAccess => {
 						if let Expr::Atom(Atom::Identifier(ref id), _) = elems[1].0 {
 							let id = id.clone();
-							match elems[0].0.validate(scope, None, meta).unwrap() {
-								Type::Aggregate(t) => Some(t.members.iter().find(|mem| mem.0 == id.name).unwrap().1.0.clone()),
-								_ => None,
+
+							if let Type::TypeRef(r) = elems[0].0.validate(scope, None, meta).unwrap() {
+								match &*r.borrow() {
+
+									TypeDef::Aggregate(t) => {
+										if let Some(member) = t.members.iter().find(|mem| mem.0 == id.name) {
+											 return Some(member.1.0.clone());
+										}
+									}
+
+									_ => {},
+								}
+
 							}
-						} else {
-							None
 						}
+						// Didn't return Some, so not a valid member access
+						None
 					}
 
 					_ => None,
@@ -608,26 +631,26 @@ impl Atom {
 
 			Atom::FnCall { name, args } => {
 				
-				if let Some(t) = scope.resolve_identifier(name) {
-					if let Type::Function(ret, params) = t {
+				if let Some(Type::TypeRef(t)) = scope.resolve_identifier(name) {
+					if let TypeDef::Function(ret, params) = &*t.borrow() {
 
 						// Identifier is a function, check parameter types
 						if args.len() == params.len() {
 
 							for i in 0..args.len() {
-								args[i].type_info.replace(Some(*params[i].0.clone()));
+								args[i].type_info.replace(Some(params[i].0.clone()));
 								let arg_type = args[i].get_expr().borrow_mut().validate(scope, None, meta)?;
 
-								if !args[i].get_expr().borrow().coercable_to(&arg_type, params[i].0.as_ref(), scope) {
-									return Err((CMNError::InvalidCoercion{ from: arg_type, to: params[i].0.as_ref().clone()}, args[i].token_data));
+								if !args[i].get_expr().borrow().coercable_to(&arg_type, &params[i].0, scope) {
+									return Err((CMNError::InvalidCoercion{ from: arg_type, to: params[i].0.clone()}, args[i].token_data));
 								}
 
-								if arg_type != *params[i].0 {
-									args[i].wrap_expr_in_cast(Some(arg_type), *params[i].0.clone());
+								if arg_type != params[i].0 {
+									args[i].wrap_expr_in_cast(Some(arg_type), params[i].0.clone());
 								}
 							}
 							// All good, return function's return type
-							Ok(*ret.clone())
+							Ok(ret.clone())
 
 						} else {
 							Err((CMNError::ParamCountMismatch{expected: params.len(), got: args.len()}, meta))
@@ -649,7 +672,7 @@ impl Atom {
 
 	// Check if we should issue any warnings or errors when casting
 	pub fn check_cast(&mut self, from: &Type, to: &Type, scope: &FnScope, meta: &TokenData) -> ASTResult<()> {
-		match &from {
+		match from {
 
 			Type::Basic(b) => match b {
 
@@ -667,13 +690,11 @@ impl Atom {
 				_ => Ok(())
 			},
 
-			Type::Alias(_, t) => {
-				self.check_cast(t.as_ref(), to, scope, meta)
-			},
-			
-			Type::Aggregate(_) => todo!(),
+			//Type::Alias(_, t) => {
+			//	self.check_cast(t.as_ref(), to, scope, meta)
+			//},
+			Type::TypeRef(_) => todo!(),
 			Type::Pointer(_) => todo!(),
-			Type::Function(_, _) => todo!(),
 			Type::Unresolved(_) => todo!(),
 		}
 	}

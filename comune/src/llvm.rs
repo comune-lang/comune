@@ -5,7 +5,7 @@ use crate::parser::ast::{ASTElem, ASTNode};
 use crate::parser::controlflow::ControlFlow;
 use crate::parser::expression::{Expr, Atom, Operator};
 use crate::parser::namespace::Identifier;
-use crate::parser::types::{Type, Basic};
+use crate::parser::types::{Type, Basic, TypeDef};
 
 use inkwell::{IntPredicate, AddressSpace};
 use inkwell::builder::Builder;
@@ -79,14 +79,14 @@ impl<'ctx> LLVMBackend<'ctx> {
 		self.module.add_function("_exit", exit_t, Some(Linkage::External));		
 	}
 
-	pub fn register_fn(&mut self, name_mangled: &String, t: &Type) -> LLVMResult<FunctionValue> {
+	pub fn register_fn(&mut self, name_mangled: &String, t: &TypeDef) -> LLVMResult<FunctionValue> {
 		let fn_t = self.generate_prototype(t)?;
 		let fn_v = self.module.add_function(name_mangled.as_str(), fn_t, None);
 
 		Ok(fn_v)
 	}
 
-	pub fn generate_fn(&mut self, name_mangled: &String, t: &Type, body: Option<&ASTElem>) -> LLVMResult<FunctionValue> {
+	pub fn generate_fn(&mut self, name_mangled: &String, t: &TypeDef, body: Option<&ASTElem>) -> LLVMResult<FunctionValue> {
 		let fn_v = self.module.get_function(name_mangled.as_str()).unwrap();
 
 		self.fn_value_opt = Some(fn_v);
@@ -99,7 +99,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 			let mut scope = LLVMScope::new();
 	
 			// Add parameters to variable list
-			if let Type::Function(_ret, args) = &t {
+			if let TypeDef::Function(_ret, args) = &t {
 				for (i, param) in fn_v.get_param_iter().enumerate() {
 
 					// Only add parameter to scope is it is named
@@ -124,11 +124,11 @@ impl<'ctx> LLVMBackend<'ctx> {
 	}
 
 
-	fn generate_prototype(&self, t: &Type) -> LLVMResult<FunctionType<'ctx>> {
-		if let Type::Function(ret, args) = &t {
+	fn generate_prototype(&self, t: &TypeDef) -> LLVMResult<FunctionType<'ctx>> {
+		if let TypeDef::Function(ret, args) = &t {
 
 			let types_mapped: Vec<_> = args.iter().map(
-				|t| Self::to_basic_metadata_enum(self.get_llvm_type(t.0.as_ref())).unwrap()
+				|t| Self::to_basic_metadata_enum(self.get_llvm_type(&t.0)).unwrap()
 			).collect();
 
 			Ok(match self.get_llvm_type(&ret).as_any_type_enum() {
@@ -450,7 +450,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 					let rhs = &elems[1];
 
 					// Type of cons
-					match &t {
+					match t {
 						Type::Basic(b) => {
 							match b {
 								
@@ -517,10 +517,9 @@ impl<'ctx> LLVMBackend<'ctx> {
 								Basic::STR => todo!(),
 							}
 						},
-						Type::Alias(_, _) => todo!(),
-						Type::Aggregate(_) => todo!(),
+
+						Type::TypeRef(_) => todo!(),
 						Type::Pointer(_) => todo!(),
-						Type::Function(_, _) => todo!(),
 						Type::Unresolved(_) => todo!(),
 					}
 				}
@@ -644,11 +643,9 @@ impl<'ctx> LLVMBackend<'ctx> {
 					}
 				}
 			},
-			Type::Alias(_, _) => todo!(),
-			Type::Aggregate(_) => todo!(),
 			Type::Pointer(_) => todo!(),
-			Type::Function(_, _) => todo!(),
 			Type::Unresolved(_) => todo!(),
+    		Type::TypeRef(_) => todo!(),
 		}
 	}
 
@@ -749,26 +746,25 @@ impl<'ctx> LLVMBackend<'ctx> {
 				Basic::STR => 							Box::new(self.str_type()),
 			},
 
-			Type::Alias(_id, t) => self.get_llvm_type(t.as_ref()),
+			Type::TypeRef(t_ref) => match &*t_ref.borrow() {
+				TypeDef::Alias(_id, t) => self.get_llvm_type(t),
 
-			Type::Aggregate(aggregate) => {
-				let mut types_mapped = vec![];
-				types_mapped.reserve(aggregate.members.len());
-				
-				for m in aggregate.members.iter() {
-					match m.1.0 {
-						Type::Function(_, _) => { 
-							self.module.add_function(&m.0, self.generate_prototype(&m.1.0).unwrap(), None); 
-						},
-						_ => types_mapped.push(Self::to_basic_type(self.get_llvm_type(&m.1.0)).as_basic_type_enum()) 
+				TypeDef::Aggregate(aggregate) => {
+					let mut types_mapped = vec![];
+					types_mapped.reserve(aggregate.members.len());
+					
+					for m in aggregate.members.iter() {
+						//TypeDef::Function(_, _) => { 
+						//	self.module.add_function(&m.0, self.generate_prototype(&m.1.0).unwrap(), None); 
+						//},
+						types_mapped.push(Self::to_basic_type(self.get_llvm_type(&m.1.0)).as_basic_type_enum())
 					}
-				}
 
-				Box::new(self.context.struct_type(&types_mapped, false))
-			},
-
+					Box::new(self.context.struct_type(&types_mapped, false))
+				},
+   				TypeDef::Function(_, _) => todo!(),
+			}
 			Type::Pointer(t_sub) => Box::new(Self::to_basic_type(self.get_llvm_type(t_sub)).ptr_type(AddressSpace::Generic)),
-			Type::Function(_, _) => todo!(),
 			Type::Unresolved(_) => panic!(),
 		}
 	}

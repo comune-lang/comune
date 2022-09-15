@@ -72,7 +72,7 @@ impl ModuleJobManager {
 	
 	pub fn resolve_types(&self, mod_state: ModuleCompileState, context: &Context) -> Result<ModuleCompileState, CMNError> {
 		// At this point, all imports have been resolved, so validate namespace-level types
-		semantic::resolve_types(mod_state.parser.current_namespace(), mod_state.parser.current_namespace()).unwrap();
+		semantic::resolve_namespace_types(mod_state.parser.current_namespace(), mod_state.parser.current_namespace()).unwrap();
 		// And then mangle names
 		semantic::mangle_names(mod_state.parser.current_namespace()).unwrap();
 

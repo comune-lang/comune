@@ -1,9 +1,9 @@
-use std::{collections::{HashMap, HashSet}, fmt::Display, cell::RefCell, hash::Hash};
+use std::{collections::{HashMap, HashSet}, fmt::Display, cell::RefCell, hash::Hash, rc::Rc};
 
 use mangling::mangle;
 
-use super::{semantic::Attribute, errors::CMNError, ParseResult};
-use super::{types::{Type, Basic}, ast::ASTElem};
+use super::{semantic::Attribute, errors::CMNError, ParseResult, types::TypeDef};
+use super::{types::Type, ast::ASTElem};
 
 
 
@@ -96,9 +96,9 @@ pub enum NamespaceASTElem {
 
 // refcell hell
 pub enum NamespaceItem {
-	Type(RefCell<Type>),
-	Function(RefCell<Type>, RefCell<NamespaceASTElem>),
-	Variable(RefCell<Type>, RefCell<NamespaceASTElem>),
+	Type(Rc<RefCell<TypeDef>>),
+	Function(Rc<RefCell<TypeDef>>, RefCell<NamespaceASTElem>),
+	Variable(Type, RefCell<NamespaceASTElem>),
 	Namespace(Box<RefCell<Namespace>>),
 }
 
@@ -116,20 +116,10 @@ pub struct Namespace {
 impl<'root: 'this, 'this> Namespace {
 	
 	pub fn new() -> Self {
-		let mangle_path = ScopePath::new(true);
 		Namespace { 
 			// Initialize root namespace with basic types
 			path: ScopePath::new(true),
-			children: Basic::hashmap().into_iter().map(|(key, val)| 
-			(
-				key.clone(), 
-				(
-					NamespaceItem::Type(RefCell::new(val.clone())), 
-					vec![], 
-					Some(Self::mangle_name(&mangle_path, &key, &val))
-				)
-			)).collect(),
-
+			children: HashMap::new(),
 			referenced_modules: HashSet::new(),
 			imported: Box::new(None),
 		}
@@ -148,7 +138,7 @@ impl<'root: 'this, 'this> Namespace {
 	}
 
 
-	pub fn mangle_name(path: &ScopePath, name: &str, ty: &Type) -> String {
+	pub fn mangle_name(path: &ScopePath, name: &str, ty: &TypeDef) -> String {
 		mangle(format!("{}::{}({})", path.to_string(), name, ty.serialize()).as_bytes())
 	}
 

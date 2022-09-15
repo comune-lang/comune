@@ -20,7 +20,7 @@ namespace cool {
 	}
 
 	struct Subtest {
-		int b;
+		Test* b;
 	}
 } 
 
