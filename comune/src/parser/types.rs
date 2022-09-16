@@ -1,4 +1,7 @@
 use std::cell::RefCell;
+use std::hash::{Hash, Hasher};
+use std::ops::Deref;
+use std::ptr;
 use std::rc::Rc;
 use std::{fmt::Display, collections::HashMap};
 
@@ -8,10 +11,8 @@ use super::namespace::{Identifier, NamespaceASTElem};
 use super::semantic::Attribute;
 use super::{semantic::FnScope, ASTResult};
 
-type BoxedType = Box<Type>;
-
+pub type BoxedType = Box<Type>;
 pub type FnParamList = Vec<(Type, Option<String>)>;
-
 
 pub(crate) static PTR_SIZE_BYTES: OnceCell<u32> = OnceCell::new();
 
@@ -21,7 +22,7 @@ pub trait Typed {
 }
 
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Basic {
 	I64,
 	U64,
@@ -170,6 +171,21 @@ impl PartialEq for Type {
         }
     }
 }
+
+impl Eq for Type {}
+
+impl Hash for Type {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        match self {
+            Type::Basic(b) => b.hash(state),
+            Type::Pointer(t) => t.hash(state),
+            Type::Unresolved(id) => id.hash(state),
+            Type::TypeRef(r) => ptr::hash(r, state),
+        }
+    }
+}
+
+
 
 impl Display for Type {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -365,7 +381,7 @@ pub struct AggregateType {
 }
 
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Visibility {
 	Public,
 	Private,
@@ -384,6 +400,19 @@ impl AggregateType {
 		}
 	}
 }
+
+impl Hash for AggregateType {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+		// We hash based on Type only, so two aggregates with the same layout have the same Hash
+		// Hashing is only relevant for LLVM codegen, so semantic analysis will already have happened
+        self.members.iter().map(|item| &item.1.0).collect::<Vec<_>>().hash(state);
+        self.methods.iter().map(|item| &item.1.0).collect::<Vec<_>>().hash(state);
+        self.constructors.hash(state);
+        self.destructor.hash(state);
+        self.inherits.hash(state);
+    }
+}
+
 
 impl std::fmt::Debug for Type {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

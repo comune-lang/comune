@@ -1,5 +1,6 @@
 use std::cell::{RefCell, Ref};
 use std::collections::HashMap;
+use std::rc::Rc;
 
 use crate::parser::ast::{ASTElem, ASTNode};
 use crate::parser::controlflow::ControlFlow;
@@ -27,6 +28,7 @@ pub struct LLVMBackend<'ctx> {
 	pub builder: Builder<'ctx>,
 	pub fpm: Option<PassManager<FunctionValue<'ctx>>>,
 	pub fn_value_opt: Option<FunctionValue<'ctx>>,
+	pub type_map: RefCell<HashMap<Type, Rc<dyn AnyType<'ctx> + 'ctx>>>, 
 }
 
 struct LLVMScope<'ctx, 'scope> {
@@ -354,26 +356,26 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 
 
-	fn generate_expr(&self, expr: &Expr, t: &Type, scope: &LLVMScope<'ctx, '_>) -> Box<dyn AnyValue<'ctx> + 'ctx> {
+	fn generate_expr(&self, expr: &Expr, t: &Type, scope: &LLVMScope<'ctx, '_>) -> Rc<dyn AnyValue<'ctx> + 'ctx> {
 		match expr {
 			Expr::Atom(a, _meta) => {
 				match a {
 					Atom::IntegerLit(i, _) => {
 						match self.get_llvm_type(t).as_any_type_enum() {
-							AnyTypeEnum::IntType(i_t) => return Box::new(i_t.const_int(*i as u64, false)),
+							AnyTypeEnum::IntType(i_t) => return Rc::new(i_t.const_int(*i as u64, false)),
 							_ => panic!(),
 						}
 					}
 
 					Atom::FloatLit(f, _) => {
 						match self.get_llvm_type(t).as_any_type_enum() {
-							AnyTypeEnum::FloatType(f_t) => return Box::new(f_t.const_float(*f)),
+							AnyTypeEnum::FloatType(f_t) => return Rc::new(f_t.const_float(*f)),
 							_ => panic!(),
 						}
 					}
 
-					Atom::BoolLit(b) => Box::new(self.context.bool_type().const_int(if *b { 1 } else { 0 }, false)),
-					Atom::Identifier(v) => Box::new(self.builder.build_load(self.resolve_identifier(scope, v), "vload")),
+					Atom::BoolLit(b) => Rc::new(self.context.bool_type().const_int(if *b { 1 } else { 0 }, false)),
+					Atom::Identifier(v) => Rc::new(self.builder.build_load(self.resolve_identifier(scope, v), "vload")),
 					Atom::ArrayLit(_) => todo!(),
 
 					Atom::Cast(elem, to) => {
@@ -398,7 +400,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 							}
 						).collect(); 
 
-						Box::new(self.builder.build_call(fn_v, &args_mapped, name.resolved.as_ref().unwrap()))
+						Rc::new(self.builder.build_call(fn_v, &args_mapped, name.resolved.as_ref().unwrap()))
 					},
 
 					Atom::StringLit(s) => {
@@ -409,7 +411,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 						val.set_initializer(&IntType::const_array(self.context.i8_type(), &literal));
 
-						Box::new(self.str_type().const_named_struct(&[
+						Rc::new(self.str_type().const_named_struct(&[
 								val.as_pointer_value().as_basic_value_enum(), 
 								self.context.i64_type().const_int(len.into(), false).as_basic_value_enum()
 								]
@@ -427,7 +429,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 						Operator::Ref => {
 							if let Expr::Atom(a, _) = &elems[0].0 {
 								if let Atom::Identifier(v) = &a {						
-									return Box::new(self.resolve_identifier(scope, v));
+									return Rc::new(self.resolve_identifier(scope, v));
 								}
 							}
 							panic!()
@@ -437,7 +439,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 							if let Expr::Atom(a, _) = &elems[0].0 {
 								if let Atom::Identifier(v) = &a {
 									let ptr = self.builder.build_load(self.resolve_identifier(scope, v), "loadptr").as_basic_value_enum().into_pointer_value();
-									return Box::new(self.builder.build_load(ptr, "deref"));
+									return Rc::new(self.builder.build_load(ptr, "deref"));
 								}
 							}
 							panic!()
@@ -460,7 +462,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 										Operator::MemberAccess => {
 											if let Expr::Atom(Atom::Identifier(id), _) = &rhs.0 {
 												let lhs_s = self.generate_expr(&lhs.0, t, scope).as_any_value_enum().into_struct_value();
-												Box::new(self.builder.build_extract_value(lhs_s, id.mem_idx, "memberaccess").unwrap())
+												Rc::new(self.builder.build_extract_value(lhs_s, id.mem_idx, "memberaccess").unwrap())
 											} else {
 												panic!();
 											}
@@ -473,7 +475,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 											let lhs_i = self.generate_expr(&lhs.0, t, scope).as_any_value_enum().into_int_value();
 											let rhs_i = self.generate_expr(&rhs.0, t, scope).as_any_value_enum().into_int_value();
 
-											Box::new(
+											Rc::new(
 												match op {
 													Operator::Add => self.builder.build_int_add(lhs_i, rhs_i, "iadd"),
 													Operator::Sub => self.builder.build_int_sub(lhs_i, rhs_i, "isub"),
@@ -482,7 +484,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 													Operator::Assign => {
 														self.builder.build_store(self.generate_lvalue_expr(&lhs.0, t, scope), rhs_i);
-														return Box::new(rhs_i);	
+														return Rc::new(rhs_i);	
 													}
 
 													// TODO: Add compound assignment
@@ -500,7 +502,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 									let lhs = self.generate_expr(&lhs.0, t, scope).as_any_value_enum().into_float_value();
 									let rhs = self.generate_expr(&rhs.0, t, scope).as_any_value_enum().into_float_value();
 
-									Box::new(
+									Rc::new(
 										match op {
 											Operator::Add => self.builder.build_float_add(lhs, rhs, "fadd"),
 											Operator::Sub => self.builder.build_float_sub(lhs, rhs, "fsub"),
@@ -565,7 +567,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 	}
 
 
-	fn generate_cast(&self, expr: &Expr, from: &Type, to: &Type, scope: &LLVMScope<'ctx, '_>) -> Box<dyn AnyValue<'ctx> + 'ctx> {
+	fn generate_cast(&self, expr: &Expr, from: &Type, to: &Type, scope: &LLVMScope<'ctx, '_>) -> Rc<dyn AnyValue<'ctx> + 'ctx> {
 		match from {
 			Type::Basic(b) => {
 				
@@ -578,7 +580,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 								match b {
 
 									Basic::BOOL => 
-										return Box::new(
+										return Rc::new(
 											self.builder.build_int_compare(IntPredicate::NE, i, i.get_type().const_zero(), "boolcast")
 										),
 
@@ -586,7 +588,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 										if to.is_numeric() {
 											match self.get_llvm_type(to).as_any_type_enum() {
-												AnyTypeEnum::IntType(t) => return Box::new(self.builder.build_int_cast(i, t, "icast")),
+												AnyTypeEnum::IntType(t) => return Rc::new(self.builder.build_int_cast(i, t, "icast")),
 												
 												_ => panic!(),
 											}
@@ -623,7 +625,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 													_ => panic!(),
 												};
 
-												return Box::new(
+												return Rc::new(
 													self.builder.build_pointer_cast(
 														val_extracted, 
 														self.context.i8_type().ptr_type(AddressSpace::Generic), 
@@ -672,11 +674,11 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 
 
-	fn into_basic_metadata_value<'scope>(t: Box<dyn AnyValue<'scope> + 'scope>) -> BasicMetadataValueEnum<'scope> {
+	fn into_basic_metadata_value<'scope>(t: Rc<dyn AnyValue<'scope> + 'scope>) -> BasicMetadataValueEnum<'scope> {
 		Self::try_into_basic_metadata_value(t).unwrap()
 	}
 
-	fn try_into_basic_metadata_value<'scope>(t: Box<dyn AnyValue<'scope> + 'scope>) -> Option<BasicMetadataValueEnum<'scope>> {
+	fn try_into_basic_metadata_value<'scope>(t: Rc<dyn AnyValue<'scope> + 'scope>) -> Option<BasicMetadataValueEnum<'scope>> {
 		match (*t).as_any_value_enum() {
 			AnyValueEnum::ArrayValue(a) => Some(inkwell::values::BasicMetadataValueEnum::ArrayValue(a)),
 			AnyValueEnum::FloatValue(f) => Some(inkwell::values::BasicMetadataValueEnum::FloatValue(f)),
@@ -689,35 +691,35 @@ impl<'ctx> LLVMBackend<'ctx> {
 	}
 
 
-	fn into_basic_value<'scope>(t: Box<dyn AnyValue<'scope> + 'scope>) -> Box<dyn BasicValue<'scope> + 'scope> {
+	fn into_basic_value<'scope>(t: Rc<dyn AnyValue<'scope> + 'scope>) -> Rc<dyn BasicValue<'scope> + 'scope> {
 		Self::try_into_basic_value(t).unwrap()
 	}
 
-	fn try_into_basic_value<'scope>(t: Box<dyn AnyValue<'scope> + 'scope>) -> Option<Box<dyn BasicValue<'scope> + 'scope>> {
+	fn try_into_basic_value<'scope>(t: Rc<dyn AnyValue<'scope> + 'scope>) -> Option<Rc<dyn BasicValue<'scope> + 'scope>> {
 		match (*t).as_any_value_enum() {
-			AnyValueEnum::ArrayValue(a) => Some(Box::new(a)),
-			AnyValueEnum::FloatValue(f) => Some(Box::new(f)),
-			AnyValueEnum::IntValue(i) => Some(Box::new(i)),
-			AnyValueEnum::PointerValue(p) => Some(Box::new(p)),
-			AnyValueEnum::StructValue(s) => Some(Box::new(s)),
-			AnyValueEnum::VectorValue(v) => Some(Box::new(v)),
+			AnyValueEnum::ArrayValue(a) => Some(Rc::new(a)),
+			AnyValueEnum::FloatValue(f) => Some(Rc::new(f)),
+			AnyValueEnum::IntValue(i) => Some(Rc::new(i)),
+			AnyValueEnum::PointerValue(p) => Some(Rc::new(p)),
+			AnyValueEnum::StructValue(s) => Some(Rc::new(s)),
+			AnyValueEnum::VectorValue(v) => Some(Rc::new(v)),
 			_ => panic!(),
 		}
 	}
 
-	fn to_basic_type<'scope>(t: Box<dyn AnyType<'scope> + 'scope>) -> Box<dyn BasicType<'scope> + 'scope> {
+	fn to_basic_type<'scope>(t: Rc<dyn AnyType<'scope> + 'scope>) -> Rc<dyn BasicType<'scope> + 'scope> {
 		match (*t).as_any_type_enum() {
-			AnyTypeEnum::ArrayType(a) => Box::new(a),
-			AnyTypeEnum::FloatType(f) => Box::new(f),
-			AnyTypeEnum::IntType(i) => Box::new(i),
-			AnyTypeEnum::PointerType(p) => Box::new(p),
-			AnyTypeEnum::StructType(s) => Box::new(s),
-			AnyTypeEnum::VectorType(v) => Box::new(v),
+			AnyTypeEnum::ArrayType(a) => Rc::new(a),
+			AnyTypeEnum::FloatType(f) => Rc::new(f),
+			AnyTypeEnum::IntType(i) => Rc::new(i),
+			AnyTypeEnum::PointerType(p) => Rc::new(p),
+			AnyTypeEnum::StructType(s) => Rc::new(s),
+			AnyTypeEnum::VectorType(v) => Rc::new(v),
 			_ => panic!(),
 		}
 	}
 
-	fn to_basic_metadata_enum(t: Box<dyn AnyType<'ctx> + 'ctx>) -> Option<BasicMetadataTypeEnum<'ctx>> {
+	fn to_basic_metadata_enum(t: Rc<dyn AnyType<'ctx> + 'ctx>) -> Option<BasicMetadataTypeEnum<'ctx>> {
 		match t.as_any_type_enum() {
 			AnyTypeEnum::ArrayType(a) => Some(BasicMetadataTypeEnum::ArrayType(a)),
 			AnyTypeEnum::FloatType(f) => Some(BasicMetadataTypeEnum::FloatType(f)),
@@ -731,40 +733,54 @@ impl<'ctx> LLVMBackend<'ctx> {
 		}
 	}
 	
-	fn get_llvm_type(&self, t: &Type) -> Box<dyn AnyType<'ctx> + 'ctx> {
+	fn get_llvm_type(&self, t: &Type) -> Rc<dyn AnyType<'ctx> + 'ctx> {
 		match &t {
 			Type::Basic(b) => match b {
-				Basic::I64 | Basic::U64 =>				Box::new(self.context.i64_type()),
-				Basic::I32 | Basic::U32 =>				Box::new(self.context.i32_type()),
-				Basic::I16 | Basic::U16 =>				Box::new(self.context.i16_type()),
-				Basic::I8 | Basic::U8 | Basic::CHAR =>	Box::new(self.context.i8_type()),
-				Basic::ISIZE | Basic::USIZE => 			Box::new(self.context.i64_type()),
-				Basic::F64 => 							Box::new(self.context.f64_type()),
-				Basic::F32 => 							Box::new(self.context.f32_type()),
-				Basic::BOOL => 							Box::new(self.context.bool_type()),
-				Basic::VOID => 							Box::new(self.context.void_type()),
-				Basic::STR => 							Box::new(self.str_type()),
+				Basic::I64 | Basic::U64 =>				Rc::new(self.context.i64_type()),
+				Basic::I32 | Basic::U32 =>				Rc::new(self.context.i32_type()),
+				Basic::I16 | Basic::U16 =>				Rc::new(self.context.i16_type()),
+				Basic::I8 | Basic::U8 | Basic::CHAR =>	Rc::new(self.context.i8_type()),
+				Basic::ISIZE | Basic::USIZE => 			Rc::new(self.context.i64_type()),
+				Basic::F64 => 							Rc::new(self.context.f64_type()),
+				Basic::F32 => 							Rc::new(self.context.f32_type()),
+				Basic::BOOL => 							Rc::new(self.context.bool_type()),
+				Basic::VOID => 							Rc::new(self.context.void_type()),
+				Basic::STR => 							Rc::new(self.str_type()),
 			},
 
 			Type::TypeRef(t_ref) => match &*t_ref.borrow() {
 				TypeDef::Alias(_id, t) => self.get_llvm_type(t),
 
 				TypeDef::Aggregate(aggregate) => {
-					let mut types_mapped = vec![];
-					types_mapped.reserve(aggregate.members.len());
-					
-					for m in aggregate.members.iter() {
-						//TypeDef::Function(_, _) => { 
-						//	self.module.add_function(&m.0, self.generate_prototype(&m.1.0).unwrap(), None); 
-						//},
-						types_mapped.push(Self::to_basic_type(self.get_llvm_type(&m.1.0)).as_basic_type_enum())
-					}
+					let mapped_t = { self.type_map.borrow().get(t).cloned() };
 
-					Box::new(self.context.struct_type(&types_mapped, false))
+					if let Some(mapped_t) = mapped_t {
+						mapped_t.clone()
+					} else {
+						let result_type = Rc::new(self.context.opaque_struct_type("agg"));
+
+						{
+							self.type_map.borrow_mut().insert(t.clone(), result_type.clone());
+						}
+
+						let mut types_mapped = vec![];
+						types_mapped.reserve(aggregate.members.len());
+						
+						for m in aggregate.members.iter() {
+							//TypeDef::Function(_, _) => { 
+							//	self.module.add_function(&m.0, self.generate_prototype(&m.1.0).unwrap(), None); 
+							//},
+							types_mapped.push(Self::to_basic_type(self.get_llvm_type(&m.1.0)).as_basic_type_enum())
+						}
+
+						result_type.set_body(&types_mapped, false);
+
+						result_type
+					}
 				},
    				TypeDef::Function(_, _) => todo!(),
 			}
-			Type::Pointer(t_sub) => Box::new(Self::to_basic_type(self.get_llvm_type(t_sub)).ptr_type(AddressSpace::Generic)),
+			Type::Pointer(t_sub) => Rc::new(Self::to_basic_type(self.get_llvm_type(t_sub)).ptr_type(AddressSpace::Generic)),
 			Type::Unresolved(_) => panic!(),
 		}
 	}

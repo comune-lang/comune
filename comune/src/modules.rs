@@ -1,4 +1,4 @@
-use std::{ffi::OsString, sync::Arc};
+use std::{ffi::OsString, sync::Arc, collections::HashMap, cell::RefCell};
 
 use colored::Colorize;
 use inkwell::{context::Context, module::Module, passes::PassManager};
@@ -13,10 +13,10 @@ pub struct ManagerState {
 }
 
 pub struct ModuleJobManager {
-	state: Arc<ManagerState> // Read-only
+	state: Arc<ManagerState>
 }
 
-pub struct ModuleCompileState {
+pub struct ModuleState {
 	parser: Parser,
 }
 
@@ -33,7 +33,7 @@ impl ModuleJobManager {
 		}
 	}
 	
-	pub fn parse_api(&self, module: OsString) -> Result<ModuleCompileState, CMNError> {
+	pub fn parse_api(&self, module: OsString) -> Result<ModuleState, CMNError> {
 		// Okay, here's how we're going about this
 		// Step 1a. Check if NamespaceInfo cache exists (Add this once modular compiling works in general lol)
 		// Step 1b. Parse namespace level
@@ -49,7 +49,7 @@ impl ModuleJobManager {
 			});
 
 
-			let mut state = ModuleCompileState {
+			let mut state = ModuleState {
 				parser: Parser::new(self.state.verbose_output)
 			};
 
@@ -70,7 +70,7 @@ impl ModuleJobManager {
 	}
 
 	
-	pub fn resolve_types(&self, mod_state: ModuleCompileState, _context: &Context) -> Result<ModuleCompileState, CMNError> {
+	pub fn resolve_types(&self, mod_state: ModuleState, _context: &Context) -> Result<ModuleState, CMNError> {
 		// At this point, all imports have been resolved, so validate namespace-level types
 		semantic::resolve_namespace_types(mod_state.parser.current_namespace(), mod_state.parser.current_namespace()).unwrap();
 		// And then mangle names
@@ -84,7 +84,8 @@ impl ModuleJobManager {
 	}
 
 
-	pub fn generate_code<'ctx>(&self, mut mod_state: ModuleCompileState, context: &'ctx Context) -> Result<LLVMBackend<'ctx>, CMNError> {
+	pub fn generate_code<'ctx>(&self, mut mod_state: ModuleState, context: &'ctx Context) -> Result<LLVMBackend<'ctx>, CMNError> {
+		// Generate AST
 		let namespace = match mod_state.parser.generate_ast() {
 			Ok(ctx) => { if self.state.verbose_output { println!("\nvalidating..."); } ctx },
 			Err(e) => { log_msg(CMNMessage::Error(e.clone())); return Err(e); },
@@ -107,6 +108,7 @@ impl ModuleJobManager {
 			builder,
 			fpm: None,
 			fn_value_opt: None,
+			type_map: RefCell::new(HashMap::new()),
 		};
 
 

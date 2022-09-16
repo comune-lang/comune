@@ -47,7 +47,6 @@ fn main() -> color_eyre::eyre::Result<()> {
 		.build_global()
 		.unwrap();
 
-
 	Target::initialize_x86(&InitializationConfig::default());
 	let target = Target::from_name("x86-64").unwrap();
 
