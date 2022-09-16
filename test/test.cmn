@@ -27,6 +27,6 @@ namespace cool {
 int main() {
 	cool::Test test;
 	cool::Test* testptr = &test;
-	(*testptr).a.b = cool::fib(10) as i32;
-	return test.a.b;
+	(*testptr).a.b = testptr;
+	return cool::fib(10) as i32;
 }

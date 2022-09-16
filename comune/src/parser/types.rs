@@ -1,4 +1,3 @@
-use std::borrow::Borrow;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::{fmt::Display, collections::HashMap};
@@ -95,36 +94,6 @@ impl Basic {
 		}
 	}
 
-	// this is a stupid amount of manual fucking repetition but w/e
-	pub fn hashmap() -> HashMap<String, Type> {
-		HashMap::from(
-			[
-				("i64", Basic::I64),
-				("u64", Basic::U64),
-				("i32", Basic::I32),
-				("u32", Basic::U32),
-				("i16", Basic::I16),
-				("u16", Basic::U16),
-				("i8", Basic::I8),
-				("u8", Basic::U8),
-				("char", Basic::CHAR),
-				("str", Basic::STR),
-				("f64", Basic::F64),
-				("f32", Basic::F32),
-				("isize", Basic::ISIZE),
-				("usize", Basic::USIZE),
-				("bool", Basic::BOOL),
-				("void", Basic::VOID),
-
-				("int", Basic::I32),
-				("uint", Basic::U32),
-				("float", Basic::F32),
-				("double", Basic::F64),
-			
-			].map(|(a, b)| (a.to_string(), Type::Basic(b))
-		))
-	}
-
 	
 	pub fn is_numeric(&self) -> bool {
 		self.is_integral() || self.is_floating_point()
@@ -173,7 +142,7 @@ impl Display for Basic {
 }
 
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone)]
 pub enum Type {
 	Basic(Basic),											// Fundamental type
 	Pointer(BoxedType),										// Pointer-to-<BoxedType>
@@ -189,6 +158,18 @@ pub enum TypeDef {
 	Alias(String, Type)										// Identifier + referenced type
 }
 
+
+impl PartialEq for Type {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Basic(l0), Self::Basic(r0)) => l0 == r0,
+            (Self::Pointer(l0), Self::Pointer(r0)) => l0 == r0,
+            (Self::Unresolved(l0), Self::Unresolved(r0)) => l0 == r0,
+            (Self::TypeRef(l0), Self::TypeRef(r0)) => Rc::ptr_eq(l0, r0),
+			_ => false,
+        }
+    }
+}
 
 impl Display for Type {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -253,8 +234,7 @@ impl Type {
 			},
 
 			
-			Type::Pointer(t) => {
-				result.push_str(&t.serialize());
+			Type::Pointer(_) => {
 				result.push_str("*");
 			},
 
@@ -403,4 +383,15 @@ impl AggregateType {
 			inherits: vec![],
 		}
 	}
+}
+
+impl std::fmt::Debug for Type {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Basic(arg0) => f.debug_tuple("Basic").field(arg0).finish(),
+            Self::Pointer(_) => f.debug_tuple("Pointer").finish(),
+            Self::Unresolved(arg0) => f.debug_tuple("Unresolved").field(arg0).finish(),
+            Self::TypeRef(arg0) => f.debug_tuple("TypeRef").field(arg0).finish(),
+        }
+    }
 }

@@ -1,5 +1,4 @@
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::rc::Rc;
 
 use self::lexer::Token;
@@ -63,7 +62,6 @@ pub type ASTResult<T> = Result<T, (CMNError, TokenData)>;
 pub struct Parser {
 	active_namespace: Option<RefCell<Namespace>>,
 	root_namespace: Option<RefCell<Namespace>>,
-	item_pool: HashMap<Identifier, Type>,
 	verbose: bool,
 }
 
@@ -74,7 +72,6 @@ impl Parser {
 		let result = Parser { 
 			active_namespace: None,
     		root_namespace: None,
-			item_pool: HashMap::new(),
 			verbose,
 		};
 

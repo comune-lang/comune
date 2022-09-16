@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::HashMap};
+use std::{cell::RefCell, collections::HashMap, borrow::Borrow};
 
 use super::{types::{Type, Basic, Typed, TypeDef}, CMNError, ASTResult, namespace::{Namespace, Identifier, NamespaceItem, NamespaceASTElem}, ast::{ASTElem, ASTNode, TokenData}, controlflow::ControlFlow, expression::{Expr, Operator, Atom}, lexer, errors::{CMNMessage, CMNWarning}, ParseResult};
 
@@ -119,7 +119,7 @@ pub fn validate_namespace(namespace: &RefCell<Namespace>, root_namespace: &RefCe
 				let mut scope;
 				let ret;
 
-				if let TypeDef::Function(fn_ret, args) = &*sym_type.borrow() {
+				if let TypeDef::Function(fn_ret, args) = &*sym_type.as_ref().borrow() {
 					ret = fn_ret.clone();
 					scope = FnScope::new(namespace, root_namespace, ret.clone());
 					
@@ -155,8 +155,7 @@ pub fn validate_namespace(namespace: &RefCell<Namespace>, root_namespace: &RefCe
 
 pub fn resolve_type(ty: &mut Type, namespace: &Namespace, root: &RefCell<Namespace>) -> ParseResult<()> {
 	match ty {
-		// TODO: Make pointee an Identifier or something because recursion
-		Type::Pointer(ref mut pointee) => resolve_type(pointee, namespace, root),
+		Type::Pointer(ref mut pointee) => resolve_type(pointee, namespace, root),	
 
 		Type::Unresolved(ref id) => {
 			let mut result = Err(CMNError::UnresolvedTypename(id.to_string()));
@@ -257,7 +256,8 @@ pub fn mangle_names(namespace: &RefCell<Namespace>) -> ASTResult<()> {
 				// Mangle name
 				child.1.2 = match &child.1.0 {
 					
-					NamespaceItem::Function(ty, _) | NamespaceItem::Type(ty) => Some(Namespace::mangle_name(&path, child.0, &ty.borrow())),
+					NamespaceItem::Function(ty, _) | NamespaceItem::Type(ty) => 
+						Some(Namespace::mangle_name(&path, child.0, &ty.as_ref().borrow())),
 					
 					_ => None,
 				}
@@ -513,7 +513,7 @@ impl Expr {
 						match scope.find_symbol(name).unwrap().1 {
 
 							Type::TypeRef(r) => {
-								if let TypeDef::Function(ret, _) = &*r.borrow() { 
+								if let TypeDef::Function(ret, _) = &*r.as_ref().borrow() { 
 									*ret == *target
 								} else {
 									false
@@ -554,7 +554,7 @@ impl Expr {
 							let id = id.clone();
 
 							if let Type::TypeRef(r) = elems[0].0.validate(scope, None, meta).unwrap() {
-								match &*r.borrow() {
+								match &*r.as_ref().borrow() {
 
 									TypeDef::Aggregate(t) => {
 										if let Some(member) = t.members.iter().find(|mem| mem.0 == id.name) {
@@ -632,7 +632,7 @@ impl Atom {
 			Atom::FnCall { name, args } => {
 				
 				if let Some(Type::TypeRef(t)) = scope.resolve_identifier(name) {
-					if let TypeDef::Function(ret, params) = &*t.borrow() {
+					if let TypeDef::Function(ret, params) = &*t.as_ref().borrow() {
 
 						// Identifier is a function, check parameter types
 						if args.len() == params.len() {
