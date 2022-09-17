@@ -64,6 +64,7 @@ impl<'ctx, 'scope> LLVMScope<'ctx, 'scope> {
 	fn new() -> Self {
 		LLVMScope { variables: RefCell::new(HashMap::new()), parent: None }
 	}
+
 	fn from_parent(parent: &'scope LLVMScope<'ctx, 'scope>) -> Self {
 		LLVMScope { 
 			variables: RefCell::new(HashMap::new()), 
@@ -741,19 +742,15 @@ impl<'ctx> LLVMBackend<'ctx> {
 					if let Some(mapped_t) = mapped_t {
 						mapped_t.clone()
 					} else {
-						let result_type = Rc::new(self.context.opaque_struct_type("agg"));
+						println!("generating LLVM type for {}", t);
 
-						{
-							self.type_map.borrow_mut().insert(t.clone(), result_type.clone());
-						}
+						let result_type = Rc::new(self.context.opaque_struct_type("agg"));
+						self.type_map.borrow_mut().insert(t.clone(), result_type.clone());
 
 						let mut types_mapped = vec![];
 						types_mapped.reserve(aggregate.members.len());
 						
 						for m in aggregate.members.iter() {
-							//TypeDef::Function(_, _) => { 
-							//	self.module.add_function(&m.0, self.generate_prototype(&m.1.0).unwrap(), None); 
-							//},
 							types_mapped.push(Self::to_basic_type(self.get_llvm_type(&m.1.0)).as_basic_type_enum())
 						}
 

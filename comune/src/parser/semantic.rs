@@ -677,13 +677,20 @@ impl Atom {
 			Type::Basic(b) => match b {
 
 				Basic::STR => {
-					if let Atom::StringLit(s) = self {
-						if s.chars().last() != Some('\0') {
-							s.push('\0');
-							lexer::log_msg_at(meta.0, meta.1, CMNMessage::Warning(CMNWarning::CharPtrNoNull));
+					match to {
+						Type::Pointer(to_ptr) => {
+							if let Type::Basic(Basic::CHAR) = **to_ptr {
+								if let Atom::StringLit(s) = self {
+									if s.chars().last() != Some('\0') {
+										s.push('\0');
+										lexer::log_msg_at(meta.0, meta.1, CMNMessage::Warning(CMNWarning::CharPtrNoNull));
+									}
+								}
+							}
 						}
+						
+						_ => {}
 					}
-
 					Ok(())
 				},
 

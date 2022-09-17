@@ -120,14 +120,11 @@ impl ModuleJobManager {
 
 		backend.generate_libc_bindings();
 
-
 		if let Err(e) = backend.module.verify() {
-			println!("an internal compiler error occurred:\n{}", e);
+			println!("an internal compiler error occurred:\n{}", e.to_string());
 			
 			// Output bogus LLVM here, for debugging purposes
-			//if args.emit_llvm {
-			//	backend.module.print_to_file(args.output_file.clone() + ".ll").unwrap();
-			//}
+			backend.module.print_to_file("bogus.ll").unwrap();
 
 			return Err(CMNError::LLVMError);
 		};

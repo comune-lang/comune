@@ -1,6 +1,5 @@
 use std::cell::RefCell;
 use std::hash::{Hash, Hasher};
-use std::ops::Deref;
 use std::ptr;
 use std::rc::Rc;
 use std::{fmt::Display, collections::HashMap};
@@ -189,7 +188,7 @@ impl Hash for Type {
             Type::Basic(b) => b.hash(state),
             Type::Pointer(t) => t.hash(state),
             Type::Unresolved(id) => id.hash(state),
-            Type::TypeRef(r) => ptr::hash(r, state),
+            Type::TypeRef(r) => ptr::hash(r.as_ref(), state),
         }
     }
 }
@@ -203,8 +202,8 @@ impl Display for Type {
 				write!(f, "{}", t)?;
 			},
 
-			Type::Pointer(t) => {
-				write!(f, "{}*", t)?;
+			Type::Pointer(_) => {
+				write!(f, "ptr")?;
 			},
 
 			Type::Unresolved(t) => {
@@ -229,7 +228,7 @@ impl Display for TypeDef {
 			},
 
 			TypeDef::Aggregate(agg) => {
-				write!(f, "{:?}", agg)?;
+				write!(f, "{}", agg)?;
 			},
 			
 			TypeDef::Function(ret, params) => {
@@ -363,7 +362,7 @@ impl TypeDef {
 	}
 
 	pub fn get_size_bytes(&self) -> usize {
-		let ptr_size = *PTR_SIZE_BYTES.get().unwrap() as usize;
+		let ptr_size = *PTR_SIZE_BYTES.get().unwrap() as u32;
 
 		match &self {
 			TypeDef::Alias(_, t) => t.get_size_bytes(),
@@ -414,12 +413,23 @@ impl AggregateType {
 	}
 }
 
+impl Display for AggregateType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		let mut members = self.members.iter();
+		write!(f, "Struct {{{}", members.next().unwrap().1.0)?;
+		for mem in members {
+			write!(f, ", {}", mem.1.0)?;
+		}
+		write!(f, "}}")
+    }
+}
+
 impl Hash for AggregateType {
     fn hash<H: Hasher>(&self, state: &mut H) {
 		// We hash based on Type only, so two aggregates with the same layout have the same Hash
 		// Hashing is only relevant for LLVM codegen, so semantic analysis will already have happened
-        self.members.iter().map(|item| &item.1.0).collect::<Vec<_>>().hash(state);
-        self.methods.iter().map(|item| &item.1.0).collect::<Vec<_>>().hash(state);
+        self.members.iter().map(|item| &item.1.0).collect::<Vec<&Type>>().hash(state);
+        self.methods.iter().map(|item| &item.1.0).collect::<Vec<&Type>>().hash(state);
         self.constructors.hash(state);
         self.destructor.hash(state);
         self.inherits.hash(state);
