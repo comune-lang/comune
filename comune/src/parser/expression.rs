@@ -7,7 +7,7 @@ use super::{types::{Type, Basic}, ast::{TokenData, ASTElem}, namespace::Identifi
 pub enum Operator {
 	Add,
 	Sub,
-	Mult,
+	Mul,
 	Div,
 	Mod,
 
@@ -79,7 +79,7 @@ impl Operator {
 			Operator::Ref		| Operator::Deref												=> { 190 }
 
 
-			Operator::Mult		| Operator::Div		| Operator::Mod 							=> { 180 }
+			Operator::Mul		| Operator::Div		| Operator::Mod 							=> { 180 }
 			
 			Operator::Add		| Operator::Sub 												=> { 170 }
 			
@@ -120,7 +120,7 @@ impl Operator {
 				"+" => Some(Operator::Add),
 				"-" => Some(Operator::Sub),
 				"/" => Some(Operator::Div),
-				"*" => Some(Operator::Mult),
+				"*" => Some(Operator::Mul),
 				"%" => Some(Operator::Mod),
 				"^" => Some(Operator::BitXOR),
 				"|" => Some(Operator::BitOR),

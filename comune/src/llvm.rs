@@ -8,7 +8,7 @@ use crate::parser::expression::{Expr, Atom, Operator};
 use crate::parser::namespace::Identifier;
 use crate::parser::types::{Type, Basic, TypeDef};
 
-use inkwell::{IntPredicate, AddressSpace};
+use inkwell::{IntPredicate, AddressSpace, FloatPredicate};
 use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::{Module, Linkage};
@@ -450,79 +450,64 @@ impl<'ctx> LLVMBackend<'ctx> {
 				} else {
 					let lhs = &elems[0];
 					let rhs = &elems[1];
-
-					// Type of cons
-					match t {
-						Type::Basic(b) => {
-							match b {
-								
-								Basic::ISIZE | Basic::USIZE | Basic::I64 | Basic::U64 | Basic::I32 | Basic::U32 | Basic::I16 | Basic::U16 | Basic::I8 | Basic::U8 | Basic::CHAR => {
-									match op {
-										// Member read
-										Operator::MemberAccess => {
-											if let Expr::Atom(Atom::Identifier(id), _) = &rhs.0 {
-												let lhs_s = self.generate_expr(&lhs.0, t, scope).as_any_value_enum().into_struct_value();
-												Rc::new(self.builder.build_extract_value(lhs_s, id.mem_idx, "memberaccess").unwrap())
-											} else {
-												panic!();
-											}
-										}
-										//Operator::ScopeRes => {
-
-										//}
-										_ => {
-									
-											let lhs_i = self.generate_expr(&lhs.0, t, scope).as_any_value_enum().into_int_value();
-											let rhs_i = self.generate_expr(&rhs.0, t, scope).as_any_value_enum().into_int_value();
-
-											Rc::new(
-												match op {
-													Operator::Add => self.builder.build_int_add(lhs_i, rhs_i, "iadd"),
-													Operator::Sub => self.builder.build_int_sub(lhs_i, rhs_i, "isub"),
-													Operator::Mult => self.builder.build_int_mul(lhs_i, rhs_i, "imul"),
-													Operator::Div => self.builder.build_int_signed_div(lhs_i, rhs_i, "idiv"), // TODO: Add unsigned
-
-													Operator::Assign => {
-														self.builder.build_store(self.generate_lvalue_expr(&lhs.0, t, scope), rhs_i);
-														return Rc::new(rhs_i);	
-													}
-
-													// TODO: Add compound assignment
-
-													// Relational operators
-													_ => self.builder.build_int_compare(Self::to_int_predicate(op, true), lhs_i, rhs_i, "icomp")
-													
-												}
-											)
-										},
-									}
-								}
-
-								Basic::F64 | Basic::F32 => {
-									let lhs = self.generate_expr(&lhs.0, t, scope).as_any_value_enum().into_float_value();
-									let rhs = self.generate_expr(&rhs.0, t, scope).as_any_value_enum().into_float_value();
-
-									Rc::new(
-										match op {
-											Operator::Add => self.builder.build_float_add(lhs, rhs, "fadd"),
-											Operator::Sub => self.builder.build_float_sub(lhs, rhs, "fsub"),
-											Operator::Mult => self.builder.build_float_mul(lhs, rhs, "fmul"),
-											Operator::Div => self.builder.build_float_div(lhs, rhs, "fdiv"),
-
-											_ => todo!(),
-										}
-									)
-		
-								},
-								Basic::BOOL => todo!(),
-								Basic::VOID => todo!(),
-								Basic::STR => todo!(),
+					
+					match op {
+						Operator::MemberAccess => {
+							if let Expr::Atom(Atom::Identifier(id), _) = &rhs.0 {
+								let lhs_s = self.generate_expr(&lhs.0, t, scope).as_any_value_enum().into_struct_value();
+								Rc::new(self.builder.build_extract_value(lhs_s, id.mem_idx, "memberaccess").unwrap())
+							} else {
+								panic!();
 							}
-						},
+						}
 
-						Type::TypeRef(_) => todo!(),
-						Type::Pointer(_) => todo!(),
-						Type::Unresolved(_) => todo!(),
+						Operator::Assign => {
+							let rhs_val = Self::into_basic_value(self.generate_expr(&rhs.0, t, scope)).as_basic_value_enum();
+							self.builder.build_store(self.generate_lvalue_expr(&lhs.0, t, scope), rhs_val);
+							Rc::new(rhs_val)
+						}
+
+						_ => {
+							if t.is_integral() {
+								let lhs_i = self.generate_expr(&lhs.0, t, scope).as_any_value_enum().into_int_value();
+								let rhs_i = self.generate_expr(&rhs.0, t, scope).as_any_value_enum().into_int_value();
+
+								Rc::new(match op {
+									Operator::Add => self.builder.build_int_add(lhs_i, rhs_i, "iadd"),
+									Operator::Sub => self.builder.build_int_sub(lhs_i, rhs_i, "isub"),
+									Operator::Mul => self.builder.build_int_mul(lhs_i, rhs_i, "imul"),
+									Operator::Div => 
+										if t.is_signed() { 
+											self.builder.build_int_signed_div(lhs_i, rhs_i, "idiv")
+										} else {
+											self.builder.build_int_unsigned_div(lhs_i, rhs_i, "udiv")
+										},
+
+									// TODO: Compound assignment
+
+									// Relational operators
+									_ => self.builder.build_int_compare(Self::to_int_predicate(op, t.is_signed()), lhs_i, rhs_i, "icomp")
+								})
+
+							} else if t.is_floating_point() {
+								let lhs_f = self.generate_expr(&lhs.0, t, scope).as_any_value_enum().into_float_value();
+								let rhs_f = self.generate_expr(&rhs.0, t, scope).as_any_value_enum().into_float_value();
+
+								Rc::new(match op {
+									Operator::Add => self.builder.build_float_add(lhs_f, rhs_f, "fadd").as_any_value_enum(),
+									Operator::Sub => self.builder.build_float_sub(lhs_f, rhs_f, "fsub").as_any_value_enum(),
+									Operator::Mul => self.builder.build_float_mul(lhs_f, rhs_f, "fmul").as_any_value_enum(),
+									Operator::Div => self.builder.build_float_div(lhs_f, rhs_f, "fdiv").as_any_value_enum(),
+
+									// TODO: Compound assignment
+
+									// Relational operators
+									_ => self.builder.build_float_compare(Self::to_float_predicate(op), lhs_f, rhs_f, "fcomp").as_any_value_enum()
+								})
+							} else {
+								todo!()
+							}
+						}
 					}
 				}
 			},
@@ -544,7 +529,6 @@ impl<'ctx> LLVMBackend<'ctx> {
 							self.builder.build_load(self.resolve_identifier(scope, id), "loadptr")
 								.as_basic_value_enum()
 								.into_pointer_value()
-
 						} else {
 							panic!()
 						}
@@ -809,6 +793,20 @@ impl<'ctx> LLVMBackend<'ctx> {
 				
 				_ => panic!(),
 			}
+		}
+	}
+
+
+	fn to_float_predicate(op: &Operator) -> FloatPredicate {
+		match op {
+			Operator::Eq =>			FloatPredicate::OEQ,
+			Operator::NotEq =>		FloatPredicate::ONE,
+			Operator::Greater =>	FloatPredicate::OGT,
+			Operator::GreaterEq =>	FloatPredicate::OGE,
+			Operator::Less =>		FloatPredicate::OLT,
+			Operator::LessEq =>		FloatPredicate::OLE,
+			
+			_ => panic!(),
 		}
 	}
 

@@ -115,6 +115,15 @@ impl Basic {
 		}
 	}
 
+	pub fn is_signed(&self) -> bool {
+		match self {
+			Basic::ISIZE | Basic::I64 | Basic::I32 | Basic::I16 | Basic::I8 => 
+				true,
+			_ => 
+				false
+		}
+	}
+
 
 	pub fn is_boolean(&self) -> bool {
 		match self {
@@ -292,6 +301,10 @@ impl Type {
 
 	pub fn is_floating_point(&self) -> bool {
 		if let Type::Basic(b) = self { b.is_floating_point() } else { false }
+	}
+
+	pub fn is_signed(&self) -> bool {
+		if let Type::Basic(b) = self { b.is_signed() } else { false }
 	}
 
 
