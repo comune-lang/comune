@@ -73,6 +73,9 @@ impl ModuleJobManager {
 	pub fn resolve_types(&self, mod_state: ModuleState, _context: &Context) -> Result<ModuleState, CMNError> {
 		// At this point, all imports have been resolved, so validate namespace-level types
 		semantic::resolve_namespace_types(mod_state.parser.current_namespace(), mod_state.parser.current_namespace()).unwrap();
+		// Check for cyclical dependencies without indirection
+		// TODO: Nice error reporting for this
+		semantic::check_namespace_cyclical_deps(&mod_state.parser.current_namespace().borrow()).unwrap();
 		// And then mangle names
 		semantic::mangle_names(mod_state.parser.current_namespace()).unwrap();
 

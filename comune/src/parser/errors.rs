@@ -35,6 +35,7 @@ pub enum CMNError {
 	ParamCountMismatch{expected: usize, got: usize},
 	NotCallable(String),
 	NonPtrDeref,
+	InfiniteSizeType,
 
 	// Resolution errors
 	ModuleNotFound(OsString),
@@ -89,6 +90,7 @@ impl Display for CMNError {
 		CMNError::InvalidMemberAccess{ t, idx } =>			write!(f, "variable of type {} has no member '{}'", t, idx),
 		CMNError::NotCallable(id) => 						write!(f, "{} is not callable", id),
 		CMNError::NonPtrDeref =>							write!(f, "attempt to dereference a non-pointer value"),
+		CMNError::InfiniteSizeType =>						write!(f, "cyclical type dependency found"),
 
 		CMNError::ModuleNotFound(m) =>						write!(f, "module not found: {}", m.to_string_lossy()),
 		

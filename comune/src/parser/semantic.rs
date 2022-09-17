@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::HashMap};
+use std::{cell::RefCell, collections::HashMap, rc::Rc, borrow::Borrow};
 
 use super::{types::{Type, Basic, Typed, TypeDef}, CMNError, ASTResult, namespace::{Namespace, Identifier, NamespaceItem, NamespaceASTElem}, ast::{ASTElem, ASTNode, TokenData}, controlflow::ControlFlow, expression::{Expr, Operator, Atom}, lexer, errors::{CMNMessage, CMNWarning}, ParseResult};
 
@@ -84,6 +84,7 @@ impl<'ctx> FnScope<'ctx> {
 
 		return result;
 	}
+	
 	pub fn get_identifier_type(&self, id: &Identifier) -> Option<Type> {
 		if let Some(result) = self.find_symbol(id) {
 			Some(result.1)
@@ -229,6 +230,34 @@ pub fn resolve_namespace_types(namespace: &RefCell<Namespace>, root: &RefCell<Na
 
 				_ => todo!(),
 			};
+		}
+	}
+	Ok(())
+}
+
+
+pub fn check_cyclical_deps(ty: &Rc<RefCell<TypeDef>>, parent_types: &mut Vec<Rc<RefCell<TypeDef>>>) -> ASTResult<()> {
+	if let TypeDef::Aggregate(agg) = &*ty.as_ref().borrow() {
+		for member in agg.members.iter() {
+			if let Type::TypeRef(ref_t) =  &member.1.0 {
+				if parent_types.contains(ref_t) {
+					return Err((CMNError::InfiniteSizeType, (0, 0)));
+				}
+				parent_types.push(ty.clone());
+				check_cyclical_deps(&ref_t, parent_types)?;
+			}
+		}
+	}
+	Ok(())
+}
+
+
+pub fn check_namespace_cyclical_deps(namespace: &Namespace) -> ASTResult<()> {
+	for item in &namespace.children {
+		match &item.1.0 {
+			NamespaceItem::Type(ty) => check_cyclical_deps(&ty, &mut vec![])?,
+			NamespaceItem::Namespace(ns) => check_namespace_cyclical_deps(&ns.as_ref().borrow())?,
+			_ => {}
 		}
 	}
 	Ok(())
