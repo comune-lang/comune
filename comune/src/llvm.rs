@@ -742,8 +742,6 @@ impl<'ctx> LLVMBackend<'ctx> {
 					if let Some(mapped_t) = mapped_t {
 						mapped_t.clone()
 					} else {
-						println!("generating LLVM type for {}", t);
-
 						let result_type = Rc::new(self.context.opaque_struct_type("agg"));
 						self.type_map.borrow_mut().insert(t.clone(), result_type.clone());
 
