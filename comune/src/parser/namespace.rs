@@ -113,7 +113,7 @@ pub struct Namespace {
 	pub children: HashMap<String, NamespaceEntry>,
 }
 
-impl<'root: 'this, 'this> Namespace {
+impl Namespace {
 	
 	pub fn new() -> Self {
 		Namespace { 
@@ -143,8 +143,7 @@ impl<'root: 'this, 'this> Namespace {
 	}
 
 
-	// TODO: Replace &'this self with &'this RefCell<Namespace>?
-	pub fn with_item(&'this self, name: &Identifier, root: &'root Namespace, mut closure: impl FnMut(&NamespaceEntry, &Namespace) -> ()) -> bool {
+	pub fn with_item(&self, name: &Identifier, root: &Namespace, mut closure: impl FnMut(&NamespaceEntry, &Namespace) -> ()) -> bool {
 		let self_is_root = root as *const _ == self as *const _;
 
 		// If name is an absolute path, look in root
