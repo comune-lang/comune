@@ -469,16 +469,21 @@ impl<'ctx> LLVMBackend<'ctx> {
 						}
 
 						_ => {
+							let lhs_v = self.generate_expr(&lhs.0, t, scope).as_any_value_enum();
+							let rhs_v = self.generate_expr(&rhs.0, t, scope).as_any_value_enum();
+							let result;
+
+							let mut used_op = op.clone();
+							
+							if op.is_compound_assignment() {
+								used_op = used_op.get_compound_operator();
+							}
+
 							if t.is_integral() {
-								let lhs_i = self.generate_expr(&lhs.0, t, scope).as_any_value_enum().into_int_value();
-								let rhs_i = self.generate_expr(&rhs.0, t, scope).as_any_value_enum().into_int_value();
-								let mut used_op = op.clone();
+								let lhs_i = lhs_v.into_int_value();
+								let rhs_i = rhs_v.into_int_value();
 
-								if op.is_compound_assignment() {
-									used_op = used_op.get_compound_operator();
-								}
-
-								let result = match used_op {
+								result = match used_op {
 									Operator::Add => self.builder.build_int_add(lhs_i, rhs_i, "iadd"),
 									Operator::Sub => self.builder.build_int_sub(lhs_i, rhs_i, "isub"),
 									Operator::Mul => self.builder.build_int_mul(lhs_i, rhs_i, "imul"),
@@ -491,16 +496,35 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 									// Relational operators
 									_ => self.builder.build_int_compare(Self::to_int_predicate(&used_op, t.is_signed()), lhs_i, rhs_i, "icomp")
-								};
-
-								if op.is_compound_assignment() {
-									let lhs_store = self.generate_lvalue_expr(&lhs.0, t, scope);
-									self.builder.build_store(lhs_store, result);
-								}
-
-								Rc::new(result)
+									
+								}.as_basic_value_enum();
 
 							} else if t.is_floating_point() {
+								let lhs_f = lhs_v.into_float_value();
+								let rhs_f = rhs_v.into_float_value();
+
+								result = match op {
+									Operator::Add => self.builder.build_float_add(lhs_f, rhs_f, "fadd").as_basic_value_enum(),
+									Operator::Sub => self.builder.build_float_sub(lhs_f, rhs_f, "fsub").as_basic_value_enum(),
+									Operator::Mul => self.builder.build_float_mul(lhs_f, rhs_f, "fmul").as_basic_value_enum(),
+									Operator::Div => self.builder.build_float_div(lhs_f, rhs_f, "fdiv").as_basic_value_enum(),
+
+									// Relational operators
+									_ => self.builder.build_float_compare(Self::to_float_predicate(op), lhs_f, rhs_f, "fcomp").as_basic_value_enum()
+								}
+							} else {
+								todo!();
+							}
+
+
+							if op.is_compound_assignment() {
+								let lhs_store = self.generate_lvalue_expr(&lhs.0, t, scope);
+								self.builder.build_store(lhs_store, result);
+							}
+
+							Rc::new(result)
+
+							/*} else if t.is_floating_point() {
 								let lhs_f = self.generate_expr(&lhs.0, t, scope).as_any_value_enum().into_float_value();
 								let rhs_f = self.generate_expr(&rhs.0, t, scope).as_any_value_enum().into_float_value();
 
@@ -517,7 +541,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 								})
 							} else {
 								todo!()
-							}
+							}*/
 						}
 					}
 				}
