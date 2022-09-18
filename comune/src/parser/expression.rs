@@ -51,7 +51,7 @@ pub enum Operator {
 	Assign,
 	AssAdd,
 	AssSub,
-	AssMult,
+	AssMul,
 	AssDiv,
 	AssMod,
 	AssBitShL,
@@ -97,7 +97,7 @@ impl Operator {
 			Operator::LogicOr	=> { 90 }
 
 			
-			Operator::Assign | Operator::AssAdd | Operator::AssSub | Operator::AssMult | Operator::AssDiv | Operator::AssMod | 
+			Operator::Assign | Operator::AssAdd | Operator::AssSub | Operator::AssMul | Operator::AssDiv | Operator::AssMod | 
 			Operator::AssBitShL | Operator::AssBitShR | Operator::AssBitOR | Operator::AssBitXOR | Operator::AssBitAND 
 			=> { 80 }
 
@@ -110,6 +110,33 @@ impl Operator {
 		match self.get_binding_power() {
 			80 | 190	=> { true }		// Pre-inc/dec, logical not, compound assignment
 			_			=> { false }	// All others
+		}
+	}
+
+
+	pub fn is_compound_assignment(&self) -> bool {
+		match self {
+			Operator::AssAdd | Operator::AssSub | Operator::AssDiv | Operator::AssMul |
+			Operator::AssBitAND | Operator::AssBitOR | Operator::AssBitXOR |
+			Operator::AssBitShL | Operator::AssBitShR => true,
+
+			_ => false,
+		}
+	}
+
+
+	pub fn get_compound_operator(&self) -> Self {
+		match self {
+			Operator::AssAdd => Operator::Add,
+			Operator::AssSub => Operator::Sub,
+			Operator::AssMul => Operator::Mul,
+			Operator::AssDiv => Operator::Div,
+			Operator::AssBitAND => Operator::BitAND,
+			Operator::AssBitXOR => Operator::BitXOR,
+			Operator::AssBitOR => Operator::BitOR,
+			Operator::AssBitShL => Operator::AssBitShL,
+			Operator::AssBitShR => Operator::AssBitShR,
+			_ => panic!(),
 		}
 	}
 
@@ -127,7 +154,7 @@ impl Operator {
 				"&" => Some(Operator::BitAND),
 				"=" => Some(Operator::Assign),
 				"/=" => Some(Operator::AssDiv),
-				"*=" => Some(Operator::AssMult),
+				"*=" => Some(Operator::AssMul),
 				"+=" => Some(Operator::AssAdd),
 				"-=" => Some(Operator::AssSub),
 				"++" => Some(Operator::PostInc),

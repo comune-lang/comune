@@ -472,8 +472,13 @@ impl<'ctx> LLVMBackend<'ctx> {
 							if t.is_integral() {
 								let lhs_i = self.generate_expr(&lhs.0, t, scope).as_any_value_enum().into_int_value();
 								let rhs_i = self.generate_expr(&rhs.0, t, scope).as_any_value_enum().into_int_value();
+								let mut used_op = op.clone();
 
-								Rc::new(match op {
+								if op.is_compound_assignment() {
+									used_op = used_op.get_compound_operator();
+								}
+
+								let result = match used_op {
 									Operator::Add => self.builder.build_int_add(lhs_i, rhs_i, "iadd"),
 									Operator::Sub => self.builder.build_int_sub(lhs_i, rhs_i, "isub"),
 									Operator::Mul => self.builder.build_int_mul(lhs_i, rhs_i, "imul"),
@@ -484,11 +489,16 @@ impl<'ctx> LLVMBackend<'ctx> {
 											self.builder.build_int_unsigned_div(lhs_i, rhs_i, "udiv")
 										},
 
-									// TODO: Compound assignment
-
 									// Relational operators
-									_ => self.builder.build_int_compare(Self::to_int_predicate(op, t.is_signed()), lhs_i, rhs_i, "icomp")
-								})
+									_ => self.builder.build_int_compare(Self::to_int_predicate(&used_op, t.is_signed()), lhs_i, rhs_i, "icomp")
+								};
+
+								if op.is_compound_assignment() {
+									let lhs_store = self.generate_lvalue_expr(&lhs.0, t, scope);
+									self.builder.build_store(lhs_store, result);
+								}
+
+								Rc::new(result)
 
 							} else if t.is_floating_point() {
 								let lhs_f = self.generate_expr(&lhs.0, t, scope).as_any_value_enum().into_float_value();
