@@ -2,10 +2,9 @@ mod parser;
 mod llvm;
 mod modules;
 
-use std::{path::Path, io::{self, Write}, ffi::OsString};
+use std::{io::{self, Write}, ffi::OsString, sync::{Arc, Mutex}};
 use clap::Parser;
 use colored::Colorize;
-use inkwell::{context::Context, targets::{Target, InitializationConfig, TargetTriple, FileType}};
 use parser::types;
 use std::process::Command;
 
@@ -47,49 +46,33 @@ fn main() -> color_eyre::eyre::Result<()> {
 		.build_global()
 		.unwrap();
 
-	Target::initialize_x86(&InitializationConfig::default());
-	let target = Target::from_name("x86-64").unwrap();
 
-	let target_machine = target.create_target_machine(
-		&TargetTriple::create("x86_64-pc-linux-gnu"), 
-		"x86-64", 
-		"+avx2", 
-		inkwell::OptimizationLevel::Aggressive, 
-		inkwell::targets::RelocMode::Default, 
-		inkwell::targets::CodeModel::Default
-	).unwrap();
+	let target_machine = llvm::get_target_machine();
 
 
 	types::PTR_SIZE_BYTES.set(target_machine.get_target_data().get_pointer_byte_size(None)).unwrap();
 
+	let manager_state = Arc::new(modules::ManagerState { 
+		working_dir: "test/".into(), 
+		import_paths: vec![], 
+		max_threads: args.num_jobs, 
+		verbose_output: args.verbose,
+		output_modules: Mutex::new(vec![]),
+	});
 
-	let manager = modules::ModuleJobManager::new("test/".into(), vec![], args.num_jobs, args.verbose);
-
-	let mut state = match manager.parse_api(args.input_file) {
-		Ok(r) => r,
-		Err(_) => return Ok(()),
-	};
-
-	let context = Context::create();
-
-	state = match manager.resolve_types(state, &context) {
-		Ok(r) => r,
-		Err(_) => return Ok(()),
-	};
-
-
-	let result = match manager.generate_code(state, &context) {
-		Ok(r) => r,
-		Err(_) => return Ok(()),
-	};
+	rayon::scope(|s| {
+		modules::launch_module_compilation(manager_state.clone(), args.input_file, s).unwrap();
+	});
 	
-	result.module.print_to_file("ir.ll").unwrap();
-	target_machine.write_to_file(&result.module, FileType::Object, &Path::new("out.o")).unwrap();
-
 	// Link into executable
 	// We use gcc here because fuck dude i don't know how to use ld manually
-	let output = Command::new("gcc")
-				.arg("-o".to_string() + &args.output_file.to_string_lossy())
+	let mut output = Command::new("gcc");
+	
+	for module in &*manager_state.output_modules.lock().unwrap() {
+		output.arg("-o".to_string() + &module.to_string_lossy());
+	}
+
+	let output_result = output
 				.arg("-nodefaultlibs")
 				.arg("-lc")
 				.arg("-fno-rtti")
@@ -98,8 +81,8 @@ fn main() -> color_eyre::eyre::Result<()> {
 				.output()
 				.expect("fatal: failed to link executable");
 	
-	io::stdout().write(&output.stdout).unwrap();
-	io::stderr().write(&output.stderr).unwrap();
+	io::stdout().write(&output_result.stdout).unwrap();
+	io::stderr().write(&output_result.stderr).unwrap();
 	
 	Ok(())
 }
