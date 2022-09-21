@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use std::rc::Rc;
+use std::sync::{Arc, RwLock};
 
 use self::lexer::Token;
 use self::ast::{ASTNode, ASTElem, TokenData};
@@ -239,7 +239,7 @@ impl Parser {
 
 								self.current_namespace().borrow_mut().children.insert(
 									name.expect_scopeless()?, (
-										NamespaceItem::Type(Rc::new(RefCell::new(aggregate))), 
+										NamespaceItem::Type(Arc::new(RwLock::new(aggregate))), 
 										current_attributes,
 										None
 									)
@@ -292,14 +292,14 @@ impl Parser {
 						}
 
 
-						"using" => {
-							// Register type alias/import statement
+						"import" => {
+							// Register import statement
 							let name_token = get_next()?;
 
 							if let Token::Identifier(name) = name_token {
-								self.current_namespace().borrow_mut().referenced_modules.insert(name.path.scopes[0].clone());
-								// TODO: Implement
-
+								self.current_namespace().borrow_mut().referenced_modules.insert(name);
+								get_next()?;
+								self.check_semicolon()?;
 							} else {
 								return Err(CMNError::ExpectedIdentifier);
 							}
@@ -442,7 +442,7 @@ impl Parser {
 				if Basic::get_basic_type(&id.name).is_some() && id.path.scopes.is_empty() {
 					type_found = true;
 				} else {
-					ns.with_item(id, root, |item, _| type_found = matches!(item.0, NamespaceItem::Type(_)));
+					ns.with_item(id, root, |item, _, _| type_found = matches!(item.0, NamespaceItem::Type(_)));
 				}
 				
 				if type_found {
@@ -705,7 +705,7 @@ impl Parser {
 							return Err(CMNError::UnexpectedToken);
 						}
 
-						item = NamespaceItem::Function(Rc::new(RefCell::new(t)), RefCell::new(ast_elem));
+						item = NamespaceItem::Function(Arc::new(RwLock::new(t)), RefCell::new(ast_elem));
 					}
 
 					"=" => {
@@ -1019,9 +1019,9 @@ impl Parser {
 						found = true;
 					}
 				} else {
-					ctx.with_item(&typename, root, |item, _| {
+					ctx.with_item(&typename, root, |item, _, id| {
 						if let NamespaceItem::Type(t) = &item.0 {
-							result = Type::TypeRef(t.clone());
+							result = Type::TypeRef(Arc::downgrade(t), id.clone());
 							found = true;
 						}
 					});

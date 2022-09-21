@@ -5,7 +5,7 @@ mod modules;
 use std::{io::{self, Write}, ffi::OsString, sync::{Arc, Mutex}};
 use clap::Parser;
 use colored::Colorize;
-use parser::types;
+use parser::{types, namespace::Identifier};
 use std::process::Command;
 
 
@@ -53,7 +53,7 @@ fn main() -> color_eyre::eyre::Result<()> {
 	types::PTR_SIZE_BYTES.set(target_machine.get_target_data().get_pointer_byte_size(None)).unwrap();
 
 	let manager_state = Arc::new(modules::ManagerState { 
-		working_dir: "test/".into(), 
+		working_dir: "./test".into(), 
 		import_paths: vec![], 
 		max_threads: args.num_jobs, 
 		verbose_output: args.verbose,
@@ -61,23 +61,28 @@ fn main() -> color_eyre::eyre::Result<()> {
 	});
 
 	rayon::scope(|s| {
-		modules::launch_module_compilation(manager_state.clone(), args.input_file, s).unwrap();
+		modules::launch_module_compilation(manager_state.clone(), Identifier::from_name(args.input_file.clone().to_string_lossy().to_string()), s).unwrap();
 	});
 	
 	// Link into executable
-	// We use gcc here because fuck dude i don't know how to use ld manually
-	let mut output = Command::new("gcc");
+	// We use clang here because fuck dude i don't know how to use ld manually
+	let mut output = Command::new("clang");
 	
 	for module in &*manager_state.output_modules.lock().unwrap() {
-		output.arg("-o".to_string() + &module.to_string_lossy());
+		output.arg(module);
 	}
+
+	let mut output_file = modules::get_out_folder(&manager_state);
+	output_file.push(args.input_file);
+	output_file.set_extension("");
 
 	let output_result = output
 				.arg("-nodefaultlibs")
 				.arg("-lc")
 				.arg("-fno-rtti")
 				.arg("-fno-exceptions")
-				.arg("out.o")
+				.arg("-o")
+				.arg(output_file)
 				.output()
 				.expect("fatal: failed to link executable");
 	

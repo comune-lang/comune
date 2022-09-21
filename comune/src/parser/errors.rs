@@ -45,6 +45,7 @@ pub enum CMNError {
 
 	// Misc
 	Unimplemented,
+	Other,
 }
 
 
@@ -97,6 +98,7 @@ impl Display for CMNError {
 		CMNError::LLVMError =>								write!(f, "an internal compiler error occurred"),
 
 		CMNError::Unimplemented =>							write!(f, "not yet implemented"),
+		CMNError::Other =>									write!(f, "an unknown error occurred"),
 		
 		}
 	}

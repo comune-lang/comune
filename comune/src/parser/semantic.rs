@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::HashMap, rc::Rc, borrow::Borrow};
+use std::{cell::RefCell, collections::HashMap, sync::{Arc, RwLock}};
 
 use super::{types::{Type, Basic, Typed, TypeDef}, CMNError, ASTResult, namespace::{Namespace, Identifier, NamespaceItem, NamespaceASTElem}, ast::{ASTElem, ASTNode, TokenData}, controlflow::ControlFlow, expression::{Expr, Operator, Atom}, lexer, errors::{CMNMessage, CMNWarning}, ParseResult};
 
@@ -31,7 +31,7 @@ impl<'ctx> FnScope<'ctx> {
 
 	pub fn from_parent(parent: &'ctx FnScope) -> Self {
 		FnScope { 
-			context: parent.context.clone(), 
+			context: parent.context, 
 			parent: Some(parent), 
 			fn_return_type: parent.fn_return_type.clone(),
 			root_namespace: parent.root_namespace, 
@@ -75,9 +75,9 @@ impl<'ctx> FnScope<'ctx> {
 			let namespace = self.context.borrow();
 			let root = self.root_namespace.borrow();
 
-			namespace.with_item(&id, &root, |item, _| {
+			namespace.with_item(&id, &root, |item, _, id| {
 				if let NamespaceItem::Function(fn_type, _) = &item.0 {
-					result = Some((item.2.as_ref().unwrap().clone(), Type::TypeRef(fn_type.clone())));
+					result = Some((item.2.as_ref().unwrap().clone(), Type::TypeRef(Arc::downgrade(fn_type), id.clone())));
 				}
 			});
 		}
@@ -120,7 +120,7 @@ pub fn validate_namespace(namespace: &RefCell<Namespace>, root_namespace: &RefCe
 				let mut scope;
 				let ret;
 
-				if let TypeDef::Function(fn_ret, args) = &*sym_type.as_ref().borrow() {
+				if let TypeDef::Function(fn_ret, args) = &*sym_type.as_ref().read().unwrap() {
 					ret = fn_ret.clone();
 					scope = FnScope::new(namespace, root_namespace, ret.clone());
 					
@@ -167,9 +167,9 @@ pub fn resolve_type(ty: &mut Type, namespace: &Namespace, root: &RefCell<Namespa
 					result = Ok(());
 				}
 			} else {
-				namespace.with_item(&id.clone(), &root.borrow(), |item, _| {				
+				namespace.with_item(&id.clone(), &root.borrow(), |item, _, id| {				
 					if let NamespaceItem::Type(t) = &item.0 {
-						*ty = Type::TypeRef(t.clone());
+						*ty = Type::TypeRef(Arc::downgrade(t), id.clone());
 						result = Ok(());
 					}
 				});
@@ -179,7 +179,7 @@ pub fn resolve_type(ty: &mut Type, namespace: &Namespace, root: &RefCell<Namespa
 			
 		},
 
-		Type::TypeRef(_) | Type::Basic(_) => Ok(()),
+		Type::TypeRef(..) | Type::Basic(_) => Ok(()),
 	}
 }
 
@@ -215,7 +215,7 @@ pub fn resolve_namespace_types(namespace: &RefCell<Namespace>, root: &RefCell<Na
 		for child in &namespace.children {
 			match &child.1.0 {
 				NamespaceItem::Function(ty, _) => {
-					if let TypeDef::Function(ret, args) = &mut *ty.borrow_mut() {
+					if let TypeDef::Function(ret, args) = &mut *ty.write().unwrap() {
 						resolve_type(ret, &namespace, root).unwrap();
 
 						for arg in args {
@@ -226,7 +226,7 @@ pub fn resolve_namespace_types(namespace: &RefCell<Namespace>, root: &RefCell<Na
 
 				NamespaceItem::Namespace(_) => {}
 
-				NamespaceItem::Type(t) => resolve_type_def(&mut *t.borrow_mut(), &namespace, root).unwrap(),
+				NamespaceItem::Type(t) => resolve_type_def(&mut *t.write().unwrap(), &namespace, root).unwrap(),
 
 				_ => todo!(),
 			};
@@ -236,15 +236,15 @@ pub fn resolve_namespace_types(namespace: &RefCell<Namespace>, root: &RefCell<Na
 }
 
 
-pub fn check_cyclical_deps(ty: &Rc<RefCell<TypeDef>>, parent_types: &mut Vec<Rc<RefCell<TypeDef>>>) -> ASTResult<()> {
-	if let TypeDef::Aggregate(agg) = &*ty.as_ref().borrow() {
+pub fn check_cyclical_deps(ty: &Arc<RwLock<TypeDef>>, parent_types: &mut Vec<Arc<RwLock<TypeDef>>>) -> ASTResult<()> {
+	if let TypeDef::Aggregate(agg) = &*ty.as_ref().read().unwrap() {
 		for member in agg.members.iter() {
-			if let Type::TypeRef(ref_t) =  &member.1.0 {
-				if parent_types.contains(ref_t) {
+			if let Type::TypeRef(ref_t, _) =  &member.1.0 {
+				if parent_types.iter().find(|elem| Arc::ptr_eq(elem, &ref_t.upgrade().unwrap())).is_some() {
 					return Err((CMNError::InfiniteSizeType, (0, 0)));
 				}
 				parent_types.push(ty.clone());
-				check_cyclical_deps(&ref_t, parent_types)?;
+				check_cyclical_deps(&ref_t.upgrade().unwrap(), parent_types)?;
 			}
 		}
 	}
@@ -286,7 +286,7 @@ pub fn mangle_names(namespace: &RefCell<Namespace>) -> ASTResult<()> {
 				child.1.2 = match &child.1.0 {
 					
 					NamespaceItem::Function(ty, _) | NamespaceItem::Type(ty) => 
-						Some(Namespace::mangle_name(&path, child.0, &ty.as_ref().borrow())),
+						Some(Namespace::mangle_name(&path, child.0, &ty.as_ref().read().unwrap())),
 					
 					_ => None,
 				}
@@ -541,8 +541,8 @@ impl Expr {
 					Atom::FnCall { name, args: _ } => {
 						match scope.find_symbol(name).unwrap().1 {
 
-							Type::TypeRef(r) => {
-								if let TypeDef::Function(ret, _) = &*r.as_ref().borrow() { 
+							Type::TypeRef(r, _) => {
+								if let TypeDef::Function(ret, _) = &*r.upgrade().unwrap().as_ref().read().unwrap() { 
 									*ret == *target
 								} else {
 									false
@@ -582,8 +582,8 @@ impl Expr {
 						if let Expr::Atom(Atom::Identifier(ref id), _) = elems[1].0 {
 							let id = id.clone();
 
-							if let Type::TypeRef(r) = elems[0].0.validate(scope, None, meta).unwrap() {
-								match &*r.as_ref().borrow() {
+							if let Type::TypeRef(r, _) = elems[0].0.validate(scope, None, meta).unwrap() {
+								match &*r.upgrade().unwrap().as_ref().read().unwrap() {
 
 									TypeDef::Aggregate(t) => {
 										if let Some(member) = t.members.iter().find(|mem| mem.0 == id.name) {
@@ -660,8 +660,8 @@ impl Atom {
 
 			Atom::FnCall { name, args } => {
 				
-				if let Some(Type::TypeRef(t)) = scope.resolve_identifier(name) {
-					if let TypeDef::Function(ret, params) = &*t.as_ref().borrow() {
+				if let Some(Type::TypeRef(t, _)) = scope.resolve_identifier(name) {
+					if let TypeDef::Function(ret, params) = &*t.upgrade().unwrap().as_ref().read().unwrap() {
 
 						// Identifier is a function, check parameter types
 						if args.len() == params.len() {
@@ -700,7 +700,7 @@ impl Atom {
 
 
 	// Check if we should issue any warnings or errors when casting
-	pub fn check_cast(&mut self, from: &Type, to: &Type, scope: &FnScope, meta: &TokenData) -> ASTResult<()> {
+	pub fn check_cast(&mut self, from: &Type, to: &Type, _scope: &FnScope, meta: &TokenData) -> ASTResult<()> {
 		match from {
 
 			Type::Basic(b) => match b {
@@ -729,7 +729,7 @@ impl Atom {
 			//Type::Alias(_, t) => {
 			//	self.check_cast(t.as_ref(), to, scope, meta)
 			//},
-			Type::TypeRef(_) => todo!(),
+			Type::TypeRef(..) => todo!(),
 			Type::Pointer(_) => todo!(),
 			Type::Unresolved(_) => todo!(),
 		}

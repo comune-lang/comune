@@ -1,4 +1,4 @@
-use std::{collections::{HashMap, HashSet}, fmt::Display, cell::RefCell, hash::Hash, rc::Rc};
+use std::{collections::{HashMap, HashSet}, fmt::Display, cell::RefCell, hash::Hash, sync::{Arc, RwLock}};
 
 use mangling::mangle;
 
@@ -16,6 +16,15 @@ pub struct Identifier {
 }
 
 impl Identifier {
+	pub fn from_name(name: String) -> Self {
+		Identifier {
+			name,
+			path: ScopePath::new(false),
+			mem_idx: 0,
+			resolved: None,
+		}
+	}
+
 	pub fn expect_scopeless(&self) -> ParseResult<String> {
 		if self.path.scopes.is_empty() && !self.path.absolute {
 			Ok(self.name.clone())
@@ -30,8 +39,7 @@ impl Hash for Identifier {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
 		// Absolute Identifiers are used to definitively and uniquely identify NamespaceItems in HashMaps.
 		// A relative Identifier can't be meaningfully hashed, and doing so indicates a logic error in the code.
-		assert!(self.path.absolute, "can't hash a relative ScopePath!");
-        self.name.hash(state);
+		self.name.hash(state);
         self.path.hash(state);
         self.mem_idx.hash(state);
         self.resolved.hash(state);
@@ -95,9 +103,10 @@ pub enum NamespaceASTElem {
 }
 
 // refcell hell
+#[derive(Clone)]
 pub enum NamespaceItem {
-	Type(Rc<RefCell<TypeDef>>),
-	Function(Rc<RefCell<TypeDef>>, RefCell<NamespaceASTElem>),
+	Type(Arc<RwLock<TypeDef>>),
+	Function(Arc<RwLock<TypeDef>>, RefCell<NamespaceASTElem>),
 	Variable(Type, RefCell<NamespaceASTElem>),
 	Namespace(Box<RefCell<Namespace>>),
 }
@@ -105,11 +114,11 @@ pub enum NamespaceItem {
 type NamespaceEntry = (NamespaceItem, Vec<Attribute>, Option<String>);
 
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Namespace {
 	pub path: ScopePath,
-	pub referenced_modules: HashSet<String>,
-	pub imported: Box<Option<Namespace>>,
+	pub referenced_modules: HashSet<Identifier>,
+	pub imported: HashMap<Identifier, Namespace>,
 	pub children: HashMap<String, NamespaceEntry>,
 }
 
@@ -121,7 +130,7 @@ impl Namespace {
 			path: ScopePath::new(true),
 			children: HashMap::new(),
 			referenced_modules: HashSet::new(),
-			imported: Box::new(None),
+			imported: HashMap::new(),
 		}
 	}
 
@@ -133,7 +142,7 @@ impl Namespace {
 			path: ScopePath::from_parent(parent, name),
 
 			referenced_modules: HashSet::new(),
-			imported: Box::new(None),
+			imported: HashMap::new(),
 		}
 	}
 
@@ -143,7 +152,7 @@ impl Namespace {
 	}
 
 
-	pub fn with_item(&self, name: &Identifier, root: &Namespace, mut closure: impl FnMut(&NamespaceEntry, &Namespace) -> ()) -> bool {
+	pub fn with_item(&self, name: &Identifier, root: &Namespace, mut closure: impl FnMut(&NamespaceEntry, &Namespace, &Identifier) -> ()) -> bool {
 		let self_is_root = root as *const _ == self as *const _;
 
 		// If name is an absolute path, look in root
@@ -154,7 +163,8 @@ impl Namespace {
 		
 		if name.path.scopes.is_empty() {
 			if self.children.contains_key(&name.name) {
-				closure(&self.children.get(&name.name).unwrap(), &self);
+				let id = Identifier {name: name.name.clone(), path: self.path.clone(), mem_idx: 0, resolved: None };
+				closure(&self.children.get(&name.name).unwrap(), &self, &id);
 				return true;
 			}
 		} else {
@@ -168,7 +178,6 @@ impl Namespace {
 		// Didn't find it in our own namespace
 
 		if !self_is_root {
-			// We're not root, so search there
 			root.with_item(name, root, closure)
 		} else {
 			false
@@ -181,14 +190,12 @@ impl Display for Namespace {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {		
 		for c in &self.children {
 			match &c.1.0 {
-				NamespaceItem::Type(t) => write!(f, "\t[type] {}: {}\n", c.0, t.borrow())?,
-				NamespaceItem::Function(t, _) => write!(f, "\t[func] {}: {}\n", c.0, t.borrow())?,
+				NamespaceItem::Type(t) => write!(f, "\t[type] {}: {}\n", c.0, t.read().unwrap())?,
+				NamespaceItem::Function(t, _) => write!(f, "\t[func] {}: {}\n", c.0, t.read().unwrap())?,
 				NamespaceItem::Variable(_, _) => todo!(),
-				NamespaceItem::Namespace(ns) => write!(f, "\n[[sub-namespace]]\n\n{}\n[[end sub-namespace]]\n\n", &ns.as_ref().borrow())?
-				,
+				NamespaceItem::Namespace(ns) => write!(f, "\n[[sub-namespace]]\n\n{}\n[[end sub-namespace]]\n\n", &ns.as_ref().borrow())?,
 			}
 		}
-
 		Ok(())
 	}
 }

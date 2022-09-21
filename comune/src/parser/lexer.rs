@@ -29,7 +29,6 @@ pub(crate) fn log_msg(e: CMNMessage) {
 }
 
 const KEYWORDS: &[&'static str] = &[
-	"mod",	
 	"if",
 	"use",
 	"else",  
@@ -42,6 +41,7 @@ const KEYWORDS: &[&'static str] = &[
 	"namespace",
 	"static",
 	"const",
+	"mut",
 	"for",
 	"while",
 	"using",
@@ -52,6 +52,9 @@ const KEYWORDS: &[&'static str] = &[
 	"true",
 	"false",
 	"unsafe",
+	"safe",
+	"import",
+	"export"
 ];
 
 const OPERATORS: &[&str] = &[

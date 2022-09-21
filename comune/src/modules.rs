@@ -1,16 +1,16 @@
-use std::{ffi::{OsString, OsStr}, sync::{Arc, Mutex}, collections::HashMap, cell::RefCell, path::Path};
+use std::{ffi::{OsString, OsStr}, sync::{Arc, Mutex}, collections::HashMap, cell::RefCell, path::{PathBuf, Path}, fs};
 
 use colored::Colorize;
-use inkwell::{context::Context, module::{Module, self}, passes::PassManager, targets::FileType};
+use inkwell::{context::Context, module::{Module}, passes::PassManager, targets::FileType};
 
-use crate::{parser::{errors::{CMNMessage, CMNError}, lexer::{Lexer, log_msg_at, log_msg, self}, Parser, semantic, namespace::{Namespace, NamespaceItem, NamespaceASTElem, Interface}}, llvm::{LLVMBackend, self}};
+use crate::{parser::{errors::{CMNMessage, CMNError}, lexer::{Lexer, log_msg_at, log_msg, self}, Parser, semantic, namespace::{Namespace, NamespaceItem, NamespaceASTElem, Identifier}}, llvm::{LLVMBackend, self}};
 
 pub struct ManagerState {
 	pub import_paths: Vec<OsString>,
 	pub working_dir: OsString,
 	pub max_threads: usize,
 	pub verbose_output: bool,
-	pub output_modules: Mutex<Vec<OsString>>,
+	pub output_modules: Mutex<Vec<PathBuf>>,
 }
 
 
@@ -24,27 +24,31 @@ pub struct ModuleState {
 unsafe impl Send for ModuleState {}
 
 
-pub fn launch_module_compilation<'scope>(state: Arc<ManagerState>, input_module: OsString, s: &rayon::Scope<'scope>) -> Result<Interface, CMNError> {
-	let mut mod_state = parse_api(&state, &input_module).unwrap();
+pub fn launch_module_compilation<'scope>(state: Arc<ManagerState>, input_module: Identifier, s: &rayon::Scope<'scope>) -> Result<Namespace, CMNError> {
+	let src_path = get_module_source_path(&state, &input_module);
+	state.output_modules.lock().unwrap().push(src_path.clone());
+
+	let mut mod_state = parse_api(&state, &src_path).unwrap();
 
 	// Resolve module imports
 	let module_names = mod_state.parser.current_namespace().borrow().referenced_modules.clone();
 	let mut imports = HashMap::new();
 
-	for name in &module_names {
-		let module_interface = launch_module_compilation(state.clone(), OsString::from(name), s);
+	for name in module_names {
+		let module_interface = launch_module_compilation(state.clone(), name.clone(), s);
+		imports.insert(name, module_interface?);
 	}
 	
 	mod_state.parser.current_namespace().borrow_mut().imported = imports;
 	
-	let interface = mod_state.parser.current_namespace().borrow().generate_interface();
+	let interface = mod_state.parser.current_namespace().borrow().clone();
 
 	s.spawn(move |_s| {
 		let context = Context::create();
 		resolve_types(&state, &mut mod_state, &context).unwrap();
 		let result = generate_code(&state, mod_state, &context).unwrap();
 		let target_machine = llvm::get_target_machine();
-		target_machine.write_to_file(&result.1.module, FileType::Object, Path::new(&("build/".to_string() + &input_module.to_string_lossy()))).unwrap();
+		target_machine.write_to_file(&result.1.module, FileType::Object, &get_module_out_path(&state, &input_module, None)).unwrap();
 	});
 
 
@@ -52,7 +56,51 @@ pub fn launch_module_compilation<'scope>(state: Arc<ManagerState>, input_module:
 }
 
 
-pub fn parse_api(state: &Arc<ManagerState>, module: &OsStr) -> Result<ModuleState, CMNError> {
+// TODO: Add proper module searching support, based on a list of module search dirs, as well as support for .cmn, .h, .hpp etc 
+pub fn get_module_source_path(state: &Arc<ManagerState>, module: &Identifier) -> PathBuf {
+	let mut result = get_src_folder(state);
+	
+	fs::create_dir_all(result.clone()).unwrap();
+	
+	result.push(&module.name);
+	result.set_extension("cmn");
+	result
+}
+
+
+pub fn get_module_out_path(state: &Arc<ManagerState>, module: &Identifier, dependency_name: Option<&OsStr>) -> PathBuf {
+	let mut result = get_out_folder(state);
+	
+	if let Some(dep) = dependency_name {
+		result.push("deps");
+		result.push(dep);
+	} else {
+		result.push("modules");
+	}
+
+	fs::create_dir_all(result.clone()).unwrap();
+	
+	result.push(&module.name);
+	result.set_extension("o");
+	result
+}
+
+
+pub fn get_src_folder(state: &Arc<ManagerState>) -> PathBuf {
+	let mut result = PathBuf::from(&state.working_dir);
+	result.push("src");
+	result
+}
+
+
+pub fn get_out_folder(state: &Arc<ManagerState>) -> PathBuf {
+	let mut result = PathBuf::from(&state.working_dir);
+	result.push("build");
+	result
+}
+
+
+pub fn parse_api(state: &Arc<ManagerState>, path: &Path) -> Result<ModuleState, CMNError> {
 	// Okay, here's how we're going about this
 	// Step 1a. Check if NamespaceInfo cache exists (Add this once modular compiling works in general lol)
 	// Step 1b. Parse namespace level
@@ -62,11 +110,11 @@ pub fn parse_api(state: &Arc<ManagerState>, module: &OsStr) -> Result<ModuleStat
 	// Parse namespace level
 	let mod_state = lexer::CURRENT_LEXER.with(|lexer| { 
 
-		lexer.replace(match Lexer::new(module.clone()) { // TODO: Take module name instead of filename 
+		lexer.replace(match Lexer::new(path) { // TODO: Take module name instead of filename 
 			Ok(f) => f,
 			Err(e) => { 
-				println!("{} failed to open module '{}' ({})", "fatal:".red().bold(), module.to_string_lossy(), e); 
-				return Err(CMNError::ModuleNotFound(module.to_os_string())); 
+				println!("{} failed to open module '{}' ({})", "fatal:".red().bold(), path.file_name().unwrap().to_string_lossy(), e); 
+				return Err(CMNError::ModuleNotFound(OsString::from(path.file_name().unwrap()))); 
 			}
 		});
 
@@ -211,7 +259,7 @@ fn register_namespace(backend: &mut LLVMBackend, namespace: &Namespace, root: Op
 	
 	for child in &namespace.children {
 		if let NamespaceItem::Function(sym_type, _) = &child.1.0 {
-			backend.register_fn(child.1.2.as_ref().unwrap(), &sym_type.borrow()).unwrap();
+			backend.register_fn(child.1.2.as_ref().unwrap(), &sym_type.read().unwrap()).unwrap();
 		}
 	}
 }
@@ -233,7 +281,7 @@ fn compile_namespace(backend: &mut LLVMBackend, namespace: &Namespace, root: Opt
 		if let NamespaceItem::Function(sym_type, sym_elem) = &child.1.0 {
 			backend.generate_fn(
 				child.1.2.as_ref().unwrap(), 
-				&sym_type.borrow(), 
+				&sym_type.read().unwrap(), 
 				if let NamespaceASTElem::Parsed(elem) = &*sym_elem.borrow() { Some(elem) } else { None }
 			).unwrap();
 		}

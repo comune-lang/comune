@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::hash::{Hash, Hasher};
 use std::ptr;
-use std::rc::Rc;
+use std::sync::{RwLock, Weak, Arc};
 use std::{fmt::Display, collections::HashMap};
 
 use once_cell::sync::OnceCell;
@@ -39,6 +39,54 @@ pub enum Basic {
 	BOOL,
 	VOID,
 	STR,
+}
+
+
+#[derive(Clone)]
+pub enum Type {
+	Basic(Basic),											// Fundamental type
+	Pointer(BoxedType),										// Pointer-to-<BoxedType>
+	Unresolved(Identifier),									// Unresolved type (during parsing phase)
+	TypeRef(Weak<RwLock<TypeDef>>, Identifier)		// Reference to type definition, plus Identifier for serialization
+}
+
+
+#[derive(Debug, PartialEq)]
+pub enum TypeDef {
+	Function(Type, Vec<(Type, Option<String>)>),			// Return type + parameter types
+	Aggregate(Box<AggregateType>),							// Guess.
+	Alias(String, Type)										// Identifier + referenced type
+}
+
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct AggregateType {
+	pub members: Vec<(String, (Type, RefCell<NamespaceASTElem>, Vec<Attribute>, Visibility))>,
+	pub methods: HashMap<String, (Type, RefCell<NamespaceASTElem>, Vec<Attribute>)>,
+	pub constructors: Vec<Type>,
+	pub destructor: Option<Type>,
+	pub inherits: Vec<Type>,
+}
+
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum Visibility {
+	Public,
+	Private,
+	Protected,
+}
+
+
+impl AggregateType {
+	pub fn new() -> Self {
+		AggregateType { 
+			members: vec![],
+			methods: HashMap::new(),
+			constructors: vec![],
+			destructor: None,
+			inherits: vec![],
+		}
+	}
 }
 
 
@@ -143,105 +191,6 @@ impl Basic {
 	}
 }
 
-
-impl Display for Basic {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.as_str())
-    }
-}
-
-
-#[derive(Clone)]
-pub enum Type {
-	Basic(Basic),											// Fundamental type
-	Pointer(BoxedType),										// Pointer-to-<BoxedType>
-	Unresolved(Identifier),									// Unresolved type (during parsing phase)
-	TypeRef(Rc<RefCell<TypeDef>>)							// Reference to type definition
-}
-
-
-#[derive(Debug, PartialEq)]
-pub enum TypeDef {
-	Function(Type, Vec<(Type, Option<String>)>),			// Return type + parameter types
-	Aggregate(Box<AggregateType>),							// Guess.
-	Alias(String, Type)										// Identifier + referenced type
-}
-
-
-impl PartialEq for Type {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::Basic(l0), Self::Basic(r0)) => l0 == r0,
-            (Self::Pointer(l0), Self::Pointer(r0)) => l0 == r0,
-            (Self::Unresolved(l0), Self::Unresolved(r0)) => l0 == r0,
-            (Self::TypeRef(l0), Self::TypeRef(r0)) => Rc::ptr_eq(l0, r0),
-			_ => false,
-        }
-    }
-}
-
-impl Eq for Type {}
-
-impl Hash for Type {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        match self {
-            Type::Basic(b) => b.hash(state),
-            Type::Pointer(t) => t.hash(state),
-            Type::Unresolved(id) => id.hash(state),
-            Type::TypeRef(r) => ptr::hash(r.as_ref(), state),
-        }
-    }
-}
-
-
-
-impl Display for Type {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		match &self {
-			Type::Basic(t) => {
-				write!(f, "{}", t)?;
-			},
-
-			Type::Pointer(_) => {
-				write!(f, "ptr")?;
-			},
-
-			Type::Unresolved(t) => {
-				write!(f, "\"{}\"", t)?;
-			},
-
-			Type::TypeRef(t) => {
-				t.as_ref().borrow().fmt(f)?;
-			}
-		}
-
-		Ok(())
-    }
-}
-
-
-impl Display for TypeDef {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		match &self {
-			TypeDef::Alias(a, t) => {
-				write!(f, "{} ({})", a, t)?;
-			},
-
-			TypeDef::Aggregate(agg) => {
-				write!(f, "{}", agg)?;
-			},
-			
-			TypeDef::Function(ret, params) => {
-				write!(f, "{}(", ret)?;
-				for param in params {
-					write!(f, "{}, ", param.0)?;
-				}
-				write!(f, ")")?;
-			},
-		}
-		Ok(())
-	}
-}
  
 impl Type {
 	pub fn ptr_type(&self) -> Self {
@@ -262,7 +211,7 @@ impl Type {
 				result.push_str("*");
 			},
 
-			Type::TypeRef(t) => result.push_str(&t.as_ref().borrow().serialize()),
+			Type::TypeRef(t, _) => result.push_str(&t.upgrade().unwrap().as_ref().read().unwrap().serialize()),
 
 			Type::Unresolved(_) => { panic!("Attempt to serialize an unresolved type!"); },
 		}
@@ -328,7 +277,7 @@ impl Type {
 
 			Type::Pointer(_) => ptr_size,
 
-			Type::TypeRef(t_ref) => t_ref.as_ref().borrow().get_size_bytes(),
+			Type::TypeRef(t_ref, _) => t_ref.upgrade().unwrap().as_ref().read().unwrap().get_size_bytes(),
 			
 			_ => 0,
 		}
@@ -382,36 +331,90 @@ impl TypeDef {
 }
 
 
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct AggregateType {
-	pub members: Vec<(String, (Type, RefCell<NamespaceASTElem>, Vec<Attribute>, Visibility))>,
-	pub methods: HashMap<String, (Type, RefCell<NamespaceASTElem>, Vec<Attribute>)>,
-	pub constructors: Vec<Type>,
-	pub destructor: Option<Type>,
-	pub inherits: Vec<Type>,
+impl Display for Basic {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
 }
 
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub enum Visibility {
-	Public,
-	Private,
-	Protected,
+impl PartialEq for Type {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Basic(l0), Self::Basic(r0)) => l0 == r0,
+            (Self::Pointer(l0), Self::Pointer(r0)) => l0 == r0,
+            (Self::Unresolved(l0), Self::Unresolved(r0)) => l0 == r0,
+            (Self::TypeRef(l0, l1), Self::TypeRef(r0, r1)) => Arc::ptr_eq(&l0.upgrade().unwrap(), &r0.upgrade().unwrap()) && l1 == r1,
+			_ => false,
+        }
+    }
 }
 
 
-impl AggregateType {
-	pub fn new() -> Self {
-		AggregateType { 
-			members: vec![],
-			methods: HashMap::new(),
-			constructors: vec![],
-			destructor: None,
-			inherits: vec![],
+impl Eq for Type {}
+
+
+impl Hash for Type {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        match self {
+            Type::Basic(b) => b.hash(state),
+            Type::Pointer(t) => t.hash(state),
+            Type::Unresolved(id) => id.hash(state),
+            Type::TypeRef(r, _) => ptr::hash(r.upgrade().unwrap().as_ref(), state),
+        }
+    }
+}
+
+
+
+impl Display for Type {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		match &self {
+			Type::Basic(t) => {
+				write!(f, "{}", t)?;
+			},
+
+			Type::Pointer(t) => {
+				write!(f, "{}*", t)?;
+			},
+
+			Type::Unresolved(t) => {
+				write!(f, "\"{}\"", t)?;
+			},
+
+			Type::TypeRef(_, id) => {
+				write!(f, "{}", id)?;
+			}
 		}
+
+		Ok(())
+    }
+}
+
+
+impl Display for TypeDef {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		match &self {
+			TypeDef::Alias(a, t) => {
+				write!(f, "{} ({})", a, t)?;
+			},
+
+			TypeDef::Aggregate(agg) => {
+				write!(f, "{}", agg)?;
+			},
+			
+			TypeDef::Function(ret, params) => {
+				write!(f, "{}(", ret)?;
+				for param in params {
+					write!(f, "{}, ", param.0)?;
+				}
+				write!(f, ")")?;
+			},
+		}
+		Ok(())
 	}
 }
+
 
 impl Display for AggregateType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -443,7 +446,7 @@ impl std::fmt::Debug for Type {
             Self::Basic(arg0) => f.debug_tuple("Basic").field(arg0).finish(),
             Self::Pointer(_) => f.debug_tuple("Pointer").finish(),
             Self::Unresolved(arg0) => f.debug_tuple("Unresolved").field(arg0).finish(),
-            Self::TypeRef(arg0) => f.debug_tuple("TypeRef").field(arg0).finish(),
+            Self::TypeRef(arg0, _) => f.debug_tuple("TypeRef").field(arg0).finish(),
         }
     }
 }

@@ -1,4 +1,4 @@
 /target
 /.vscode
 /.cargo
-/build
+/test/build

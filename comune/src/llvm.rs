@@ -8,6 +8,7 @@ use crate::parser::expression::{Expr, Atom, Operator};
 use crate::parser::namespace::Identifier;
 use crate::parser::types::{Type, Basic, TypeDef};
 
+use inkwell::targets::{TargetMachine, Target, InitializationConfig, TargetTriple};
 use inkwell::{IntPredicate, AddressSpace, FloatPredicate};
 use inkwell::builder::Builder;
 use inkwell::context::Context;
@@ -19,6 +20,19 @@ use inkwell::values::{AnyValueEnum, FunctionValue, BasicValue, AnyValue, Pointer
 
 // This shit is a mess of enum conversions. hate it
 
+pub fn get_target_machine() -> TargetMachine {
+	Target::initialize_x86(&InitializationConfig::default());
+	let target = Target::from_name("x86-64").unwrap();
+
+	target.create_target_machine(
+		&TargetTriple::create("x86_64-pc-linux-gnu"), 
+		"x86-64", 
+		"+avx2", 
+		inkwell::OptimizationLevel::Aggressive, 
+		inkwell::targets::RelocMode::Default, 
+		inkwell::targets::CodeModel::Default
+	).unwrap()
+}
 
 type LLVMResult<T> = Result<T, String>;
 
@@ -496,13 +510,16 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 									// Relational operators
 									_ => self.builder.build_int_compare(Self::to_int_predicate(&used_op, t.is_signed()), lhs_i, rhs_i, "icomp")
-									
+
 								}.as_basic_value_enum();
 
 							} else if t.is_floating_point() {
 								let lhs_f = lhs_v.into_float_value();
 								let rhs_f = rhs_v.into_float_value();
-
+								
+								// Unlike with integers, we can't cast the match expression as a whole to a BasicValue,
+								// since builder_float_compare() returns an IntValue, not a FloatValue
+								// So we have to cast each one individually. Yippie
 								result = match op {
 									Operator::Add => self.builder.build_float_add(lhs_f, rhs_f, "fadd").as_basic_value_enum(),
 									Operator::Sub => self.builder.build_float_sub(lhs_f, rhs_f, "fsub").as_basic_value_enum(),
@@ -666,7 +683,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 			},
 			Type::Pointer(_) => todo!(),
 			Type::Unresolved(_) => todo!(),
-    		Type::TypeRef(_) => todo!(),
+    		Type::TypeRef(_, _) => todo!(),
 		}
 	}
 
@@ -767,7 +784,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 				Basic::STR => 							Rc::new(self.str_type()),
 			},
 
-			Type::TypeRef(t_ref) => match &*t_ref.borrow() {
+			Type::TypeRef(t_ref, _) => match &*t_ref.upgrade().unwrap().read().unwrap() {
 				TypeDef::Alias(_id, t) => self.get_llvm_type(t),
 
 				TypeDef::Aggregate(aggregate) => {
