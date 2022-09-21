@@ -712,7 +712,9 @@ impl Atom {
 								if let Atom::StringLit(s) = self {
 									if s.chars().last() != Some('\0') {
 										s.push('\0');
-										lexer::log_msg_at(meta.0, meta.1, CMNMessage::Warning(CMNWarning::CharPtrNoNull));
+										todo!();
+										// TODO: Pass down Parser ref through functions?
+										//lexer::log_msg_at(meta.0, meta.1, CMNMessage::Warning(CMNWarning::CharPtrNoNull));
 									}
 								}
 							}

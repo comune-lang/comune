@@ -11,22 +11,22 @@ use crate::parser::errors::CMNMessage;
 
 use super::namespace::{Identifier, ScopePath};
 
-thread_local! {
-	pub(crate) static CURRENT_LEXER: RefCell<Lexer> = RefCell::new(Lexer::dummy());
-}
+//thread_local! {
+//	pub(crate) static CURRENT_LEXER: RefCell<Lexer> = RefCell::new(Lexer::dummy());
+//}
 
 // For logging warnings from arbitrary locations in the parse code
-pub(crate) fn log_msg_at(char_idx: usize, token_len: usize, e: CMNMessage) {
-	CURRENT_LEXER.with(|lexer| { 
-		lexer.borrow().log_msg_at(char_idx, token_len, e);
-	});
-}
+//pub(crate) fn log_msg_at(char_idx: usize, token_len: usize, e: CMNMessage) {
+//	CURRENT_LEXER.with(|lexer| { 
+//		lexer.borrow().log_msg_at(char_idx, token_len, e);
+//	});
+//}
 
-pub(crate) fn log_msg(e: CMNMessage) {
-	CURRENT_LEXER.with(|lexer| { 
-		lexer.borrow().log_msg(e);
-	});
-}
+//pub(crate) fn log_msg(e: CMNMessage) {
+//	CURRENT_LEXER.with(|lexer| { 
+//		lexer.borrow().log_msg(e);
+//	});
+//}
 
 const KEYWORDS: &[&'static str] = &[
 	"if",

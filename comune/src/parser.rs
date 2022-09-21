@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::sync::{Arc, RwLock};
 
-use self::lexer::Token;
+use self::lexer::{Token, Lexer};
 use self::ast::{ASTNode, ASTElem, TokenData};
 use self::controlflow::ControlFlow;
 use self::errors::CMNError;
@@ -20,29 +20,29 @@ pub mod semantic;
 pub mod controlflow;
 
 // Utility functions to make the code a bit cleaner
-
-fn get_current() -> ParseResult<Token> {
+/*
+fn self.get_current() -> ParseResult<Token> {
 	lexer::CURRENT_LEXER.with(|lexer| match lexer.borrow().current() {
 		Some((_, tk)) => Ok(tk.clone()),
 		None => Err(CMNError::UnexpectedEOF),
 	})
 }
 
-fn get_next() -> ParseResult<Token> {
+fn self.get_next() -> ParseResult<Token> {
 	lexer::CURRENT_LEXER.with(|lexer| match lexer.borrow_mut().next() {
 		Some((_, tk)) => Ok(tk.clone()),
 		None => Err(CMNError::UnexpectedEOF),
 	})
 }
 
-fn get_current_start_index() -> usize {
+fn self.get_current_start_index() -> usize {
 	lexer::CURRENT_LEXER.with(|lexer| lexer.borrow().current().unwrap().0)
 }
 
-fn get_current_token_index() -> usize {
+fn self.get_current_token_index() -> usize {
 	lexer::CURRENT_LEXER.with(|lexer| lexer.borrow().current_token_index())
 }
-
+*/
 // Convenience function that matches a &str against various token kinds
 fn token_compare(token: &Token, text: &str) -> bool {
 	match token {
@@ -63,31 +63,53 @@ pub struct Parser {
 	active_namespace: Option<RefCell<Namespace>>,
 	root_namespace: Option<RefCell<Namespace>>,
 	verbose: bool,
+	pub lexer: RefCell<Lexer>,
 }
 
 
 
 impl Parser {
-	pub fn new(verbose: bool) -> Parser {
+	pub fn new(lexer: Lexer, verbose: bool) -> Parser {
 		let result = Parser { 
 			active_namespace: None,
     		root_namespace: None,
+			lexer: RefCell::new(lexer),
 			verbose,
 		};
 
 		result
 	}
 
+
+	fn get_current(&self) -> ParseResult<Token> {
+		match self.lexer.borrow().current() {
+			Some((_, tk)) => Ok(tk.clone()),
+			None => Err(CMNError::UnexpectedEOF),
+		}
+	}
+	
+	fn get_next(&self) -> ParseResult<Token> {
+		match self.lexer.borrow_mut().next() {
+			Some((_, tk)) => Ok(tk.clone()),
+			None => Err(CMNError::UnexpectedEOF),
+		}
+	}
+	
+	fn get_current_start_index(&self) -> usize {
+		self.lexer.borrow().current().unwrap().0
+	}
+	
+	fn get_current_token_index(&self) -> usize {
+		self.lexer.borrow().current_token_index()
+	}
+
 	pub fn current_namespace(&self) -> &RefCell<Namespace> {
 		self.active_namespace.as_ref().unwrap()
 	}
 
+
 	pub fn parse_module(&mut self) -> ParseResult<&RefCell<Namespace>> {
-
-		lexer::CURRENT_LEXER.with(|lexer| {
-			lexer.borrow_mut().tokenize_file().unwrap();
-		});
-
+		self.lexer.borrow_mut().tokenize_file().unwrap();
 		self.active_namespace = Some(RefCell::new(Namespace::new()));
 		self.root_namespace = None;
 
@@ -124,7 +146,7 @@ impl Parser {
 					match *elem {
 						NamespaceASTElem::Unparsed(idx) => {
 							// Parse function block
-							lexer::CURRENT_LEXER.with(|lexer| lexer.borrow_mut().seek_token_idx(idx));
+							self.lexer.borrow_mut().seek_token_idx(idx);
 							*elem = NamespaceASTElem::Parsed(self.parse_block()?)
 						}
 
@@ -146,7 +168,7 @@ impl Parser {
 
 
 	pub fn parse_namespace(&mut self) -> ParseResult<()> {
-		let mut current = get_current()?;
+		let mut current = self.get_current()?;
 		let mut current_attributes = vec![];
 
 		while current != Token::EOF && current != Token::Other('}') {
@@ -158,14 +180,14 @@ impl Parser {
 				Token::Other(tk) => {
 					match tk {
 						';' => {
-							get_next()?;
+							self.get_next()?;
 						}
 
 						'}' => return Ok(()),
 
 						'@' => {
 							// Parse attributes
-							while token_compare(&get_current()?, "@") {
+							while token_compare(&self.get_current()?, "@") {
 								current_attributes.push(self.parse_attribute()?);
 							}
 						}
@@ -186,10 +208,10 @@ impl Parser {
 							// Register aggregate type
 							let mut aggregate = AggregateType::new();
 
-							let name_token = get_next()?;
+							let name_token = self.get_next()?;
 							
 							if let Token::Identifier(name) = name_token {
-								let mut next = get_next()?;
+								let mut next = self.get_next()?;
 
 								if token_compare(&next, ":") {
 									// TODO: Parse base classes
@@ -197,7 +219,7 @@ impl Parser {
 									return Err(CMNError::UnexpectedToken);
 								}
 
-								next = get_next()?; // Consume brace
+								next = self.get_next()?; // Consume brace
 								
 								while !token_compare(&next, "}") {
 
@@ -214,7 +236,7 @@ impl Parser {
 												_ => todo!(),
 											}
 											
-											next = get_current()?;
+											next = self.get_current()?;
 											current_attributes = vec![];
 										} 
 
@@ -225,15 +247,15 @@ impl Parser {
 												"protected" =>	{ current_visibility = Visibility::Protected; }
 												_ => return Err(CMNError::UnexpectedKeyword),
 											}
-											get_next()?;
-											next = get_next()?;
+											self.get_next()?;
+											next = self.get_next()?;
 										}
 
 										_ => return Err(CMNError::ExpectedIdentifier),
 									}
 								}
 
-								get_next()?; // Consume closing brace
+								self.get_next()?; // Consume closing brace
 
 								let aggregate = TypeDef::Aggregate(Box::new(aggregate));
 
@@ -249,11 +271,11 @@ impl Parser {
 						}
 
 						"namespace" => {
-							let name_token = get_next()?;
+							let name_token = self.get_next()?;
 
 							if let Token::Identifier(namespace_name) = name_token {								
-								get_next()?; // Consume name
-								get_next()?; // Consume brace
+								self.get_next()?; // Consume name
+								self.get_next()?; // Consume brace
 
 								let self_is_root = self.root_namespace.is_none();
 
@@ -294,11 +316,11 @@ impl Parser {
 
 						"import" => {
 							// Register import statement
-							let name_token = get_next()?;
+							let name_token = self.get_next()?;
 
 							if let Token::Identifier(name) = name_token {
 								self.current_namespace().borrow_mut().referenced_modules.insert(name);
-								get_next()?;
+								self.get_next()?;
 								self.check_semicolon()?;
 							} else {
 								return Err(CMNError::ExpectedIdentifier);
@@ -338,7 +360,7 @@ impl Parser {
 				}
 			}
 
-			current = get_current()?;
+			current = self.get_current()?;
 		}
 
 		if current == Token::EOF {
@@ -349,14 +371,14 @@ impl Parser {
 			}
 		} else if current == Token::Other('}') {
 			if self.root_namespace.is_some() {
-				get_next()?;
+				self.get_next()?;
 				Ok(())
 			} else {
 				Err(CMNError::UnexpectedToken)
 			}
 		}
 		else {
-			get_next()?;
+			self.get_next()?;
 			Ok(())
 		}
 	}
@@ -365,7 +387,7 @@ impl Parser {
 
 	// Not super robust - add checks for namespace-level keywords and abort early if found
 	fn skip_block(&self) -> ParseResult<Token> {	
-		let mut current = get_current()?;
+		let mut current = self.get_current()?;
 	
 		if current != Token::Other('{') {
 			return Err(CMNError::UnexpectedToken);
@@ -373,7 +395,7 @@ impl Parser {
 		let mut bracket_depth = 1;
 
 		while bracket_depth > 0 {
-			current = get_next()?;
+			current = self.get_next()?;
 
 			match current {
 				Token::Other('{') => bracket_depth += 1,
@@ -383,14 +405,14 @@ impl Parser {
 			}
 		}
 
-		Ok(get_next()?)
+		Ok(self.get_next()?)
 	}
 
 
 
 	fn parse_block(&self) -> ParseResult<ASTElem> {
-		let begin = get_current_start_index();
-		let mut current = get_current()?;
+		let begin = self.get_current_start_index();
+		let mut current = self.get_current()?;
 
 		if current != Token::Other('{') {
 			return Err(CMNError::UnexpectedToken);
@@ -398,9 +420,9 @@ impl Parser {
 	
 		let mut result = Vec::<ASTElem>::new();
 
-		get_next()?;
+		self.get_next()?;
 		
-		while get_current()? != Token::Other('}') {			
+		while self.get_current()? != Token::Other('}') {			
 			let stmt = self.parse_statement()?;
 			
 			if self.verbose {
@@ -409,17 +431,17 @@ impl Parser {
 
 			result.push(stmt);
 
-			current = get_current()?;
+			current = self.get_current()?;
 
 			while current == Token::Other(';') {
-				current = get_next()?;
+				current = self.get_next()?;
 			}
 
 		}
 
-		get_next()?; // consume closing bracket
+		self.get_next()?; // consume closing bracket
 		
-		let end = get_current_start_index();
+		let end = self.get_current_start_index();
 
 		Ok(ASTElem { node: ASTNode::Block(result), token_data: (begin, end - begin), type_info: RefCell::new(None)})
 	}
@@ -427,8 +449,8 @@ impl Parser {
 
 
 	fn parse_statement(&self) -> ParseResult<ASTElem> {
-		let mut current = get_current()?;
-		let begin = get_current_start_index();
+		let mut current = self.get_current()?;
+		let begin = self.get_current_start_index();
 		let mut result = None;
 
 		match &current {
@@ -449,11 +471,11 @@ impl Parser {
 					// Found a type that matches, so parse variable declaration
 					
 					let t = self.parse_type(true)?;
-					let name = get_current()?;
+					let name = self.get_current()?;
 					let mut expr = None;
 					
-					if token_compare(&get_next()?, "=") {
-						get_next()?;
+					if token_compare(&self.get_next()?, "=") {
+						self.get_next()?;
 						expr = Some(Box::new(self.parse_expression()?));
 					}
 					self.check_semicolon()?;
@@ -466,7 +488,7 @@ impl Parser {
 					
 					// Parse return statement
 					"return" => {
-						let next = get_next()?;
+						let next = self.get_next()?;
 						
 						if next == Token::Other(';') {
 							result = Some(ASTNode::ControlFlow(Box::new(ControlFlow::Return{expr: None})));
@@ -479,22 +501,22 @@ impl Parser {
 
 					// Parse if statement
 					"if" => {
-						current = get_next()?;
+						current = self.get_next()?;
 
 						// Check opening brace
 						if token_compare(&current, "(") {
-							get_next()?;
+							self.get_next()?;
 						} else {
 							return Err(CMNError::UnexpectedToken);
 						}
 
 						let cond = self.parse_expression()?;
 
-						current = get_current()?;
+						current = self.get_current()?;
 						
 						// Check closing brace
 						if token_compare(&current, ")") {
-							get_next()?;
+							self.get_next()?;
 						} else {
 							return Err(CMNError::UnexpectedToken);
 						}
@@ -503,16 +525,16 @@ impl Parser {
 						let body;
 						let mut else_body = None;
 
-						if token_compare(&get_current()?, "{") {
+						if token_compare(&self.get_current()?, "{") {
 							body = self.parse_block()?;
 						} else {
 							body = self.parse_statement()?.wrap_in_block();
 						}
 
-						if token_compare(&get_current()?, "else") {
-							get_next()?;
+						if token_compare(&self.get_current()?, "else") {
+							self.get_next()?;
 							
-							if token_compare(&get_current()?, "{") {
+							if token_compare(&self.get_current()?, "{") {
 								else_body = Some(self.parse_block()?);
 							} else {
 								else_body = Some(self.parse_statement()?.wrap_in_block());
@@ -533,11 +555,11 @@ impl Parser {
 
 					// Parse while loop
 					"while" => {
-						current = get_next()?;
+						current = self.get_next()?;
 
 						// Check opening brace
 						if token_compare(&current, "(") {
-							current = get_next()?;
+							current = self.get_next()?;
 						} else {
 							return Err(CMNError::UnexpectedToken);
 						}
@@ -549,12 +571,12 @@ impl Parser {
 							return Err(CMNError::UnexpectedToken);
 						} else {
 							cond = self.parse_expression()?;
-							current = get_current()?;
+							current = self.get_current()?;
 						}
 
 						// Check closing brace
 						if token_compare(&current, ")") {
-							current = get_next()?;
+							current = self.get_next()?;
 						} else {
 							return Err(CMNError::UnexpectedToken);
 						}
@@ -576,11 +598,11 @@ impl Parser {
 
 					// Parse for loop
 					"for" => {
-						current = get_next()?;
+						current = self.get_next()?;
 
 						// Check opening brace
 						if token_compare(&current, "(") {
-							current = get_next()?;
+							current = self.get_next()?;
 						} else {
 							return Err(CMNError::UnexpectedToken);
 						}
@@ -591,32 +613,32 @@ impl Parser {
 
 						if token_compare(&current, ";") {
 							// No init statement, skip
-							current = get_next()?;
+							current = self.get_next()?;
 						} else {
 							init = Some(self.parse_statement()?); // TODO: Restrict to declaration?
-							current = get_current()?;
+							current = self.get_current()?;
 						}
 
 						if token_compare(&current, ";") {
 							// No iter expression, skip
-							current = get_next()?;
+							current = self.get_next()?;
 						} else {
 							cond = Some(self.parse_expression()?);
 							self.check_semicolon()?;
-							current = get_current()?;
+							current = self.get_current()?;
 						}
 
 						if token_compare(&current, ";") {
 							// No cond expression, skip
-							current = get_next()?;
+							current = self.get_next()?;
 						} else if !token_compare(&current, ")") {
 							iter = Some(self.parse_expression()?);
-							current = get_current()?;
+							current = self.get_current()?;
 						}
 
 						// Check closing brace
 						if token_compare(&current, ")") {
-							current = get_next()?;
+							current = self.get_next()?;
 						} else {
 							return Err(CMNError::UnexpectedToken);
 						}
@@ -647,7 +669,7 @@ impl Parser {
 			_ => {}
 		}
 		if result.is_some() {
-			let end = get_current_start_index();
+			let end = self.get_current_start_index();
 			let len = end - begin;
 			return Ok(ASTElem {node: result.unwrap(), token_data: (begin, len), type_info: RefCell::new(None)});
 		}
@@ -661,8 +683,8 @@ impl Parser {
 
 
 	fn check_semicolon(&self) -> ParseResult<()> {
-		if token_compare(&get_current()?, ";") {
-			get_next()?;
+		if token_compare(&self.get_current()?, ";") {
+			self.get_next()?;
 			Ok(())
 		} else {
 			Err(CMNError::UnexpectedToken)
@@ -673,11 +695,11 @@ impl Parser {
 
 	fn parse_fn_or_declaration(&self) -> ParseResult<(String, NamespaceItem)> {
 		let t = self.parse_type(false)?;
-		let item;// = Type::Unresolved(match get_current()? { Token::Identifier(id) => id, _ => panic!() });
-		let mut next = get_current()?;
+		let item;// = Type::Unresolved(match self.get_current()? { Token::Identifier(id) => id, _ => panic!() });
+		let mut next = self.get_current()?;
 		
 		if let Token::Identifier(id) = next {
-			next = get_next()?;
+			next = self.get_next()?;
 
 			
 
@@ -692,15 +714,15 @@ impl Parser {
 							);
 						
 						// Past the parameter list, check if we're at a function body or not
-						let current = get_current()?;
+						let current = self.get_current()?;
 						let ast_elem;
 
 						if current == Token::Other('{') {
-							ast_elem = NamespaceASTElem::Unparsed(get_current_token_index());
+							ast_elem = NamespaceASTElem::Unparsed(self.get_current_token_index());
 							self.skip_block()?;
 						} else if current == Token::Other(';') {
 							ast_elem = NamespaceASTElem::NoElem;
-							get_next()?;
+							self.get_next()?;
 						} else {
 							return Err(CMNError::UnexpectedToken);
 						}
@@ -709,7 +731,7 @@ impl Parser {
 					}
 
 					"=" => {
-						get_next()?;
+						self.get_next()?;
 						// TODO: Skip expression
 
 						//ast_elem = match self.parse_expression()?.node {
@@ -747,9 +769,9 @@ impl Parser {
 
 
 	fn parse_expression(&self) -> ParseResult<ASTElem> {
-		let begin = get_current_start_index();
+		let begin = self.get_current_start_index();
 		let expr = ASTNode::Expression(RefCell::new(self.parse_expression_bp(0)?));
-		let len = get_current_start_index() - begin;
+		let len = self.get_current_start_index() - begin;
 		Ok(ASTElem { node: expr, token_data: (begin, len), type_info: RefCell::new(None)})
 	}
 
@@ -757,34 +779,34 @@ impl Parser {
 
 	// World's most hacked-together pratt parser (tm)
 	fn parse_expression_bp(&self, min_bp: u8) -> ParseResult<Expr> {
-		let mut current = get_current()?;
-		let begin_lhs = get_current_start_index();
+		let mut current = self.get_current()?;
+		let begin_lhs = self.get_current_start_index();
 
 		// Get initial part of expression, could be an Atom or the operator of a unary Cons
 		let mut lhs = match current {
 			
 			// Parse atom
 			Token::Identifier(_) | Token::StringLiteral(_) | Token::NumLiteral(_, _) | Token::BoolLiteral(_) => 
-				Expr::Atom(self.parse_atom()?, (begin_lhs, get_current_start_index() - begin_lhs)),
+				Expr::Atom(self.parse_atom()?, (begin_lhs, self.get_current_start_index() - begin_lhs)),
 			
 			
 			// Handle unary prefix operators
 			Token::Operator(tk) => {
 				match Operator::get_operator(&tk, false) {
 					Some(op) => {
-						get_next()?;
+						self.get_next()?;
 						
 						if let Operator::Call = op {
 							// Special case; parse sub-expression
 							let sub = self.parse_expression_bp(0)?;
 
-							current = get_current()?;
+							current = self.get_current()?;
 
 							if let Token::Operator(op) = current {
 								if op.as_str() != ")" {
 									return Err(CMNError::UnexpectedToken);
 								}
-								get_next()?;
+								self.get_next()?;
 								sub
 							} else {
 								return Err(CMNError::UnexpectedToken);
@@ -793,7 +815,7 @@ impl Parser {
 						} else {
 							let rhs = self.parse_expression_bp(op.get_binding_power())?;
 							
-							let end_index = get_current_start_index();
+							let end_index = self.get_current_start_index();
 
 							let meta = (begin_lhs, end_index - begin_lhs);
 							Expr::Cons(op, vec![(rhs,meta)], meta)
@@ -807,11 +829,11 @@ impl Parser {
 			_ => { return Err(CMNError::UnexpectedToken); }
 		};
 
-		let end_lhs = get_current_start_index();
+		let end_lhs = self.get_current_start_index();
 
 		// Parse RHS
 		loop {
-			let tk = get_current()?;
+			let tk = self.get_current()?;
 
 			let op = match tk {
 
@@ -839,21 +861,21 @@ impl Parser {
 				break;
 			}
 			
-			get_next()?;
+			self.get_next()?;
 
-			let begin_rhs = get_current_start_index();
+			let begin_rhs = self.get_current_start_index();
 
 			if op == Operator::Cast {
 				let goal_t = self.parse_type(true)?;
 
-				let end_index = get_current_start_index();
+				let end_index = self.get_current_start_index();
 				let meta = (begin_lhs, end_index - begin_lhs);
 				
 				lhs = Expr::create_cast(lhs, None, goal_t, meta);
 			} else {
 				let rhs = self.parse_expression_bp(rbp)?;
 
-				let end_rhs = get_current_start_index();
+				let end_rhs = self.get_current_start_index();
 				let lhs_meta = (begin_lhs, end_lhs - begin_lhs);
 				let rhs_meta = (begin_rhs, end_rhs - begin_rhs);
 
@@ -867,9 +889,9 @@ impl Parser {
 
 
 	fn parse_atom(&self) -> ParseResult<Atom> {
-		let mut current = get_current()?;
+		let mut current = self.get_current()?;
 		let mut result;
-		let mut next = get_next()?;
+		let mut next = self.get_next()?;
 
 		match current {
 			Token::Identifier(name) => {
@@ -881,16 +903,16 @@ impl Parser {
 						"(" => {
 							// Function call
 							let mut args = vec![];
-							next = get_next()?;
+							next = self.get_next()?;
 							
 							if next != Token::Operator(")".to_string()) {
 								loop {									
 									args.push(self.parse_expression()?);
 									
-									current = get_current()?;
+									current = self.get_current()?;
 
 									if let Token::Other(',') = current {
-										get_next()?;
+										self.get_next()?;
 									} else if current == Token::Operator(")".to_string()) {
 										break;
 									} else {
@@ -898,7 +920,7 @@ impl Parser {
 									}
 								}
 							}
-							get_next()?;
+							self.get_next()?;
 
 							result = Atom::FnCall{name: name.clone(), args};
 							break;
@@ -948,7 +970,7 @@ impl Parser {
 	
 
 	fn parse_parameter_list(&self) -> ParseResult<FnParamList> {
-		let next = get_next()?;
+		let next = self.get_next()?;
 		let mut result = vec![];
 
 		while let Token::Identifier(_) = next {
@@ -956,20 +978,20 @@ impl Parser {
 			
 			
 			// Check for param name
-			let mut current = get_current()?;
+			let mut current = self.get_current()?;
 			if let Token::Identifier(id) = current {
 				// TODO: Add check for scopes here (illegal in param list)
 				param.1 = Some(id.name);
-				get_next()?;
+				self.get_next()?;
 			}
 			
 			result.push(param);
 
 			// Check if we've arrived at a comma, skip it, and loop back around
-			current = get_current()?;
+			current = self.get_current()?;
 			match current {
 				Token::Other(',') => {
-					get_next()?;
+					self.get_next()?;
 					continue;
 				}
 				Token::Operator(s) => {
@@ -985,11 +1007,11 @@ impl Parser {
 			}
 		}
 
-		let current = get_current()?;
+		let current = self.get_current()?;
 
 		if let Token::Operator(s) = current {
 			if s.as_str() == ")" {
-				get_next()?;
+				self.get_next()?;
 				Ok(result)
 			} else {
 				Err(CMNError::UnexpectedToken)
@@ -1002,7 +1024,7 @@ impl Parser {
 
 	fn parse_type(&self, immediate_resolve: bool) -> ParseResult<Type> {
 		let mut result = Type::Unresolved(Identifier {name: "(none)".to_string(), path: ScopePath::new(false), mem_idx: 0, resolved: None });
-		let current = get_current()?;
+		let current = self.get_current()?;
 
 		if let Token::Identifier(typename) = current {
 			// Typename
@@ -1035,7 +1057,7 @@ impl Parser {
 				result = Type::Unresolved(typename);
 			}
 
-			let mut next = get_next()?;
+			let mut next = self.get_next()?;
 		
 			match next { 
 				Token::Operator(ref op) => {
@@ -1043,29 +1065,29 @@ impl Parser {
 						"*" => {
 							while token_compare(&next, "*") {
 								result = Type::Pointer(Box::new(result));
-								next = get_next()?;
+								next = self.get_next()?;
 							}
 						}
 						
 						"<" => {
-							get_next()?;
+							self.get_next()?;
 							
 							//let generic = self.parse_type()?;
 							//result.generics.push(generic);
 							
-							while get_current()? == Token::Other(',') {
-								get_next()?;
+							while self.get_current()? == Token::Other(',') {
+								self.get_next()?;
 								
 								//let generic = self.parse_type()?;
 								//result.generics.push(generic);
 							}
 
 							// assert token == '>'
-							if get_current()? != Token::Operator(">".to_string()) {
+							if self.get_current()? != Token::Operator(">".to_string()) {
 								return Err(CMNError::UnexpectedToken)
 							}
 							// consume >
-							get_next()?;
+							self.get_next()?;
 						}
 						_ => {
 							// 
@@ -1085,11 +1107,11 @@ impl Parser {
 
 
 	fn parse_attribute(&self) -> ParseResult<Attribute> {
-		if !token_compare(&get_current()?, "@") {
+		if !token_compare(&self.get_current()?, "@") {
 			return Err(CMNError::UnexpectedToken); // You called this from the wrong place lol
 		}
 
-		let name = get_next()?;
+		let name = self.get_next()?;
 		let mut result;
 		
 		if let Token::Identifier(name) = name {
@@ -1098,17 +1120,17 @@ impl Parser {
 			return Err(CMNError::ExpectedIdentifier);
 		}
 
-		let mut current = get_next()?;
+		let mut current = self.get_next()?;
 
 		if token_compare(&current, "(") {
 			if current != Token::Operator(")".to_string()) {
 				loop {									
 					result.args.push(self.parse_expression()?);
 					
-					current = get_current()?;
+					current = self.get_current()?;
 
 					if let Token::Other(',') = current {
-						get_next()?;
+						self.get_next()?;
 					} else if current == Token::Operator(")".to_string()) {
 						break;
 					} else {
@@ -1116,7 +1138,7 @@ impl Parser {
 					}
 				}
 			}
-			get_next()?;
+			self.get_next()?;
 		}
 
 		Ok(result)

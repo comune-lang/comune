@@ -3,7 +3,7 @@ use std::{ffi::{OsString, OsStr}, sync::{Arc, Mutex}, collections::HashMap, cell
 use colored::Colorize;
 use inkwell::{context::Context, module::{Module}, passes::PassManager, targets::FileType};
 
-use crate::{parser::{errors::{CMNMessage, CMNError}, lexer::{Lexer, log_msg_at, log_msg, self, CURRENT_LEXER}, Parser, semantic, namespace::{Namespace, NamespaceItem, NamespaceASTElem, Identifier}}, llvm::{LLVMBackend, self}};
+use crate::{parser::{errors::{CMNMessage, CMNError}, lexer::{Lexer, self}, Parser, semantic, namespace::{Namespace, NamespaceItem, NamespaceASTElem, Identifier}}, llvm::{LLVMBackend, self}};
 
 pub struct ManagerState {
 	pub import_paths: Vec<OsString>,
@@ -108,35 +108,32 @@ pub fn parse_api(state: &Arc<ManagerState>, path: &Path) -> Result<ModuleState, 
 	// Step 3. Return module compilation state, to be passed to resolve_types
 
 	// Parse namespace level
-	let mod_state = lexer::CURRENT_LEXER.with(|lexer| { 
-
-		lexer.replace(match Lexer::new(path) { // TODO: Take module name instead of filename 
+	let mut mod_state = ModuleState {
+		parser: Parser::new(match Lexer::new(path) { // TODO: Take module name instead of filename 
 			Ok(f) => f,
 			Err(e) => { 
 				println!("{} failed to open module '{}' ({})", "fatal:".red().bold(), path.file_name().unwrap().to_string_lossy(), e); 
 				return Err(CMNError::ModuleNotFound(OsString::from(path.file_name().unwrap()))); 
 			}
-		});
+		}, state.verbose_output),
+	};
 
+	println!("{} {}\n", "compiling".bold().green(), mod_state.parser.lexer.borrow().file_name.to_string_lossy());
 
-		let mut mod_state = ModuleState {
-			parser: Parser::new(state.verbose_output),
-		};
+	if state.verbose_output {
+		println!("\ncollecting symbols...");
+	}
 
-		println!("{} {}\n", "compiling".bold().green(), lexer.borrow().file_name.to_string_lossy());
+	// Declarative pass
+	return match mod_state.parser.parse_module() {
+		Ok(_) => { Ok(mod_state) },
+		Err(e) => { 
+			todo!();
+			//log_msg(CMNMessage::Error(e.clone())); 
+			Err(e) 
+		},
+	};
 
-		if state.verbose_output {
-			println!("\ncollecting symbols...");
-		}
-
-		// Declarative pass
-		return match mod_state.parser.parse_module() {
-			Ok(_) => { Ok(mod_state) },
-			Err(e) => { log_msg(CMNMessage::Error(e.clone())); Err(e) },
-		};
-	});
-
-	mod_state
 }
 
 
@@ -161,13 +158,21 @@ pub fn generate_code<'ctx>(state: &Arc<ManagerState>, mut mod_state: ModuleState
 	// Generate AST
 	let namespace = match mod_state.parser.generate_ast() {
 		Ok(ctx) => { if state.verbose_output { println!("\nvalidating..."); } ctx },
-		Err(e) => { log_msg(CMNMessage::Error(e.clone())); return Err(e); },
+		Err(e) => {
+			todo!();
+			//log_msg(CMNMessage::Error(e.clone())); 
+			return Err(e); 
+		},
 	};
 
 	// Validate code
 	match semantic::validate_namespace(namespace, namespace) {
 		Ok(()) => {	if state.verbose_output { println!("generating code..."); } },
-		Err(e) => { log_msg_at(e.1.0, e.1.1, CMNMessage::Error(e.0.clone())); return Err(e.0); },
+		Err(e) => { 
+			todo!();
+			//log_msg_at(e.1.0, e.1.1, CMNMessage::Error(e.0.clone())); 
+			return Err(e.0); 
+		},
 	}
 
 	// Generate code
