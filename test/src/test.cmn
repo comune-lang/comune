@@ -19,7 +19,7 @@ namespace cool {
 	}
 
 	struct Test {
-		Subtest a;	
+		Subtest a;
 	}
 
 	struct Subtest {

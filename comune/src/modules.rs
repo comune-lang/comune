@@ -3,7 +3,7 @@ use std::{ffi::{OsString, OsStr}, sync::{Arc, Mutex}, collections::HashMap, cell
 use colored::Colorize;
 use inkwell::{context::Context, module::{Module}, passes::PassManager, targets::FileType};
 
-use crate::{parser::{errors::{CMNMessage, CMNError}, lexer::{Lexer, log_msg_at, log_msg, self}, Parser, semantic, namespace::{Namespace, NamespaceItem, NamespaceASTElem, Identifier}}, llvm::{LLVMBackend, self}};
+use crate::{parser::{errors::{CMNMessage, CMNError}, lexer::{Lexer, log_msg_at, log_msg, self, CURRENT_LEXER}, Parser, semantic, namespace::{Namespace, NamespaceItem, NamespaceASTElem, Identifier}}, llvm::{LLVMBackend, self}};
 
 pub struct ManagerState {
 	pub import_paths: Vec<OsString>,
