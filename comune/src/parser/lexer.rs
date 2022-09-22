@@ -287,9 +287,6 @@ impl Lexer {
 		let mut start = self.file_index;
 
 		if let Some(mut token) = self.char_buffer {
-			if self.eof_reached() {
-				return Ok((start, Token::EOF));
-			}
 
 			// skip whitespace and comments
 			while !self.eof_reached() && (
@@ -441,9 +438,13 @@ impl Lexer {
 				self.get_next_char()?;
 				result_token = Ok(Token::StringLiteral(result));
 
-			} else { 
-				result_token = Ok(Token::Other(token));
-				self.get_next_char()?;
+			} else {
+				if self.eof_reached() && token.is_whitespace() {
+					return Ok((start, Token::EOF));
+				} else {
+					result_token = Ok(Token::Other(token));
+					self.get_next_char()?;
+				}
 			}
 		}
 

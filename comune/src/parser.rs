@@ -695,7 +695,7 @@ impl Parser {
 
 	fn parse_fn_or_declaration(&self) -> ParseResult<(String, NamespaceItem)> {
 		let t = self.parse_type(false)?;
-		let item;// = Type::Unresolved(match self.get_current()? { Token::Identifier(id) => id, _ => panic!() });
+		let item;
 		let mut next = self.get_current()?;
 		
 		if let Token::Identifier(id) = next {
