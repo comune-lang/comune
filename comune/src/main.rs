@@ -64,6 +64,12 @@ fn main() -> color_eyre::eyre::Result<()> {
 		modules::launch_module_compilation(manager_state.clone(), Identifier::from_name(args.input_file.clone().to_string_lossy().to_string()), s).unwrap();
 	});
 	
+	let mut output_file = modules::get_out_folder(&manager_state);
+	output_file.push(args.input_file);
+	output_file.set_extension("");
+
+	println!("\n{} target {}\n", "linking".bold().green(), output_file.file_name().unwrap().to_str().unwrap().bold());
+
 	// Link into executable
 	// We use clang here because fuck dude i don't know how to use ld manually
 	let mut output = Command::new("clang");
@@ -71,10 +77,6 @@ fn main() -> color_eyre::eyre::Result<()> {
 	for module in &*manager_state.output_modules.lock().unwrap() {
 		output.arg(module);
 	}
-
-	let mut output_file = modules::get_out_folder(&manager_state);
-	output_file.push(args.input_file);
-	output_file.set_extension("");
 
 	let output_result = output
 				.arg("-nodefaultlibs")

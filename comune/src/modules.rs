@@ -3,7 +3,7 @@ use std::{ffi::{OsString, OsStr}, sync::{Arc, Mutex}, collections::HashMap, cell
 use colored::Colorize;
 use inkwell::{context::Context, module::{Module}, passes::PassManager, targets::FileType};
 
-use crate::{parser::{errors::{CMNMessage, CMNError}, lexer::{Lexer, self}, Parser, semantic, namespace::{Namespace, NamespaceItem, NamespaceASTElem, Identifier}}, llvm::{LLVMBackend, self}};
+use crate::{parser::{errors::{CMNMessage, CMNError}, lexer::Lexer, Parser, semantic, namespace::{Namespace, NamespaceItem, NamespaceASTElem, Identifier}}, llvm::{LLVMBackend, self}};
 
 pub struct ManagerState {
 	pub import_paths: Vec<OsString>,
@@ -120,7 +120,7 @@ pub fn parse_api(state: &Arc<ManagerState>, path: &Path) -> Result<ModuleState, 
 		}, state.verbose_output),
 	};
 
-	println!("{} {}\n", "compiling".bold().green(), mod_state.parser.lexer.borrow().file_name.to_string_lossy());
+	println!("{} {}", "compiling".bold().green(), mod_state.parser.lexer.borrow().file_name.to_string_lossy());
 
 	if state.verbose_output {
 		println!("\ncollecting symbols...");

@@ -1,4 +1,3 @@
-use std::cell::RefCell;
 use std::ffi::OsString;
 use std::fmt::Display;
 use std::fs::File;
@@ -11,28 +10,12 @@ use crate::parser::errors::CMNMessage;
 
 use super::namespace::{Identifier, ScopePath};
 
-//thread_local! {
-//	pub(crate) static CURRENT_LEXER: RefCell<Lexer> = RefCell::new(Lexer::dummy());
-//}
-
-// For logging warnings from arbitrary locations in the parse code
-//pub(crate) fn log_msg_at(char_idx: usize, token_len: usize, e: CMNMessage) {
-//	CURRENT_LEXER.with(|lexer| { 
-//		lexer.borrow().log_msg_at(char_idx, token_len, e);
-//	});
-//}
-
-//pub(crate) fn log_msg(e: CMNMessage) {
-//	CURRENT_LEXER.with(|lexer| { 
-//		lexer.borrow().log_msg(e);
-//	});
-//}
 
 const KEYWORDS: &[&'static str] = &[
 	"if",
 	"use",
 	"else",  
-	"auto", 
+	"var", 
 	"class",
 	"struct",
 	"public",
@@ -157,17 +140,6 @@ pub struct Lexer {
 }
 
 impl Lexer {
-	pub fn dummy() -> Lexer {
-		Lexer {
-			file_buffer: String::new(),
-			file_index: 0usize,
-			char_buffer: None,
-			token_buffer: vec![],
-			token_index: 0usize,
-			file_name: OsString::new(),
-		}
-	}
-
 	pub fn new<P: AsRef<Path>>(path: P) -> std::io::Result<Lexer> {
 		let mut result = Lexer { 
 			file_buffer: String::new(), 
@@ -315,6 +287,9 @@ impl Lexer {
 		let mut start = self.file_index;
 
 		if let Some(mut token) = self.char_buffer {
+			if self.eof_reached() {
+				return Ok((start, Token::EOF));
+			}
 
 			// skip whitespace and comments
 			while !self.eof_reached() && (
@@ -466,7 +441,7 @@ impl Lexer {
 				self.get_next_char()?;
 				result_token = Ok(Token::StringLiteral(result));
 
-			} else if !self.eof_reached() { 
+			} else { 
 				result_token = Ok(Token::Other(token));
 				self.get_next_char()?;
 			}

@@ -1,0 +1,2 @@
+@no_mangle
+int printf(char* fmt);
