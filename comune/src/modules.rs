@@ -11,6 +11,7 @@ pub struct ManagerState {
 	pub max_threads: usize,
 	pub verbose_output: bool,
 	pub output_modules: Mutex<Vec<PathBuf>>,
+	pub emit_llvm: bool,
 }
 
 
@@ -50,6 +51,13 @@ pub fn launch_module_compilation<'scope>(state: Arc<ManagerState>, input_module:
 		let context = Context::create();
 		let result = generate_code(&state, mod_state, &context).unwrap();
 		let target_machine = llvm::get_target_machine();
+
+		if state.emit_llvm {
+			let mut llvm_out_path = out_path.clone();
+			llvm_out_path.set_extension("ll");
+			result.1.module.print_to_file(llvm_out_path).unwrap();
+		}
+
 		target_machine.write_to_file(&result.1.module, FileType::Object, &out_path).unwrap();
 	});
 

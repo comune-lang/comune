@@ -6,6 +6,7 @@ use std::{fmt::Display, collections::HashMap};
 
 use once_cell::sync::OnceCell;
 
+use super::expression::{Expr, ConstExpr};
 use super::namespace::{Identifier, NamespaceASTElem};
 use super::semantic::Attribute;
 use super::{semantic::FnScope, ASTResult};
@@ -46,6 +47,7 @@ pub enum Basic {
 pub enum Type {
 	Basic(Basic),											// Fundamental type
 	Pointer(BoxedType),										// Pointer-to-<BoxedType>
+	Array(BoxedType, Box<ConstExpr>),							// Array with constant expression for size
 	Unresolved(Identifier),									// Unresolved type (during parsing phase)
 	TypeRef(Weak<RwLock<TypeDef>>, Identifier)		// Reference to type definition, plus Identifier for serialization
 }
@@ -55,7 +57,7 @@ pub enum Type {
 pub enum TypeDef {
 	Function(Type, Vec<(Type, Option<String>)>),			// Return type + parameter types
 	Aggregate(Box<AggregateType>),							// Guess.
-	Alias(String, Type)										// Identifier + referenced type
+	//Alias(String, Type)										// Identifier + referenced type
 }
 
 
@@ -205,7 +207,10 @@ impl Type {
 				// TODO: Shorten
 				result.push_str(b.as_str());
 			},
-
+			Type::Array(t, _) => {
+				result.push_str(&t.serialize());
+				result.push_str("+");
+			}
 			
 			Type::Pointer(_) => {
 				result.push_str("*");
@@ -288,10 +293,7 @@ impl Type {
 impl TypeDef {
 	pub fn serialize(&self) -> String {
 		let mut result = String::new();
-		match &self {
-			// TODO: Consider if aliased types are equivalent at the ABI stage?
-			TypeDef::Alias(_, t) => return t.serialize(),
-						
+		match &self {						
 			TypeDef::Aggregate(a) => {
 				for t in &a.members {
 					result.push_str(&t.1.0.serialize());
@@ -314,8 +316,6 @@ impl TypeDef {
 		let ptr_size = *PTR_SIZE_BYTES.get().unwrap() as u32;
 
 		match &self {
-			TypeDef::Alias(_, t) => t.get_size_bytes(),
-
 			TypeDef::Aggregate(ts) => {
 				let mut result: usize = 0;
 
@@ -358,7 +358,8 @@ impl Hash for Type {
     fn hash<H: Hasher>(&self, state: &mut H) {
         match self {
             Type::Basic(b) => b.hash(state),
-            Type::Pointer(t) => t.hash(state),
+            Type::Pointer(t) => { t.hash(state); "*".hash(state) },
+			Type::Array(t, _s) => { t.hash(state);  "+".hash(state) },
             Type::Unresolved(id) => id.hash(state),
             Type::TypeRef(r, _) => ptr::hash(r.upgrade().unwrap().as_ref(), state),
         }
@@ -378,6 +379,10 @@ impl Display for Type {
 				write!(f, "{}*", t)?;
 			},
 
+			Type::Array(t, _s) => {
+				write!(f, "{}[]", t)?;
+			}
+
 			Type::Unresolved(t) => {
 				write!(f, "\"{}\"", t)?;
 			},
@@ -395,10 +400,6 @@ impl Display for Type {
 impl Display for TypeDef {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match &self {
-			TypeDef::Alias(a, t) => {
-				write!(f, "{} ({})", a, t)?;
-			},
-
 			TypeDef::Aggregate(agg) => {
 				write!(f, "{}", agg)?;
 			},
@@ -445,6 +446,7 @@ impl std::fmt::Debug for Type {
         match self {
             Self::Basic(arg0) => f.debug_tuple("Basic").field(arg0).finish(),
             Self::Pointer(_) => f.debug_tuple("Pointer").finish(),
+            Self::Array(t, _) => f.debug_tuple("Array").field(t).finish(),
             Self::Unresolved(arg0) => f.debug_tuple("Unresolved").field(arg0).finish(),
             Self::TypeRef(arg0, _) => f.debug_tuple("TypeRef").field(arg0).finish(),
         }

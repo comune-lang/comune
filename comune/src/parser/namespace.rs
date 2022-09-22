@@ -109,6 +109,7 @@ pub enum NamespaceItem {
 	Function(Arc<RwLock<TypeDef>>, RefCell<NamespaceASTElem>),
 	Variable(Type, RefCell<NamespaceASTElem>),
 	Namespace(Box<RefCell<Namespace>>),
+	Alias(Identifier),
 }
 
 type NamespaceEntry = (NamespaceItem, Vec<Attribute>, Option<String>);
@@ -160,23 +161,40 @@ impl Namespace {
 			return root.with_item(name, root, closure);
 		}
 		
-		
 		if name.path.scopes.is_empty() {
 			if self.children.contains_key(&name.name) {
-				let id = Identifier {name: name.name.clone(), path: self.path.clone(), mem_idx: 0, resolved: None };
-				closure(&self.children.get(&name.name).unwrap(), &self, &id);
-				return true;
+				
+				// It's one of this namespace's children!
+				
+				if let NamespaceItem::Alias(id) = &self.children.get(&name.name).unwrap().0 {
+					// It's an alias, so look up the actual item
+					return self.with_item(&id, root, closure);
+				
+				} else {
+					// Generate absolute identifier
+					let id = Identifier {name: name.name.clone(), path: self.path.clone(), mem_idx: 0, resolved: None };
+				
+					closure(&self.children.get(&name.name).unwrap(), &self, &id);
+					return true;
+				}
 			}
 		} else {
 			if let Some((NamespaceItem::Namespace(child), _, _)) = self.children.get(&name.path.scopes[0]) {
+
 				// Found child namespace matching first scope path member
+
 				let mut name_clone = name.clone();
 				name_clone.path.scopes.remove(0);
+
 				return child.as_ref().borrow().with_item(&name_clone, root, closure);
+
 			} else if let Some(imported) = self.imported.get(&Identifier::from_name(name.path.scopes[0].clone()))  {
+
 				// Found imported namespace matching scope path
+
 				let mut name_clone = name.clone();
 				name_clone.path.scopes.remove(0);
+
 				return imported.with_item(&name_clone, imported, closure);
 			}
 		}
@@ -196,6 +214,7 @@ impl Display for Namespace {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {		
 		for c in &self.children {
 			match &c.1.0 {
+				NamespaceItem::Alias(id) => write!(f, "\t[alias] {}", id)?,
 				NamespaceItem::Type(t) => write!(f, "\t[type] {}: {}\n", c.0, t.read().unwrap())?,
 				NamespaceItem::Function(t, _) => write!(f, "\t[func] {}: {}\n", c.0, t.read().unwrap())?,
 				NamespaceItem::Variable(_, _) => todo!(),

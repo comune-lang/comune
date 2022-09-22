@@ -684,6 +684,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 			Type::Pointer(_) => todo!(),
 			Type::Unresolved(_) => todo!(),
     		Type::TypeRef(_, _) => todo!(),
+   			Type::Array(_, _) => todo!(),
 		}
 	}
 
@@ -784,16 +785,14 @@ impl<'ctx> LLVMBackend<'ctx> {
 				Basic::STR => 							Rc::new(self.str_type()),
 			},
 
-			Type::TypeRef(t_ref, _) => match &*t_ref.upgrade().unwrap().read().unwrap() {
-				TypeDef::Alias(_id, t) => self.get_llvm_type(t),
-
+			Type::TypeRef(t_ref, id) => match &*t_ref.upgrade().unwrap().read().unwrap() {
 				TypeDef::Aggregate(aggregate) => {
 					let mapped_t = { self.type_map.borrow().get(t).cloned() };
 
 					if let Some(mapped_t) = mapped_t {
 						mapped_t.clone()
 					} else {
-						let result_type = Rc::new(self.context.opaque_struct_type("agg"));
+						let result_type = Rc::new(self.context.opaque_struct_type(&id.name));
 						self.type_map.borrow_mut().insert(t.clone(), result_type.clone());
 
 						let mut types_mapped = vec![];
@@ -811,6 +810,7 @@ impl<'ctx> LLVMBackend<'ctx> {
    				TypeDef::Function(_, _) => todo!(),
 			}
 			Type::Pointer(t_sub) => Rc::new(Self::to_basic_type(self.get_llvm_type(t_sub)).ptr_type(AddressSpace::Generic)),
+			Type::Array(t_sub, s) => Rc::new(Self::to_basic_type(self.get_llvm_type(t_sub)).array_type(todo!())),
 			Type::Unresolved(_) => panic!(),
 		}
 	}

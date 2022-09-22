@@ -19,30 +19,7 @@ pub mod expression;
 pub mod semantic;
 pub mod controlflow;
 
-// Utility functions to make the code a bit cleaner
-/*
-fn self.get_current() -> ParseResult<Token> {
-	lexer::CURRENT_LEXER.with(|lexer| match lexer.borrow().current() {
-		Some((_, tk)) => Ok(tk.clone()),
-		None => Err(CMNError::UnexpectedEOF),
-	})
-}
 
-fn self.get_next() -> ParseResult<Token> {
-	lexer::CURRENT_LEXER.with(|lexer| match lexer.borrow_mut().next() {
-		Some((_, tk)) => Ok(tk.clone()),
-		None => Err(CMNError::UnexpectedEOF),
-	})
-}
-
-fn self.get_current_start_index() -> usize {
-	lexer::CURRENT_LEXER.with(|lexer| lexer.borrow().current().unwrap().0)
-}
-
-fn self.get_current_token_index() -> usize {
-	lexer::CURRENT_LEXER.with(|lexer| lexer.borrow().current_token_index())
-}
-*/
 // Convenience function that matches a &str against various token kinds
 fn token_compare(token: &Token, text: &str) -> bool {
 	match token {
@@ -158,6 +135,8 @@ impl Parser {
 
 				NamespaceItem::Type(_) => {},
 
+				NamespaceItem::Alias(_) => {},
+
 				_ => todo!(),
 			}
 		};
@@ -198,12 +177,12 @@ impl Parser {
 					}
 				},
 
-				Token::Keyword(ref keyword) => {
+				Token::Keyword(keyword) => {
 
-					match *keyword {
+					match keyword {
 
 						"class" | "struct" => {
-							let mut current_visibility = if *keyword == "struct" { Visibility::Public } else { Visibility::Private };
+							let mut current_visibility = if keyword == "struct" { Visibility::Public } else { Visibility::Private };
 
 							// Register aggregate type
 							let mut aggregate = AggregateType::new();
@@ -270,6 +249,7 @@ impl Parser {
 							}
 						}
 
+
 						"namespace" => {
 							let name_token = self.get_next()?;
 
@@ -316,9 +296,7 @@ impl Parser {
 
 						"import" => {
 							// Register import statement
-							let name_token = self.get_next()?;
-
-							if let Token::Identifier(name) = name_token {
+							if let Token::Identifier(name) = self.get_next()? {
 								self.current_namespace().borrow_mut().referenced_modules.insert(name);
 								self.get_next()?;
 								self.check_semicolon()?;
@@ -326,6 +304,39 @@ impl Parser {
 								return Err(CMNError::ExpectedIdentifier);
 							}
 						}
+
+
+						"using" => {
+							if let Token::Identifier(name) = self.get_next()? {
+								
+								if token_compare(&self.get_next()?, "=") {
+									// Found a '=' token, so fetch the name to alias
+									if let Token::Identifier(aliased) = self.get_next()? {
+
+										self.current_namespace().borrow_mut().children.insert(
+											name.expect_scopeless()?, 
+											(NamespaceItem::Alias(aliased), vec![], None)
+										);
+
+										self.get_next()?;
+										self.check_semicolon()?;
+
+									} else {
+										return Err(CMNError::ExpectedIdentifier);
+									}
+									
+								} else {
+									// No '=' token, just bring the name into scope
+									self.current_namespace().borrow_mut().children.insert(
+										name.name.clone(), 
+										(NamespaceItem::Alias(name), vec![], None)
+									);
+
+									self.check_semicolon()?;
+								}
+							}
+						}
+
 
 						_ => {
 							return Err(CMNError::UnexpectedToken);

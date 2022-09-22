@@ -158,6 +158,8 @@ pub fn resolve_type(ty: &mut Type, namespace: &Namespace, root: &RefCell<Namespa
 	match ty {
 		Type::Pointer(ref mut pointee) => resolve_type(pointee, namespace, root),	
 
+		Type::Array(ref mut pointee, _size) => resolve_type(pointee, namespace, root),
+
 		Type::Unresolved(ref id) => {
 			let mut result = Err(CMNError::UnresolvedTypename(id.to_string()));
 
@@ -227,6 +229,8 @@ pub fn resolve_namespace_types(namespace: &RefCell<Namespace>, root: &RefCell<Na
 				NamespaceItem::Namespace(_) => {}
 
 				NamespaceItem::Type(t) => resolve_type_def(&mut *t.write().unwrap(), &namespace, root).unwrap(),
+
+				NamespaceItem::Alias(_) => {},
 
 				_ => todo!(),
 			};
@@ -448,6 +452,7 @@ impl ASTElem {
 
 
 impl Expr {
+
 	pub fn create_cast(expr: Expr, from: Option<Type>, to: Type, meta: TokenData) -> Expr {
 		Expr::Atom(Atom::Cast(Box::new(
 			ASTElem { 
@@ -458,6 +463,7 @@ impl Expr {
 			to.clone()
 		), meta)
 	}
+
 
 	pub fn validate<'ctx>(&mut self, scope: &'ctx FnScope<'ctx>, goal_t: Option<&Type>, meta: TokenData) -> ASTResult<Type> {
 
@@ -507,8 +513,8 @@ impl Expr {
 		}
 	}
 
-	// Check whether an Expr is coercable to a type
 
+	// Check whether an Expr is coercable to a type
 	pub fn coercable_to(&self, from: &Type, target: &Type, scope: &FnScope) -> bool {
 		match self {
 			Expr::Atom(a, _) => {
@@ -602,6 +608,22 @@ impl Expr {
 
 					_ => None,
 				}
+			},
+		}
+	}
+
+
+	pub fn is_const_expr<'ctx>(&self, scope: &'ctx FnScope<'ctx>) -> bool {
+		match self {
+			Expr::Atom(a, _) => a.is_const_expr(scope),
+
+			Expr::Cons(_, e, _) => {
+				for elem in e {
+					if !elem.0.is_const_expr(scope) {
+						return false;
+					}
+				}
+				return true;
 			},
 		}
 	}
@@ -728,15 +750,9 @@ impl Atom {
 				_ => Ok(())
 			},
 
-			//Type::Alias(_, t) => {
-			//	self.check_cast(t.as_ref(), to, scope, meta)
-			//},
-			Type::TypeRef(..) => todo!(),
-			Type::Pointer(_) => todo!(),
-			Type::Unresolved(_) => todo!(),
+			_ => todo!(),
 		}
 	}
-
 
 
 	pub fn get_lvalue_type<'ctx>(&self, scope: &'ctx FnScope<'ctx>) -> Option<Type> {
@@ -746,6 +762,17 @@ impl Atom {
 				None => None,
 			},
 			_ => None,
+		}
+	}
+
+
+	pub fn is_const_expr<'ctx>(&self, scope: &'ctx FnScope<'ctx>) -> bool {
+		match self {
+			Atom::IntegerLit(..) | Atom::FloatLit(_, _) |
+			Atom::BoolLit(_) | Atom::StringLit(_) => true,
+
+			// TODO: Extend support for constant expressions
+			_ => false,
 		}
 	}
 }

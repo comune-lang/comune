@@ -205,6 +205,11 @@ pub enum Expr {
 }
 
 
+#[derive(Clone, Debug, PartialEq)]
+pub enum ConstExpr {
+	Expr(Expr),
+	Result, // TODO: Create Value type to match Type type?
+}
 
 
 

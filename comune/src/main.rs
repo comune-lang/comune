@@ -58,6 +58,7 @@ fn main() -> color_eyre::eyre::Result<()> {
 		max_threads: args.num_jobs, 
 		verbose_output: args.verbose,
 		output_modules: Mutex::new(vec![]),
+		emit_llvm: args.emit_llvm,
 	});
 
 	rayon::scope(|s| {

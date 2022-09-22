@@ -1,6 +1,9 @@
 import libc;
 import module_test;
 
+using module_test::foo;
+using my_cool_alias = libc::printf;
+
 namespace cool {
 	u64 fib(u64 n) {
 		u64 a = 0;
@@ -10,12 +13,25 @@ namespace cool {
 			c = a + b;
 			a = b;
 			b = c;
-			libc::printf("loop!\n");
+			my_cool_alias("loop!\n");
 		}
 		return c;
+	}
+
+	struct TestStruct {
+		int a;
+		int b;
+		int* c;
+		TestStructB* d;
+	}
+
+	struct TestStructB {
+		TestStruct a;
 	}
 }
 
 int main() {
-	return cool::fib(10) as i32 + module_test::foo();
+	cool::TestStruct a;
+	a.a = 23;
+	return a.a + cool::fib(10) as i32 + foo();
 }
