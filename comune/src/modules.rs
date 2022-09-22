@@ -26,7 +26,8 @@ unsafe impl Send for ModuleState {}
 
 pub fn launch_module_compilation<'scope>(state: Arc<ManagerState>, input_module: Identifier, s: &rayon::Scope<'scope>) -> Result<Namespace, CMNError> {
 	let src_path = get_module_source_path(&state, &input_module);
-	state.output_modules.lock().unwrap().push(src_path.clone());
+	let out_path = get_module_out_path(&state, &input_module, None);
+	state.output_modules.lock().unwrap().push(out_path.clone());
 
 	let mut mod_state = parse_api(&state, &src_path).unwrap();
 
@@ -40,15 +41,16 @@ pub fn launch_module_compilation<'scope>(state: Arc<ManagerState>, input_module:
 	}
 	
 	mod_state.parser.current_namespace().borrow_mut().imported = imports;
-	
+
+	resolve_types(&state, &mut mod_state).unwrap();
+
 	let interface = mod_state.parser.current_namespace().borrow().clone();
 
 	s.spawn(move |_s| {
 		let context = Context::create();
-		resolve_types(&state, &mut mod_state, &context).unwrap();
 		let result = generate_code(&state, mod_state, &context).unwrap();
 		let target_machine = llvm::get_target_machine();
-		target_machine.write_to_file(&result.1.module, FileType::Object, &get_module_out_path(&state, &input_module, None)).unwrap();
+		target_machine.write_to_file(&result.1.module, FileType::Object, &out_path).unwrap();
 	});
 
 
@@ -128,8 +130,7 @@ pub fn parse_api(state: &Arc<ManagerState>, path: &Path) -> Result<ModuleState, 
 	return match mod_state.parser.parse_module() {
 		Ok(_) => { Ok(mod_state) },
 		Err(e) => { 
-			todo!();
-			//log_msg(CMNMessage::Error(e.clone())); 
+			mod_state.parser.lexer.borrow().log_msg(CMNMessage::Error(e.clone())); 
 			Err(e) 
 		},
 	};
@@ -137,7 +138,7 @@ pub fn parse_api(state: &Arc<ManagerState>, path: &Path) -> Result<ModuleState, 
 }
 
 
-pub fn resolve_types(state: &Arc<ManagerState>, mod_state: &mut ModuleState, _context: &Context) -> Result<(), CMNError> {
+pub fn resolve_types(state: &Arc<ManagerState>, mod_state: &mut ModuleState) -> Result<(), CMNError> {
 	// At this point, all imports have been resolved, so validate namespace-level types
 	semantic::resolve_namespace_types(mod_state.parser.current_namespace(), mod_state.parser.current_namespace()).unwrap();
 	// Check for cyclical dependencies without indirection
@@ -159,8 +160,7 @@ pub fn generate_code<'ctx>(state: &Arc<ManagerState>, mut mod_state: ModuleState
 	let namespace = match mod_state.parser.generate_ast() {
 		Ok(ctx) => { if state.verbose_output { println!("\nvalidating..."); } ctx },
 		Err(e) => {
-			todo!();
-			//log_msg(CMNMessage::Error(e.clone())); 
+			mod_state.parser.lexer.borrow().log_msg(CMNMessage::Error(e.clone())); 
 			return Err(e); 
 		},
 	};
@@ -169,8 +169,7 @@ pub fn generate_code<'ctx>(state: &Arc<ManagerState>, mut mod_state: ModuleState
 	match semantic::validate_namespace(namespace, namespace) {
 		Ok(()) => {	if state.verbose_output { println!("generating code..."); } },
 		Err(e) => { 
-			todo!();
-			//log_msg_at(e.1.0, e.1.1, CMNMessage::Error(e.0.clone())); 
+			mod_state.parser.lexer.borrow().log_msg_at(e.1.0, e.1.1, CMNMessage::Error(e.0.clone())); 
 			return Err(e.0); 
 		},
 	}
@@ -188,6 +187,11 @@ pub fn generate_code<'ctx>(state: &Arc<ManagerState>, mut mod_state: ModuleState
 		type_map: RefCell::new(HashMap::new()),
 	};
 
+	for (_, import) in &namespace.borrow().imported {
+		register_namespace(&mut backend, import, None);
+	}
+
+	register_namespace(&mut backend, &namespace.borrow(), None);
 
 	// Generate LLVM IR
 	register_namespace(&mut backend, &namespace.borrow(), None);

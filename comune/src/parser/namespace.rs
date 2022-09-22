@@ -169,9 +169,15 @@ impl Namespace {
 			}
 		} else {
 			if let Some((NamespaceItem::Namespace(child), _, _)) = self.children.get(&name.path.scopes[0]) {
+				// Found child namespace matching first scope path member
 				let mut name_clone = name.clone();
 				name_clone.path.scopes.remove(0);
 				return child.as_ref().borrow().with_item(&name_clone, root, closure);
+			} else if let Some(imported) = self.imported.get(&Identifier::from_name(name.path.scopes[0].clone()))  {
+				// Found imported namespace matching scope path
+				let mut name_clone = name.clone();
+				name_clone.path.scopes.remove(0);
+				return imported.with_item(&name_clone, imported, closure);
 			}
 		}
 

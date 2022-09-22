@@ -3,7 +3,7 @@ import module_test;
 
 @no_mangle
 int printf(char* fmt);
-
+/*
 namespace cool {
 	u64 fib(u64 n) {
 		u64 a = 0; // Literals can be coerced to any numeric type
@@ -26,10 +26,10 @@ namespace cool {
 		Test* b;
 	}
 }
-
+*/
 int main() {
-	cool::Test test;
-	cool::Test* testptr = &test;
-	(*testptr).a.b = testptr;
-	return cool::fib(10) as i32 + module_test::foo();
+	//cool::Test test;
+	//cool::Test* testptr = &test;
+	//(*testptr).a.b = testptr;
+	return module_test::foo();
 }
