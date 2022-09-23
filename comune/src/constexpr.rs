@@ -17,7 +17,7 @@ pub enum ConstValue {
 	Bool(bool),
 }
 
-trait ConstEval {
+pub trait ConstEval {
 	fn eval_const(&self, scope: &FnScope) -> ASTResult<ConstValue>;
 }
 

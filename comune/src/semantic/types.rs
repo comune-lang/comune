@@ -38,7 +38,7 @@ pub enum Basic {
 pub enum Type {
 	Basic(Basic),											// Fundamental type
 	Pointer(BoxedType),										// Pointer-to-<BoxedType>
-	Array(BoxedType, Box<ConstExpr>),						// Array with constant expression for size
+	Array(BoxedType, Box<RefCell<ConstExpr>>),						// Array with constant expression for size
 	Unresolved(Identifier),									// Unresolved type (during parsing phase)
 	TypeRef(Weak<RwLock<TypeDef>>, Identifier)				// Reference to type definition, plus Identifier for serialization
 }

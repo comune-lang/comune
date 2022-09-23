@@ -1,6 +1,7 @@
 use std::cell::RefCell;
 use std::sync::{Arc, RwLock};
 
+use crate::constexpr::ConstExpr;
 use crate::lexer::{Token, Lexer};
 use crate::errors::CMNError;
 
@@ -1070,6 +1071,23 @@ impl Parser {
 								next = self.get_next()?;
 							}
 						}
+
+						"[" => {
+							self.get_next()?;
+							let const_expr = self.parse_expression()?;
+							let dummy_expr = Expr::Atom(Atom::IntegerLit(0, None), (0, 0));
+
+							if self.get_current()? != Token::Operator("]".to_string()) {
+								return Err(CMNError::UnexpectedToken);
+							}
+
+							result = Type::Array(
+								Box::new(result), 
+								Box::new(RefCell::new(ConstExpr::Expr(const_expr.get_expr().replace(dummy_expr))))
+							);
+
+							self.get_next()?;
+						}
 						
 						"<" => {
 							self.get_next()?;
@@ -1086,7 +1104,7 @@ impl Parser {
 
 							// assert token == '>'
 							if self.get_current()? != Token::Operator(">".to_string()) {
-								return Err(CMNError::UnexpectedToken)
+								return Err(CMNError::UnexpectedToken);
 							}
 							// consume >
 							self.get_next()?;

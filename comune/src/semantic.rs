@@ -2,7 +2,7 @@ use std::{cell::RefCell, collections::HashMap, sync::{Arc, RwLock}};
 
 use types::{Type, Basic, Typed, TypeDef};
 
-use crate::{errors::CMNError, parser::{ASTResult, ParseResult}};
+use crate::{errors::CMNError, parser::{ASTResult, ParseResult}, constexpr::{ConstExpr, ConstEval}};
 
 use self::{namespace::{Namespace, Identifier, NamespaceItem, NamespaceASTElem}, ast::{ASTElem, ASTNode, TokenData}, controlflow::ControlFlow, expression::{Expr, Atom, Operator}};
 
@@ -340,10 +340,14 @@ impl ASTElem {
 			ASTNode::Expression(e) => Ok(Some(e.borrow_mut().validate(scope, None, self.token_data)?)),
 			
 			ASTNode::Declaration(t, n, e) => {
+				t.validate(&scope, self.token_data)?;
 
 				if let Some(expr) = e {
+
 					expr.type_info.replace(Some(t.clone()));
+
 					let expr_type = expr.get_type(scope)?;
+
 					if expr_type != *t {
 						if expr.get_expr().borrow().coercable_to(&expr_type, t, scope) {
 							expr.wrap_expr_in_cast(Some(expr_type), t.clone());
@@ -784,5 +788,25 @@ impl Atom {
 			// TODO: Extend support for constant expressions
 			_ => false,
 		}
+	}
+}
+
+impl Type {
+	pub fn validate<'ctx>(&self, scope: &'ctx FnScope<'ctx>, meta: TokenData) -> ASTResult<()> {
+		match self {
+			Type::Array(_, expr) => {
+				let mut result = None;
+				if let ConstExpr::Expr(e) = &*expr.borrow() {
+					result = Some(ConstExpr::Result(e.eval_const(scope)?));
+				}
+				if let Some(result) = result {
+					*expr.borrow_mut() = result;
+				}
+			}
+
+			_ => {}
+		}
+		
+		Ok(())
 	}
 }

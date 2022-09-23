@@ -6,6 +6,7 @@ int printf(char* fmt);
 
 namespace cool {
 	u64 fib(u64 n) {
+		u64[3] array_test;
 		u64 a = 0;
 		u64 b = 1;
 		u64 c = 0;
@@ -17,21 +18,8 @@ namespace cool {
 		}
 		return c;
 	}
-
-	struct TestStruct {
-		int a;
-		int b;
-		int* c;
-		TestStructB* d;
-	}
-
-	struct TestStructB {
-		TestStruct a;
-	}
 }
 
 int main() {
-	cool::TestStruct a;
-	a.a = 23;
-	return a.a + cool::fib(10) as i32 + foo();
+	return cool::fib(10) as i32 + foo();
 }

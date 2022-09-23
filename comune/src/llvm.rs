@@ -2,6 +2,7 @@ use std::cell::{RefCell, Ref};
 use std::collections::HashMap;
 use std::rc::Rc;
 
+use crate::constexpr::{ConstExpr, ConstValue};
 use crate::semantic::ast::{ASTElem, ASTNode};
 use crate::semantic::controlflow::ControlFlow;
 use crate::semantic::expression::{Expr, Atom, Operator};
@@ -784,7 +785,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 				
 				Basic::SIZEINT { .. } =>	 			Rc::new(self.context.ptr_sized_int_type(&get_target_machine().get_target_data(), None)),
 				Basic::FLOAT { size_bytes } =>			Rc::new(if *size_bytes == 8 { self.context.f64_type()} else { self.context.f32_type() }),
-				
+
 				Basic::CHAR =>							Rc::new(self.context.i8_type()),
 				Basic::BOOL => 							Rc::new(self.context.bool_type()),
 				Basic::VOID => 							Rc::new(self.context.void_type()),
@@ -816,7 +817,17 @@ impl<'ctx> LLVMBackend<'ctx> {
    				TypeDef::Function(_, _) => todo!(),
 			}
 			Type::Pointer(t_sub) => Rc::new(Self::to_basic_type(self.get_llvm_type(t_sub)).ptr_type(AddressSpace::Generic)),
-			Type::Array(t_sub, s) => Rc::new(Self::to_basic_type(self.get_llvm_type(t_sub)).array_type(todo!())),
+			
+			Type::Array(t_sub, s) => match &*s.borrow() {
+				ConstExpr::Result(v) => {
+					if let ConstValue::Integral(i, _) = v {
+						Rc::new(Self::to_basic_type(self.get_llvm_type(t_sub)).array_type(*i as u32))
+					} else {
+						panic!()
+					}
+				}
+				_ => panic!(),
+			},
 			Type::Unresolved(_) => panic!(),
 		}
 	}
