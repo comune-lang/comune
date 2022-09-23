@@ -1,6 +1,0 @@
-[book]
-authors = ["Ash Taylor"]
-language = "en"
-multilingual = false
-src = "src"
-title = "The Comune Programming Language"
