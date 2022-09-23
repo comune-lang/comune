@@ -773,13 +773,19 @@ impl<'ctx> LLVMBackend<'ctx> {
 	fn get_llvm_type(&self, t: &Type) -> Rc<dyn AnyType<'ctx> + 'ctx> {
 		match &t {
 			Type::Basic(b) => match b {
-				Basic::I64 | Basic::U64 =>				Rc::new(self.context.i64_type()),
-				Basic::I32 | Basic::U32 =>				Rc::new(self.context.i32_type()),
-				Basic::I16 | Basic::U16 =>				Rc::new(self.context.i16_type()),
-				Basic::I8 | Basic::U8 | Basic::CHAR =>	Rc::new(self.context.i8_type()),
-				Basic::ISIZE | Basic::USIZE => 			Rc::new(self.context.i64_type()),
-				Basic::F64 => 							Rc::new(self.context.f64_type()),
-				Basic::F32 => 							Rc::new(self.context.f32_type()),
+				
+				Basic::INTEGRAL { size_bytes, .. } =>	Rc::new(match size_bytes {
+															8 => self.context.i64_type(),
+															4 => self.context.i32_type(),
+															2 => self.context.i16_type(),
+															1 => self.context.i8_type(),
+															_ => panic!(),
+														}),
+				
+				Basic::SIZEINT { .. } =>	 			Rc::new(self.context.ptr_sized_int_type(&get_target_machine().get_target_data(), None)),
+				Basic::FLOAT { size_bytes } =>			Rc::new(if *size_bytes == 8 { self.context.f64_type()} else { self.context.f32_type() }),
+				
+				Basic::CHAR =>							Rc::new(self.context.i8_type()),
 				Basic::BOOL => 							Rc::new(self.context.bool_type()),
 				Basic::VOID => 							Rc::new(self.context.void_type()),
 				Basic::STR => 							Rc::new(self.str_type()),

@@ -652,7 +652,7 @@ impl Atom {
 					if goal_t.is_some() && goal_t.unwrap().is_integral() { 
 						Ok(goal_t.unwrap().clone()) 
 					} else { 
-						Ok(Type::Basic(Basic::I32)) 
+						Ok(Type::Basic(Basic::INTEGRAL { signed: true, size_bytes: 4 })) 
 					}
 				},
 			
@@ -662,7 +662,7 @@ impl Atom {
 				if goal_t.is_some() && goal_t.unwrap().is_floating_point() { 
 					Ok(goal_t.unwrap().clone()) 
 				} else { 
-					Ok(Type::Basic(Basic::F32)) 
+					Ok(Type::Basic(Basic::FLOAT { size_bytes: 4 })) 
 				}
 			},
 
