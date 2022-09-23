@@ -1,7 +1,7 @@
 use std::{fmt::Display, ffi::OsString};
 
-use super::{types::Type, expression::Operator};
-
+use super::types::Type;
+use crate::semantic::expression::Operator;
 
 #[derive(Debug, Clone)]
 pub enum CMNMessage {

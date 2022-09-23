@@ -1,24 +1,15 @@
 use std::cell::RefCell;
 use std::sync::{Arc, RwLock};
 
-use self::lexer::{Token, Lexer};
-use self::ast::{ASTNode, ASTElem, TokenData};
-use self::controlflow::ControlFlow;
-use self::errors::CMNError;
-use self::expression::{Expr, Operator, Atom};
-use self::namespace::{Namespace, NamespaceItem, NamespaceASTElem, Identifier, ScopePath};
-use self::semantic::Attribute;
-use self::types::{Type, FnParamList, Basic, AggregateType, Visibility, TypeDef};
+use crate::lexer::{Token, Lexer};
+use crate::errors::CMNError;
 
-pub mod namespace;
-pub mod lexer;
-pub mod errors;
-pub mod ast;
-pub mod types;
-pub mod expression;
-pub mod semantic;
-pub mod controlflow;
-
+use crate::semantic::ast::{ASTNode, ASTElem, TokenData};
+use crate::semantic::controlflow::ControlFlow;
+use crate::semantic::expression::{Expr, Operator, Atom};
+use crate::semantic::namespace::{Namespace, NamespaceItem, NamespaceASTElem, Identifier, ScopePath};
+use crate::semantic::Attribute;
+use crate::semantic::types::{Type, FnParamList, Basic, AggregateType, Visibility, TypeDef};
 
 // Convenience function that matches a &str against various token kinds
 fn token_compare(token: &Token, text: &str) -> bool {

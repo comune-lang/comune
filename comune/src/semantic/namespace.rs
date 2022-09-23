@@ -2,8 +2,9 @@ use std::{collections::{HashMap, HashSet}, fmt::Display, cell::RefCell, hash::Ha
 
 use mangling::mangle;
 
-use super::{semantic::Attribute, errors::CMNError, ParseResult, types::TypeDef};
-use super::{types::Type, ast::ASTElem};
+use crate::{parser::ParseResult, errors::CMNError};
+
+use super::{types::{Type, TypeDef}, ast::ASTElem, Attribute};
 
 
 

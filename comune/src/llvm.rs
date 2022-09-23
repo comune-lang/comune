@@ -2,11 +2,11 @@ use std::cell::{RefCell, Ref};
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use crate::parser::ast::{ASTElem, ASTNode};
-use crate::parser::controlflow::ControlFlow;
-use crate::parser::expression::{Expr, Atom, Operator};
-use crate::parser::namespace::Identifier;
-use crate::parser::types::{Type, Basic, TypeDef};
+use crate::semantic::ast::{ASTElem, ASTNode};
+use crate::semantic::controlflow::ControlFlow;
+use crate::semantic::expression::{Expr, Atom, Operator};
+use crate::semantic::namespace::Identifier;
+use crate::semantic::types::{Type, Basic, TypeDef};
 
 use inkwell::targets::{TargetMachine, Target, InitializationConfig, TargetTriple};
 use inkwell::{IntPredicate, AddressSpace, FloatPredicate};

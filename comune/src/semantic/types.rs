@@ -8,8 +8,8 @@ use once_cell::sync::OnceCell;
 
 use super::expression::{Expr, ConstExpr};
 use super::namespace::{Identifier, NamespaceASTElem};
-use super::semantic::Attribute;
-use super::{semantic::FnScope, ASTResult};
+use crate::semantic::{Attribute, FnScope};
+use crate::parser::ASTResult;
 
 pub type BoxedType = Box<Type>;
 pub type FnParamList = Vec<(Type, Option<String>)>;
@@ -47,9 +47,9 @@ pub enum Basic {
 pub enum Type {
 	Basic(Basic),											// Fundamental type
 	Pointer(BoxedType),										// Pointer-to-<BoxedType>
-	Array(BoxedType, Box<ConstExpr>),							// Array with constant expression for size
+	Array(BoxedType, Box<ConstExpr>),						// Array with constant expression for size
 	Unresolved(Identifier),									// Unresolved type (during parsing phase)
-	TypeRef(Weak<RwLock<TypeDef>>, Identifier)		// Reference to type definition, plus Identifier for serialization
+	TypeRef(Weak<RwLock<TypeDef>>, Identifier)				// Reference to type definition, plus Identifier for serialization
 }
 
 

@@ -1,11 +1,14 @@
 mod parser;
 mod llvm;
 mod modules;
+mod semantic;
+mod lexer;
+mod errors;
 
 use std::{io::{self, Write}, ffi::OsString, sync::{Arc, Mutex}};
 use clap::Parser;
 use colored::Colorize;
-use parser::{types, namespace::Identifier};
+use semantic::{types, namespace::Identifier};
 use std::process::Command;
 
 

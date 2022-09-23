@@ -6,9 +6,9 @@ use std::path::Path;
 
 use colored::Colorize;
 
-use crate::parser::errors::CMNMessage;
+use crate::errors::CMNMessage;
 
-use super::namespace::{Identifier, ScopePath};
+use crate::semantic::namespace::{Identifier, ScopePath};
 
 
 const KEYWORDS: &[&'static str] = &[
@@ -37,7 +37,8 @@ const KEYWORDS: &[&'static str] = &[
 	"unsafe",
 	"safe",
 	"import",
-	"export"
+	"export",
+	"compile",
 ];
 
 const OPERATORS: &[&str] = &[

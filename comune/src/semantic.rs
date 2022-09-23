@@ -1,7 +1,17 @@
 use std::{cell::RefCell, collections::HashMap, sync::{Arc, RwLock}};
 
-use super::{types::{Type, Basic, Typed, TypeDef}, CMNError, ASTResult, namespace::{Namespace, Identifier, NamespaceItem, NamespaceASTElem}, ast::{ASTElem, ASTNode, TokenData}, controlflow::ControlFlow, expression::{Expr, Operator, Atom}, lexer, errors::{CMNMessage, CMNWarning}, ParseResult};
+use types::{Type, Basic, Typed, TypeDef};
 
+use crate::{errors::CMNError, parser::{ASTResult, ParseResult}};
+
+use self::{namespace::{Namespace, Identifier, NamespaceItem, NamespaceASTElem}, ast::{ASTElem, ASTNode, TokenData}, controlflow::ControlFlow, expression::{Expr, Atom, Operator}};
+
+pub mod ast;
+pub mod controlflow;
+pub mod expression;
+pub mod namespace;
+pub mod types;
+pub mod value;
 
 // SEMANTIC ANALYSIS
 // This module contains structs and impls related to AST checking, name resolution, and type validation.

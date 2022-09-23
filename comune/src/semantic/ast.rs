@@ -1,9 +1,9 @@
 use std::cell::RefCell;
 use std::fmt::Display;
 
-use super::lexer::Token;
-use super::ASTResult;
-use super::semantic::FnScope;
+use crate::lexer::Token;
+use crate::parser::ASTResult;
+use super::FnScope;
 use super::types::{Type, Basic, Typed};
 use super::expression::{Expr, Atom};
 use super::controlflow::ControlFlow;

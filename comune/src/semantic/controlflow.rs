@@ -1,6 +1,8 @@
 use std::fmt::Display;
 
-use super::{ast::ASTElem, types::{Typed, Type, Basic}, semantic::FnScope};
+use crate::parser::ASTResult;
+
+use super::{ast::ASTElem, FnScope, types::{Typed, Type, Basic}};
 
 
 #[derive(Clone, Debug, PartialEq)]
@@ -33,7 +35,7 @@ pub enum ControlFlow {
 
 
 impl Typed for ControlFlow {
-    fn get_type<'ctx>(&self, scope: &'ctx FnScope<'ctx>) -> super::ASTResult<Type> {
+    fn get_type<'ctx>(&self, scope: &'ctx FnScope<'ctx>) -> ASTResult<Type> {
         match self {
             ControlFlow::If { cond: _, body, else_body } => {
 
