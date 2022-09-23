@@ -1,8 +1,8 @@
-import libc;
 import module_test;
-
 using module_test::foo;
-using my_cool_alias = libc::printf;
+
+@no_mangle
+int printf(char* fmt);
 
 namespace cool {
 	u64 fib(u64 n) {
@@ -13,7 +13,7 @@ namespace cool {
 			c = a + b;
 			a = b;
 			b = c;
-			my_cool_alias("loop!\n");
+			printf("loop!\n");
 		}
 		return c;
 	}
