@@ -955,7 +955,7 @@ impl Parser {
 				let atom = if s.find('.').is_some() {
 					Atom::FloatLit(s.parse::<f64>().unwrap(), suffix_b)			
 				} else {
-					Atom::IntegerLit(s.parse::<isize>().unwrap(), suffix_b)
+					Atom::IntegerLit(s.parse::<i128>().unwrap(), suffix_b)
 				};
 
 				atom

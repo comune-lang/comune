@@ -230,7 +230,7 @@ impl Display for Expr {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Atom {
-	IntegerLit(isize, Option<Basic>),
+	IntegerLit(i128, Option<Basic>),
 	FloatLit(f64, Option<Basic>),
 	BoolLit(bool),
 	StringLit(String),
