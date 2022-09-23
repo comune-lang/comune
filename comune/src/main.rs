@@ -4,6 +4,7 @@ mod modules;
 mod semantic;
 mod lexer;
 mod errors;
+mod constexpr;
 
 use std::{io::{self, Write}, ffi::OsString, sync::{Arc, Mutex}};
 use clap::Parser;

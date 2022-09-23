@@ -6,8 +6,8 @@ use std::{fmt::Display, collections::HashMap};
 
 use once_cell::sync::OnceCell;
 
-use super::expression::{Expr, ConstExpr};
 use super::namespace::{Identifier, NamespaceASTElem};
+use crate::constexpr::ConstExpr;
 use crate::semantic::{Attribute, FnScope};
 use crate::parser::ASTResult;
 

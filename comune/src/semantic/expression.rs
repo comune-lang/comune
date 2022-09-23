@@ -205,13 +205,6 @@ pub enum Expr {
 }
 
 
-#[derive(Clone, Debug, PartialEq)]
-pub enum ConstExpr {
-	Expr(Expr),
-	Result(),
-}
-
-
 
 impl Display for Expr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
