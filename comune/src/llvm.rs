@@ -611,40 +611,50 @@ impl<'ctx> LLVMBackend<'ctx> {
 				
 				if from.is_numeric() {
 					let val = self.generate_expr(expr, from, scope);
+
 					match val.as_any_value_enum() {
 									
-						AnyValueEnum::IntValue(i) => {
-							if let Type::Basic(b) = &to {
-								match b {
+						AnyValueEnum::IntValue(i) => match &to {
 
-									Basic::BOOL => 
-										return Rc::new(
-											self.builder.build_int_compare(IntPredicate::NE, i, i.get_type().const_zero(), "boolcast")
-										),
+							Type::Basic(Basic::BOOL) => 
+								return Rc::new(
+									self.builder.build_int_compare(IntPredicate::NE, i, i.get_type().const_zero(), "boolcast")
+								),
 
-									_ => {
+							
+							_ => match self.get_llvm_type(to).as_any_type_enum() {
 
-										if to.is_numeric() {
-											match self.get_llvm_type(to).as_any_type_enum() {
-												AnyTypeEnum::IntType(t) => return Rc::new(self.builder.build_int_cast(i, t, "icast")),
-												
-												_ => panic!(),
-											}
-										}
+								AnyTypeEnum::IntType(t) => return Rc::new(self.builder.build_int_cast(i, t, "icast")),
+								
+								AnyTypeEnum::FloatType(t) => return Rc::new(
+									if from.is_signed() {
+										self.builder.build_signed_int_to_float(i, t, "fcast")
+									} else {
+										self.builder.build_unsigned_int_to_float(i, t, "fcast")
+									}),
 
-										todo!()
-									}
-								}
-
-							}
+								_ => panic!(),
+							
+							}							
 						},
 
-						AnyValueEnum::FloatValue(_) => todo!(),
+						AnyValueEnum::FloatValue(f) => match self.get_llvm_type(to).as_any_type_enum() {
+							
+							AnyTypeEnum::FloatType(t) => return Rc::new(self.builder.build_float_cast(f, t, "fcast")),
+
+							AnyTypeEnum::IntType(t) => return Rc::new(
+								if to.is_signed() { 
+									self.builder.build_float_to_signed_int(f, t, "icast")
+								} else {
+									self.builder.build_float_to_unsigned_int(f, t, "icast")	
+								}),
+
+							_ => panic!(),
+						}
+,
 
 						_ => panic!(),
 					}
-					
-					panic!() // Didn't return, incorrect cast
 
 				} else { // Not numeric, match other Basics
 

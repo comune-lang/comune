@@ -21,6 +21,6 @@ namespace cool {
 }
 
 int main() {
-	float a = 10.f;
-	return cool::fib(10) as i32 + foo();
+	float a = 10.f + 12.f;
+	return cool::fib(10) as i32 + foo() + a as i32;
 }
