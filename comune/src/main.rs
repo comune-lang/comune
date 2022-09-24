@@ -6,7 +6,7 @@ mod lexer;
 mod errors;
 mod constexpr;
 
-use std::{io::{self, Write}, ffi::OsString, sync::{Arc, Mutex}};
+use std::{io::{self, Write}, ffi::OsString, sync::{Arc, Mutex}, time::Instant};
 use clap::Parser;
 use colored::Colorize;
 use semantic::{types, namespace::Identifier};
@@ -45,14 +45,14 @@ fn main() -> color_eyre::eyre::Result<()> {
 		return Ok(());
 	}
 
+	let build_time = Instant::now();
+
 	rayon::ThreadPoolBuilder::new()
 		.num_threads(args.num_jobs)
 		.build_global()
 		.unwrap();
 
-
 	let target_machine = llvm::get_target_machine();
-
 
 	types::PTR_SIZE_BYTES.set(target_machine.get_target_data().get_pointer_byte_size(None)).unwrap();
 
@@ -65,15 +65,24 @@ fn main() -> color_eyre::eyre::Result<()> {
 		emit_llvm: args.emit_llvm,
 	});
 
+
+	// Launch multithreaded compilation
+	
 	rayon::scope(|s| {
 		modules::launch_module_compilation(manager_state.clone(), Identifier::from_name(args.input_file.clone().to_string_lossy().to_string()), s).unwrap();
 	});
+
+	let compile_time = build_time.elapsed();
+
+	// Link into binary
 	
 	let mut output_file = modules::get_out_folder(&manager_state);
 	output_file.push(args.input_file);
 	output_file.set_extension("");
+	
+	let build_name = output_file.file_name().unwrap().to_string_lossy().to_string();
 
-	println!("\n{} target {}\n", "linking".bold().green(), output_file.file_name().unwrap().to_str().unwrap().bold());
+	println!("\n{} target {}\n", "linking".bold().green(), build_name.bold());
 
 	// Link into executable
 	// We use clang here because fuck dude i don't know how to use ld manually
@@ -95,6 +104,15 @@ fn main() -> color_eyre::eyre::Result<()> {
 	
 	io::stdout().write(&output_result.stdout).unwrap();
 	io::stderr().write(&output_result.stderr).unwrap();
+
+	let link_time = build_time.elapsed() - compile_time;
+
+	println!("{} building {} in {}s (compile: {}s, link: {}s)\n", "finished".bold().green(), 
+		build_name.bold(), 
+		build_time.elapsed().as_millis() as f64 / 1000.0,
+		compile_time.as_millis() as f64 / 1000.0,
+		link_time.as_millis() as f64 / 1000.0
+	);
 	
 	Ok(())
 }

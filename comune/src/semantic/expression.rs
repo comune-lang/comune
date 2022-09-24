@@ -144,39 +144,45 @@ impl Operator {
 	pub fn get_operator(token: &str, has_lhs: bool) -> Option<Operator> {
 		if has_lhs {
 			match token {
-				"+" => Some(Operator::Add),
-				"-" => Some(Operator::Sub),
-				"/" => Some(Operator::Div),
-				"*" => Some(Operator::Mul),
-				"%" => Some(Operator::Mod),
-				"^" => Some(Operator::BitXOR),
-				"|" => Some(Operator::BitOR),
-				"&" => Some(Operator::BitAND),
-				"=" => Some(Operator::Assign),
-				"/=" => Some(Operator::AssDiv),
-				"*=" => Some(Operator::AssMul),
-				"+=" => Some(Operator::AssAdd),
-				"-=" => Some(Operator::AssSub),
-				"++" => Some(Operator::PostInc),
-				"--" => Some(Operator::PostDec),
-				"(" => Some(Operator::Call),
-				")" => None,
-				"[" => Some(Operator::Subscr),
-				"]" => None,
-				"->" => Some(Operator::MemberAccess),
-				"." => Some(Operator::MemberAccess),
-				"::" => Some(Operator::ScopeRes),
-				"<" => Some(Operator::Less),
-				">" => Some(Operator::Greater),
-				"||" => Some(Operator::LogicOr),
-				"&&" => Some(Operator::LogicAnd),
-				"==" => Some(Operator::Eq),
-				"<=" => Some(Operator::LessEq),
-				">=" => Some(Operator::GreaterEq),
-				"!=" => Some(Operator::NotEq),
-				"<<" => Some(Operator::BitShiftL),
-				">>" => Some(Operator::BitShiftR),
-				"as" => Some(Operator::Cast),
+				"+" =>	Some(Operator::Add),
+				"-" =>	Some(Operator::Sub),
+				"/" =>	Some(Operator::Div),
+				"*" =>	Some(Operator::Mul),
+				"%" =>	Some(Operator::Mod),
+				"^" =>	Some(Operator::BitXOR),
+				"|" =>	Some(Operator::BitOR),
+				"&" =>	Some(Operator::BitAND),
+
+				"=" =>	Some(Operator::Assign),
+				"/=" =>	Some(Operator::AssDiv),
+				"*=" =>	Some(Operator::AssMul),
+				"+=" =>	Some(Operator::AssAdd),
+				"-=" =>	Some(Operator::AssSub),
+				"&=" =>	Some(Operator::AssBitAND),
+				"|=" =>	Some(Operator::AssBitOR),
+				"%=" =>	Some(Operator::AssMod),
+				"^=" =>	Some(Operator::AssBitXOR),
+				
+				"++" =>	Some(Operator::PostInc),
+				"--" =>	Some(Operator::PostDec),
+				"(" =>	Some(Operator::Call),
+				")" =>	None,
+				"[" =>	Some(Operator::Subscr),
+				"]" =>	None,
+				"->" =>	Some(Operator::MemberAccess),
+				"." =>	Some(Operator::MemberAccess),
+				"::" =>	Some(Operator::ScopeRes),
+				"<" => 	Some(Operator::Less),
+				">" =>	Some(Operator::Greater),
+				"||" =>	Some(Operator::LogicOr),
+				"&&" =>	Some(Operator::LogicAnd),
+				"==" =>	Some(Operator::Eq),
+				"<=" =>	Some(Operator::LessEq),
+				">=" =>	Some(Operator::GreaterEq),
+				"!=" =>	Some(Operator::NotEq),
+				"<<" =>	Some(Operator::BitShiftL),
+				">>" =>	Some(Operator::BitShiftR),
+				"as" =>	Some(Operator::Cast),
 				
 				_ => None,
 			
@@ -234,8 +240,11 @@ pub enum Atom {
 	FloatLit(f64, Option<Basic>),
 	BoolLit(bool),
 	StringLit(String),
-	Identifier(Identifier),
 	ArrayLit(Vec<ASTElem>),
+	TupleLit(Vec<ASTElem>),
+
+	Identifier(Identifier),
+
 	Cast(Box<ASTElem>, Type),
 
 	FnCall{
@@ -251,12 +260,16 @@ impl Display for Atom {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
 			Atom::IntegerLit(i, _) => write!(f, "{}", i),
-			
+
             Atom::FloatLit(fl, _) => write!(f, "{}", fl),
 
             Atom::StringLit(s) => write!(f, "\"{}\"", s.escape_default()),
 
 			Atom::BoolLit(b) => if *b { write!(f, "true") } else { write!(f, "false") }
+
+			Atom::ArrayLit(_elems) => todo!(),
+            
+			Atom::TupleLit(_elems) => todo!(),
 
             Atom::FnCall {name, args} => {
 				let mut args_iter = args.iter();
@@ -275,8 +288,6 @@ impl Display for Atom {
 			Atom::Cast(elem, to) => write!(f, "{}({})", to, elem),
 
             Atom::Identifier(var) => write!(f, "{}", var),
-			
-            Atom::ArrayLit(_elems) => todo!(),
 		}
     }
 }

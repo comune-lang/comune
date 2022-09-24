@@ -10,7 +10,7 @@ use crate::semantic::controlflow::ControlFlow;
 use crate::semantic::expression::{Expr, Operator, Atom};
 use crate::semantic::namespace::{Namespace, NamespaceItem, NamespaceASTElem, Identifier, ScopePath};
 use crate::semantic::Attribute;
-use crate::semantic::types::{Type, FnParamList, Basic, AggregateType, Visibility, TypeDef};
+use crate::semantic::types::{Type, FnParamList, Basic, AlgebraicType, Visibility, TypeDef};
 
 // Convenience function that matches a &str against various token kinds
 fn token_compare(token: &Token, text: &str) -> bool {
@@ -177,7 +177,7 @@ impl Parser {
 							let mut current_visibility = if keyword == "struct" { Visibility::Public } else { Visibility::Private };
 
 							// Register aggregate type
-							let mut aggregate = AggregateType::new();
+							let mut aggregate = AlgebraicType::new();
 
 							let name_token = self.get_next()?;
 							
@@ -228,7 +228,7 @@ impl Parser {
 
 								self.get_next()?; // Consume closing brace
 
-								let aggregate = TypeDef::Aggregate(Box::new(aggregate));
+								let aggregate = TypeDef::Algebraic(Box::new(aggregate));
 
 								self.current_namespace().borrow_mut().children.insert(
 									name.expect_scopeless()?, (
@@ -947,10 +947,16 @@ impl Parser {
 			Token::StringLiteral(s) => result = Atom::StringLit(s),
 			
 			Token::NumLiteral(s, suffix) => result = {
-				let suffix_b = Basic::get_basic_type(suffix.as_str());
+				let mut suffix_b = Basic::get_basic_type(suffix.as_str());
 		
 				if suffix_b.is_none() && !suffix.is_empty() {
-					return Err(CMNError::InvalidSuffix);
+					suffix_b = match suffix.as_str() {
+						// Add special numeric suffixes here
+						
+						"f" => Some(Basic::FLOAT { size_bytes: 4 }),
+
+						_ => return Err(CMNError::InvalidSuffix),
+					};
 				}
 
 				let atom = if s.find('.').is_some() {
@@ -1083,7 +1089,7 @@ impl Parser {
 
 							result = Type::Array(
 								Box::new(result), 
-								Box::new(RefCell::new(ConstExpr::Expr(const_expr.get_expr().replace(dummy_expr))))
+								RefCell::new(vec![ConstExpr::Expr(const_expr.get_expr().replace(dummy_expr))])
 							);
 
 							self.get_next()?;

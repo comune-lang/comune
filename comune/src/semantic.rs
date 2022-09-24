@@ -170,6 +170,13 @@ pub fn resolve_type(ty: &mut Type, namespace: &Namespace, root: &RefCell<Namespa
 
 		Type::Array(ref mut pointee, _size) => resolve_type(pointee, namespace, root),
 
+		Type::Tuple(ref mut types) => {
+			for t in types {
+				resolve_type(t, namespace, root)?;
+			}
+			Ok(())
+		}
+
 		Type::Unresolved(ref id) => {
 			let mut result = Err(CMNError::UnresolvedTypename(id.to_string()));
 
@@ -199,7 +206,7 @@ pub fn resolve_type(ty: &mut Type, namespace: &Namespace, root: &RefCell<Namespa
 pub fn resolve_type_def(ty: &mut TypeDef, namespace: &Namespace, root: &RefCell<Namespace>) -> ParseResult<()> {
 	match ty {
 
-		TypeDef::Aggregate(ref mut agg) => { 
+		TypeDef::Algebraic(ref mut agg) => { 
 			for member in &mut agg.members {
 				resolve_type(&mut member.1.0, &namespace, root).unwrap();
 			}
@@ -251,7 +258,7 @@ pub fn resolve_namespace_types(namespace: &RefCell<Namespace>, root: &RefCell<Na
 
 
 pub fn check_cyclical_deps(ty: &Arc<RwLock<TypeDef>>, parent_types: &mut Vec<Arc<RwLock<TypeDef>>>) -> ASTResult<()> {
-	if let TypeDef::Aggregate(agg) = &*ty.as_ref().read().unwrap() {
+	if let TypeDef::Algebraic(agg) = &*ty.as_ref().read().unwrap() {
 		for member in agg.members.iter() {
 			if let Type::TypeRef(ref_t, _) =  &member.1.0 {
 				if parent_types.iter().find(|elem| Arc::ptr_eq(elem, &ref_t.upgrade().unwrap())).is_some() {
@@ -575,6 +582,7 @@ impl Expr {
 
 					Atom::Cast(_, cast_t) => *target == *cast_t,
 					Atom::ArrayLit(_) => todo!(),
+        			Atom::TupleLit(_) => todo!(),
 				}
 			},
 
@@ -605,7 +613,7 @@ impl Expr {
 							if let Type::TypeRef(r, _) = elems[0].0.validate(scope, None, meta).unwrap() {
 								match &*r.upgrade().unwrap().as_ref().read().unwrap() {
 
-									TypeDef::Aggregate(t) => {
+									TypeDef::Algebraic(t) => {
 										if let Some(member) = t.members.iter().find(|mem| mem.0 == id.name) {
 											 return Some(member.1.0.clone());
 										}
@@ -731,6 +739,7 @@ impl Atom {
 			},
 
 			Atom::ArrayLit(_) => todo!(),
+    		Atom::TupleLit(_) => todo!(),
 		}
 	}
 
@@ -791,16 +800,27 @@ impl Atom {
 	}
 }
 
+
 impl Type {
 	pub fn validate<'ctx>(&self, scope: &'ctx FnScope<'ctx>, meta: TokenData) -> ASTResult<()> {
 		match self {
-			Type::Array(_, expr) => {
-				let mut result = None;
-				if let ConstExpr::Expr(e) = &*expr.borrow() {
-					result = Some(ConstExpr::Result(e.eval_const(scope)?));
-				}
-				if let Some(result) = result {
-					*expr.borrow_mut() = result;
+			Type::Array(_, n) => {
+				// Old fashioned way to make life easier with the RefCell
+				let mut idx = 0;
+				let len = n.borrow().len();
+
+				while idx < len {
+					let mut result = None;
+					
+					if let ConstExpr::Expr(e) = &n.borrow()[idx] {
+						result = Some(ConstExpr::Result(e.eval_const(scope)?));
+					}
+					
+					if let Some(result) = result {
+						n.borrow_mut()[idx] = result;
+					}
+
+					idx += 1;
 				}
 			}
 

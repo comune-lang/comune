@@ -38,7 +38,8 @@ pub enum Basic {
 pub enum Type {
 	Basic(Basic),											// Fundamental type
 	Pointer(BoxedType),										// Pointer-to-<BoxedType>
-	Array(BoxedType, Box<RefCell<ConstExpr>>),						// Array with constant expression for size
+	Tuple(Vec<Type>),										// Simple set of values of different types
+	Array(BoxedType, RefCell<Vec<ConstExpr>>),				// N-dimensional array with constant expression for size
 	Unresolved(Identifier),									// Unresolved type (during parsing phase)
 	TypeRef(Weak<RwLock<TypeDef>>, Identifier)				// Reference to type definition, plus Identifier for serialization
 }
@@ -47,18 +48,18 @@ pub enum Type {
 #[derive(Debug, PartialEq)]
 pub enum TypeDef {
 	Function(Type, Vec<(Type, Option<String>)>),			// Return type + parameter types
-	Aggregate(Box<AggregateType>),							// Guess.
-	//Alias(String, Type)										// Identifier + referenced type
+	Algebraic(Box<AlgebraicType>),							// Data type for structs & enums
+	// TODO: Add Class TypeDef
 }
 
 
+// Metatype that represents a generic algebraic type.
+// This is the internal representation of both structs and enums, as they can contain each other.
 #[derive(Clone, Debug, PartialEq)]
-pub struct AggregateType {
+pub struct AlgebraicType {
 	pub members: Vec<(String, (Type, RefCell<NamespaceASTElem>, Vec<Attribute>, Visibility))>,
+	pub variants: Vec<(String, (Box<AlgebraicType>, Vec<Attribute>))>,
 	pub methods: HashMap<String, (Type, RefCell<NamespaceASTElem>, Vec<Attribute>)>,
-	pub constructors: Vec<Type>,
-	pub destructor: Option<Type>,
-	pub inherits: Vec<Type>,
 }
 
 
@@ -70,14 +71,12 @@ pub enum Visibility {
 }
 
 
-impl AggregateType {
+impl AlgebraicType {
 	pub fn new() -> Self {
-		AggregateType { 
+		AlgebraicType { 
 			members: vec![],
+			variants: vec![],
 			methods: HashMap::new(),
-			constructors: vec![],
-			destructor: None,
-			inherits: vec![],
 		}
 	}
 }
@@ -169,13 +168,23 @@ impl Type {
 	pub fn serialize(&self) -> String {
 		let mut result = String::new();
 		match &self {
+
 			Type::Basic(b) => {
 				// TODO: Shorten
 				result.push_str(b.as_str());
 			},
+
 			Type::Array(t, _) => {
 				result.push_str(&t.serialize());
-				result.push_str("+");
+				result.push_str("[]");
+			}
+
+			Type::Tuple(types) => {
+				result.push_str("(");
+				for t in types {
+					result.push_str(&t.serialize());
+				}
+				result.push_str(")");
 			}
 			
 			Type::Pointer(_) => {
@@ -257,7 +266,7 @@ impl TypeDef {
 	pub fn serialize(&self) -> String {
 		let mut result = String::new();
 		match &self {						
-			TypeDef::Aggregate(a) => {
+			TypeDef::Algebraic(a) => {
 				for t in &a.members {
 					result.push_str(&t.1.0.serialize());
 				}
@@ -279,7 +288,7 @@ impl TypeDef {
 		let ptr_size = *PTR_SIZE_BYTES.get().unwrap() as u32;
 
 		match &self {
-			TypeDef::Aggregate(ts) => {
+			TypeDef::Algebraic(ts) => {
 				let mut result = 0;
 
 				for t in ts.members.iter() {
@@ -323,6 +332,7 @@ impl Hash for Type {
             Type::Basic(b) => b.hash(state),
             Type::Pointer(t) => { t.hash(state); "*".hash(state) },
 			Type::Array(t, _s) => { t.hash(state);  "+".hash(state) },
+			Type::Tuple(types) => { "(".hash(state); for t in types { t.hash(state); } ")".hash(state) }
             Type::Unresolved(id) => id.hash(state),
             Type::TypeRef(r, _) => ptr::hash(r.upgrade().unwrap().as_ref(), state),
         }
@@ -346,6 +356,19 @@ impl Display for Type {
 				write!(f, "{}[]", t)?;
 			}
 
+			Type::Tuple(types) => {
+				if types.is_empty() {
+					write!(f, "()")?;
+				} else {
+					let mut iter = types.iter();
+					write!(f, "({}", iter.next().unwrap())?;
+					for t in iter {
+						write!(f, ", {}", t)?;
+					}
+					write!(f, ")")?;
+				}
+			}
+
 			Type::Unresolved(t) => {
 				write!(f, "\"{}\"", t)?;
 			},
@@ -363,7 +386,7 @@ impl Display for Type {
 impl Display for TypeDef {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match &self {
-			TypeDef::Aggregate(agg) => {
+			TypeDef::Algebraic(agg) => {
 				write!(f, "{}", agg)?;
 			},
 			
@@ -380,7 +403,7 @@ impl Display for TypeDef {
 }
 
 
-impl Display for AggregateType {
+impl Display for AlgebraicType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		let mut members = self.members.iter();
 		write!(f, "Struct {{{}", members.next().unwrap().1.0)?;
@@ -391,15 +414,13 @@ impl Display for AggregateType {
     }
 }
 
-impl Hash for AggregateType {
+impl Hash for AlgebraicType {
     fn hash<H: Hasher>(&self, state: &mut H) {
 		// We hash based on Type only, so two aggregates with the same layout have the same Hash
 		// Hashing is only relevant for LLVM codegen, so semantic analysis will already have happened
         self.members.iter().map(|item| &item.1.0).collect::<Vec<&Type>>().hash(state);
+        self.variants.iter().map(|item| &item.1.0).collect::<Vec<&Box<AlgebraicType>>>().hash(state);
         self.methods.iter().map(|item| &item.1.0).collect::<Vec<&Type>>().hash(state);
-        self.constructors.hash(state);
-        self.destructor.hash(state);
-        self.inherits.hash(state);
     }
 }
 
@@ -410,6 +431,7 @@ impl std::fmt::Debug for Type {
             Self::Basic(arg0) => f.debug_tuple("Basic").field(arg0).finish(),
             Self::Pointer(_) => f.debug_tuple("Pointer").finish(),
             Self::Array(t, _) => f.debug_tuple("Array").field(t).finish(),
+            Self::Tuple(types) => f.debug_tuple("Tuples").field(types).finish(),
             Self::Unresolved(arg0) => f.debug_tuple("Unresolved").field(arg0).finish(),
             Self::TypeRef(arg0, _) => f.debug_tuple("TypeRef").field(arg0).finish(),
         }

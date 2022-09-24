@@ -434,8 +434,9 @@ impl<'ctx> LLVMBackend<'ctx> {
 							)
 						)
 					}
+       				
+					Atom::TupleLit(_) => todo!(),
 				}
-
 			},
 
 			Expr::Cons(op, elems, _meta) => 
@@ -682,10 +683,8 @@ impl<'ctx> LLVMBackend<'ctx> {
 					}
 				}
 			},
-			Type::Pointer(_) => todo!(),
-			Type::Unresolved(_) => todo!(),
-    		Type::TypeRef(_, _) => todo!(),
-   			Type::Array(_, _) => todo!(),
+
+			_ => todo!(),
 		}
 	}
 
@@ -793,7 +792,8 @@ impl<'ctx> LLVMBackend<'ctx> {
 			},
 
 			Type::TypeRef(t_ref, id) => match &*t_ref.upgrade().unwrap().read().unwrap() {
-				TypeDef::Aggregate(aggregate) => {
+
+				TypeDef::Algebraic(aggregate) => {
 					let mapped_t = { self.type_map.borrow().get(t).cloned() };
 
 					if let Some(mapped_t) = mapped_t {
@@ -814,20 +814,28 @@ impl<'ctx> LLVMBackend<'ctx> {
 						result_type
 					}
 				},
+
    				TypeDef::Function(_, _) => todo!(),
 			}
+
+			Type::Tuple(_) => todo!(),
+
 			Type::Pointer(t_sub) => Rc::new(Self::to_basic_type(self.get_llvm_type(t_sub)).ptr_type(AddressSpace::Generic)),
 			
-			Type::Array(t_sub, s) => match &*s.borrow() {
-				ConstExpr::Result(v) => {
-					if let ConstValue::Integral(i, _) = v {
-						Rc::new(Self::to_basic_type(self.get_llvm_type(t_sub)).array_type(*i as u32))
-					} else {
+			Type::Array(t_sub, s) => {
+				let mut array_size: u32 = 0;
+
+				for dimension in &*s.borrow() {
+					if let ConstExpr::Result(ConstValue::Integral(i, _)) = dimension {
+						array_size += *i as u32;
+					} else { 
 						panic!()
 					}
 				}
-				_ => panic!(),
+
+				Rc::new(Self::to_basic_type(self.get_llvm_type(t_sub)).array_type(array_size))
 			},
+			
 			Type::Unresolved(_) => panic!(),
 		}
 	}
