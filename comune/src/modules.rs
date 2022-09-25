@@ -53,7 +53,7 @@ pub fn launch_module_compilation<'scope>(state: Arc<ManagerState>, input_module:
 
 		let result = match generate_code(&state, &mut mod_state, &context) {
 			Ok(res) => res,
-			Err(_) => todo!(), // TODO: Add some kind of global compilation result tracker
+			Err(_) => return, // TODO: Add some kind of global compilation result tracker
 		};
 
 		let target_machine = llvm::get_target_machine();

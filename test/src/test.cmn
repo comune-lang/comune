@@ -11,12 +11,8 @@ struct Test {
 
 impl Test {
 	int sum(Test this) {
-		return this.a + this.b;
-	}
-
-	void log() {
 		printf("This is a method call!\n");
-		return;
+		return this.a + this.b;
 	}
 }
 
@@ -24,6 +20,5 @@ int main() {
 	Test test;
 	test.a = 10;
 	test.b = 5;
-	test.log();
-	return test.sum(test);
+	return test.sum();
 }

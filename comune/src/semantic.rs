@@ -677,22 +677,24 @@ impl Expr {
 		match self {
 			Expr::Atom(a, _) => a.get_lvalue_type(scope),
 
-			Expr::Cons(op, elems, _) => {
+			Expr::Cons(op, elems, _) => match op {
 				// Only these operators can result in lvalues
-				match op {
-
-					Operator::Deref => {
-						match elems[0].0.validate(scope, None, meta).unwrap() {
-							Type::Pointer(t) => Some(*t),
-							_ => None,
-						}
+			
+				Operator::Deref => {
+					match elems[0].0.validate(scope, None, meta).unwrap() {
+						Type::Pointer(t) => Some(*t),
+						_ => None,
 					}
+				}
 
-					Operator::MemberAccess => {
-						if let Type::TypeRef(r, id) = elems[0].0.validate(scope, None, meta).unwrap() {
+				Operator::MemberAccess => {
+					if let Type::TypeRef(r, id) = elems[0].0.validate(scope, None, meta).unwrap() {
+
+						if let (lhs, [rhs, ..]) = elems.split_first_mut().unwrap() {
+
 							match &mut *r.upgrade().unwrap().write().unwrap() {
-
-								TypeDef::Algebraic(t) => match &mut elems[1].0 {
+								// Dot operator is on an algebraic type, so check if it's a member access or method call
+								TypeDef::Algebraic(t) => match &mut rhs.0 {
 									
 									// Member access on algebraic type
 									Expr::Atom(Atom::Identifier(ref mut id), _) => {
@@ -711,32 +713,41 @@ impl Expr {
 									Expr::Atom(Atom::FnCall { name, args }, _) => {
 										
 										// jesse. we have to call METHods
-										if let Some(impls) = scope.context.borrow().impls.get(&id) {
-											if let Some(method) = impls.iter().find(|meth| {&meth.0 == &name.name}) {
-												if let TypeDef::Function(ret, params) = &mut *method.1.as_ref().write().unwrap() {
-													name.resolved = method.3.clone();
-													// TODO: Parameter typecheck
-													return validate_fn_call(ret, args, params, scope, meta.clone()).ok();
-												}
+
+										if let Some(method) = scope.context.borrow().impls.get(&id).unwrap_or(&vec![]).iter().find(|meth| {&meth.0 == &name.name}) {
+											if let TypeDef::Function(ret, params) = &mut *method.1.as_ref().write().unwrap() {
+												name.resolved = method.3.clone();
+												
+												// Insert `this` into the arg list
+												args.insert(0, ASTElem { 
+													node: ASTNode::Expression(
+														RefCell::new(
+															lhs.0.clone()
+														)
+													), token_data: (0, 0), type_info: RefCell::new(Some(Type::TypeRef(r.clone(), id.clone()))) });
+												
+												return validate_fn_call(ret, &args, params, scope, meta.clone()).ok();
 											}
 										}
+									
 
 										None
 									}
 
 									_ => None
 								}
-
 								_ => None,
 							}
 						} else {
 							None
 						}
+					} else {
+						None
 					}
-
-					_ => None,
 				}
-			},
+
+				_ => None,
+			}
 		}
 	}
 
