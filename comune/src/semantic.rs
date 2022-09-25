@@ -672,11 +672,11 @@ impl Expr {
 								TypeDef::Algebraic(t) => match &mut elems[1].0 {
 									
 									// Member access on algebraic type
-									Expr::Atom(Atom::Identifier(ref id), _) => {
-										let id = id.clone();
+									Expr::Atom(Atom::Identifier(ref mut id), _) => {
 
-										if let Some(member) = t.members.iter().find(|mem| mem.0 == id.name) {
-											return Some(member.1.0.clone());
+										if let Some(i) = t.members.iter().position(|mem| mem.0 == id.name) {
+											id.mem_idx = i as u32;
+											return Some(t.members[i].1.0.clone());
 										}
 									
 										// Didn't return Some, so not a valid member access
