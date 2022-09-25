@@ -20,14 +20,10 @@ impl Test {
 	}
 }
 
-int sum(Test test) {
-	return test.a + test.b; 
-}
-
 int main() {
 	Test test;
 	test.a = 10;
 	test.b = 5;
 	test.log();
-	return sum(test);//test.sum(test);
+	return test.sum(test);
 }

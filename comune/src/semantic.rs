@@ -150,6 +150,29 @@ pub fn validate_function(sym_type: &TypeDef, sym_elem: &RefCell<NamespaceASTElem
 }
 
 
+pub fn validate_fn_call(ret: &Type, args: &Vec<ASTElem>, params: &Vec<(Type, Option<String>)>, scope: &FnScope, meta: TokenData) -> ASTResult<Type> {
+	if args.len() == params.len() {
+
+		for i in 0..args.len() {
+			args[i].type_info.replace(Some(params[i].0.clone()));
+			let arg_type = args[i].get_expr().borrow_mut().validate(scope, None, meta)?;
+
+			if !args[i].get_expr().borrow().coercable_to(&arg_type, &params[i].0, scope) {
+				return Err((CMNError::InvalidCoercion{ from: arg_type, to: params[i].0.clone()}, args[i].token_data));
+			}
+
+			if arg_type != params[i].0 {
+				args[i].wrap_expr_in_cast(Some(arg_type), params[i].0.clone());
+			}
+		}
+		// All good, return function's return type
+		Ok(ret.clone())
+
+	} else {
+		Err((CMNError::ParamCountMismatch{expected: params.len(), got: args.len()}, meta))
+	}
+}
+
 
 pub fn validate_namespace(namespace: &RefCell<Namespace>, root_namespace: &RefCell<Namespace>) -> ASTResult<()> {
 	for c in &namespace.borrow().children {
@@ -685,16 +708,15 @@ impl Expr {
 									},
 
 									// Method call on algebraic type
-									Expr::Atom(Atom::FnCall { name, .. }, _) => {
+									Expr::Atom(Atom::FnCall { name, args }, _) => {
 										
 										// jesse. we have to call METHods
 										if let Some(impls) = scope.context.borrow().impls.get(&id) {
 											if let Some(method) = impls.iter().find(|meth| {&meth.0 == &name.name}) {
-												if let TypeDef::Function(ret, _) = &mut *method.1.as_ref().write().unwrap() {
+												if let TypeDef::Function(ret, params) = &mut *method.1.as_ref().write().unwrap() {
 													name.resolved = method.3.clone();
 													// TODO: Parameter typecheck
-
-													return Some(ret.clone());
+													return validate_fn_call(ret, args, params, scope, meta.clone()).ok();
 												}
 											}
 										}
@@ -792,26 +814,7 @@ impl Atom {
 					if let TypeDef::Function(ret, params) = &*t.upgrade().unwrap().as_ref().read().unwrap() {
 
 						// Identifier is a function, check parameter types
-						if args.len() == params.len() {
-
-							for i in 0..args.len() {
-								args[i].type_info.replace(Some(params[i].0.clone()));
-								let arg_type = args[i].get_expr().borrow_mut().validate(scope, None, meta)?;
-
-								if !args[i].get_expr().borrow().coercable_to(&arg_type, &params[i].0, scope) {
-									return Err((CMNError::InvalidCoercion{ from: arg_type, to: params[i].0.clone()}, args[i].token_data));
-								}
-
-								if arg_type != params[i].0 {
-									args[i].wrap_expr_in_cast(Some(arg_type), params[i].0.clone());
-								}
-							}
-							// All good, return function's return type
-							Ok(ret.clone())
-
-						} else {
-							Err((CMNError::ParamCountMismatch{expected: params.len(), got: args.len()}, meta))
-						}
+						validate_fn_call(ret, args, params, scope, meta.clone())
 						
 					} else {
 						Err((CMNError::NotCallable(name.to_string()), meta)) // Trying to call a non-function
