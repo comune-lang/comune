@@ -470,11 +470,17 @@ impl<'ctx> LLVMBackend<'ctx> {
 					
 					match op {
 						Operator::MemberAccess => {
-							if let Expr::Atom(Atom::Identifier(id), _) = &rhs.0 {
-								let lhs_s = self.generate_expr(&lhs.0, t, scope).as_any_value_enum().into_struct_value();
-								Rc::new(self.builder.build_extract_value(lhs_s, id.mem_idx, "memberaccess").unwrap())
-							} else {
-								panic!();
+							match &rhs.0 {
+
+								Expr::Atom(Atom::Identifier(id), _) => {
+									let lhs_s = self.generate_expr(&lhs.0, t, scope).as_any_value_enum().into_struct_value();
+									Rc::new(self.builder.build_extract_value(lhs_s, id.mem_idx, "memberaccess").unwrap())
+								}
+
+								Expr::Atom(Atom::FnCall { name, args }, _) => self.generate_fn_call(name, args, t, scope),
+
+								_ => panic!(),
+								
 							}
 						}
 
@@ -698,6 +704,25 @@ impl<'ctx> LLVMBackend<'ctx> {
 		}
 	}
 
+
+	fn generate_fn_call(&self, name: &Identifier, args: &Vec<ASTElem>, t: &Type, scope: &LLVMScope<'ctx, '_>) -> Rc<dyn AnyValue<'ctx> + 'ctx> {
+		let fn_v = self.module.get_function(name.resolved.as_ref().unwrap()).unwrap();
+
+		let args_mapped: Vec<_> = args.iter().map(
+			|x| {
+				let expr;
+				if let ASTNode::Expression(e) = &x.node { 
+					expr = e.borrow(); 
+				} else { 
+					panic!() 
+				}
+				
+				Self::into_basic_metadata_value(self.generate_expr(&expr, t, scope))
+			}
+		).collect(); 
+
+		Rc::new(self.builder.build_call(fn_v, &args_mapped, name.resolved.as_ref().unwrap()))
+	}
 
 	
 	fn resolve_identifier(&self, scope: &LLVMScope<'ctx, '_>, id: &Identifier) -> PointerValue<'ctx> {

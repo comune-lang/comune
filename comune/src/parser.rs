@@ -133,6 +133,22 @@ impl Parser {
 			}
 		};
 
+		for im in &namespace.borrow().impls {
+			// Generate impl function bodies
+			for method in im.1 {
+				let mut elem = method.2.borrow_mut(); 
+				match *elem {
+					NamespaceASTElem::Unparsed(idx) => {
+						// Parse method block
+						self.lexer.borrow_mut().seek_token_idx(idx);
+						*elem = NamespaceASTElem::Parsed(self.parse_block()?)
+					}
+
+					_ => {},
+				}
+			}
+		}
+
 		Ok(namespace)
 	}
 
@@ -173,10 +189,10 @@ impl Parser {
 
 					match keyword {
 
-						"class" | "struct" => {
-							let mut current_visibility = if keyword == "struct" { Visibility::Public } else { Visibility::Private };
+						"struct" => {
+							let mut current_visibility = Visibility::Public;
 
-							// Register aggregate type
+							// Register algebraic type
 							let mut aggregate = AlgebraicType::new();
 
 							let name_token = self.get_next()?;
@@ -280,6 +296,87 @@ impl Parser {
 								);
 
 								current_attributes = vec![];
+							} else {
+								return Err(CMNError::ExpectedIdentifier);
+							}
+						}
+
+
+						"impl" => {
+							let impl_name_token = self.get_next()?;
+							let impl_name;
+							let mut trait_name = None;
+
+							if let Token::Identifier(id) = &impl_name_token {
+
+								match self.get_next()? {
+
+									Token::Other('{') => {
+										// Regular impl
+										impl_name = id.clone();
+										self.get_next()?;
+									}
+
+									Token::Keyword("for") => {
+										// Trait impl
+										trait_name = Some(id);
+
+										if let Token::Identifier(id) = self.get_next()? {
+											impl_name = id;
+										} else {
+											return Err(CMNError::ExpectedIdentifier);
+										}
+										
+										if !token_compare(&self.get_next()?, "{") {
+											return Err(CMNError::UnexpectedToken);
+										}
+
+										self.get_next()?;
+									}
+
+									_ => return Err(CMNError::UnexpectedToken),
+								}
+
+								let mut current = self.get_current()?;
+
+								// Parse functions
+
+								while current != Token::Other('}') {
+									let fn_ret = self.parse_type(false)?;
+									
+									let fn_name = if let Token::Identifier(id) = self.get_current()? { 
+										id.expect_scopeless()?
+									} else { 
+										return Err(CMNError::ExpectedIdentifier);
+									};
+
+									self.get_next()?;
+
+									let fn_params = self.parse_parameter_list()?;
+									
+									let ast_elem = NamespaceASTElem::Unparsed(self.get_current_token_index());
+									self.skip_block()?;
+
+									// Register impl
+									let impls = &mut self.current_namespace().borrow_mut().impls;
+									
+									let current_impl = (fn_name, 
+										Arc::new(RwLock::new(TypeDef::Function(fn_ret, fn_params))), 
+										RefCell::new(ast_elem),
+										None
+									);
+
+									if let Some(impls) = impls.get_mut(&impl_name) {
+										impls.push(current_impl);
+									} else {
+										impls.insert(impl_name.clone(), vec![current_impl]);
+									}
+									
+
+									current = self.get_current()?;
+								}
+
+								self.get_next()?;
 							} else {
 								return Err(CMNError::ExpectedIdentifier);
 							}
@@ -703,8 +800,6 @@ impl Parser {
 		
 		if let Token::Identifier(id) = next {
 			next = self.get_next()?;
-
-			
 
 			if let Token::Operator(op) = next {
 				match op.as_str() {

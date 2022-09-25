@@ -45,7 +45,7 @@ pub enum Type {
 }
 
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub enum TypeDef {
 	Function(Type, Vec<(Type, Option<String>)>),			// Return type + parameter types
 	Algebraic(Box<AlgebraicType>),							// Data type for structs & enums
@@ -55,11 +55,11 @@ pub enum TypeDef {
 
 // Metatype that represents a generic algebraic type.
 // This is the internal representation of both structs and enums, as they can contain each other.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct AlgebraicType {
 	pub members: Vec<(String, (Type, RefCell<NamespaceASTElem>, Vec<Attribute>, Visibility))>,
 	pub variants: Vec<(String, (Box<AlgebraicType>, Vec<Attribute>))>,
-	pub methods: HashMap<String, (Type, RefCell<NamespaceASTElem>, Vec<Attribute>)>,
+	//pub methods: HashMap<String, (Arc<RwLock<TypeDef>>, RefCell<NamespaceASTElem>, Vec<Attribute>)>,
 }
 
 
@@ -76,7 +76,7 @@ impl AlgebraicType {
 		AlgebraicType { 
 			members: vec![],
 			variants: vec![],
-			methods: HashMap::new(),
+			//methods: HashMap::new(),
 		}
 	}
 }
@@ -370,7 +370,7 @@ impl Display for Type {
 			}
 
 			Type::Unresolved(t) => {
-				write!(f, "\"{}\"", t)?;
+				write!(f, "unresolved type \"{}\"", t)?;
 			},
 
 			Type::TypeRef(_, id) => {
@@ -420,7 +420,7 @@ impl Hash for AlgebraicType {
 		// Hashing is only relevant for LLVM codegen, so semantic analysis will already have happened
         self.members.iter().map(|item| &item.1.0).collect::<Vec<&Type>>().hash(state);
         self.variants.iter().map(|item| &item.1.0).collect::<Vec<&Box<AlgebraicType>>>().hash(state);
-        self.methods.iter().map(|item| &item.1.0).collect::<Vec<&Type>>().hash(state);
+        //self.methods.iter().map(|item| &item.1.0).collect::<Vec<&Type>>().hash(state);
     }
 }
 

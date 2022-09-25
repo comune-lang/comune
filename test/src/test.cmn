@@ -1,26 +1,33 @@
 import module_test;
-using module_test::foo;
 
-@no_mangle
-int printf(char* fmt);
+using module_test::fib;
+using module_test::printf;
 
-namespace cool {
-	u64 fib(u64 n) {
-		u64[3] array_test;
-		u64 a = 0;
-		u64 b = 1;
-		u64 c = 0;
-		for (u64 i = 1; i < n; i += 1u64) {
-			c = a + b;
-			a = b;
-			b = c;
-			printf("loop!\n");
-		}
-		return c;
+
+struct Test {
+	int a;
+	int b;
+}
+
+impl Test {
+	int sum(Test this) {
+		return this.a + this.b;
+	}
+
+	void log() {
+		printf("This is a method call!\n");
+		return;
 	}
 }
 
+int sum(Test test) {
+	return test.a + test.b; 
+}
+
 int main() {
-	float a = 10.f + 12.f;
-	return cool::fib(10) as i32 + foo() + a as i32;
+	Test test;
+	test.a = 413;
+	test.b = 612;
+	test.log();
+	return sum(test);//test.sum(test);
 }

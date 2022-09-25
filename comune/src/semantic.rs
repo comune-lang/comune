@@ -118,6 +118,38 @@ impl<'ctx> FnScope<'ctx> {
 }
 
 
+pub fn validate_function(sym_type: &TypeDef, sym_elem: &RefCell<NamespaceASTElem>, namespace: &RefCell<Namespace>, root: &RefCell<Namespace>) -> ASTResult<()> {
+	let mut scope;
+	let ret;
+
+	if let TypeDef::Function(fn_ret, args) = sym_type {
+		ret = fn_ret.clone();
+		scope = FnScope::new(namespace, root, ret.clone());
+		
+		for arg in args.iter() {
+			scope.add_variable(arg.0.clone(), arg.1.clone().unwrap())
+		}
+		
+	} else { 
+		panic!()
+	}
+
+	if let NamespaceASTElem::Parsed(elem) = &*sym_elem.borrow() {
+		// Validate function block & get return type, make sure it matches the signature
+		let void = Type::Basic(Basic::VOID);
+		let ret_type = elem.validate(&mut scope, &ret)?;
+		
+		if ret_type.is_none() && ret != void {
+			// No returns in non-void function
+			return Err((CMNError::ReturnTypeMismatch { expected: ret.clone(), got: void }, elem.token_data));
+		} else if ret_type.is_some() && !ret_type.as_ref().unwrap().castable_to(&ret) {
+			return Err((CMNError::ReturnTypeMismatch { expected: ret.clone(), got: ret_type.unwrap() }, elem.token_data));
+		}
+	}
+	Ok(())
+}
+
+
 
 pub fn validate_namespace(namespace: &RefCell<Namespace>, root_namespace: &RefCell<Namespace>) -> ASTResult<()> {
 	for c in &namespace.borrow().children {
@@ -126,38 +158,16 @@ pub fn validate_namespace(namespace: &RefCell<Namespace>, root_namespace: &RefCe
 			NamespaceItem::Namespace(ns) => validate_namespace(ns, root_namespace)?,
 			
 			// Validate function
-			NamespaceItem::Function(sym_type, sym_elem) => {
-				let mut scope;
-				let ret;
-
-				if let TypeDef::Function(fn_ret, args) = &*sym_type.as_ref().read().unwrap() {
-					ret = fn_ret.clone();
-					scope = FnScope::new(namespace, root_namespace, ret.clone());
-					
-					for arg in args.iter() {
-						scope.add_variable(arg.0.clone(), arg.1.clone().unwrap())
-					}
-					
-				} else { 
-					panic!()
-				}
-				
-				if let NamespaceASTElem::Parsed(elem) = &*sym_elem.borrow() {
-					// Validate function block & get return type, make sure it matches the signature
-					let void = Type::Basic(Basic::VOID);
-					let ret_type = elem.validate(&mut scope, &ret)?;
-					
-					if ret_type.is_none() && ret != void {
-						// No returns in non-void function
-						return Err((CMNError::ReturnTypeMismatch { expected: ret.clone(), got: void }, elem.token_data));
-					} else if ret_type.is_some() && !ret_type.as_ref().unwrap().castable_to(&ret) {
-						return Err((CMNError::ReturnTypeMismatch { expected: ret.clone(), got: ret_type.unwrap() }, elem.token_data));
-					}
-				}
-			}
+			NamespaceItem::Function(sym_type, sym_elem) => validate_function(&sym_type.read().unwrap(), sym_elem, namespace, root_namespace)?,
 
 			_ => {},
 		}
+	}
+
+	for im in &namespace.borrow().impls {
+		for method in im.1 {
+			validate_function(&method.1.read().unwrap(), &method.2, namespace, root_namespace)?;
+		} 
 	}
 
 	Ok(())
@@ -285,6 +295,46 @@ pub fn check_namespace_cyclical_deps(namespace: &Namespace) -> ASTResult<()> {
 }
 
 
+pub fn register_impls(namespace: &RefCell<Namespace>, root: &RefCell<Namespace>) -> ASTResult<()> {
+	let mut impls_remapped = HashMap::new();
+	
+	for im in &namespace.borrow().impls {
+
+		// Impls can be defined with relative Identifiers, so we monomorphize them here
+
+		namespace.borrow().with_item(im.0, &root.borrow(), |item, _ns, id| {
+			if let NamespaceItem::Type(t_def) = &item.0 {
+				if let TypeDef::Algebraic(_alg) = &mut *t_def.write().unwrap() {
+
+					let mut this_impl = vec![];
+
+					for func in im.1 {
+						// Resolve function types
+						
+						if let TypeDef::Function(ret, args) = &mut *func.1.write().unwrap() {
+							resolve_type(ret, &namespace.borrow(), root).unwrap();
+	
+							for arg in args {
+								resolve_type(&mut arg.0, &namespace.borrow(), root).unwrap();
+							}
+						}
+
+						this_impl.push((func.0.clone(), func.1.clone(), func.2.clone(), None));
+					}
+
+					impls_remapped.insert(id.clone(), this_impl);
+				}
+			}
+		});
+	}
+
+	namespace.borrow_mut().impls = impls_remapped;
+
+	Ok(())
+}
+
+
+
 pub fn mangle_names(namespace: &RefCell<Namespace>) -> ASTResult<()> {
 	for child in &namespace.borrow().children {
 		if let NamespaceItem::Namespace(ref ns) = child.1.0 { 
@@ -311,6 +361,15 @@ pub fn mangle_names(namespace: &RefCell<Namespace>) -> ASTResult<()> {
 					
 					_ => None,
 				}
+			}
+		}
+
+		for im in &mut namespace.impls {
+			let mut path = im.0.path.clone();
+			path.scopes.push(im.0.name.clone());
+
+			for method in im.1 {
+				method.3 = Some(Namespace::mangle_name(&path, &method.0, &method.1.read().unwrap()));
 			}
 		}
 	}
@@ -607,25 +666,50 @@ impl Expr {
 					}
 
 					Operator::MemberAccess => {
-						if let Expr::Atom(Atom::Identifier(ref id), _) = elems[1].0 {
-							let id = id.clone();
+						if let Type::TypeRef(r, id) = elems[0].0.validate(scope, None, meta).unwrap() {
+							match &mut *r.upgrade().unwrap().write().unwrap() {
 
-							if let Type::TypeRef(r, _) = elems[0].0.validate(scope, None, meta).unwrap() {
-								match &*r.upgrade().unwrap().as_ref().read().unwrap() {
+								TypeDef::Algebraic(t) => match &mut elems[1].0 {
+									
+									// Member access on algebraic type
+									Expr::Atom(Atom::Identifier(ref id), _) => {
+										let id = id.clone();
 
-									TypeDef::Algebraic(t) => {
 										if let Some(member) = t.members.iter().find(|mem| mem.0 == id.name) {
-											 return Some(member.1.0.clone());
+											return Some(member.1.0.clone());
 										}
+									
+										// Didn't return Some, so not a valid member access
+
+										None
+									},
+
+									// Method call on algebraic type
+									Expr::Atom(Atom::FnCall { name, .. }, _) => {
+										
+										// jesse. we have to call METHods
+										if let Some(impls) = scope.context.borrow().impls.get(&id) {
+											if let Some(method) = impls.iter().find(|meth| {&meth.0 == &name.name}) {
+												if let TypeDef::Function(ret, _) = &mut *method.1.as_ref().write().unwrap() {
+													name.resolved = method.3.clone();
+													// TODO: Parameter typecheck
+
+													return Some(ret.clone());
+												}
+											}
+										}
+
+										None
 									}
 
-									_ => {},
+									_ => None
 								}
 
+								_ => None,
 							}
+						} else {
+							None
 						}
-						// Didn't return Some, so not a valid member access
-						None
 					}
 
 					_ => None,

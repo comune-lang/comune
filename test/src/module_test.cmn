@@ -1,3 +1,15 @@
-int foo() {
-	return 69;
+@no_mangle
+void printf(char* fmt);
+
+u64 fib(u64 n) {
+	u64[3] array_test;
+	u64 a = 0;
+	u64 b = 1;
+	u64 c = 0;
+	for (u64 i = 1; i < n; i += 1u64) {
+		c = a + b;
+		a = b;
+		b = c;
+	}
+	return c;
 }

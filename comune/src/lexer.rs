@@ -39,6 +39,9 @@ const KEYWORDS: &[&'static str] = &[
 	"import",
 	"export",
 	"compile",
+	"trait",
+	"impl",
+	"enum",
 ];
 
 const OPERATORS: &[&str] = &[
@@ -514,21 +517,23 @@ impl Lexer {
 			let line = self.get_line_number(char_idx);
 			let column = self.get_column(char_idx);
 
+			// Print message
 			match e {
-				CMNMessage::Error(_) =>		print!("{}: {}", "error".bold().red(), e.to_string().bold()),
-				CMNMessage::Warning(_) =>	print!("{}: {}", "warning".bold().yellow(), e.to_string().bold()),
+				CMNMessage::Error(_) =>		print!("\n{}: {}", "error".bold().red(), e.to_string().bold()),
+				CMNMessage::Warning(_) =>	print!("\n{}: {}", "warning".bold().yellow(), e.to_string().bold()),
 			}
 
-			println!("{}", 
-				format!(" in {}:{}:{}\n", self.file_name.to_string_lossy(), line + 1, column).bright_black()
-			);
+			// Print file:row:column 
+			println!("{}", format!(" in {}:{}:{}\n", self.file_name.to_string_lossy(), line + 1, column).bright_black());
 
+			// Print code snippet
 			println!("{} {}", 
 				format!("{}\t{}", line + 1, "|").bright_black(), 
 				self.get_line(line));
-
+			
+			// Print squiggle
 			print!("\t{: <1$}", "", column + 1);
-			println!("{:~<1$}\n", "", token_len);	
+			println!("{:~<1$}", "", token_len);	
 			
 			let notes = e.get_notes();
 			for note in notes {

@@ -113,7 +113,7 @@ pub enum NamespaceItem {
 	Alias(Identifier),
 }
 
-type NamespaceEntry = (NamespaceItem, Vec<Attribute>, Option<String>);
+type NamespaceEntry = (NamespaceItem, Vec<Attribute>, Option<String>); // Option<String> is the item's mangled name
 
 
 #[derive(Default, Clone)]
@@ -122,6 +122,7 @@ pub struct Namespace {
 	pub referenced_modules: HashSet<Identifier>,
 	pub imported: HashMap<Identifier, Namespace>,
 	pub children: HashMap<String, NamespaceEntry>,
+	pub impls: HashMap<Identifier, Vec<(String, Arc<RwLock<TypeDef>>, RefCell<NamespaceASTElem>, Option<String>)>>, // Impls defined in this namespace
 }
 
 impl Namespace {
@@ -133,6 +134,7 @@ impl Namespace {
 			children: HashMap::new(),
 			referenced_modules: HashSet::new(),
 			imported: HashMap::new(),
+			impls: HashMap::new(),
 		}
 	}
 
@@ -142,9 +144,9 @@ impl Namespace {
 		Namespace { 
 			children: HashMap::new(),
 			path: ScopePath::from_parent(parent, name),
-
 			referenced_modules: HashSet::new(),
 			imported: HashMap::new(),
+			impls: HashMap::new(),
 		}
 	}
 
@@ -154,7 +156,7 @@ impl Namespace {
 	}
 
 
-	pub fn with_item(&self, name: &Identifier, root: &Namespace, mut closure: impl FnMut(&NamespaceEntry, &Namespace, &Identifier) -> ()) -> bool {
+	pub fn with_item<Ret>(&self, name: &Identifier, root: &Namespace, mut closure: impl FnMut(&NamespaceEntry, &Namespace, &Identifier) -> Ret) -> Option<Ret> {
 		let self_is_root = root as *const _ == self as *const _;
 
 		// If name is an absolute path, look in root
@@ -175,8 +177,7 @@ impl Namespace {
 					// Generate absolute identifier
 					let id = Identifier {name: name.name.clone(), path: self.path.clone(), mem_idx: 0, resolved: None };
 				
-					closure(&self.children.get(&name.name).unwrap(), &self, &id);
-					return true;
+					return Some(closure(&self.children.get(&name.name).unwrap(), &self, &id));
 				}
 			}
 		} else {
@@ -205,7 +206,7 @@ impl Namespace {
 		if !self_is_root {
 			root.with_item(name, root, closure)
 		} else {
-			false
+			None
 		}
 	}
 }

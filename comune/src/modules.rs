@@ -3,7 +3,7 @@ use std::{ffi::{OsString, OsStr}, sync::{Arc, Mutex}, collections::HashMap, cell
 use colored::Colorize;
 use inkwell::{context::Context, module::{Module}, passes::PassManager, targets::FileType};
 
-use crate::{llvm::{self, LLVMBackend}, semantic::{namespace::{Identifier, Namespace, NamespaceItem, NamespaceASTElem}, self}, errors::{CMNError, CMNMessage}, lexer::Lexer, parser::Parser};
+use crate::{llvm::{self, LLVMBackend}, semantic::{namespace::{Identifier, Namespace, NamespaceItem, NamespaceASTElem}, self}, errors::{CMNError, CMNMessage}, lexer::Lexer, parser::{Parser, ASTResult}};
 
 
 pub struct ManagerState {
@@ -47,19 +47,24 @@ pub fn launch_module_compilation<'scope>(state: Arc<ManagerState>, input_module:
 	resolve_types(&state, &mut mod_state).unwrap();
 
 	let interface = mod_state.parser.current_namespace().borrow().clone();
-
+	
 	s.spawn(move |_s| {
 		let context = Context::create();
-		let result = generate_code(&state, mod_state, &context).unwrap();
+
+		let result = match generate_code(&state, &mut mod_state, &context) {
+			Ok(res) => res,
+			Err(_) => todo!(), // TODO: Add some kind of global compilation result tracker
+		};
+
 		let target_machine = llvm::get_target_machine();
 
 		if state.emit_llvm {
 			let mut llvm_out_path = out_path.clone();
 			llvm_out_path.set_extension("ll");
-			result.1.module.print_to_file(llvm_out_path).unwrap();
+			result.module.print_to_file(llvm_out_path).unwrap();
 		}
 
-		target_machine.write_to_file(&result.1.module, FileType::Object, &out_path).unwrap();
+		target_machine.write_to_file(&result.module, FileType::Object, &out_path).unwrap();
 	});
 
 
@@ -147,14 +152,19 @@ pub fn parse_api(state: &Arc<ManagerState>, path: &Path) -> Result<ModuleState, 
 }
 
 
-pub fn resolve_types(state: &Arc<ManagerState>, mod_state: &mut ModuleState) -> Result<(), CMNError> {
+pub fn resolve_types(state: &Arc<ManagerState>, mod_state: &mut ModuleState) -> ASTResult<()> {
 	// At this point, all imports have been resolved, so validate namespace-level types
-	semantic::resolve_namespace_types(mod_state.parser.current_namespace(), mod_state.parser.current_namespace()).unwrap();
+	semantic::resolve_namespace_types(mod_state.parser.current_namespace(), mod_state.parser.current_namespace())?;
+
 	// Check for cyclical dependencies without indirection
 	// TODO: Nice error reporting for this
-	semantic::check_namespace_cyclical_deps(&mod_state.parser.current_namespace().borrow()).unwrap();
+	semantic::check_namespace_cyclical_deps(&mod_state.parser.current_namespace().borrow())?;
+
+	// Then register impls to their types
+	semantic::register_impls(mod_state.parser.current_namespace(), mod_state.parser.current_namespace())?;
+
 	// And then mangle names
-	semantic::mangle_names(mod_state.parser.current_namespace()).unwrap();
+	semantic::mangle_names(mod_state.parser.current_namespace())?;
 
 	if state.verbose_output {
 		println!("\ntype resolution output:\n\n{}", mod_state.parser.current_namespace().borrow());
@@ -164,8 +174,10 @@ pub fn resolve_types(state: &Arc<ManagerState>, mod_state: &mut ModuleState) -> 
 }
 
 
-pub fn generate_code<'ctx>(state: &Arc<ManagerState>, mut mod_state: ModuleState, context: &'ctx Context) -> Result<(ModuleState, LLVMBackend<'ctx>), CMNError> {
+pub fn generate_code<'ctx>(state: &Arc<ManagerState>, mod_state: &mut ModuleState, context: &'ctx Context) -> Result<LLVMBackend<'ctx>, CMNError> {
+	
 	// Generate AST
+
 	let namespace = match mod_state.parser.generate_ast() {
 		Ok(ctx) => { if state.verbose_output { println!("\nvalidating..."); } ctx },
 		Err(e) => {
@@ -175,6 +187,7 @@ pub fn generate_code<'ctx>(state: &Arc<ManagerState>, mut mod_state: ModuleState
 	};
 
 	// Validate code
+	
 	match semantic::validate_namespace(namespace, namespace) {
 		Ok(()) => {	if state.verbose_output { println!("generating code..."); } },
 		Err(e) => { 
@@ -199,8 +212,9 @@ pub fn generate_code<'ctx>(state: &Arc<ManagerState>, mut mod_state: ModuleState
 	for (_, import) in &namespace.borrow().imported {
 		register_namespace(&mut backend, import, None);
 	}
-
-	register_namespace(&mut backend, &namespace.borrow(), None);
+	
+	// why is this here Twice
+	//register_namespace(&mut backend, &namespace.borrow(), None);
 
 	// Generate LLVM IR
 	register_namespace(&mut backend, &namespace.borrow(), None);
@@ -230,38 +244,8 @@ pub fn generate_code<'ctx>(state: &Arc<ManagerState>, mut mod_state: ModuleState
 
 	mpm.run_on(&backend.module);
 
-	Ok((mod_state, backend))
+	Ok(backend)
 }
-
-
-
-// This function attempts to load a cached NamespaceInfo from disk, or else attempts to find a module and
-// initialize its compilation, blocking until the NamespaceInfo is ready
-// The paths searched for the module are defined by `CompilerState::import_paths`,
-// Returns CMNError::ModuleNotFound if the module could not be found
-/*pub fn resolve_module_imports(state: Arc<ManagerState>, mod_state: &mut ModuleState, s: &rayon::Scope) -> Result<Namespace, CMNError> {
-	let module_names = mod_state.parser.current_namespace().borrow().referenced_modules.clone();
-	
-	rayon::scope(move |t| {
-		for module in module_names.clone().into_iter() {
-			// Launch compilation of child module
-			let state_clone = state.clone();
-
-			let mut mod_state = parse_api(&state, &OsString::from(module)).unwrap();
-			let imports = resolve_module_imports(state_clone.clone(), &mut mod_state, t).unwrap();
-
-			s.spawn(move |s| {
-				let context = Context::create();
-				resolve_types(&state_clone, &mut mod_state, &context).unwrap();
-				let result = generate_code(&state_clone, mod_state, &context).unwrap();
-			});
-		}
-	});
-	
-
-	Err(CMNError::Other) // TODO: Create error for this
-}*/
-
 
 
 fn register_namespace(backend: &mut LLVMBackend, namespace: &Namespace, root: Option<&Namespace>) {
@@ -269,15 +253,20 @@ fn register_namespace(backend: &mut LLVMBackend, namespace: &Namespace, root: Op
 		assert!(namespace as *const _ != root.unwrap() as *const _);
 	}
 
+	// Register child namespaces
 	for child in &namespace.children {
-		if let NamespaceItem::Namespace(namespace) = &child.1.0 {
-			register_namespace(backend, &namespace.borrow(), root);
+		match &child.1.0 {
+			NamespaceItem::Namespace(namespace) => register_namespace(backend, &namespace.borrow(), root),
+
+			NamespaceItem::Function(sym_type, _) => { backend.register_fn(child.1.2.as_ref().unwrap(), &sym_type.read().unwrap()).unwrap(); },
+			
+			_ => {},
 		}
 	}
-	
-	for child in &namespace.children {
-		if let NamespaceItem::Function(sym_type, _) = &child.1.0 {
-			backend.register_fn(child.1.2.as_ref().unwrap(), &sym_type.read().unwrap()).unwrap();
+
+	for im in &namespace.impls {
+		for meth in im.1 {
+			backend.register_fn(meth.3.as_ref().unwrap(), &meth.1.read().unwrap()).unwrap();
 		}
 	}
 }
@@ -301,6 +290,16 @@ fn compile_namespace(backend: &mut LLVMBackend, namespace: &Namespace, root: Opt
 				child.1.2.as_ref().unwrap(), 
 				&sym_type.read().unwrap(), 
 				if let NamespaceASTElem::Parsed(elem) = &*sym_elem.borrow() { Some(elem) } else { None }
+			).unwrap();
+		}
+	}
+
+	for im in &namespace.impls {
+		for method in im.1 {
+			backend.generate_fn(
+				method.3.as_ref().unwrap(), 
+				&method.1.read().unwrap(), 
+				if let NamespaceASTElem::Parsed(elem) = &*method.2.borrow() { Some(elem) } else { None }
 			).unwrap();
 		}
 	}
