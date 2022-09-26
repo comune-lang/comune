@@ -5,7 +5,7 @@ using module_test::printf;
 using module_test::Test;
 
 impl Test {
-	int sum(ref Test this) {
+	int sum(Test this) {
 		printf("This is a method call!\n");
 		return this.a + this.b;
 	}

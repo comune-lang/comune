@@ -70,6 +70,7 @@ pub enum Visibility {
 	Protected,
 }
 
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DataLayout {
 	Declared,			// Layout is exactly as declared
@@ -291,6 +292,7 @@ impl TypeDef {
 		result
 	}
 
+	// This is naive and often inaccurate; maybe query LLVM for the type size somehow?
 	pub fn get_size_bytes(&self) -> u32 {
 		let ptr_size = *PTR_SIZE_BYTES.get().unwrap() as u32;
 

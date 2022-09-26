@@ -918,7 +918,7 @@ impl Atom {
 
 
 impl Type {
-	pub fn validate<'ctx>(&self, scope: &'ctx FnScope<'ctx>, meta: TokenData) -> ASTResult<()> {
+	pub fn validate<'ctx>(&self, scope: &'ctx FnScope<'ctx>, _meta: TokenData) -> ASTResult<()> {
 		match self {
 			Type::Array(_, n) => {
 				// Old fashioned way to make life easier with the RefCell

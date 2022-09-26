@@ -94,6 +94,7 @@ const OPERATORS: &[&str] = &[
 pub enum Token {
 	EOF,
 	Identifier(Identifier),
+	MultiIdentifier(Vec<Identifier>), // For `using` paths
 	StringLiteral(String),
 	BoolLiteral(bool),
 	Keyword(&'static str),
@@ -105,7 +106,10 @@ pub enum Token {
 impl Token {
 	pub fn len(&self) -> usize {
 		match self {
-			Token::Identifier(x) => x.name.len(), // Incorrect, TODO: Actually implement this
+
+			// TODO: Actually implement these
+			Token::Identifier(x) => x.name.len(), 
+			Token::MultiIdentifier(x) => x[0].name.len(),
 
 			Token::NumLiteral(x, _) | Token::Operator(x) => x.len(),
 
@@ -126,6 +130,8 @@ impl Display for Token {
 		
 		match self {
 			Token::Identifier(x) => x.to_string(),
+
+			Token::MultiIdentifier(_x) => String::from("todo"),
 
 			Token::StringLiteral(x) | Token::NumLiteral(x, _) | Token::Operator(x) => x.clone(),
 

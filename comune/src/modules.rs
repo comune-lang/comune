@@ -65,6 +65,7 @@ pub fn launch_module_compilation<'scope>(state: Arc<ManagerState>, input_module:
 		}
 
 		target_machine.write_to_file(&result.module, FileType::Object, &out_path).unwrap();
+		println!("{} {}", "finished".bold().green(), out_path.file_name().unwrap().to_str().unwrap());
 	});
 
 
