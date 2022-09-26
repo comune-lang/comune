@@ -1,4 +1,5 @@
 import module_test;
+import module_test_2;
 
 using module_test::fib;
 using module_test::printf;

@@ -1291,19 +1291,41 @@ impl Parser {
 		let mut current = self.get_next()?;
 
 		if token_compare(&current, "(") {
-			if current != Token::Operator(")".to_string()) {
-				loop {									
-					result.args.push(self.parse_expression()?);
-					
-					current = self.get_current()?;
+			current = self.get_next()?;
 
-					if let Token::Other(',') = current {
-						self.get_next()?;
-					} else if current == Token::Operator(")".to_string()) {
-						break;
-					} else {
-						return Err(CMNError::UnexpectedToken);
+			if current != Token::Operator(")".to_string()) {
+				let mut current_seq = vec![];
+				let mut paren_depth = 0;
+
+				loop {
+					match current {
+						
+						Token::Other(',') => 
+							if paren_depth == 0 {
+								result.args.push(current_seq);
+								current_seq = vec![];
+								current = self.get_next()?;
+								continue;
+							}
+
+						Token::Operator(ref op) => match op.as_str() {
+							"(" => paren_depth += 1,
+
+							")" => 
+								if paren_depth == 0 {
+									result.args.push(current_seq);
+									break;
+								} else {
+									paren_depth -= 1
+								}
+
+							_ => {},
+						}
+						_ => {},
 					}
+
+					current_seq.push(current);
+					current = self.get_next()?;
 				}
 			}
 			self.get_next()?;

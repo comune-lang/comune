@@ -1,7 +1,8 @@
 use std::{ffi::{OsString, OsStr}, sync::{Arc, Mutex}, collections::HashMap, cell::RefCell, path::{PathBuf, Path}, fs};
 
 use colored::Colorize;
-use inkwell::{context::Context, module::{Module}, passes::PassManager, targets::FileType};
+use inkwell::{context::Context, targets::FileType};
+use rayon::prelude::*;
 
 use crate::{llvm::{self, LLVMBackend}, semantic::{namespace::{Identifier, Namespace, NamespaceItem, NamespaceASTElem}, self}, errors::{CMNError, CMNMessage}, lexer::Lexer, parser::{Parser, ASTResult}};
 
@@ -21,10 +22,8 @@ pub struct ModuleState {
 }
 
 
-// I'm a bit iffy on this. This is safe IF and ONLY IF all the `Rc`s and `RefCell`s are referenced INSIDE ModuleState.
-// TODO: Verify that's the case.
-unsafe impl Send for ModuleState {}
-
+// This is only sound under the condition that Namespaces are ONLY modified by their owning Parsers. 
+unsafe impl Send for Namespace {}
 
 pub fn launch_module_compilation<'scope>(state: Arc<ManagerState>, input_module: Identifier, s: &rayon::Scope<'scope>) -> Result<Namespace, CMNError> {
 	let src_path = get_module_source_path(&state, &input_module);
@@ -35,18 +34,19 @@ pub fn launch_module_compilation<'scope>(state: Arc<ManagerState>, input_module:
 
 	// Resolve module imports
 	let module_names = mod_state.parser.current_namespace().borrow().referenced_modules.clone();
-	let mut imports = HashMap::new();
 
-	for name in module_names {
+	let imports = module_names.into_par_iter().map(|name| {
 		let module_interface = launch_module_compilation(state.clone(), name.clone(), s);
-		imports.insert(name, module_interface?);
-	}
+		(name, module_interface.unwrap())
+	}).collect();
 	
 	mod_state.parser.current_namespace().borrow_mut().imported = imports;
 
 	resolve_types(&state, &mut mod_state).unwrap();
 
 	let interface = mod_state.parser.current_namespace().borrow().clone();
+	
+	// The rest of the module's compilation happens in a worker thread
 	
 	s.spawn(move |_s| {
 		let context = Context::create();

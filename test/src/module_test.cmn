@@ -14,8 +14,34 @@ u64 fib(u64 n) {
 	return c;
 }
 
-
+@layout(packed)
 struct Test {
 	int a;
 	int b;
+}
+
+u64 fib2(u64 n) {
+	u64[3] array_test;
+	u64 a = 0;
+	u64 b = 1;
+	u64 c = 0;
+	for (u64 i = 1; i < n; i += 1u64) {
+		c = a + b;
+		a = b;
+		b = c;
+	}
+	return c;
+}
+
+u64 fib3(u64 n) {
+	u64[3] array_test;
+	u64 a = 0;
+	u64 b = 1;
+	u64 c = 0;
+	for (u64 i = 1; i < n; i += 1u64) {
+		c = a + b;
+		a = b;
+		b = c;
+	}
+	return c;
 }

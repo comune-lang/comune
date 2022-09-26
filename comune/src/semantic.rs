@@ -2,7 +2,7 @@ use std::{cell::RefCell, collections::HashMap, sync::{Arc, RwLock}};
 
 use types::{Type, Basic, Typed, TypeDef};
 
-use crate::{errors::CMNError, parser::{ASTResult, ParseResult}, constexpr::{ConstExpr, ConstEval}};
+use crate::{errors::CMNError, parser::{ASTResult, ParseResult}, constexpr::{ConstExpr, ConstEval}, lexer::Token};
 
 use self::{namespace::{Namespace, Identifier, NamespaceItem, NamespaceASTElem}, ast::{ASTElem, ASTNode, TokenData}, controlflow::ControlFlow, expression::{Expr, Atom, Operator}};
 
@@ -19,7 +19,7 @@ pub mod value;
 #[derive(PartialEq, Clone, Debug)]
 pub struct Attribute {
 	pub name: String,
-	pub args: Vec<ASTElem>,
+	pub args: Vec<Vec<Token>>,
 }
 
 pub fn get_attribute<'a>(attributes: &'a Vec<Attribute>, attr_name: &str) -> Option<&'a Attribute> {

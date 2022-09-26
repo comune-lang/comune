@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::hash::{Hash, Hasher};
 use std::ptr;
 use std::sync::{RwLock, Weak, Arc};
-use std::{fmt::Display, collections::HashMap};
+use std::fmt::Display;
 
 use once_cell::sync::OnceCell;
 
@@ -59,7 +59,6 @@ pub enum TypeDef {
 pub struct AlgebraicType {
 	pub members: Vec<(String, (Type, RefCell<NamespaceASTElem>, Vec<Attribute>, Visibility))>,
 	pub variants: Vec<(String, (Box<AlgebraicType>, Vec<Attribute>))>,
-	//pub methods: HashMap<String, (Arc<RwLock<TypeDef>>, RefCell<NamespaceASTElem>, Vec<Attribute>)>,
 }
 
 
@@ -76,7 +75,6 @@ impl AlgebraicType {
 		AlgebraicType { 
 			members: vec![],
 			variants: vec![],
-			//methods: HashMap::new(),
 		}
 	}
 }

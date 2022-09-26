@@ -23,13 +23,10 @@ struct ComuneCLI {
 	#[clap(value_parser, default_value="")]
 	input_file: OsString,
 
-	#[clap(short='o', long="output", default_value="a.out", value_parser)]
-	output_file: OsString,
-
 	#[clap(long="emit-llvm", default_value_t=false, value_parser)]
 	emit_llvm: bool,
 
-	#[clap(short='j', long="jobs", default_value_t=1, value_parser)]
+	#[clap(short='j', long="jobs", default_value_t=0, value_parser)]
 	num_jobs: usize,
 }
 
