@@ -13,3 +13,9 @@ u64 fib(u64 n) {
 	}
 	return c;
 }
+
+
+struct Test {
+	int a;
+	int b;
+}

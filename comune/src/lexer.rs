@@ -25,6 +25,7 @@ const KEYWORDS: &[&'static str] = &[
 	"static",
 	"const",
 	"mut",
+	"ref",
 	"for",
 	"while",
 	"using",

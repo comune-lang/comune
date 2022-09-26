@@ -553,37 +553,23 @@ impl Parser {
 		let begin = self.get_current_start_index();
 		let mut result = None;
 
-		match &current {
 		
-			Token::Identifier(id) => {
-				// Might be a declaration, check if identifier is a type
-				let ns = self.current_namespace().borrow();
-				let root = &self.root_namespace.as_ref().unwrap_or(self.current_namespace()).borrow();
-				let mut type_found = false;
+		if self.is_at_type_token(true)? {
+			// This is a variable declaration
 
-				if Basic::get_basic_type(&id.name).is_some() && id.path.scopes.is_empty() {
-					type_found = true;
-				} else {
-					ns.with_item(id, root, |item, _, _| type_found = matches!(item.0, NamespaceItem::Type(_)));
-				}
-				
-				if type_found {
-					// Found a type that matches, so parse variable declaration
-					
-					let t = self.parse_type(true)?;
-					let name = self.get_current()?;
-					let mut expr = None;
-					
-					if token_compare(&self.get_next()?, "=") {
-						self.get_next()?;
-						expr = Some(Box::new(self.parse_expression()?));
-					}
-					self.check_semicolon()?;
-					result = Some(ASTNode::Declaration(t, name, expr));
-				};
-			},
-
-			Token::Keyword(keyword) => {
+			let t = self.parse_type(true)?;
+			let name = self.get_current()?;
+			let mut expr = None;
+			
+			if token_compare(&self.get_next()?, "=") {
+				self.get_next()?;
+				expr = Some(Box::new(self.parse_expression()?));
+			}
+			self.check_semicolon()?;
+			result = Some(ASTNode::Declaration(t, name, expr));
+		} else {
+			// This isn't a variable declaration, check if it's a control flow statement
+			if let Token::Keyword(keyword) = &current {
 				match *keyword {
 					
 					// Parse return statement
@@ -765,9 +751,9 @@ impl Parser {
 					}
 				}
 			}
-	
-			_ => {}
 		}
+
+		// Check if we found a valid interpretation of the statement yet. If not, parse it as an expression
 		if result.is_some() {
 			let end = self.get_current_start_index();
 			let len = end - begin;
@@ -1071,15 +1057,57 @@ impl Parser {
 		Ok(result)
 	}
 
+
+	// Returns true if the current token is the start of a Type.
+	// In ambiguous contexts (i.e. function blocks), `resolve_idents` enables basic name resolution
+	fn is_at_type_token(&self, resolve_idents: bool) -> ParseResult<bool> {
+		match self.get_current()? {
+    		Token::Identifier(typename) => if resolve_idents {
+				let mut found = false;
+
+				if Basic::get_basic_type(&typename.name).is_some() && typename.path.scopes.is_empty() {
+					found = true;
+				} else {
+					let ctx = self.current_namespace().borrow();
+					let root = &self.root_namespace.as_ref().unwrap_or(self.current_namespace()).borrow();
+
+					ctx.with_item(&typename, root, |item, _, _| {
+						if let NamespaceItem::Type(_) = &item.0 {
+							found = true;
+						}
+					});
+				}
+
+				Ok(found)
+			} else {
+				Ok(true)
+			},
+
+   			Token::Keyword(kw) => Ok(match kw {
+
+				"mut" | "const" | "ref" => true,
+
+				_ => false,
+
+			}),
+
+			_ => Ok(false),
+		}
+	}
+
 	
 
 	fn parse_parameter_list(&self) -> ParseResult<FnParamList> {
-		let next = self.get_next()?;
 		let mut result = vec![];
 
-		while let Token::Identifier(_) = next {
+		if token_compare(&self.get_current()?, "(") {
+			self.get_next()?;
+		} else {
+			return Err(CMNError::UnexpectedToken);
+		}
+
+		while self.is_at_type_token(false)? {
 			let mut param = (self.parse_type(false)?, None);
-			
 			
 			// Check for param name
 			let mut current = self.get_current()?;
@@ -1128,9 +1156,28 @@ impl Parser {
 
 	fn parse_type(&self, immediate_resolve: bool) -> ParseResult<Type> {
 		let mut result = Type::Unresolved(Identifier {name: "(none)".to_string(), path: ScopePath::new(false), mem_idx: 0, resolved: None });
-		let current = self.get_current()?;
 
-		if let Token::Identifier(typename) = current {
+		if self.is_at_type_token(immediate_resolve)? {
+			let mut current = self.get_current()?;
+			let typename;
+
+			// TODO: Actually do something with these
+			while let Token::Keyword(kw) = current {
+				match kw {
+					"const" => {},
+					"mut" => {},
+					"ref" => {},
+					_ => return Err(CMNError::UnexpectedKeyword),
+				}
+				current = self.get_next()?;
+			}
+
+			if let Token::Identifier(id) = current {
+				typename = id;
+			} else {
+				return Err(CMNError::ExpectedIdentifier);
+			}
+
 			// Typename
 
 			if immediate_resolve {
