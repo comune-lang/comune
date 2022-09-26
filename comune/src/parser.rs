@@ -190,19 +190,15 @@ impl Parser {
 					match keyword {
 
 						"struct" => {
-							let mut current_visibility = Visibility::Public;
-
 							// Register algebraic type
+							let mut current_visibility = Visibility::Public;
 							let mut aggregate = AlgebraicType::new();
-
 							let name_token = self.get_next()?;
-							
+
 							if let Token::Identifier(name) = name_token {
 								let mut next = self.get_next()?;
 
-								if token_compare(&next, ":") {
-									// TODO: Parse base classes
-								} else if !token_compare(&next, "{") {
+								if !token_compare(&next, "{") {
 									return Err(CMNError::UnexpectedToken);
 								}
 
@@ -217,14 +213,13 @@ impl Parser {
 
 												NamespaceItem::Variable(t, n) =>
 													aggregate.members.push(
-														(result.0, (t, n, current_attributes, current_visibility.clone()))
+														(result.0, (t, n, vec![], current_visibility.clone()))
 													),
 
 												_ => todo!(),
 											}
 											
 											next = self.get_current()?;
-											current_attributes = vec![];
 										} 
 
 										Token::Keyword(k) => {
@@ -1112,8 +1107,7 @@ impl Parser {
 			// Check for param name
 			let mut current = self.get_current()?;
 			if let Token::Identifier(id) = current {
-				// TODO: Add check for scopes here (illegal in param list)
-				param.1 = Some(id.name);
+				param.1 = Some(id.expect_scopeless()?);
 				self.get_next()?;
 			}
 			

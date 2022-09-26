@@ -7,7 +7,7 @@ use crate::semantic::ast::{ASTElem, ASTNode};
 use crate::semantic::controlflow::ControlFlow;
 use crate::semantic::expression::{Expr, Atom, Operator};
 use crate::semantic::namespace::Identifier;
-use crate::semantic::types::{Type, Basic, TypeDef};
+use crate::semantic::types::{Type, Basic, TypeDef, DataLayout};
 
 use inkwell::targets::{TargetMachine, Target, InitializationConfig, TargetTriple};
 use inkwell::{IntPredicate, AddressSpace, FloatPredicate};
@@ -716,7 +716,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 				} else { 
 					panic!() 
 				}
-				
+
 				Self::into_basic_metadata_value(self.generate_expr(&expr, t, scope))
 			}
 		).collect(); 
@@ -844,7 +844,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 							types_mapped.push(Self::to_basic_type(self.get_llvm_type(&m.1.0)).as_basic_type_enum())
 						}
 
-						result_type.set_body(&types_mapped, false);
+						result_type.set_body(&types_mapped, aggregate.layout == DataLayout::Packed);
 
 						result_type
 					}

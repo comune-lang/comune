@@ -59,14 +59,22 @@ pub enum TypeDef {
 pub struct AlgebraicType {
 	pub members: Vec<(String, (Type, RefCell<NamespaceASTElem>, Vec<Attribute>, Visibility))>,
 	pub variants: Vec<(String, (Box<AlgebraicType>, Vec<Attribute>))>,
+	pub layout: DataLayout,
 }
 
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug)]
 pub enum Visibility {
 	Public,
 	Private,
 	Protected,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum DataLayout {
+	Declared,			// Layout is exactly as declared
+	Optimized,			// Layout may be shuffled to minimize padding
+	Packed,				// Layout is packed in declaration order with no padding (no alignment)
 }
 
 
@@ -75,6 +83,7 @@ impl AlgebraicType {
 		AlgebraicType { 
 			members: vec![],
 			variants: vec![],
+			layout: DataLayout::Declared,
 		}
 	}
 }

@@ -236,12 +236,30 @@ pub fn resolve_type(ty: &mut Type, namespace: &Namespace, root: &RefCell<Namespa
 }
 
 
-pub fn resolve_type_def(ty: &mut TypeDef, namespace: &Namespace, root: &RefCell<Namespace>) -> ParseResult<()> {
+pub fn resolve_type_def(ty: &mut TypeDef, attributes: &Vec<Attribute>, namespace: &Namespace, root: &RefCell<Namespace>) -> ParseResult<()> {
 	match ty {
 
 		TypeDef::Algebraic(ref mut agg) => { 
 			for member in &mut agg.members {
 				resolve_type(&mut member.1.0, &namespace, root).unwrap();
+			}
+
+			if let Some(layout) = get_attribute(attributes, "layout") {
+				if layout.args.len() != 1 {
+					return Err(CMNError::ParamCountMismatch { expected: 1, got: layout.args.len() });
+				}
+				if layout.args[0].len() != 1 {
+					return Err(CMNError::ParamCountMismatch { expected: 1, got: layout.args[0].len() });
+				}
+
+				if let Token::Identifier(layout_name) = &layout.args[0][0] {
+					agg.layout = match layout_name.expect_scopeless().unwrap().as_str() {
+						"declared" => types::DataLayout::Declared,
+						"optimized" => types::DataLayout::Optimized,
+						"packed" => types::DataLayout::Packed,
+						_ => return Err(CMNError::UnexpectedToken),
+					}
+				}
 			}
 		}
 
@@ -278,7 +296,7 @@ pub fn resolve_namespace_types(namespace: &RefCell<Namespace>, root: &RefCell<Na
 
 				NamespaceItem::Namespace(_) => {}
 
-				NamespaceItem::Type(t) => resolve_type_def(&mut *t.write().unwrap(), &namespace, root).unwrap(),
+				NamespaceItem::Type(t) => resolve_type_def(&mut *t.write().unwrap(), &child.1.1, &namespace, root).unwrap(),
 
 				NamespaceItem::Alias(_) => {},
 
