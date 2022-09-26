@@ -19,6 +19,7 @@ pub struct ManagerState {
 
 pub struct ModuleState {
 	parser: Parser,
+	term_cursor_pos: usize,
 }
 
 
@@ -133,6 +134,7 @@ pub fn parse_api(state: &Arc<ManagerState>, path: &Path) -> Result<ModuleState, 
 				return Err(CMNError::ModuleNotFound(OsString::from(path.file_name().unwrap()))); 
 			}
 		}, state.verbose_output),
+		term_cursor_pos: 0,
 	};
 
 	println!("{} {}", "compiling".bold().green(), mod_state.parser.lexer.borrow().file_name.to_string_lossy());
