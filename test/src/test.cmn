@@ -9,21 +9,20 @@ struct Test {
 	int b;
 }
 
+
 impl Test {
-	int sum(ref Test self) {
+	int sum(Test self) {
 		printf("This is a method call!\n");
 		return self.a + self.b;
 	}
+}
 
-	Test new() {
-		Test result;
-		result.a = 60;
-		result.b = 9;
-		return result;
-	}
+Test new_test() {
+	return Test { a: 60, b: 9 };
+	
 }
 
 int main() {
-	Test test = Test::new();
+	Test test = new_test();
 	return test.sum();
 }

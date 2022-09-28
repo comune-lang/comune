@@ -392,7 +392,10 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 					Atom::BoolLit(b) => Rc::new(self.context.bool_type().const_int(if *b { 1 } else { 0 }, false)),
 					Atom::Identifier(v) => Rc::new(self.builder.build_load(self.resolve_identifier(scope, v), "vload")),
+
 					Atom::ArrayLit(_) => todo!(),
+
+					Atom::AlgebraicLit(_, _) => todo!(),
 
 					Atom::Cast(elem, to) => {
 						if let ASTNode::Expression(expr) = &elem.node {

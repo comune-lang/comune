@@ -242,6 +242,9 @@ pub enum Atom {
 	StringLit(String),
 	ArrayLit(Vec<ASTElem>),
 	TupleLit(Vec<ASTElem>),
+	
+	// Struct/enum literal
+	AlgebraicLit(Type, Vec<(Option<String>, Expr, TokenData)>),
 
 	Identifier(Identifier),
 
@@ -288,6 +291,7 @@ impl Display for Atom {
 			Atom::Cast(elem, to) => write!(f, "{}({})", to, elem),
 
             Atom::Identifier(var) => write!(f, "{}", var),
+            Atom::AlgebraicLit(_, _) => todo!(),
 		}
     }
 }

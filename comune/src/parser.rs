@@ -15,7 +15,7 @@ use crate::semantic::types::{Type, FnParamList, Basic, AlgebraicType, Visibility
 // Convenience function that matches a &str against various token kinds
 fn token_compare(token: &Token, text: &str) -> bool {
 	match token {
-	    Token::Operator(op) => text == op.as_str(),
+	    Token::Operator(op) => text == *op,
    		Token::Other(c) => text.chars().next().unwrap() == *c,
 		Token::Keyword(keyword) => text == *keyword,
 		_ => false,
@@ -784,7 +784,7 @@ impl Parser {
 			next = self.get_next()?;
 
 			if let Token::Operator(op) = next {
-				match op.as_str() {
+				match op {
 					
 					// Function declaration
 					"(" => {	
@@ -883,7 +883,7 @@ impl Parser {
 							current = self.get_current()?;
 
 							if let Token::Operator(op) = current {
-								if op.as_str() != ")" {
+								if op != ")" {
 									return Err(CMNError::UnexpectedToken);
 								}
 								self.get_next()?;
@@ -974,50 +974,72 @@ impl Parser {
 		let mut next = self.get_next()?;
 
 		match current {
+
 			Token::Identifier(name) => {
 				result = Atom::Identifier(name.clone());
-
-				while let Token::Operator(ref op) = next {
-					match op.as_str() {
-
-						"(" => {
-							// Function call
-							let mut args = vec![];
-							next = self.get_next()?;
+				
+				if let Some(Type::TypeRef(ty, _)) = self.find_type(&name) {
+								
+					match &*ty.upgrade().unwrap().read().unwrap() {
+						
+						TypeDef::Function(_, _) => {
+							// Parse with function name
 							
-							if next != Token::Operator(")".to_string()) {
-								loop {									
-									args.push(self.parse_expression()?);
-									
-									current = self.get_current()?;
-
-									if let Token::Other(',') = current {
+							while let Token::Operator(op) = next {
+							
+								match op {
+		
+									"(" => {
+										// Function call
+										let mut args = vec![];
+										next = self.get_next()?;
+										
+										if next != Token::Operator(")") {
+											loop {									
+												args.push(self.parse_expression()?);
+												
+												current = self.get_current()?;
+		
+												if let Token::Other(',') = current {
+													self.get_next()?;
+												} else if current == Token::Operator(")") {
+													break;
+												} else {
+													return Err(CMNError::UnexpectedToken);
+												}
+											}
+										}
 										self.get_next()?;
-									} else if current == Token::Operator(")".to_string()) {
+		
+										result = Atom::FnCall{name: name.clone(), args};
 										break;
-									} else {
-										return Err(CMNError::UnexpectedToken);
 									}
+		
+									"<" => {
+										// TODO: Generics
+										result = Atom::Identifier(name.clone());
+										break;
+									}
+
+									_ => return Err(CMNError::UnexpectedToken),
 								}
 							}
-							self.get_next()?;
+						},
 
-							result = Atom::FnCall{name: name.clone(), args};
-							break;
-						}
+						TypeDef::Algebraic(_) => {
+							
+							match &next {
+								Token::Other('{') => {
 
-						"<" => {
-							// TODO: Disambiguate between type parameter list or LT operator 
-							result = Atom::Identifier(name.clone());
-							break;
-						}
-
-						_ => {
-							// Just a variable
-							result = Atom::Identifier(name.clone());
-							break;
-						}
-					} 
+								}
+								_ => todo!(),
+							}
+						},
+					}
+					
+				} else {
+					// Just a variable
+					result = Atom::Identifier(name.clone());
 				};
 			},
 
@@ -1051,6 +1073,27 @@ impl Parser {
 		};
 
 		Ok(result)
+	}
+
+
+	fn find_type(&self, typename: &Identifier) -> Option<Type> {
+		
+		if typename.path.scopes.is_empty() {
+			if let Some(basic) = Basic::get_basic_type(&typename.name) {
+				return Some(Type::Basic(basic));
+			}
+		}
+		let ctx = self.current_namespace().borrow();
+		let root = &self.root_namespace.as_ref().unwrap_or(self.current_namespace()).borrow();
+
+		let mut result = None;
+		ctx.with_item(&typename, root, |item, id| {
+			if let NamespaceItem::Type(t) = &item.0 {
+				result = Some(Type::TypeRef(Arc::downgrade(t), id.clone()));
+			}
+		});
+	
+		None
 	}
 
 
@@ -1116,18 +1159,15 @@ impl Parser {
 
 			// Check if we've arrived at a comma, skip it, and loop back around
 			current = self.get_current()?;
+			
 			match current {
 				Token::Other(',') => {
 					self.get_next()?;
 					continue;
 				}
-				Token::Operator(s) => {
-					if s.as_str() == ")" {
-						break;
-					} else {
-						return Err(CMNError::UnexpectedToken);
-					}
-				}
+
+				Token::Operator(")") => break,
+
 				_ => {
 					return Err(CMNError::UnexpectedToken);
 				}
@@ -1137,7 +1177,7 @@ impl Parser {
 		let current = self.get_current()?;
 
 		if let Token::Operator(s) = current {
-			if s.as_str() == ")" {
+			if s == ")" {
 				self.get_next()?;
 				Ok(result)
 			} else {
@@ -1206,8 +1246,8 @@ impl Parser {
 			let mut next = self.get_next()?;
 		
 			match next { 
-				Token::Operator(ref op) => {
-					match op.as_str() {
+				Token::Operator(op) => {
+					match op {
 						"*" => {
 							while token_compare(&next, "*") {
 								result = Type::Pointer(Box::new(result));
@@ -1220,7 +1260,7 @@ impl Parser {
 							let const_expr = self.parse_expression()?;
 							let dummy_expr = Expr::Atom(Atom::IntegerLit(0, None), (0, 0));
 
-							if self.get_current()? != Token::Operator("]".to_string()) {
+							if self.get_current()? != Token::Operator("]") {
 								return Err(CMNError::UnexpectedToken);
 							}
 
@@ -1246,7 +1286,7 @@ impl Parser {
 							}
 
 							// assert token == '>'
-							if self.get_current()? != Token::Operator(">".to_string()) {
+							if self.get_current()? != Token::Operator(">") {
 								return Err(CMNError::UnexpectedToken);
 							}
 							// consume >
@@ -1288,7 +1328,7 @@ impl Parser {
 		if token_compare(&current, "(") {
 			current = self.get_next()?;
 
-			if current != Token::Operator(")".to_string()) {
+			if current != Token::Operator(")") {
 				let mut current_seq = vec![];
 				let mut paren_depth = 0;
 
@@ -1303,7 +1343,7 @@ impl Parser {
 								continue;
 							}
 
-						Token::Operator(ref op) => match op.as_str() {
+						Token::Operator(op) => match op {
 							"(" => paren_depth += 1,
 
 							")" => 

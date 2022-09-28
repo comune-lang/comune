@@ -706,6 +706,7 @@ impl Expr {
 					Atom::Cast(_, cast_t) => *target == *cast_t,
 					Atom::ArrayLit(_) => todo!(),
         			Atom::TupleLit(_) => todo!(),
+        			Atom::AlgebraicLit(_, _) => todo!(),
 				}
 			},
 
@@ -879,6 +880,7 @@ impl Atom {
 
 			Atom::ArrayLit(_) => todo!(),
     		Atom::TupleLit(_) => todo!(),
+    		Atom::AlgebraicLit(_, _) => todo!(),
 		}
 	}
 

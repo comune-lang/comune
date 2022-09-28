@@ -99,7 +99,7 @@ pub enum Token {
 	BoolLiteral(bool),
 	Keyword(&'static str),
 	NumLiteral(String, String), // Optional suffix
-	Operator(String),
+	Operator(&'static str),
 	Other(char),
 }
 
@@ -111,11 +111,11 @@ impl Token {
 			Token::Identifier(x) => x.name.len(), 
 			Token::MultiIdentifier(x) => x[0].name.len(),
 
-			Token::NumLiteral(x, _) | Token::Operator(x) => x.len(),
+			Token::NumLiteral(x, _)=> x.len(),
 
 			Token::StringLiteral(x) => x.len() + 2,
 
-			Token::Keyword(x) => x.len(),
+			Token::Keyword(x)  | Token::Operator(x) => x.len(),
 
 			Token::EOF => 0,
 			
@@ -133,9 +133,9 @@ impl Display for Token {
 
 			Token::MultiIdentifier(_x) => String::from("todo"),
 
-			Token::StringLiteral(x) | Token::NumLiteral(x, _) | Token::Operator(x) => x.clone(),
+			Token::StringLiteral(x) | Token::NumLiteral(x, _) => x.clone(),
 
-			Token::Keyword(x) => x.to_string(),
+			Token::Keyword(x) | Token::Operator(x) => x.to_string(),
 			
 			Token::BoolLiteral(b) => if *b { "true".to_string() } else { "false".to_string() },
 			
@@ -345,7 +345,7 @@ impl Lexer {
 
 					}
 				} else if OPERATORS.contains(&result.as_str()) {
-					result_token = Ok(Token::Operator(result));
+					result_token = Ok(Token::Operator(*OPERATORS.iter().find(|x_static| **x_static == result.as_str()).unwrap()));
 				} else {
 					// Result is not a keyword or an operator, so parse an Identifier
 					// This is a mess i sure hope it works
@@ -408,7 +408,7 @@ impl Lexer {
 
 				result_token = Ok(Token::NumLiteral(result, suffix));
 
-			} else if OPERATORS.iter().find(|x| { x.chars().next().unwrap() == token }).is_some() {
+			} else if let Some(op) = OPERATORS.iter().find(|x| { x.chars().next().unwrap() == token }) {
 				// Operator
 
 				let result = String::from(token);
@@ -419,9 +419,9 @@ impl Lexer {
 				// Check for two-char operator
 				if OPERATORS.contains(&result_double.as_str()) {
 					self.get_next_char()?;
-					result_token = Ok(Token::Operator(result_double));
+					result_token = Ok(Token::Operator(*OPERATORS.iter().find(|x_static| **x_static == result_double.as_str()).unwrap()));
 				} else {
-					result_token = Ok(Token::Operator(result));
+					result_token = Ok(Token::Operator(*op));
 				}
 
 				self.get_next_char()?;
