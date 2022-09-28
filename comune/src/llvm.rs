@@ -6,7 +6,7 @@ use crate::constexpr::{ConstExpr, ConstValue};
 use crate::semantic::ast::{ASTElem, ASTNode};
 use crate::semantic::controlflow::ControlFlow;
 use crate::semantic::expression::{Expr, Atom, Operator};
-use crate::semantic::namespace::Identifier;
+use crate::semantic::namespace::{Identifier, NamespaceItem};
 use crate::semantic::types::{Type, Basic, TypeDef, DataLayout};
 
 use inkwell::targets::{TargetMachine, Target, InitializationConfig, TargetTriple};
@@ -838,10 +838,11 @@ impl<'ctx> LLVMBackend<'ctx> {
 						self.type_map.borrow_mut().insert(t.clone(), result_type.clone());
 
 						let mut types_mapped = vec![];
-						types_mapped.reserve(aggregate.members.len());
 						
-						for m in aggregate.members.iter() {
-							types_mapped.push(Self::to_basic_type(self.get_llvm_type(&m.1.0)).as_basic_type_enum())
+						for m in aggregate.items.iter() {
+							if let NamespaceItem::Variable(t, _) = &m.1.0 {
+								types_mapped.push(Self::to_basic_type(self.get_llvm_type(t)).as_basic_type_enum())
+							}
 						}
 
 						result_type.set_body(&types_mapped, aggregate.layout == DataLayout::Packed);

@@ -14,8 +14,3 @@ u64 fib(u64 n) {
 	return c;
 }
 
-@layout(packed)
-struct Test {
-	int a;
-	int b;
-}

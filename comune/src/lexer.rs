@@ -351,26 +351,32 @@ impl Lexer {
 					// This is a mess i sure hope it works
 					let mut path = ScopePath { scopes: vec![result.clone()], absolute: false };
 
-					// Recursively get next scope members
- 					if self.char_buffer.unwrap() == ':' && self.peek_next_char()? == ':' {
-							self.advance_char()?; self.advance_char()?; 
-							if let Token::Identifier(mut id) = self.parse_next()?.1 {
-								// If path is empty, we've reached the final part of the Identifier,
-								// so take the name and push it onto the scopes vec to pop it back later
-								// (TODO: why the fuck are we doing it this way)
-								if id.path.scopes.is_empty() {
-									path.scopes.push(id.name);
-								} else {
-									path.scopes.append(&mut id.path.scopes);
-								}
-							}
-							let name = path.scopes.pop().unwrap();
-							result_token = Ok(Token::Identifier(Identifier{ name, path, mem_idx: 0, resolved: None }));
+					// Gather scope members
+ 					while self.char_buffer.unwrap() == ':' && self.peek_next_char()? == ':' {
+						self.advance_char()?; 
+						// Get next part of identifier
+						let mut current = self.get_next_char()?;
 						
-					} else {
-						// No scope res operator after this, return unscoped Identifier
-						result_token = Ok(Token::Identifier(Identifier{name: result, path: ScopePath::new(false), mem_idx: 0, resolved: None}));
+						if current.is_alphabetic() {
+							let mut scope = String::from(current);
+							current = self.get_next_char()?;
+							
+							while current.is_alphanumeric() {
+								scope.push(current);
+								current = self.get_next_char()?;
+							}
+
+							if KEYWORDS.contains(&scope.as_str()) {
+								todo!(); // TODO: Return appropriate error
+							}
+
+							path.scopes.push(scope);
+						} else if current == '{' {
+							
+						}
 					}
+					let name = path.scopes.pop().unwrap();
+					result_token = Ok(Token::Identifier(Identifier{ name, path, mem_idx: 0, resolved: None }));
 				}
 
 			} else if token.is_numeric() { 

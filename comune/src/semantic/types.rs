@@ -6,9 +6,9 @@ use std::fmt::Display;
 
 use once_cell::sync::OnceCell;
 
-use super::namespace::{Identifier, NamespaceASTElem};
+use super::namespace::{Identifier, NamespaceEntry, NamespaceItem, Namespace};
 use crate::constexpr::ConstExpr;
-use crate::semantic::{Attribute, FnScope};
+use crate::semantic::FnScope;
 use crate::parser::ASTResult;
 
 pub type BoxedType = Box<Type>;
@@ -53,12 +53,14 @@ pub enum TypeDef {
 }
 
 
-// Metatype that represents a generic algebraic type.
-// This is the internal representation of both structs and enums, as they can contain each other.
+// The internal representation of algebraic types, like structs, enums, and (shocker) struct enums
+//
+// Algebraics (strums?) can contain member variables, inner type aliases, variants (aka subtype definitions), etc...
+// Hence we give them the same data structure as Namespaces, a list of `String`s and `NamespaceEntry`s
+// However, since declaration order *is* meaningful in strums, we store them as a Vec, rather than a HashMap
 #[derive(Clone, Debug)]
 pub struct AlgebraicType {
-	pub members: Vec<(String, (Type, RefCell<NamespaceASTElem>, Vec<Attribute>, Visibility))>,
-	pub variants: Vec<(String, (Box<AlgebraicType>, Vec<Attribute>))>,
+	pub items: Vec<(String, NamespaceEntry, Visibility)>,
 	pub layout: DataLayout,
 }
 
@@ -75,17 +77,75 @@ pub enum Visibility {
 pub enum DataLayout {
 	Declared,			// Layout is exactly as declared
 	Optimized,			// Layout may be shuffled to minimize padding
-	Packed,				// Layout is packed in declaration order with no padding (no alignment)
+	Packed,				// Layout is packed in declaration order with no padding (inner alignment is 1 byte)
 }
 
 
 impl AlgebraicType {
 	pub fn new() -> Self {
-		AlgebraicType { 
-			members: vec![],
-			variants: vec![],
+		AlgebraicType {
+			items: vec![],
 			layout: DataLayout::Declared,
 		}
+	}
+
+	pub fn get_member(&self, name: &str) -> Option<(usize, &Type)> {
+		let mut index = 0;
+		
+		for item in &self.items {
+			if let NamespaceItem::Variable(t, _) = &item.1.0 {
+				if &item.0 == name {
+					return Some((index, t));
+				} else {
+					index += 1;
+				}
+			}
+		}
+		None
+	}
+
+	
+	pub fn with_item<Ret>(&self, name: &Identifier, parent: &Namespace, root: &Namespace, mut closure: impl FnMut(&NamespaceEntry, &Identifier) -> Ret) -> Option<Ret> {
+
+		if name.path.scopes.is_empty() {
+			if let Some(item) = self.items.iter().find(|item| item.0 == name.name) {
+				
+				// It's one of this namespace's children!
+				
+				if let NamespaceItem::Alias(id) = &item.1.0 {
+					// It's an alias, so look up the actual item
+					return parent.with_item(&id, root, closure);
+				
+				} else {
+					// Generate absolute identifier
+					let id = Identifier {name: name.name.clone(), path: parent.path.clone(), mem_idx: 0, resolved: None };
+				
+					return Some(closure(&item.1, &id));
+				}
+			}
+		} else {
+			if let Some(item) = self.items.iter().find(|item| item.0 == name.path.scopes[0]) {
+				
+				match &item.1.0 {
+
+					NamespaceItem::Type(ty) => match &*ty.read().unwrap() {
+						TypeDef::Algebraic(alg) => {
+
+							let mut name_clone = name.clone();
+							name_clone.path.scopes.remove(0);
+							
+							return alg.with_item(&name_clone, parent, root, closure);
+						}
+
+						_ => panic!(),
+					}
+
+					_ => panic!(), // TODO: Proper error
+				}
+			}
+		}
+
+		None
 	}
 }
 
@@ -275,8 +335,11 @@ impl TypeDef {
 		let mut result = String::new();
 		match &self {						
 			TypeDef::Algebraic(a) => {
-				for t in &a.members {
-					result.push_str(&t.1.0.serialize());
+				for t in &a.items {
+					match &t.1.0 {
+						NamespaceItem::Variable(t, _) => result.push_str(&t.serialize()),
+						_ => todo!(),
+					}
 				}
 			},
 
@@ -300,8 +363,10 @@ impl TypeDef {
 			TypeDef::Algebraic(ts) => {
 				let mut result = 0;
 
-				for t in ts.members.iter() {
-					result += t.1.0.get_size_bytes();
+				for t in ts.items.iter() {
+					if let NamespaceItem::Variable(t, _) = &t.1.0 {
+						result += t.get_size_bytes();
+					}
 				}
 				result
 			},
@@ -313,22 +378,22 @@ impl TypeDef {
 
 
 impl Display for Basic {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.as_str())
-    }
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		write!(f, "{}", self.as_str())
+	}
 }
 
 
 impl PartialEq for Type {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::Basic(l0), Self::Basic(r0)) => l0 == r0,
-            (Self::Pointer(l0), Self::Pointer(r0)) => l0 == r0,
-            (Self::Unresolved(l0), Self::Unresolved(r0)) => l0 == r0,
-            (Self::TypeRef(l0, l1), Self::TypeRef(r0, r1)) => Arc::ptr_eq(&l0.upgrade().unwrap(), &r0.upgrade().unwrap()) && l1 == r1,
+	fn eq(&self, other: &Self) -> bool {
+		match (self, other) {
+			(Self::Basic(l0), Self::Basic(r0)) => l0 == r0,
+			(Self::Pointer(l0), Self::Pointer(r0)) => l0 == r0,
+			(Self::Unresolved(l0), Self::Unresolved(r0)) => l0 == r0,
+			(Self::TypeRef(l0, l1), Self::TypeRef(r0, r1)) => Arc::ptr_eq(&l0.upgrade().unwrap(), &r0.upgrade().unwrap()) && l1 == r1,
 			_ => false,
-        }
-    }
+		}
+	}
 }
 
 
@@ -336,22 +401,22 @@ impl Eq for Type {}
 
 
 impl Hash for Type {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        match self {
-            Type::Basic(b) => b.hash(state),
-            Type::Pointer(t) => { t.hash(state); "*".hash(state) },
+	fn hash<H: Hasher>(&self, state: &mut H) {
+		match self {
+			Type::Basic(b) => b.hash(state),
+			Type::Pointer(t) => { t.hash(state); "*".hash(state) },
 			Type::Array(t, _s) => { t.hash(state);  "+".hash(state) },
 			Type::Tuple(types) => { "(".hash(state); for t in types { t.hash(state); } ")".hash(state) }
-            Type::Unresolved(id) => id.hash(state),
-            Type::TypeRef(r, _) => ptr::hash(r.upgrade().unwrap().as_ref(), state),
-        }
-    }
+			Type::Unresolved(id) => id.hash(state),
+			Type::TypeRef(r, _) => ptr::hash(r.upgrade().unwrap().as_ref(), state),
+		}
+	}
 }
 
 
 
 impl Display for Type {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match &self {
 			Type::Basic(t) => {
 				write!(f, "{}", t)?;
@@ -388,7 +453,7 @@ impl Display for Type {
 		}
 
 		Ok(())
-    }
+	}
 }
 
 
@@ -413,36 +478,44 @@ impl Display for TypeDef {
 
 
 impl Display for AlgebraicType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		let mut members = self.members.iter();
-		write!(f, "Struct {{{}", members.next().unwrap().1.0)?;
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		let mut members = self.items.iter();
+
+		write!(f, "Struct {{{:?}", members.next().unwrap().1.0)?;
+
 		for mem in members {
-			write!(f, ", {}", mem.1.0)?;
+			write!(f, ", {:?}", mem.1.0)?;
 		}
 		write!(f, "}}")
-    }
+	}
 }
 
 impl Hash for AlgebraicType {
-    fn hash<H: Hasher>(&self, state: &mut H) {
+	fn hash<H: Hasher>(&self, state: &mut H) {
 		// We hash based on Type only, so two aggregates with the same layout have the same Hash
 		// Hashing is only relevant for LLVM codegen, so semantic analysis will already have happened
-        self.members.iter().map(|item| &item.1.0).collect::<Vec<&Type>>().hash(state);
-        self.variants.iter().map(|item| &item.1.0).collect::<Vec<&Box<AlgebraicType>>>().hash(state);
-        //self.methods.iter().map(|item| &item.1.0).collect::<Vec<&Type>>().hash(state);
-    }
+		//self.members.iter().map(|item| &item.1.0).collect::<Vec<&Type>>().hash(state);
+		//self.variants.iter().map(|item| &item.1.0).collect::<Vec<&Box<AlgebraicType>>>().hash(state);
+		//self.methods.iter().map(|item| &item.1.0).collect::<Vec<&Type>>().hash(state);
+		for item in &self.items {
+			match &item.1.0 {
+				NamespaceItem::Variable(t, _) => t.hash(state),
+				_ => todo!(),
+			}
+		}
+	}
 }
 
 
 impl std::fmt::Debug for Type {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Basic(arg0) => f.debug_tuple("Basic").field(arg0).finish(),
-            Self::Pointer(_) => f.debug_tuple("Pointer").finish(),
-            Self::Array(t, _) => f.debug_tuple("Array").field(t).finish(),
-            Self::Tuple(types) => f.debug_tuple("Tuples").field(types).finish(),
-            Self::Unresolved(arg0) => f.debug_tuple("Unresolved").field(arg0).finish(),
-            Self::TypeRef(arg0, _) => f.debug_tuple("TypeRef").field(arg0).finish(),
-        }
-    }
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		match self {
+			Self::Basic(arg0) => f.debug_tuple("Basic").field(arg0).finish(),
+			Self::Pointer(_) => f.debug_tuple("Pointer").finish(),
+			Self::Array(t, _) => f.debug_tuple("Array").field(t).finish(),
+			Self::Tuple(types) => f.debug_tuple("Tuples").field(types).finish(),
+			Self::Unresolved(arg0) => f.debug_tuple("Unresolved").field(arg0).finish(),
+			Self::TypeRef(arg0, _) => f.debug_tuple("TypeRef").field(arg0).finish(),
+		}
+	}
 }

@@ -209,11 +209,12 @@ impl Parser {
 									match next { 
 										Token::Identifier(_) => {
 											let result = self.parse_fn_or_declaration()?;
+											
 											match result.1 {
 
 												NamespaceItem::Variable(t, n) =>
-													aggregate.members.push(
-														(result.0, (t, n, vec![], current_visibility.clone()))
+													aggregate.items.push(
+														(result.0, (NamespaceItem::Variable(t, n), vec![], None), current_visibility.clone())
 													),
 
 												_ => todo!(),
@@ -1066,7 +1067,7 @@ impl Parser {
 					let ctx = self.current_namespace().borrow();
 					let root = &self.root_namespace.as_ref().unwrap_or(self.current_namespace()).borrow();
 
-					ctx.with_item(&typename, root, |item, _, _| {
+					ctx.with_item(&typename, root, |item, _| {
 						if let NamespaceItem::Type(_) = &item.0 {
 							found = true;
 						}
@@ -1186,7 +1187,7 @@ impl Parser {
 						found = true;
 					}
 				} else {
-					ctx.with_item(&typename, root, |item, _, id| {
+					ctx.with_item(&typename, root, |item, id| {
 						if let NamespaceItem::Type(t) = &item.0 {
 							result = Type::TypeRef(Arc::downgrade(t), id.clone());
 							found = true;

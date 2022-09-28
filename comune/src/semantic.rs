@@ -85,7 +85,7 @@ impl<'ctx> FnScope<'ctx> {
 			let namespace = self.context.borrow();
 			let root = self.root_namespace.borrow();
 
-			namespace.with_item(&id, &root, |item, _, id| {
+			namespace.with_item(&id, &root, |item, id| {
 				if let NamespaceItem::Function(fn_type, _) = &item.0 {
 					result = Some((item.2.as_ref().unwrap().clone(), Type::TypeRef(Arc::downgrade(fn_type), id.clone())));
 				}
@@ -219,7 +219,7 @@ pub fn resolve_type(ty: &mut Type, namespace: &Namespace, root: &RefCell<Namespa
 					result = Ok(());
 				}
 			} else {
-				namespace.with_item(&id.clone(), &root.borrow(), |item, _, id| {				
+				namespace.with_item(&id.clone(), &root.borrow(), |item, id| {				
 					if let NamespaceItem::Type(t) = &item.0 {
 						*ty = Type::TypeRef(Arc::downgrade(t), id.clone());
 						result = Ok(());
@@ -239,9 +239,14 @@ pub fn resolve_type(ty: &mut Type, namespace: &Namespace, root: &RefCell<Namespa
 pub fn resolve_type_def(ty: &mut TypeDef, attributes: &Vec<Attribute>, namespace: &Namespace, root: &RefCell<Namespace>) -> ParseResult<()> {
 	match ty {
 
-		TypeDef::Algebraic(ref mut agg) => { 
-			for member in &mut agg.members {
-				resolve_type(&mut member.1.0, &namespace, root).unwrap();
+		TypeDef::Algebraic(ref mut agg) => {
+
+			for item in &mut agg.items {
+				match &mut item.1.0 {
+					NamespaceItem::Variable(t, _) => resolve_type(t, &namespace, root).unwrap(),
+					NamespaceItem::Type(t) => resolve_type_def(&mut t.write().unwrap(), &vec![], &namespace, root).unwrap(),
+					_ => (),
+				}
 			}
 
 			if let Some(layout) = get_attribute(attributes, "layout") {
@@ -310,14 +315,34 @@ pub fn resolve_namespace_types(namespace: &RefCell<Namespace>, root: &RefCell<Na
 
 pub fn check_cyclical_deps(ty: &Arc<RwLock<TypeDef>>, parent_types: &mut Vec<Arc<RwLock<TypeDef>>>) -> ASTResult<()> {
 	if let TypeDef::Algebraic(agg) = &*ty.as_ref().read().unwrap() {
-		for member in agg.members.iter() {
-			if let Type::TypeRef(ref_t, _) =  &member.1.0 {
-				if parent_types.iter().find(|elem| Arc::ptr_eq(elem, &ref_t.upgrade().unwrap())).is_some() {
-					return Err((CMNError::InfiniteSizeType, (0, 0)));
+
+		for member in agg.items.iter() {
+
+			match &member.1.0 {
+
+				NamespaceItem::Variable(t, _) => {
+					if let Type::TypeRef(ref_t, _) = &t {
+						// Check if 
+						if parent_types.iter().find(|elem| Arc::ptr_eq(elem, &ref_t.upgrade().unwrap())).is_some() {
+							return Err((CMNError::InfiniteSizeType, (0, 0)));
+						}
+
+						parent_types.push(ty.clone());
+						check_cyclical_deps(&ref_t.upgrade().unwrap(), parent_types)?;
+						parent_types.pop();
+					}
+
 				}
-				parent_types.push(ty.clone());
-				check_cyclical_deps(&ref_t.upgrade().unwrap(), parent_types)?;
+
+				NamespaceItem::Type(t) => {
+					parent_types.push(ty.clone());
+					check_cyclical_deps(t, parent_types)?;
+					parent_types.pop();
+				}
+
+				_ => {},
 			}
+			
 		}
 	}
 	Ok(())
@@ -343,7 +368,7 @@ pub fn register_impls(namespace: &RefCell<Namespace>, root: &RefCell<Namespace>)
 
 		// Impls can be defined with relative Identifiers, so we monomorphize them here
 
-		namespace.borrow().with_item(im.0, &root.borrow(), |item, _ns, id| {
+		namespace.borrow().with_item(im.0, &root.borrow(), |item, id| {
 			if let NamespaceItem::Type(t_def) = &item.0 {
 				if let TypeDef::Algebraic(_alg) = &mut *t_def.write().unwrap() {
 
@@ -359,10 +384,8 @@ pub fn register_impls(namespace: &RefCell<Namespace>, root: &RefCell<Namespace>)
 								resolve_type(&mut arg.0, &namespace.borrow(), root).unwrap();
 							}
 						}
-
 						this_impl.push((func.0.clone(), func.1.clone(), func.2.clone(), None));
 					}
-
 					impls_remapped.insert(id.clone(), this_impl);
 				}
 			}
@@ -717,9 +740,9 @@ impl Expr {
 									// Member access on algebraic type
 									Expr::Atom(Atom::Identifier(ref mut id), _) => {
 
-										if let Some(i) = t.members.iter().position(|mem| mem.0 == id.name) {
+										if let Some((i, m)) = t.get_member(&id.name) {
 											id.mem_idx = i as u32;
-											return Some(t.members[i].1.0.clone());
+											return Some(m.clone());
 										}
 									
 										// Didn't return Some, so not a valid member access

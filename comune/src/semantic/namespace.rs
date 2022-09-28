@@ -104,7 +104,7 @@ pub enum NamespaceASTElem {
 }
 
 // refcell hell
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum NamespaceItem {
 	Type(Arc<RwLock<TypeDef>>),
 	Function(Arc<RwLock<TypeDef>>, RefCell<NamespaceASTElem>),
@@ -113,10 +113,10 @@ pub enum NamespaceItem {
 	Alias(Identifier),
 }
 
-type NamespaceEntry = (NamespaceItem, Vec<Attribute>, Option<String>); // Option<String> is the item's mangled name
+pub type NamespaceEntry = (NamespaceItem, Vec<Attribute>, Option<String>); // Option<String> is the item's mangled name
 
 
-#[derive(Default, Clone)]
+#[derive(Default, Clone, Debug)]
 pub struct Namespace {
 	pub path: ScopePath,
 	pub referenced_modules: HashSet<Identifier>,
@@ -156,7 +156,7 @@ impl Namespace {
 	}
 
 
-	pub fn with_item<Ret>(&self, name: &Identifier, root: &Namespace, mut closure: impl FnMut(&NamespaceEntry, &Namespace, &Identifier) -> Ret) -> Option<Ret> {
+	pub fn with_item<Ret>(&self, name: &Identifier, root: &Namespace, mut closure: impl FnMut(&NamespaceEntry, &Identifier) -> Ret) -> Option<Ret> {
 		let self_is_root = root as *const _ == self as *const _;
 
 		// If name is an absolute path, look in root
@@ -177,18 +177,51 @@ impl Namespace {
 					// Generate absolute identifier
 					let id = Identifier {name: name.name.clone(), path: self.path.clone(), mem_idx: 0, resolved: None };
 				
-					return Some(closure(&self.children.get(&name.name).unwrap(), &self, &id));
+					return Some(closure(&self.children.get(&name.name).unwrap(), &id));
 				}
 			}
 		} else {
-			if let Some((NamespaceItem::Namespace(child), _, _)) = self.children.get(&name.path.scopes[0]) {
+			if let Some(child) = self.children.get(&name.path.scopes[0]) {
+				
+				match &child.0 {
+					NamespaceItem::Namespace(child) => {
+						// Found child namespace matching first scope path member
 
-				// Found child namespace matching first scope path member
+						let mut name_clone = name.clone();
+						name_clone.path.scopes.remove(0);
 
-				let mut name_clone = name.clone();
-				name_clone.path.scopes.remove(0);
+						return child.as_ref().borrow().with_item(&name_clone, root, closure);
+					}
 
-				return child.as_ref().borrow().with_item(&name_clone, root, closure);
+					NamespaceItem::Type(ty) => match &*ty.read().unwrap() {
+						TypeDef::Algebraic(alg) => {
+
+							let mut name_clone = name.clone();
+							name_clone.path.scopes.remove(0);
+							
+							return alg.with_item(&name_clone, self, root, closure);
+						}
+
+						_ => panic!(),
+					}
+
+					NamespaceItem::Alias(alias_id) => {
+						let mut merged_path = alias_id.path.scopes.clone();
+						
+						merged_path.append(&mut name.path.scopes.clone());
+						
+						return self.with_item(
+							&Identifier { 
+								name: name.name.clone(),
+								path: ScopePath { scopes: merged_path, absolute: alias_id.path.absolute }, 
+								mem_idx: 0, 
+								resolved: None
+							}, root, closure);
+					}
+
+					_ => panic!(), // TODO: Proper error
+				}
+
 
 			} else if let Some(imported) = self.imported.get(&Identifier::from_name(name.path.scopes[0].clone()))  {
 

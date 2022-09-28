@@ -19,7 +19,6 @@ pub struct ManagerState {
 
 pub struct ModuleState {
 	parser: Parser,
-	term_cursor_pos: usize,
 }
 
 
@@ -31,7 +30,7 @@ pub fn launch_module_compilation<'scope>(state: Arc<ManagerState>, input_module:
 	let out_path = get_module_out_path(&state, &input_module, None);
 	state.output_modules.lock().unwrap().push(out_path.clone());
 
-	let mut mod_state = parse_api(&state, &src_path).unwrap();
+	let mut mod_state = parse_interface(&state, &src_path).unwrap();
 
 	// Resolve module imports
 	let module_names = mod_state.parser.current_namespace().borrow().referenced_modules.clone();
@@ -118,14 +117,10 @@ pub fn get_out_folder(state: &Arc<ManagerState>) -> PathBuf {
 }
 
 
-pub fn parse_api(state: &Arc<ManagerState>, path: &Path) -> Result<ModuleState, CMNError> {
-	// Okay, here's how we're going about this
-	// Step 1a. Check if NamespaceInfo cache exists (Add this once modular compiling works in general lol)
-	// Step 1b. Parse namespace level
-	// Step 2. Resolve module imports, wait till done (this uses rayon)
-	// Step 3. Return module compilation state, to be passed to resolve_types
+pub fn parse_interface(state: &Arc<ManagerState>, path: &Path) -> Result<ModuleState, CMNError> {
 
-	// Parse namespace level
+	// First phase of module compilation: create Lexer and Parser, and parse the module at the namespace level
+
 	let mut mod_state = ModuleState {
 		parser: Parser::new(match Lexer::new(path) { // TODO: Take module name instead of filename 
 			Ok(f) => f,
@@ -134,7 +129,6 @@ pub fn parse_api(state: &Arc<ManagerState>, path: &Path) -> Result<ModuleState, 
 				return Err(CMNError::ModuleNotFound(OsString::from(path.file_name().unwrap()))); 
 			}
 		}, state.verbose_output),
-		term_cursor_pos: 0,
 	};
 
 	println!("{} {}", "compiling".bold().green(), mod_state.parser.lexer.borrow().file_name.to_string_lossy());
@@ -143,7 +137,8 @@ pub fn parse_api(state: &Arc<ManagerState>, path: &Path) -> Result<ModuleState, 
 		println!("\ncollecting symbols...");
 	}
 
-	// Declarative pass
+	// Parse namespace level
+
 	return match mod_state.parser.parse_module() {
 		Ok(_) => { Ok(mod_state) },
 		Err(e) => { 
