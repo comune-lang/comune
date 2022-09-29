@@ -19,7 +19,6 @@ impl Test {
 
 Test new_test() {
 	return Test { a: 60, b: 9 };
-	
 }
 
 int main() {

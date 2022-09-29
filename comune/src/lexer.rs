@@ -111,11 +111,11 @@ impl Token {
 			Token::Identifier(x) => x.name.len(), 
 			Token::MultiIdentifier(x) => x[0].name.len(),
 
-			Token::NumLiteral(x, _)=> x.len(),
+			Token::NumLiteral(x, _) => x.len(),
 
 			Token::StringLiteral(x) => x.len() + 2,
 
-			Token::Keyword(x)  | Token::Operator(x) => x.len(),
+			Token::Keyword(x) | Token::Operator(x) => x.len(),
 
 			Token::EOF => 0,
 			
@@ -420,8 +420,10 @@ impl Lexer {
 				if OPERATORS.contains(&result_double.as_str()) {
 					self.get_next_char()?;
 					result_token = Ok(Token::Operator(*OPERATORS.iter().find(|x_static| **x_static == result_double.as_str()).unwrap()));
-				} else {
+				} else if OPERATORS.contains(&result.as_str()) {
 					result_token = Ok(Token::Operator(*op));
+				} else {
+					result_token = Ok(Token::Other(token));
 				}
 
 				self.get_next_char()?;

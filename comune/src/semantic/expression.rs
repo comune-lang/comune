@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::{fmt::Display, cell::RefCell};
 
 use super::{types::{Type, Basic}, ast::{TokenData, ASTElem}, namespace::Identifier};
 
@@ -241,10 +241,9 @@ pub enum Atom {
 	BoolLit(bool),
 	StringLit(String),
 	ArrayLit(Vec<ASTElem>),
-	TupleLit(Vec<ASTElem>),
 	
 	// Struct/enum literal
-	AlgebraicLit(Type, Vec<(Option<String>, Expr, TokenData)>),
+	AlgebraicLit(Type, Vec<(Option<String>, RefCell<Expr>, TokenData)>),
 
 	Identifier(Identifier),
 
@@ -271,8 +270,6 @@ impl Display for Atom {
 			Atom::BoolLit(b) => if *b { write!(f, "true") } else { write!(f, "false") }
 
 			Atom::ArrayLit(_elems) => todo!(),
-            
-			Atom::TupleLit(_elems) => todo!(),
 
             Atom::FnCall {name, args} => {
 				let mut args_iter = args.iter();

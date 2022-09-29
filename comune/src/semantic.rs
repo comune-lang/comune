@@ -203,13 +203,6 @@ pub fn resolve_type(ty: &mut Type, namespace: &Namespace, root: &RefCell<Namespa
 
 		Type::Array(ref mut pointee, _size) => resolve_type(pointee, namespace, root),
 
-		Type::Tuple(ref mut types) => {
-			for t in types {
-				resolve_type(t, namespace, root)?;
-			}
-			Ok(())
-		}
-
 		Type::Unresolved(ref id) => {
 			let mut result = Err(CMNError::UnresolvedTypename(id.to_string()));
 
@@ -704,9 +697,8 @@ impl Expr {
 					},
 
 					Atom::Cast(_, cast_t) => *target == *cast_t,
-					Atom::ArrayLit(_) => todo!(),
-        			Atom::TupleLit(_) => todo!(),
         			Atom::AlgebraicLit(_, _) => todo!(),
+					Atom::ArrayLit(_) => todo!(),
 				}
 			},
 
@@ -792,22 +784,6 @@ impl Expr {
 			}
 		}
 	}
-
-
-	pub fn is_const_expr<'ctx>(&self, scope: &'ctx FnScope<'ctx>) -> bool {
-		match self {
-			Expr::Atom(a, _) => a.is_const_expr(scope),
-
-			Expr::Cons(_, e, _) => {
-				for elem in e {
-					if !elem.0.is_const_expr(scope) {
-						return false;
-					}
-				}
-				return true;
-			},
-		}
-	}
 }
 
 
@@ -879,14 +855,35 @@ impl Atom {
 			},
 
 			Atom::ArrayLit(_) => todo!(),
-    		Atom::TupleLit(_) => todo!(),
-    		Atom::AlgebraicLit(_, _) => todo!(),
+
+    		Atom::AlgebraicLit(ty, elems) => {
+				if let Type::TypeRef(alg, _) = ty {
+					if let TypeDef::Algebraic(alg) = &*alg.upgrade().unwrap().read().unwrap() {
+						
+						for elem in elems {
+							let member_ty = if let Some((_, ty)) = alg.get_member(elem.0.as_ref().unwrap()) {
+								ty
+							} else {
+								// Invalid member in strenum literal
+								todo!()
+							};
+
+							let expr_ty = elem.1.get_mut().validate(scope, Some(member_ty), elem.2)?;
+						}
+
+						return Ok(ty.clone());
+					}
+				}
+
+				todo!()
+			},
+
 		}
 	}
 
 
 	// Check if we should issue any warnings or errors when casting
-	pub fn check_cast(&mut self, from: &Type, to: &Type, _scope: &FnScope, meta: &TokenData) -> ASTResult<()> {
+	pub fn check_cast(&mut self, from: &Type, to: &Type, _scope: &FnScope, _meta: &TokenData) -> ASTResult<()> {
 		match from {
 
 			Type::Basic(b) => match b {
@@ -926,17 +923,6 @@ impl Atom {
 				None => None,
 			},
 			_ => None,
-		}
-	}
-
-
-	pub fn is_const_expr<'ctx>(&self, scope: &'ctx FnScope<'ctx>) -> bool {
-		match self {
-			Atom::IntegerLit(..) | Atom::FloatLit(_, _) |
-			Atom::BoolLit(_) | Atom::StringLit(_) => true,
-
-			// TODO: Extend support for constant expressions
-			_ => false,
 		}
 	}
 }

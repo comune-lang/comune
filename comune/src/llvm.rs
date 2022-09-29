@@ -395,7 +395,34 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 					Atom::ArrayLit(_) => todo!(),
 
-					Atom::AlgebraicLit(_, _) => todo!(),
+					Atom::AlgebraicLit(ty, elems) =>
+						if let Type::TypeRef(ty_r, _) = ty {
+							if let TypeDef::Algebraic(alg) = &*ty_r.upgrade().unwrap().read().unwrap() {
+
+								let struct_ty = self.get_llvm_type(ty).as_any_type_enum().into_struct_type();
+								let mut undef = struct_ty.get_undef();
+
+								// Redundant work; could probably be stored in the AlgebraicLit from sem. analysis
+								for elem in elems {
+									if let Some((idx, elem_ty)) = alg.get_member(&elem.0.as_ref().unwrap()) {
+										
+										undef = self.builder.build_insert_value(
+											undef, 
+											Self::into_basic_value(self.generate_expr(&elem.1.borrow(), elem_ty, scope)).as_basic_value_enum(), 
+											idx as u32, 
+											"con_struct_or").unwrap().into_struct_value();
+
+									} else {
+										panic!()
+									}
+								}
+		
+								Rc::new(undef)
+
+							} else { panic!() }
+						} else { panic!() }
+						
+					,
 
 					Atom::Cast(elem, to) => {
 						if let ASTNode::Expression(expr) = &elem.node {
@@ -437,8 +464,6 @@ impl<'ctx> LLVMBackend<'ctx> {
 							)
 						)
 					}
-       				
-					Atom::TupleLit(_) => todo!(),
 				}
 			},
 
@@ -856,8 +881,6 @@ impl<'ctx> LLVMBackend<'ctx> {
 
    				TypeDef::Function(_, _) => todo!(),
 			}
-
-			Type::Tuple(_) => todo!(),
 
 			Type::Pointer(t_sub) => Rc::new(Self::to_basic_type(self.get_llvm_type(t_sub)).ptr_type(AddressSpace::Generic)),
 			

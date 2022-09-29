@@ -38,7 +38,6 @@ pub enum Basic {
 pub enum Type {
 	Basic(Basic),											// Fundamental type
 	Pointer(BoxedType),										// Pointer-to-<BoxedType>
-	Tuple(Vec<Type>),										// Simple set of values of different types
 	Array(BoxedType, RefCell<Vec<ConstExpr>>),				// N-dimensional array with constant expression for size
 	Unresolved(Identifier),									// Unresolved type (during parsing phase)
 	TypeRef(Weak<RwLock<TypeDef>>, Identifier)				// Reference to type definition, plus Identifier for serialization
@@ -235,29 +234,21 @@ impl Type {
 	// Name mangling
 	pub fn serialize(&self) -> String {
 		let mut result = String::new();
-		match &self {
 
+		match &self {
 			Type::Basic(b) => {
 				// TODO: Shorten
 				result.push_str(b.as_str());
-			},
+			}
 
 			Type::Array(t, _) => {
 				result.push_str(&t.serialize());
 				result.push_str("[]");
 			}
-
-			Type::Tuple(types) => {
-				result.push_str("(");
-				for t in types {
-					result.push_str(&t.serialize());
-				}
-				result.push_str(")");
-			}
 			
 			Type::Pointer(_) => {
 				result.push_str("*");
-			},
+			}
 
 			Type::TypeRef(t, _) => result.push_str(&t.upgrade().unwrap().as_ref().read().unwrap().serialize()),
 
@@ -406,7 +397,6 @@ impl Hash for Type {
 			Type::Basic(b) => b.hash(state),
 			Type::Pointer(t) => { t.hash(state); "*".hash(state) },
 			Type::Array(t, _s) => { t.hash(state);  "+".hash(state) },
-			Type::Tuple(types) => { "(".hash(state); for t in types { t.hash(state); } ")".hash(state) }
 			Type::Unresolved(id) => id.hash(state),
 			Type::TypeRef(r, _) => ptr::hash(r.upgrade().unwrap().as_ref(), state),
 		}
@@ -420,32 +410,19 @@ impl Display for Type {
 		match &self {
 			Type::Basic(t) => {
 				write!(f, "{}", t)?;
-			},
+			}
 
 			Type::Pointer(t) => {
 				write!(f, "{}*", t)?;
-			},
+			}
 
 			Type::Array(t, _s) => {
 				write!(f, "{}[]", t)?;
 			}
 
-			Type::Tuple(types) => {
-				if types.is_empty() {
-					write!(f, "()")?;
-				} else {
-					let mut iter = types.iter();
-					write!(f, "({}", iter.next().unwrap())?;
-					for t in iter {
-						write!(f, ", {}", t)?;
-					}
-					write!(f, ")")?;
-				}
-			}
-
 			Type::Unresolved(t) => {
 				write!(f, "unresolved type \"{}\"", t)?;
-			},
+			}
 
 			Type::TypeRef(_, id) => {
 				write!(f, "{}", id)?;
@@ -513,7 +490,6 @@ impl std::fmt::Debug for Type {
 			Self::Basic(arg0) => f.debug_tuple("Basic").field(arg0).finish(),
 			Self::Pointer(_) => f.debug_tuple("Pointer").finish(),
 			Self::Array(t, _) => f.debug_tuple("Array").field(t).finish(),
-			Self::Tuple(types) => f.debug_tuple("Tuples").field(types).finish(),
 			Self::Unresolved(arg0) => f.debug_tuple("Unresolved").field(arg0).finish(),
 			Self::TypeRef(arg0, _) => f.debug_tuple("TypeRef").field(arg0).finish(),
 		}
