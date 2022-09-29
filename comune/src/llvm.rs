@@ -10,7 +10,7 @@ use crate::semantic::namespace::{Identifier, NamespaceItem};
 use crate::semantic::types::{Type, Basic, TypeDef, DataLayout};
 
 use inkwell::targets::{TargetMachine, Target, InitializationConfig, TargetTriple};
-use inkwell::{IntPredicate, AddressSpace, FloatPredicate};
+use inkwell::{IntPredicate, AddressSpace, FloatPredicate, GlobalVisibility};
 use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::{Module, Linkage};
@@ -452,7 +452,12 @@ impl<'ctx> LLVMBackend<'ctx> {
 					Atom::StringLit(s) => {
 						let len = s.as_bytes().len().try_into().unwrap();
 						let string_t = self.context.i8_type().array_type(len);
+						
 						let val = self.module.add_global(string_t, Some(AddressSpace::Const), ".str");
+						val.set_visibility(GlobalVisibility::Hidden);
+						val.set_linkage(Linkage::Private);
+						val.set_unnamed_addr(true);
+
 						let literal: Vec<_> = s.as_bytes().iter().map(|x| self.context.i8_type().const_int(*x as u64, false)).collect();
 
 						val.set_initializer(&IntType::const_array(self.context.i8_type(), &literal));

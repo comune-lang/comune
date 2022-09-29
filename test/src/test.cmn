@@ -12,7 +12,7 @@ struct Test {
 
 impl Test {
 	int sum(Test self) {
-		printf("This is a method call!\n");
+		printf("This is a method call!\n\0");
 		return self.a + self.b;
 	}
 }
@@ -22,6 +22,7 @@ Test new_test() {
 }
 
 int main() {
+	printf("This is main()!\n\0");
 	Test test = new_test();
 	return test.sum();
 }
