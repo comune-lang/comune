@@ -23,6 +23,12 @@ void no_return() {
 
 int main() {
 	printf("This is main()!\n\0");
-	Test test = Test { a: 60, b: 9 };
+	Test test = Test { a: 60, b: 0 };
+	while (true) {
+		test.b += 1;
+		if (test.b == 9) {
+			break;
+		}
+	}
 	return test.sum();
 }

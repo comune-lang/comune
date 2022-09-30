@@ -205,11 +205,11 @@ impl Basic {
 
 
 	pub fn is_integral(&self) -> bool {
-		matches!(self, Basic::INTEGRAL { .. })
+		matches!(self, Basic::INTEGRAL { .. } | Basic::SIZEINT { .. })
 	}
 
 	pub fn is_signed(&self) -> bool {
-		if let Basic::INTEGRAL { signed, .. } = self { 
+		if let Basic::INTEGRAL { signed, .. } | Basic::SIZEINT { signed } = self { 
 			*signed
 		} else {
 			false

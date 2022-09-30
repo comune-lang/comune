@@ -583,6 +583,19 @@ impl Parser {
 						self.check_semicolon()?;
 					}
 
+					"break" => {
+						let _next = self.get_next()?;
+						// TODO: Labeled break and continue
+						result = Some(ASTNode::ControlFlow(Box::new(ControlFlow::Break)));
+						self.check_semicolon()?;
+					}
+
+					"continue" => {
+						let _next = self.get_next()?;
+						// TODO: Labeled break and continue
+						result = Some(ASTNode::ControlFlow(Box::new(ControlFlow::Continue)));
+						self.check_semicolon()?;
+					}
 
 					// Parse if statement
 					"if" => {

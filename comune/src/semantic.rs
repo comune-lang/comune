@@ -503,11 +503,13 @@ impl ASTElem {
 					let cond_type = cond.get_type(scope)?;
 					let bool_t = Type::Basic(Basic::BOOL);
 
-					if !cond_type.castable_to(&bool_t) {
-						return Err((CMNError::InvalidCast{ from: cond_type, to: bool_t}, self.token_data));
+					if cond_type != bool_t {
+						if cond_type.castable_to(&bool_t) {
+							cond.wrap_expr_in_cast(Some(cond_type), bool_t);	
+						} else {
+							return Err((CMNError::InvalidCast{ from: cond_type, to: bool_t}, self.token_data));
+						}
 					}
-
-					cond.wrap_expr_in_cast(Some(cond_type), bool_t);
 
 					let t = body.validate(scope, ret)?;
 
@@ -523,11 +525,13 @@ impl ASTElem {
 					let cond_type = cond.get_type(scope)?;
 					let bool_t = Type::Basic(Basic::BOOL);
 
-					if !cond_type.castable_to(&bool_t) {
-						return Err((CMNError::InvalidCast{ from: cond_type, to: bool_t}, self.token_data));
+					if cond_type != bool_t {
+						if cond_type.castable_to(&bool_t) {
+							cond.wrap_expr_in_cast(Some(cond_type), bool_t);	
+						} else {
+							return Err((CMNError::InvalidCast{ from: cond_type, to: bool_t}, self.token_data));
+						}
 					}
-
-					cond.wrap_expr_in_cast(Some(cond_type), bool_t);
 
 					let t = body.validate(scope, ret)?;
 					Ok(t)
@@ -541,14 +545,17 @@ impl ASTElem {
 					// Check if condition is coercable to bool
 					if let Some(cond) = cond {
 						let bool_t = Type::Basic(Basic::BOOL);
-						
+
+						cond.type_info.replace(Some(bool_t.clone()));
 						let cond_type = cond.get_type(&mut subscope)?;
 						
-						if !cond_type.castable_to(&bool_t) {
-							return Err((CMNError::InvalidCast{ from: cond_type, to: bool_t }, cond.token_data));
+						if cond_type != bool_t {
+							if cond_type.castable_to(&bool_t) {
+								cond.wrap_expr_in_cast(Some(cond_type), bool_t);	
+							} else {
+								return Err((CMNError::InvalidCast{ from: cond_type, to: bool_t}, self.token_data));
+							}
 						}
-						
-						cond.wrap_expr_in_cast(Some(cond_type), bool_t);
 					}
 					
 					if let Some(iter) = iter { iter.validate(&mut subscope, ret)?; }
@@ -652,6 +659,9 @@ impl Expr {
 									_ => return Err((CMNError::NonPtrDeref, *meta)),
 								}
 							}
+
+							Operator::Eq | Operator::NotEq | Operator::Less | Operator::Greater | Operator::LessEq | Operator::GreaterEq =>
+								return Ok(Type::Basic(Basic::BOOL)),
 
 							_ => Ok(second_t.unwrap())
 						}

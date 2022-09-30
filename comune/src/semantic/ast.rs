@@ -133,7 +133,7 @@ impl ASTNode {
 				for elem in elems {
 					result = elem.node.get_type(&subscope, t, meta)?;
 				}
-				Ok(result) // Just take the type of the last statement for now. Remember to add support for `return` later
+				Ok(result)
 			},
 			
 			ASTNode::Expression(e) => e.borrow_mut().validate(scope, t, meta),
