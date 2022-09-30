@@ -134,14 +134,25 @@ pub fn validate_function(sym_type: &TypeDef, sym_elem: &RefCell<NamespaceASTElem
 		panic!()
 	}
 
-	if let NamespaceASTElem::Parsed(elem) = &*sym_elem.borrow() {
+	if let NamespaceASTElem::Parsed(elem) = &mut *sym_elem.borrow_mut() {
 		// Validate function block & get return type, make sure it matches the signature
 		let void = Type::Basic(Basic::VOID);
 		let ret_type = elem.validate(&mut scope, &ret)?;
 		
-		if ret_type.is_none() && ret != void {
-			// No returns in non-void function
-			return Err((CMNError::ReturnTypeMismatch { expected: ret.clone(), got: void }, elem.token_data));
+		if ret_type.is_none() {
+			if ret != void {
+				// No returns in non-void function
+				return Err((CMNError::ReturnTypeMismatch { expected: ret.clone(), got: void }, elem.token_data));
+			} else {
+				// Add implicit return statement to void fn
+				if let ASTNode::Block(elems) = &mut elem.node {
+					elems.push(ASTElem {
+						node: ASTNode::ControlFlow(Box::new(ControlFlow::Return { expr: None })),
+						token_data: (0, 0), 
+						type_info: RefCell::new(None)
+					});
+				}
+			}
 		} else if ret_type.is_some() && !ret_type.as_ref().unwrap().castable_to(&ret) {
 			return Err((CMNError::ReturnTypeMismatch { expected: ret.clone(), got: ret_type.unwrap() }, elem.token_data));
 		}

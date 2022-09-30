@@ -754,7 +754,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 			}
 		).collect(); 
 
-		Rc::new(self.builder.build_call(fn_v, &args_mapped, name.resolved.as_ref().unwrap()))
+		Rc::new(self.builder.build_call(fn_v, &args_mapped, "fncall"))
 	}
 
 	

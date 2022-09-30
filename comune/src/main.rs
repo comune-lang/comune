@@ -79,7 +79,7 @@ fn main() -> color_eyre::eyre::Result<()> {
 	
 	let build_name = output_file.file_name().unwrap().to_string_lossy().to_string();
 
-	println!("\n{} target {}\n", "linking".bold().green(), build_name.bold());
+	println!("\n{:>10} target {}", "linking".bold().green(), build_name.bold());
 
 	// Link into executable
 	// We use clang here because fuck dude i don't know how to use ld manually
@@ -104,7 +104,7 @@ fn main() -> color_eyre::eyre::Result<()> {
 
 	let link_time = build_time.elapsed() - compile_time;
 
-	println!("{} building {} in {}s (compile: {}s, link: {}s)\n", "finished".bold().green(), 
+	println!("{:>10} building {} in {}s (compile: {}s, link: {}s)\n", "finished".bold().green(), 
 		build_name.bold(), 
 		build_time.elapsed().as_millis() as f64 / 1000.0,
 		compile_time.as_millis() as f64 / 1000.0,

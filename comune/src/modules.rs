@@ -65,7 +65,7 @@ pub fn launch_module_compilation<'scope>(state: Arc<ManagerState>, input_module:
 		}
 
 		target_machine.write_to_file(&result.module, FileType::Object, &out_path).unwrap();
-		println!("{} {}", "finished".bold().green(), out_path.file_name().unwrap().to_str().unwrap());
+		println!("{:>10} {}", "finished".bold().green(), out_path.file_name().unwrap().to_str().unwrap());
 	});
 
 
@@ -131,7 +131,7 @@ pub fn parse_interface(state: &Arc<ManagerState>, path: &Path) -> Result<ModuleS
 		}, state.verbose_output),
 	};
 
-	println!("{} {}", "compiling".bold().green(), mod_state.parser.lexer.borrow().file_name.to_string_lossy());
+	println!("{:>10} {}", "compiling".bold().green(), mod_state.parser.lexer.borrow().file_name.to_string_lossy());
 
 	if state.verbose_output {
 		println!("\ncollecting symbols...");

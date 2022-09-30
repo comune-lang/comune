@@ -188,6 +188,9 @@ impl Parser {
 				Token::Keyword(keyword) => {
 
 					match keyword {
+						"enum" => {
+							todo!()
+						},
 
 						"struct" => {
 							// Register algebraic type
@@ -1025,6 +1028,7 @@ impl Parser {
 						_ => {},
 					}
 				}
+
 				if result.is_none() {
 					// Variable or function name
 					result = Some(Atom::Identifier(name.clone()));

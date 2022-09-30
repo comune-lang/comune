@@ -17,12 +17,12 @@ impl Test {
 	}
 }
 
-Test new_test() {
-	return Test { a: 60, b: 9 };
+void no_return() {
+	printf("This void fn doesn't have a return statement!\n\0");
 }
 
 int main() {
 	printf("This is main()!\n\0");
-	Test test = new_test();
+	Test test = Test { a: 60, b: 9 };
 	return test.sum();
 }
