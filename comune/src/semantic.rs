@@ -576,7 +576,7 @@ impl ASTElem {
 							expr.wrap_expr_in_cast(Some(expr_type), t.clone());
 						} else {
 							return Err((
-								CMNError::AssignTypeMismatch(expr_type, t.clone()),
+								CMNError::AssignTypeMismatch{ expr: expr_type, to: t.clone() },
 								self.token_data,
 							));
 						}
@@ -1058,6 +1058,10 @@ impl Atom {
 
 							let expr_ty =
 								elem.1.get_mut().validate(scope, Some(member_ty), elem.2)?;
+
+							if !elem.1.borrow().coercable_to(&expr_ty, member_ty, scope) {
+								return Err((CMNError::AssignTypeMismatch{ expr: expr_ty, to: member_ty.clone() }, elem.2));
+							}
 						}
 
 						return Ok(ty.clone());

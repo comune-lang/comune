@@ -26,7 +26,7 @@ pub enum CMNError {
 	UndeclaredIdentifier(String),
 	UnresolvedTypename(String),
 	ExprTypeMismatch(Type, Type, Operator),
-	AssignTypeMismatch(Type, Type),
+	AssignTypeMismatch{ expr: Type, to: Type},
 	InvalidCast { from: Type, to: Type },
 	InvalidCoercion { from: Type, to: Type },
 	InvalidMemberAccess { t: Type, idx: String },
@@ -81,10 +81,10 @@ impl Display for CMNError {
 				"type mismatch; cannot apply operator {:?} to {} and {}",
 				op, a, b
 			),
-			CMNError::AssignTypeMismatch(e, v) => write!(
+			CMNError::AssignTypeMismatch{ expr, to } => write!(
 				f,
 				"cannot assign value of type {} to variable of type {}",
-				e, v
+				expr, to
 			),
 			CMNError::InvalidCast { from, to } => write!(f, "cannot cast from {} to {}", from, to),
 			CMNError::InvalidCoercion { from, to } => {

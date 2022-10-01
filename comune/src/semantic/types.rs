@@ -366,35 +366,6 @@ impl Type {
 			false
 		}
 	}
-
-	pub fn get_size_bytes(&self) -> u32 {
-		let ptr_size = *PTR_SIZE_BYTES.get().unwrap();
-
-		match &self {
-			Type::Basic(b) => match b {
-				Basic::FLOAT { size_bytes } | Basic::INTEGRAL { size_bytes, .. } => *size_bytes,
-
-				Basic::SIZEINT { .. } => ptr_size,
-				Basic::STR => ptr_size + ptr_size, // sizeof(char*) + sizeof(usize)
-
-				Basic::CHAR => 1,
-				Basic::BOOL => 1,
-				Basic::VOID => 0,
-			},
-
-			Type::Pointer(_) => ptr_size,
-
-			Type::TypeRef(t_ref, _) => t_ref
-				.upgrade()
-				.unwrap()
-				.as_ref()
-				.read()
-				.unwrap()
-				.get_size_bytes(),
-
-			_ => 0,
-		}
-	}
 }
 
 impl TypeDef {
@@ -420,26 +391,6 @@ impl TypeDef {
 			}
 		}
 		result
-	}
-
-	// This is naive and often inaccurate; maybe query LLVM for the type size somehow?
-	pub fn get_size_bytes(&self) -> u32 {
-		let ptr_size = *PTR_SIZE_BYTES.get().unwrap() as u32;
-
-		match &self {
-			TypeDef::Algebraic(ts) => {
-				let mut result = 0;
-
-				for t in ts.items.iter() {
-					if let NamespaceItem::Variable(t, _) = &t.1 .0 {
-						result += t.get_size_bytes();
-					}
-				}
-				result
-			}
-
-			_ => 0,
-		}
 	}
 }
 

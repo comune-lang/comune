@@ -196,30 +196,23 @@ pub fn parse_interface(state: &Arc<ManagerState>, path: &Path) -> Result<ModuleS
 }
 
 pub fn resolve_types(state: &Arc<ManagerState>, mod_state: &mut ModuleState) -> ASTResult<()> {
+	let root = mod_state.parser.current_namespace();
+
 	// At this point, all imports have been resolved, so validate namespace-level types
-	semantic::resolve_namespace_types(
-		mod_state.parser.current_namespace(),
-		mod_state.parser.current_namespace(),
-	)?;
+	semantic::resolve_namespace_types(root, root)?;
 
 	// Check for cyclical dependencies without indirection
 	// TODO: Nice error reporting for this
-	semantic::check_namespace_cyclical_deps(&mod_state.parser.current_namespace().borrow())?;
+	semantic::check_namespace_cyclical_deps(&root.borrow())?;
 
 	// Then register impls to their types
-	semantic::register_impls(
-		mod_state.parser.current_namespace(),
-		mod_state.parser.current_namespace(),
-	)?;
+	semantic::register_impls(root, root)?;
 
 	// And then mangle names
-	semantic::mangle_names(mod_state.parser.current_namespace())?;
+	semantic::mangle_names(root)?;
 
 	if state.verbose_output {
-		println!(
-			"\ntype resolution output:\n\n{}",
-			mod_state.parser.current_namespace().borrow()
-		);
+		println!("\ntype resolution output:\n\n{}", root.borrow());
 	}
 
 	Ok(())

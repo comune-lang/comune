@@ -310,7 +310,7 @@ impl Parser {
 						"impl" => {
 							let impl_name_token = self.get_next()?;
 							let impl_name;
-							let mut trait_name = None;
+							let mut _trait_name = None;
 
 							if let Token::Identifier(id) = &impl_name_token {
 								match self.get_next()? {
@@ -322,7 +322,7 @@ impl Parser {
 
 									Token::Keyword("for") => {
 										// Trait impl
-										trait_name = Some(id);
+										_trait_name = Some(id);
 
 										if let Token::Identifier(id) = self.get_next()? {
 											impl_name = id;
