@@ -276,7 +276,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 				let end_bb = self.context.append_basic_block(parent, "whileend");
 
 				self.loop_blocks.borrow_mut().push([
-					body_bb.clone(), end_bb.clone()
+					cond_bb.clone(), end_bb.clone()
 				]);
 
 				self.builder.build_unconditional_branch(cond_bb);
@@ -320,7 +320,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 				let end_bb = self.context.append_basic_block(parent, "forend");
 
 				self.loop_blocks.borrow_mut().push([
-					body_bb.clone(), end_bb.clone()
+					cond_bb.clone(), end_bb.clone()
 				]);
 
 				self.builder.build_unconditional_branch(cond_bb);

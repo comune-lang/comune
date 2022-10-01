@@ -29,11 +29,13 @@ int main() {
 		b: 0 
 	};
 	
-	while (true) {
+	while (test.b < 9) {
+		printf("Begin!\n\0");
 		test.b += 1;
 		if (test.b == 9) {
-			break;
+			continue;
 		}
+		printf("End!\n\0");
 	}
 	
 	return test.sum();
