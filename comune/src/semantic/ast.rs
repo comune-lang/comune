@@ -1,13 +1,12 @@
 use std::cell::RefCell;
 use std::fmt::Display;
 
+use super::controlflow::ControlFlow;
+use super::expression::{Atom, Expr};
+use super::types::{Basic, Type, Typed};
+use super::FnScope;
 use crate::lexer::Token;
 use crate::parser::ASTResult;
-use super::FnScope;
-use super::types::{Type, Basic, Typed};
-use super::expression::{Expr, Atom};
-use super::controlflow::ControlFlow;
-
 
 pub type TokenData = (usize, usize); // idx, len
 
@@ -15,30 +14,25 @@ pub type TokenData = (usize, usize); // idx, len
 #[derive(Clone, Debug, PartialEq)]
 pub struct ASTElem {
 	pub node: ASTNode,
-	
+
 	// For error reporting
 	pub token_data: TokenData,
 	pub type_info: RefCell<Option<Type>>,
 }
 
-
 #[derive(Clone, Debug, PartialEq)]
 pub enum ASTNode {
 	Block(
-		Vec<ASTElem>			// Statements (doesnt need to be ASTChild because Vec is already dynamic)
-	), 			
-	Expression(
-		RefCell<Expr>
+		Vec<ASTElem>, // Statements (doesnt need to be ASTChild because Vec is already dynamic)
 	),
+	Expression(RefCell<Expr>),
 	Declaration(
-		Type, 					// Type
-		Token,					// Identifier
-		Option<Box<ASTElem>>	// Expression or Block
+		Type,                 // Type
+		Token,                // Identifier
+		Option<Box<ASTElem>>, // Expression or Block
 	),
 
-	ControlFlow(
-		Box<ControlFlow>,
-	)
+	ControlFlow(Box<ControlFlow>),
 }
 
 impl ASTElem {
@@ -55,11 +49,11 @@ impl ASTElem {
 				for elem in v {
 					elem.print_with_depth(depth + 1);
 				}
-			},
+			}
 
 			ASTNode::Expression(expr) => {
 				println!("expression {}", expr.borrow());
-			},
+			}
 
 			ASTNode::Declaration(t, n, e) => {
 				if let Some(e) = e {
@@ -67,10 +61,10 @@ impl ASTElem {
 				} else {
 					println!("declaration {} {};", t, n);
 				}
-			},
-    		ASTNode::ControlFlow(ctrl) => {
+			}
+			ASTNode::ControlFlow(ctrl) => {
 				println!("ctrl {}", ctrl);
-			},
+			}
 		}
 	}
 
@@ -78,10 +72,13 @@ impl ASTElem {
 		self.print_with_depth(0);
 	}
 
-
 	pub fn wrap_in_block(self) -> ASTElem {
 		let meta = self.token_data;
-		ASTElem { node: ASTNode::Block(vec![self]), token_data: meta, type_info: RefCell::new(None) }
+		ASTElem {
+			node: ASTNode::Block(vec![self]),
+			token_data: meta,
+			type_info: RefCell::new(None),
+		}
 	}
 
 	pub fn wrap_expr_in_cast(&self, from: Option<Type>, to: Type) {
@@ -97,7 +94,7 @@ impl ASTElem {
 
 	pub fn get_expr(&self) -> &RefCell<Expr> {
 		match &self.node {
-    		ASTNode::Expression(e) => e,
+			ASTNode::Expression(e) => e,
 			_ => panic!(),
 		}
 	}
@@ -107,11 +104,13 @@ impl ASTElem {
 			for elem in elems {
 				match &elem.node {
 					ASTNode::ControlFlow(ctrl) => match &**ctrl {
-						ControlFlow::Break | ControlFlow::Continue | ControlFlow::Return { .. } => return true,
-						_ => {},
-					}
+						ControlFlow::Break | ControlFlow::Continue | ControlFlow::Return { .. } => {
+							return true
+						}
+						_ => {}
+					},
 
-					_ => {},
+					_ => {}
 				}
 			}
 		} else {
@@ -121,26 +120,29 @@ impl ASTElem {
 	}
 }
 
-
 impl Display for ASTElem {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match &self.node {
-            ASTNode::Block(b) => {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		match &self.node {
+			ASTNode::Block(b) => {
 				write!(f, "{{\n")?;
 				for elem in b {
 					write!(f, "\t\t{}", elem)?;
 				}
 				write!(f, "\n\t}}")
-			},
+			}
 
-            ASTNode::Expression(e) => 			write!(f, "{}", e.borrow()),
-            ASTNode::Declaration(t, n, e) => 	if let Some(e) = e { write!(f, "{} {} = {};", t, n, e) } else { write!(f, "{} {};", t, n) },
-            ASTNode::ControlFlow(c) => 			write!(f, "{}", c),
-        }
-    }
+			ASTNode::Expression(e) => write!(f, "{}", e.borrow()),
+			ASTNode::Declaration(t, n, e) => {
+				if let Some(e) = e {
+					write!(f, "{} {} = {};", t, n, e)
+				} else {
+					write!(f, "{} {};", t, n)
+				}
+			}
+			ASTNode::ControlFlow(c) => write!(f, "{}", c),
+		}
+	}
 }
-
-
 
 impl ASTNode {
 	fn get_type(&self, scope: &FnScope, t: Option<&Type>, meta: TokenData) -> ASTResult<Type> {
@@ -152,20 +154,21 @@ impl ASTNode {
 					result = elem.node.get_type(&subscope, t, meta)?;
 				}
 				Ok(result)
-			},
-			
+			}
+
 			ASTNode::Expression(e) => e.borrow_mut().validate(scope, t, meta),
 
 			// Declaration types are deduced at parse-time (thanks, C-style syntax)
 			ASTNode::Declaration(t, _, _) => Ok(t.clone()),
-    		
+
 			ASTNode::ControlFlow(ctrl) => ctrl.get_type(scope),
 		}
 	}
 }
 
 impl Typed for ASTElem {
-    fn get_type(&self, scope: &FnScope) -> ASTResult<Type> {
-        self.node.get_type(scope, self.type_info.borrow().as_ref(), self.token_data)
-    }
+	fn get_type(&self, scope: &FnScope) -> ASTResult<Type> {
+		self.node
+			.get_type(scope, self.type_info.borrow().as_ref(), self.token_data)
+	}
 }

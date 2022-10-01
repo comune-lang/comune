@@ -1,10 +1,24 @@
-use std::{cell::RefCell, collections::HashMap, sync::{Arc, RwLock}};
+use std::{
+	cell::RefCell,
+	collections::HashMap,
+	sync::{Arc, RwLock},
+};
 
-use types::{Type, Basic, Typed, TypeDef};
+use types::{Basic, Type, TypeDef, Typed};
 
-use crate::{errors::CMNError, parser::{ASTResult, ParseResult}, constexpr::{ConstExpr, ConstEval}, lexer::Token};
+use crate::{
+	constexpr::{ConstEval, ConstExpr},
+	errors::CMNError,
+	lexer::Token,
+	parser::{ASTResult, ParseResult},
+};
 
-use self::{namespace::{Namespace, Identifier, NamespaceItem, NamespaceASTElem}, ast::{ASTElem, ASTNode, TokenData}, controlflow::ControlFlow, expression::{Expr, Atom, Operator}};
+use self::{
+	ast::{ASTElem, ASTNode, TokenData},
+	controlflow::ControlFlow,
+	expression::{Atom, Expr, Operator},
+	namespace::{Identifier, Namespace, NamespaceASTElem, NamespaceItem},
+};
 
 pub mod ast;
 pub mod controlflow;
@@ -26,32 +40,33 @@ pub fn get_attribute<'a>(attributes: &'a Vec<Attribute>, attr_name: &str) -> Opt
 	attributes.iter().find(|a| a.name.as_str() == attr_name)
 }
 
-
 pub struct FnScope<'ctx> {
 	context: &'ctx RefCell<Namespace>,
 	parent: Option<&'ctx FnScope<'ctx>>,
 	fn_return_type: Type,
 	root_namespace: &'ctx RefCell<Namespace>,
 
-	variables: HashMap<String, Type>
+	variables: HashMap<String, Type>,
 }
 
-
 impl<'ctx> FnScope<'ctx> {
-
 	pub fn from_parent(parent: &'ctx FnScope) -> Self {
-		FnScope { 
-			context: parent.context, 
-			parent: Some(parent), 
+		FnScope {
+			context: parent.context,
+			parent: Some(parent),
 			fn_return_type: parent.fn_return_type.clone(),
-			root_namespace: parent.root_namespace, 
-			variables: HashMap::new() 
+			root_namespace: parent.root_namespace,
+			variables: HashMap::new(),
 		}
 	}
 
-	pub fn new(context: &'ctx RefCell<Namespace>, root_namespace: &'ctx RefCell<Namespace>, return_type: Type) -> Self {
+	pub fn new(
+		context: &'ctx RefCell<Namespace>,
+		root_namespace: &'ctx RefCell<Namespace>,
+		return_type: Type,
+	) -> Self {
 		FnScope {
-			context, 
+			context,
 			parent: None,
 			fn_return_type: return_type,
 			root_namespace,
@@ -59,15 +74,17 @@ impl<'ctx> FnScope<'ctx> {
 		}
 	}
 
-
 	pub fn find_symbol(&self, id: &Identifier) -> Option<(String, Type)> {
 		let mut result = None;
 		if id.path.scopes.is_empty() {
 			// Unqualified name, perform scope-level lookup first
 			let local_lookup;
-			
+
 			if self.variables.contains_key(&id.name) {
-				local_lookup = Some((id.name.clone(), self.variables.get(&id.name).cloned().unwrap()));
+				local_lookup = Some((
+					id.name.clone(),
+					self.variables.get(&id.name).cloned().unwrap(),
+				));
 			} else if let Some(parent) = self.parent {
 				local_lookup = parent.find_symbol(id);
 			} else {
@@ -79,22 +96,25 @@ impl<'ctx> FnScope<'ctx> {
 				result = local_lookup;
 			}
 		}
-		
+
 		if result.is_none() {
-			// Look for it in the namespace tree			
+			// Look for it in the namespace tree
 			let namespace = self.context.borrow();
 			let root = self.root_namespace.borrow();
 
 			namespace.with_item(&id, &root, |item, id| {
 				if let NamespaceItem::Function(fn_type, _) = &item.0 {
-					result = Some((item.2.as_ref().unwrap().clone(), Type::TypeRef(Arc::downgrade(fn_type), id.clone())));
+					result = Some((
+						item.2.as_ref().unwrap().clone(),
+						Type::TypeRef(Arc::downgrade(fn_type), id.clone()),
+					));
 				}
 			});
 		}
 
 		return result;
 	}
-	
+
 	pub fn get_identifier_type(&self, id: &Identifier) -> Option<Type> {
 		if let Some(result) = self.find_symbol(id) {
 			Some(result.1)
@@ -117,20 +137,23 @@ impl<'ctx> FnScope<'ctx> {
 	}
 }
 
-
-pub fn validate_function(sym_type: &TypeDef, sym_elem: &RefCell<NamespaceASTElem>, namespace: &RefCell<Namespace>, root: &RefCell<Namespace>) -> ASTResult<()> {
+pub fn validate_function(
+	sym_type: &TypeDef,
+	sym_elem: &RefCell<NamespaceASTElem>,
+	namespace: &RefCell<Namespace>,
+	root: &RefCell<Namespace>,
+) -> ASTResult<()> {
 	let mut scope;
 	let ret;
 
 	if let TypeDef::Function(fn_ret, args) = sym_type {
 		ret = fn_ret.clone();
 		scope = FnScope::new(namespace, root, ret.clone());
-		
+
 		for arg in args.iter() {
 			scope.add_variable(arg.0.clone(), arg.1.clone().unwrap())
 		}
-		
-	} else { 
+	} else {
 		panic!()
 	}
 
@@ -138,38 +161,67 @@ pub fn validate_function(sym_type: &TypeDef, sym_elem: &RefCell<NamespaceASTElem
 		// Validate function block & get return type, make sure it matches the signature
 		let void = Type::Basic(Basic::VOID);
 		let ret_type = elem.validate(&mut scope, &ret)?;
-		
+
 		if ret_type.is_none() {
 			if ret != void {
 				// No returns in non-void function
-				return Err((CMNError::ReturnTypeMismatch { expected: ret.clone(), got: void }, elem.token_data));
+				return Err((
+					CMNError::ReturnTypeMismatch {
+						expected: ret.clone(),
+						got: void,
+					},
+					elem.token_data,
+				));
 			} else {
 				// Add implicit return statement to void fn
 				if let ASTNode::Block(elems) = &mut elem.node {
 					elems.push(ASTElem {
 						node: ASTNode::ControlFlow(Box::new(ControlFlow::Return { expr: None })),
-						token_data: (0, 0), 
-						type_info: RefCell::new(None)
+						token_data: (0, 0),
+						type_info: RefCell::new(None),
 					});
 				}
 			}
 		} else if ret_type.is_some() && !ret_type.as_ref().unwrap().castable_to(&ret) {
-			return Err((CMNError::ReturnTypeMismatch { expected: ret.clone(), got: ret_type.unwrap() }, elem.token_data));
+			return Err((
+				CMNError::ReturnTypeMismatch {
+					expected: ret.clone(),
+					got: ret_type.unwrap(),
+				},
+				elem.token_data,
+			));
 		}
 	}
 	Ok(())
 }
 
-
-pub fn validate_fn_call(ret: &Type, args: &Vec<ASTElem>, params: &Vec<(Type, Option<String>)>, scope: &FnScope, meta: TokenData) -> ASTResult<Type> {
+pub fn validate_fn_call(
+	ret: &Type,
+	args: &Vec<ASTElem>,
+	params: &Vec<(Type, Option<String>)>,
+	scope: &FnScope,
+	meta: TokenData,
+) -> ASTResult<Type> {
 	if args.len() == params.len() {
-
 		for i in 0..args.len() {
 			args[i].type_info.replace(Some(params[i].0.clone()));
-			let arg_type = args[i].get_expr().borrow_mut().validate(scope, None, meta)?;
+			let arg_type = args[i]
+				.get_expr()
+				.borrow_mut()
+				.validate(scope, None, meta)?;
 
-			if !args[i].get_expr().borrow().coercable_to(&arg_type, &params[i].0, scope) {
-				return Err((CMNError::InvalidCoercion{ from: arg_type, to: params[i].0.clone()}, args[i].token_data));
+			if !args[i]
+				.get_expr()
+				.borrow()
+				.coercable_to(&arg_type, &params[i].0, scope)
+			{
+				return Err((
+					CMNError::InvalidCoercion {
+						from: arg_type,
+						to: params[i].0.clone(),
+					},
+					args[i].token_data,
+				));
 			}
 
 			if arg_type != params[i].0 {
@@ -178,39 +230,59 @@ pub fn validate_fn_call(ret: &Type, args: &Vec<ASTElem>, params: &Vec<(Type, Opt
 		}
 		// All good, return function's return type
 		Ok(ret.clone())
-
 	} else {
-		Err((CMNError::ParamCountMismatch{expected: params.len(), got: args.len()}, meta))
+		Err((
+			CMNError::ParamCountMismatch {
+				expected: params.len(),
+				got: args.len(),
+			},
+			meta,
+		))
 	}
 }
 
-
-pub fn validate_namespace(namespace: &RefCell<Namespace>, root_namespace: &RefCell<Namespace>) -> ASTResult<()> {
+pub fn validate_namespace(
+	namespace: &RefCell<Namespace>,
+	root_namespace: &RefCell<Namespace>,
+) -> ASTResult<()> {
 	for c in &namespace.borrow().children {
-		match &c.1.0 {
+		match &c.1 .0 {
 			// Validate child namespace
 			NamespaceItem::Namespace(ns) => validate_namespace(ns, root_namespace)?,
-			
-			// Validate function
-			NamespaceItem::Function(sym_type, sym_elem) => validate_function(&sym_type.read().unwrap(), sym_elem, namespace, root_namespace)?,
 
-			_ => {},
+			// Validate function
+			NamespaceItem::Function(sym_type, sym_elem) => validate_function(
+				&sym_type.read().unwrap(),
+				sym_elem,
+				namespace,
+				root_namespace,
+			)?,
+
+			_ => {}
 		}
 	}
 
 	for im in &namespace.borrow().impls {
 		for method in im.1 {
-			validate_function(&method.1.read().unwrap(), &method.2, namespace, root_namespace)?;
-		} 
+			validate_function(
+				&method.1.read().unwrap(),
+				&method.2,
+				namespace,
+				root_namespace,
+			)?;
+		}
 	}
 
 	Ok(())
 }
 
-
-pub fn resolve_type(ty: &mut Type, namespace: &Namespace, root: &RefCell<Namespace>) -> ParseResult<()> {
+pub fn resolve_type(
+	ty: &mut Type,
+	namespace: &Namespace,
+	root: &RefCell<Namespace>,
+) -> ParseResult<()> {
 	match ty {
-		Type::Pointer(ref mut pointee) => resolve_type(pointee, namespace, root),	
+		Type::Pointer(ref mut pointee) => resolve_type(pointee, namespace, root),
 
 		Type::Array(ref mut pointee, _size) => resolve_type(pointee, namespace, root),
 
@@ -223,7 +295,7 @@ pub fn resolve_type(ty: &mut Type, namespace: &Namespace, root: &RefCell<Namespa
 					result = Ok(());
 				}
 			} else {
-				namespace.with_item(&id.clone(), &root.borrow(), |item, id| {				
+				namespace.with_item(&id.clone(), &root.borrow(), |item, id| {
 					if let NamespaceItem::Type(t) = &item.0 {
 						*ty = Type::TypeRef(Arc::downgrade(t), id.clone());
 						result = Ok(());
@@ -232,33 +304,43 @@ pub fn resolve_type(ty: &mut Type, namespace: &Namespace, root: &RefCell<Namespa
 			}
 
 			result
-			
-		},
+		}
 
 		Type::TypeRef(..) | Type::Basic(_) => Ok(()),
 	}
 }
 
-
-pub fn resolve_type_def(ty: &mut TypeDef, attributes: &Vec<Attribute>, namespace: &Namespace, root: &RefCell<Namespace>) -> ParseResult<()> {
+pub fn resolve_type_def(
+	ty: &mut TypeDef,
+	attributes: &Vec<Attribute>,
+	namespace: &Namespace,
+	root: &RefCell<Namespace>,
+) -> ParseResult<()> {
 	match ty {
-
 		TypeDef::Algebraic(ref mut agg) => {
-
 			for item in &mut agg.items {
-				match &mut item.1.0 {
+				match &mut item.1 .0 {
 					NamespaceItem::Variable(t, _) => resolve_type(t, &namespace, root).unwrap(),
-					NamespaceItem::Type(t) => resolve_type_def(&mut t.write().unwrap(), &vec![], &namespace, root).unwrap(),
+					NamespaceItem::Type(t) => {
+						resolve_type_def(&mut t.write().unwrap(), &vec![], &namespace, root)
+							.unwrap()
+					}
 					_ => (),
 				}
 			}
 
 			if let Some(layout) = get_attribute(attributes, "layout") {
 				if layout.args.len() != 1 {
-					return Err(CMNError::ParamCountMismatch { expected: 1, got: layout.args.len() });
+					return Err(CMNError::ParamCountMismatch {
+						expected: 1,
+						got: layout.args.len(),
+					});
 				}
 				if layout.args[0].len() != 1 {
-					return Err(CMNError::ParamCountMismatch { expected: 1, got: layout.args[0].len() });
+					return Err(CMNError::ParamCountMismatch {
+						expected: 1,
+						got: layout.args[0].len(),
+					});
 				}
 
 				if let Token::Identifier(layout_name) = &layout.args[0][0] {
@@ -274,15 +356,16 @@ pub fn resolve_type_def(ty: &mut TypeDef, attributes: &Vec<Attribute>, namespace
 
 		_ => todo!(),
 	}
-	
+
 	Ok(())
 }
 
-
-pub fn resolve_namespace_types(namespace: &RefCell<Namespace>, root: &RefCell<Namespace>) -> ASTResult<()> {
-	
+pub fn resolve_namespace_types(
+	namespace: &RefCell<Namespace>,
+	root: &RefCell<Namespace>,
+) -> ASTResult<()> {
 	for child in &namespace.borrow().children {
-		if let NamespaceItem::Namespace(ref ns) = child.1.0 { 
+		if let NamespaceItem::Namespace(ref ns) = child.1 .0 {
 			resolve_namespace_types(ns, root)?;
 		}
 	}
@@ -290,9 +373,9 @@ pub fn resolve_namespace_types(namespace: &RefCell<Namespace>, root: &RefCell<Na
 	// Resolve types
 	{
 		let namespace = namespace.borrow();
-		
+
 		for child in &namespace.children {
-			match &child.1.0 {
+			match &child.1 .0 {
 				NamespaceItem::Function(ty, _) => {
 					if let TypeDef::Function(ret, args) = &mut *ty.write().unwrap() {
 						resolve_type(ret, &namespace, root).unwrap();
@@ -305,9 +388,12 @@ pub fn resolve_namespace_types(namespace: &RefCell<Namespace>, root: &RefCell<Na
 
 				NamespaceItem::Namespace(_) => {}
 
-				NamespaceItem::Type(t) => resolve_type_def(&mut *t.write().unwrap(), &child.1.1, &namespace, root).unwrap(),
+				NamespaceItem::Type(t) => {
+					resolve_type_def(&mut *t.write().unwrap(), &child.1 .1, &namespace, root)
+						.unwrap()
+				}
 
-				NamespaceItem::Alias(_) => {},
+				NamespaceItem::Alias(_) => {}
 
 				_ => todo!(),
 			};
@@ -316,18 +402,21 @@ pub fn resolve_namespace_types(namespace: &RefCell<Namespace>, root: &RefCell<Na
 	Ok(())
 }
 
-
-pub fn check_cyclical_deps(ty: &Arc<RwLock<TypeDef>>, parent_types: &mut Vec<Arc<RwLock<TypeDef>>>) -> ASTResult<()> {
+pub fn check_cyclical_deps(
+	ty: &Arc<RwLock<TypeDef>>,
+	parent_types: &mut Vec<Arc<RwLock<TypeDef>>>,
+) -> ASTResult<()> {
 	if let TypeDef::Algebraic(agg) = &*ty.as_ref().read().unwrap() {
-
 		for member in agg.items.iter() {
-
-			match &member.1.0 {
-
+			match &member.1 .0 {
 				NamespaceItem::Variable(t, _) => {
 					if let Type::TypeRef(ref_t, _) = &t {
-						// Check if 
-						if parent_types.iter().find(|elem| Arc::ptr_eq(elem, &ref_t.upgrade().unwrap())).is_some() {
+						// Check if
+						if parent_types
+							.iter()
+							.find(|elem| Arc::ptr_eq(elem, &ref_t.upgrade().unwrap()))
+							.is_some()
+						{
 							return Err((CMNError::InfiniteSizeType, (0, 0)));
 						}
 
@@ -335,7 +424,6 @@ pub fn check_cyclical_deps(ty: &Arc<RwLock<TypeDef>>, parent_types: &mut Vec<Arc
 						check_cyclical_deps(&ref_t.upgrade().unwrap(), parent_types)?;
 						parent_types.pop();
 					}
-
 				}
 
 				NamespaceItem::Type(t) => {
@@ -344,18 +432,16 @@ pub fn check_cyclical_deps(ty: &Arc<RwLock<TypeDef>>, parent_types: &mut Vec<Arc
 					parent_types.pop();
 				}
 
-				_ => {},
+				_ => {}
 			}
-			
 		}
 	}
 	Ok(())
 }
 
-
 pub fn check_namespace_cyclical_deps(namespace: &Namespace) -> ASTResult<()> {
 	for item in &namespace.children {
-		match &item.1.0 {
+		match &item.1 .0 {
 			NamespaceItem::Type(ty) => check_cyclical_deps(&ty, &mut vec![])?,
 			NamespaceItem::Namespace(ns) => check_namespace_cyclical_deps(&ns.as_ref().borrow())?,
 			_ => {}
@@ -364,36 +450,35 @@ pub fn check_namespace_cyclical_deps(namespace: &Namespace) -> ASTResult<()> {
 	Ok(())
 }
 
-
 pub fn register_impls(namespace: &RefCell<Namespace>, root: &RefCell<Namespace>) -> ASTResult<()> {
 	let mut impls_remapped = HashMap::new();
-	
-	for im in &namespace.borrow().impls {
 
+	for im in &namespace.borrow().impls {
 		// Impls can be defined with relative Identifiers, so we monomorphize them here
 
-		namespace.borrow().with_item(im.0, &root.borrow(), |item, id| {
-			if let NamespaceItem::Type(t_def) = &item.0 {
-				if let TypeDef::Algebraic(_alg) = &mut *t_def.write().unwrap() {
+		namespace
+			.borrow()
+			.with_item(im.0, &root.borrow(), |item, id| {
+				if let NamespaceItem::Type(t_def) = &item.0 {
+					if let TypeDef::Algebraic(_alg) = &mut *t_def.write().unwrap() {
+						let mut this_impl = vec![];
 
-					let mut this_impl = vec![];
+						for func in im.1 {
+							// Resolve function types
 
-					for func in im.1 {
-						// Resolve function types
-						
-						if let TypeDef::Function(ret, args) = &mut *func.1.write().unwrap() {
-							resolve_type(ret, &namespace.borrow(), root).unwrap();
-	
-							for arg in args {
-								resolve_type(&mut arg.0, &namespace.borrow(), root).unwrap();
+							if let TypeDef::Function(ret, args) = &mut *func.1.write().unwrap() {
+								resolve_type(ret, &namespace.borrow(), root).unwrap();
+
+								for arg in args {
+									resolve_type(&mut arg.0, &namespace.borrow(), root).unwrap();
+								}
 							}
+							this_impl.push((func.0.clone(), func.1.clone(), func.2.clone(), None));
 						}
-						this_impl.push((func.0.clone(), func.1.clone(), func.2.clone(), None));
+						impls_remapped.insert(id.clone(), this_impl);
 					}
-					impls_remapped.insert(id.clone(), this_impl);
 				}
-			}
-		});
+			});
 	}
 
 	namespace.borrow_mut().impls = impls_remapped;
@@ -401,11 +486,9 @@ pub fn register_impls(namespace: &RefCell<Namespace>, root: &RefCell<Namespace>)
 	Ok(())
 }
 
-
-
 pub fn mangle_names(namespace: &RefCell<Namespace>) -> ASTResult<()> {
 	for child in &namespace.borrow().children {
-		if let NamespaceItem::Namespace(ref ns) = child.1.0 { 
+		if let NamespaceItem::Namespace(ref ns) = child.1 .0 {
 			mangle_names(ns)?;
 		}
 	}
@@ -416,17 +499,18 @@ pub fn mangle_names(namespace: &RefCell<Namespace>) -> ASTResult<()> {
 		let mut namespace = namespace.borrow_mut();
 
 		for child in &mut namespace.children {
-			
-			// Check if the function has a `no_mangle` attribute, or if it's `main`. If not, mangle the name 
-			if get_attribute(&child.1.1, "no_mangle").is_some() || (child.0 == "main" && path.scopes.is_empty()) {
-				child.1.2 = Some(child.0.clone());
+			// Check if the function has a `no_mangle` attribute, or if it's `main`. If not, mangle the name
+			if get_attribute(&child.1 .1, "no_mangle").is_some()
+				|| (child.0 == "main" && path.scopes.is_empty())
+			{
+				child.1 .2 = Some(child.0.clone());
 			} else {
 				// Mangle name
-				child.1.2 = match &child.1.0 {
-					
-					NamespaceItem::Function(ty, _) | NamespaceItem::Type(ty) => 
-						Some(Namespace::mangle_name(&path, child.0, &ty.as_ref().read().unwrap())),
-					
+				child.1 .2 = match &child.1 .0 {
+					NamespaceItem::Function(ty, _) | NamespaceItem::Type(ty) => Some(
+						Namespace::mangle_name(&path, child.0, &ty.as_ref().read().unwrap()),
+					),
+
 					_ => None,
 				}
 			}
@@ -437,7 +521,11 @@ pub fn mangle_names(namespace: &RefCell<Namespace>) -> ASTResult<()> {
 			path.scopes.push(im.0.name.clone());
 
 			for method in im.1 {
-				method.3 = Some(Namespace::mangle_name(&path, &method.0, &method.1.read().unwrap()));
+				method.3 = Some(Namespace::mangle_name(
+					&path,
+					&method.0,
+					&method.1.read().unwrap(),
+				));
 			}
 		}
 	}
@@ -445,12 +533,10 @@ pub fn mangle_names(namespace: &RefCell<Namespace>) -> ASTResult<()> {
 	Ok(())
 }
 
-
 impl ASTElem {
 	// Recursively validate ASTNode types and check if blocks have matching return types
 	pub fn validate(&self, scope: &mut FnScope, ret: &Type) -> ASTResult<Option<Type>> {
 		let result = match &self.node {
-
 			ASTNode::Block(elems) => {
 				let mut subscope = FnScope::from_parent(scope);
 				let mut last_ret = None;
@@ -469,15 +555,18 @@ impl ASTElem {
 					}
 				}
 				Ok(last_ret)
-			},
-			
-			ASTNode::Expression(e) => Ok(Some(e.borrow_mut().validate(scope, None, self.token_data)?)),
-			
+			}
+
+			ASTNode::Expression(e) => Ok(Some(e.borrow_mut().validate(
+				scope,
+				None,
+				self.token_data,
+			)?)),
+
 			ASTNode::Declaration(t, n, e) => {
 				t.validate(&scope, self.token_data)?;
 
 				if let Some(expr) = e {
-
 					expr.type_info.replace(Some(t.clone()));
 
 					let expr_type = expr.get_type(scope)?;
@@ -486,28 +575,40 @@ impl ASTElem {
 						if expr.get_expr().borrow().coercable_to(&expr_type, t, scope) {
 							expr.wrap_expr_in_cast(Some(expr_type), t.clone());
 						} else {
-							return Err((CMNError::AssignTypeMismatch(expr_type, t.clone()), self.token_data));
+							return Err((
+								CMNError::AssignTypeMismatch(expr_type, t.clone()),
+								self.token_data,
+							));
 						}
 					}
 				}
 
 				scope.add_variable(t.clone(), n.to_string());
 
-				Ok(None)	
-			},
+				Ok(None)
+			}
 
 			ASTNode::ControlFlow(ctrl) => match ctrl.as_ref() {
-
-				ControlFlow::If { cond, body, else_body } => {
+				ControlFlow::If {
+					cond,
+					body,
+					else_body,
+				} => {
 					cond.type_info.replace(Some(Type::Basic(Basic::BOOL)));
 					let cond_type = cond.get_type(scope)?;
 					let bool_t = Type::Basic(Basic::BOOL);
 
 					if cond_type != bool_t {
 						if cond_type.castable_to(&bool_t) {
-							cond.wrap_expr_in_cast(Some(cond_type), bool_t);	
+							cond.wrap_expr_in_cast(Some(cond_type), bool_t);
 						} else {
-							return Err((CMNError::InvalidCast{ from: cond_type, to: bool_t}, self.token_data));
+							return Err((
+								CMNError::InvalidCast {
+									from: cond_type,
+									to: bool_t,
+								},
+								self.token_data,
+							));
 						}
 					}
 
@@ -527,20 +628,33 @@ impl ASTElem {
 
 					if cond_type != bool_t {
 						if cond_type.castable_to(&bool_t) {
-							cond.wrap_expr_in_cast(Some(cond_type), bool_t);	
+							cond.wrap_expr_in_cast(Some(cond_type), bool_t);
 						} else {
-							return Err((CMNError::InvalidCast{ from: cond_type, to: bool_t}, self.token_data));
+							return Err((
+								CMNError::InvalidCast {
+									from: cond_type,
+									to: bool_t,
+								},
+								self.token_data,
+							));
 						}
 					}
 
 					let t = body.validate(scope, ret)?;
 					Ok(t)
-				} 
+				}
 
-				ControlFlow::For { cond, body, init, iter } => {
-					let mut subscope = FnScope::from_parent(&scope);	
+				ControlFlow::For {
+					cond,
+					body,
+					init,
+					iter,
+				} => {
+					let mut subscope = FnScope::from_parent(&scope);
 
-					if let Some(init) = init { init.validate(&mut subscope, ret)?; }
+					if let Some(init) = init {
+						init.validate(&mut subscope, ret)?;
+					}
 
 					// Check if condition is coercable to bool
 					if let Some(cond) = cond {
@@ -548,17 +662,25 @@ impl ASTElem {
 
 						cond.type_info.replace(Some(bool_t.clone()));
 						let cond_type = cond.get_type(&mut subscope)?;
-						
+
 						if cond_type != bool_t {
 							if cond_type.castable_to(&bool_t) {
-								cond.wrap_expr_in_cast(Some(cond_type), bool_t);	
+								cond.wrap_expr_in_cast(Some(cond_type), bool_t);
 							} else {
-								return Err((CMNError::InvalidCast{ from: cond_type, to: bool_t}, self.token_data));
+								return Err((
+									CMNError::InvalidCast {
+										from: cond_type,
+										to: bool_t,
+									},
+									self.token_data,
+								));
 							}
 						}
 					}
-					
-					if let Some(iter) = iter { iter.validate(&mut subscope, ret)?; }
+
+					if let Some(iter) = iter {
+						iter.validate(&mut subscope, ret)?;
+					}
 
 					let t = body.validate(&mut subscope, ret)?;
 					if t.is_some() {
@@ -579,18 +701,23 @@ impl ASTElem {
 								expr.wrap_expr_in_cast(Some(t), ret.clone());
 								Ok(Some(ret.clone()))
 							} else {
-								Err((CMNError::ReturnTypeMismatch { expected: ret.clone(), got: t }, self.token_data))
+								Err((
+									CMNError::ReturnTypeMismatch {
+										expected: ret.clone(),
+										got: t,
+									},
+									self.token_data,
+								))
 							}
 						} else {
 							Ok(None)
 						}
 					} else {
-						Ok(Some(Type::Basic(Basic::VOID))) // Return with no expression is of type void 
+						Ok(Some(Type::Basic(Basic::VOID))) // Return with no expression is of type void
 					}
-				
 				}
-				
-				_ => Ok(None)
+
+				_ => Ok(None),
 			},
 		};
 
@@ -602,29 +729,29 @@ impl ASTElem {
 	}
 }
 
-
-
-
-
 impl Expr {
-
 	pub fn create_cast(expr: Expr, from: Option<Type>, to: Type, meta: TokenData) -> Expr {
-		Expr::Atom(Atom::Cast(Box::new(
-			ASTElem { 
-				node: ASTNode::Expression(RefCell::new(expr)), 
-				type_info: RefCell::new(from), 
-				token_data: meta
-			}), 
-			to.clone()
-		), meta)
+		Expr::Atom(
+			Atom::Cast(
+				Box::new(ASTElem {
+					node: ASTNode::Expression(RefCell::new(expr)),
+					type_info: RefCell::new(from),
+					token_data: meta,
+				}),
+				to.clone(),
+			),
+			meta,
+		)
 	}
 
-
-	pub fn validate<'ctx>(&mut self, scope: &'ctx FnScope<'ctx>, goal_t: Option<&Type>, meta: TokenData) -> ASTResult<Type> {
-
+	pub fn validate<'ctx>(
+		&mut self,
+		scope: &'ctx FnScope<'ctx>,
+		goal_t: Option<&Type>,
+		meta: TokenData,
+	) -> ASTResult<Type> {
 		// Validate Atom or sub-expressions
 		match self {
-
 			Expr::Atom(a, _) => a.validate(scope, goal_t, meta),
 
 			Expr::Cons(op, elems, meta) => {
@@ -632,7 +759,8 @@ impl Expr {
 					// Special cases for member access and scope resolution
 					Operator::MemberAccess => {
 						let meta = meta.clone();
-						self.validate_lvalue(scope, meta).ok_or((CMNError::ExpectedIdentifier, meta))
+						self.validate_lvalue(scope, meta)
+							.ok_or((CMNError::ExpectedIdentifier, meta))
 					}
 
 					// General case for unary & binary expressions
@@ -647,28 +775,35 @@ impl Expr {
 							second_t = Some(item.0.validate(scope, None, item.2)?);
 
 							if first_t != *second_t.as_ref().unwrap() {
-								return Err((CMNError::ExprTypeMismatch(first_t, second_t.unwrap(), op.clone()), *meta))
+								return Err((
+									CMNError::ExprTypeMismatch(
+										first_t,
+										second_t.unwrap(),
+										op.clone(),
+									),
+									*meta,
+								));
 							}
 							elems[1].1 = second_t.clone();
 						}
-						
-						
 
 						// Handle operators that change the expression's type here
 						match op {
 							Operator::Ref => Ok(first_t.ptr_type()),
 
-							Operator::Deref => {
-								match first_t {
-									Type::Pointer(t) => Ok(*t.clone()),
-									_ => return Err((CMNError::NonPtrDeref, *meta)),
-								}
-							}
+							Operator::Deref => match first_t {
+								Type::Pointer(t) => Ok(*t.clone()),
+								_ => return Err((CMNError::NonPtrDeref, *meta)),
+							},
 
-							Operator::Eq | Operator::NotEq | Operator::Less | Operator::Greater | Operator::LessEq | Operator::GreaterEq =>
-								return Ok(Type::Basic(Basic::BOOL)),
+							Operator::Eq
+							| Operator::NotEq
+							| Operator::Less
+							| Operator::Greater
+							| Operator::LessEq
+							| Operator::GreaterEq => return Ok(Type::Basic(Basic::BOOL)),
 
-							_ => Ok(second_t.unwrap())
+							_ => Ok(second_t.unwrap()),
 						}
 					}
 				}
@@ -676,126 +811,138 @@ impl Expr {
 		}
 	}
 
-
 	// Check whether an Expr is coercable to a type
 	pub fn coercable_to(&self, from: &Type, target: &Type, scope: &FnScope) -> bool {
 		match self {
-			Expr::Atom(a, _) => {
-				match a {
-
-					Atom::IntegerLit(_, t) | Atom::FloatLit(_, t) => {
-						if t.is_some() {
-							*target == Type::Basic(t.unwrap())
-						} else {
-							target.is_numeric() 
-						}
-					},
-
-					Atom::BoolLit(_) => target.is_boolean(),
-
-					Atom::StringLit(_) => {
-						if let Type::Pointer(other_p) = &target {
-							if let Type::Basic(other_b) = **other_p {
-								if let Basic::CHAR = other_b {
-									return true;
-								} 
-							}
-						}
-
-						false
-					},
-					
-					Atom::Identifier(i) => scope.get_identifier_type(i).unwrap() == *target,
-
-					Atom::FnCall { name, args: _ } => {
-						match scope.find_symbol(name).unwrap().1 {
-
-							Type::TypeRef(r, _) => {
-								if let TypeDef::Function(ret, _) = &*r.upgrade().unwrap().as_ref().read().unwrap() { 
-									*ret == *target
-								} else {
-									false
-								}
-							}
-
-							_ => panic!(),
-						}
-					},
-
-					Atom::Cast(_, cast_t) => *target == *cast_t,
-        			Atom::AlgebraicLit(_, _) => todo!(),
-					Atom::ArrayLit(_) => todo!(),
+			Expr::Atom(a, _) => match a {
+				Atom::IntegerLit(_, t) | Atom::FloatLit(_, t) => {
+					if t.is_some() {
+						*target == Type::Basic(t.unwrap())
+					} else {
+						target.is_numeric()
+					}
 				}
+
+				Atom::BoolLit(_) => target.is_boolean(),
+
+				Atom::StringLit(_) => {
+					if let Type::Pointer(other_p) = &target {
+						if let Type::Basic(other_b) = **other_p {
+							if let Basic::CHAR = other_b {
+								return true;
+							}
+						}
+					}
+
+					false
+				}
+
+				Atom::Identifier(i) => scope.get_identifier_type(i).unwrap() == *target,
+
+				Atom::FnCall { name, args: _ } => match scope.find_symbol(name).unwrap().1 {
+					Type::TypeRef(r, _) => {
+						if let TypeDef::Function(ret, _) =
+							&*r.upgrade().unwrap().as_ref().read().unwrap()
+						{
+							*ret == *target
+						} else {
+							false
+						}
+					}
+
+					_ => panic!(),
+				},
+
+				Atom::Cast(_, cast_t) => *target == *cast_t,
+				Atom::AlgebraicLit(_, _) => todo!(),
+				Atom::ArrayLit(_) => todo!(),
 			},
 
 			Expr::Cons(_, _, _) => from == target,
 		}
 	}
 
-
-	pub fn validate_lvalue<'ctx>(&mut self, scope: &'ctx FnScope<'ctx>, meta: TokenData) -> Option<Type> {
+	pub fn validate_lvalue<'ctx>(
+		&mut self,
+		scope: &'ctx FnScope<'ctx>,
+		meta: TokenData,
+	) -> Option<Type> {
 		match self {
 			Expr::Atom(a, _) => a.get_lvalue_type(scope),
 
 			Expr::Cons(op, elems, _) => match op {
 				// Only these operators can result in lvalues
-			
-				Operator::Deref => {
-					match elems[0].0.validate(scope, None, meta).unwrap() {
-						Type::Pointer(t) => Some(*t),
-						_ => None,
-					}
-				}
+				Operator::Deref => match elems[0].0.validate(scope, None, meta).unwrap() {
+					Type::Pointer(t) => Some(*t),
+					_ => None,
+				},
 
 				Operator::MemberAccess => {
 					if let Type::TypeRef(r, id) = elems[0].0.validate(scope, None, meta).unwrap() {
-
 						if let (lhs, [rhs, ..]) = elems.split_first_mut().unwrap() {
-
 							match &mut *r.upgrade().unwrap().write().unwrap() {
 								// Dot operator is on an algebraic type, so check if it's a member access or method call
 								TypeDef::Algebraic(t) => match &mut rhs.0 {
-									
 									// Member access on algebraic type
 									Expr::Atom(Atom::Identifier(ref mut id), _) => {
-
 										if let Some((i, m)) = t.get_member(&id.name) {
 											id.mem_idx = i as u32;
 											return Some(m.clone());
 										}
-									
+
 										// Didn't return Some, so not a valid member access
-
-										None
-									},
-
-									// Method call on algebraic type
-									Expr::Atom(Atom::FnCall { name, args }, _) => {
-										
-										// jesse. we have to call METHods
-
-										if let Some(method) = scope.context.borrow().impls.get(&id).unwrap_or(&vec![]).iter().find(|meth| {&meth.0 == &name.name}) {
-											if let TypeDef::Function(ret, params) = &mut *method.1.as_ref().write().unwrap() {
-												name.resolved = method.3.clone();
-												
-												// Insert `this` into the arg list
-												args.insert(0, ASTElem { 
-													node: ASTNode::Expression(
-														RefCell::new(
-															lhs.0.clone()
-														)
-													), token_data: (0, 0), type_info: RefCell::new(Some(Type::TypeRef(r.clone(), id.clone()))) });
-												
-												return validate_fn_call(ret, &args, params, scope, meta.clone()).ok();
-											}
-										}
-									
 
 										None
 									}
 
-									_ => None
-								}
+									// Method call on algebraic type
+									Expr::Atom(Atom::FnCall { name, args }, _) => {
+										// jesse. we have to call METHods
+
+										if let Some(method) = scope
+											.context
+											.borrow()
+											.impls
+											.get(&id)
+											.unwrap_or(&vec![])
+											.iter()
+											.find(|meth| &meth.0 == &name.name)
+										{
+											if let TypeDef::Function(ret, params) =
+												&mut *method.1.as_ref().write().unwrap()
+											{
+												name.resolved = method.3.clone();
+
+												// Insert `this` into the arg list
+												args.insert(
+													0,
+													ASTElem {
+														node: ASTNode::Expression(RefCell::new(
+															lhs.0.clone(),
+														)),
+														token_data: (0, 0),
+														type_info: RefCell::new(Some(
+															Type::TypeRef(r.clone(), id.clone()),
+														)),
+													},
+												);
+
+												return validate_fn_call(
+													ret,
+													&args,
+													params,
+													scope,
+													meta.clone(),
+												)
+												.ok();
+											}
+										}
+
+										None
+									}
+
+									_ => None,
+								},
 								_ => None,
 							}
 						} else {
@@ -807,43 +954,53 @@ impl Expr {
 				}
 
 				_ => None,
-			}
+			},
 		}
 	}
 }
 
-
-
-
 impl Atom {
-	pub fn validate<'ctx>(&mut self, scope: &'ctx FnScope<'ctx>, goal_t: Option<&Type>, meta: TokenData) -> ASTResult<Type> {
+	pub fn validate<'ctx>(
+		&mut self,
+		scope: &'ctx FnScope<'ctx>,
+		goal_t: Option<&Type>,
+		meta: TokenData,
+	) -> ASTResult<Type> {
 		match self {
-			Atom::IntegerLit(_, t) =>
-				if let Some(t) = t { 
-					Ok(Type::Basic(t.clone())) 
+			Atom::IntegerLit(_, t) => {
+				if let Some(t) = t {
+					Ok(Type::Basic(t.clone()))
 				} else {
-					if goal_t.is_some() && goal_t.unwrap().is_integral() { 
-						Ok(goal_t.unwrap().clone()) 
-					} else { 
-						Ok(Type::Basic(Basic::INTEGRAL { signed: true, size_bytes: 4 })) 
+					if goal_t.is_some() && goal_t.unwrap().is_integral() {
+						Ok(goal_t.unwrap().clone())
+					} else {
+						Ok(Type::Basic(Basic::INTEGRAL {
+							signed: true,
+							size_bytes: 4,
+						}))
 					}
-				},
-			
-			Atom::FloatLit(_, t) => if let Some(t) = t { 
-				Ok(Type::Basic(t.clone())) 
-			} else {
-				if goal_t.is_some() && goal_t.unwrap().is_floating_point() { 
-					Ok(goal_t.unwrap().clone()) 
-				} else { 
-					Ok(Type::Basic(Basic::FLOAT { size_bytes: 4 })) 
 				}
-			},
+			}
+
+			Atom::FloatLit(_, t) => {
+				if let Some(t) = t {
+					Ok(Type::Basic(t.clone()))
+				} else {
+					if goal_t.is_some() && goal_t.unwrap().is_floating_point() {
+						Ok(goal_t.unwrap().clone())
+					} else {
+						Ok(Type::Basic(Basic::FLOAT { size_bytes: 4 }))
+					}
+				}
+			}
 
 			Atom::BoolLit(_) => Ok(Type::Basic(Basic::BOOL)),
 			Atom::StringLit(_) => Ok(Type::Basic(Basic::STR)),
 
-			Atom::Identifier(name) => scope.resolve_identifier(name).ok_or((CMNError::UndeclaredIdentifier(name.to_string()), meta)),
-			
+			Atom::Identifier(name) => scope
+				.resolve_identifier(name)
+				.ok_or((CMNError::UndeclaredIdentifier(name.to_string()), meta)),
+
 			Atom::Cast(a, t) => {
 				if let ASTNode::Expression(expr) = &a.node {
 					let a_t = expr.borrow_mut().validate(scope, None, meta)?;
@@ -856,45 +1013,51 @@ impl Atom {
 						a.type_info.replace(Some(t.clone()));
 						Ok(t.clone())
 					} else {
-						Err((CMNError::InvalidCast{ from: a_t, to: t.clone()}, meta))
+						Err((
+							CMNError::InvalidCast {
+								from: a_t,
+								to: t.clone(),
+							},
+							meta,
+						))
 					}
-				} else { 
-					panic!(); 
+				} else {
+					panic!();
 				}
-			},
+			}
 
 			Atom::FnCall { name, args } => {
-				
 				if let Some(Type::TypeRef(t, _)) = scope.resolve_identifier(name) {
-					if let TypeDef::Function(ret, params) = &*t.upgrade().unwrap().as_ref().read().unwrap() {
-
+					if let TypeDef::Function(ret, params) =
+						&*t.upgrade().unwrap().as_ref().read().unwrap()
+					{
 						// Identifier is a function, check parameter types
 						validate_fn_call(ret, args, params, scope, meta.clone())
-						
 					} else {
 						Err((CMNError::NotCallable(name.to_string()), meta)) // Trying to call a non-function
 					}
-
 				} else {
-					Err((CMNError::UndeclaredIdentifier(name.to_string()), meta)) // Couldn't find symbol!
+					Err((CMNError::UndeclaredIdentifier(name.to_string()), meta))
+					// Couldn't find symbol!
 				}
-			},
+			}
 
 			Atom::ArrayLit(_) => todo!(),
 
-    		Atom::AlgebraicLit(ty, elems) => {
+			Atom::AlgebraicLit(ty, elems) => {
 				if let Type::TypeRef(alg, _) = ty {
 					if let TypeDef::Algebraic(alg) = &*alg.upgrade().unwrap().read().unwrap() {
-						
 						for elem in elems {
-							let member_ty = if let Some((_, ty)) = alg.get_member(elem.0.as_ref().unwrap()) {
-								ty
-							} else {
-								// Invalid member in strenum literal
-								todo!()
-							};
+							let member_ty =
+								if let Some((_, ty)) = alg.get_member(elem.0.as_ref().unwrap()) {
+									ty
+								} else {
+									// Invalid member in strenum literal
+									todo!()
+								};
 
-							let expr_ty = elem.1.get_mut().validate(scope, Some(member_ty), elem.2)?;
+							let expr_ty =
+								elem.1.get_mut().validate(scope, Some(member_ty), elem.2)?;
 						}
 
 						return Ok(ty.clone());
@@ -902,18 +1065,20 @@ impl Atom {
 				}
 
 				todo!()
-			},
-
+			}
 		}
 	}
 
-
 	// Check if we should issue any warnings or errors when casting
-	pub fn check_cast(&mut self, from: &Type, to: &Type, _scope: &FnScope, _meta: &TokenData) -> ASTResult<()> {
+	pub fn check_cast(
+		&mut self,
+		from: &Type,
+		to: &Type,
+		_scope: &FnScope,
+		_meta: &TokenData,
+	) -> ASTResult<()> {
 		match from {
-
 			Type::Basic(b) => match b {
-
 				Basic::STR => {
 					match to {
 						Type::Pointer(to_ptr) => {
@@ -928,23 +1093,22 @@ impl Atom {
 								}
 							}
 						}
-						
+
 						_ => {}
 					}
 					Ok(())
-				},
+				}
 
-				_ => Ok(())
+				_ => Ok(()),
 			},
 
 			_ => todo!(),
 		}
 	}
 
-
 	pub fn get_lvalue_type<'ctx>(&self, scope: &'ctx FnScope<'ctx>) -> Option<Type> {
 		match self {
-			Atom::Identifier(id) => match scope.find_symbol(id){
+			Atom::Identifier(id) => match scope.find_symbol(id) {
 				Some((_, t)) => Some(t),
 				None => None,
 			},
@@ -952,7 +1116,6 @@ impl Atom {
 		}
 	}
 }
-
 
 impl Type {
 	pub fn validate<'ctx>(&self, scope: &'ctx FnScope<'ctx>, _meta: TokenData) -> ASTResult<()> {
@@ -964,11 +1127,11 @@ impl Type {
 
 				while idx < len {
 					let mut result = None;
-					
+
 					if let ConstExpr::Expr(e) = &n.borrow()[idx] {
 						result = Some(ConstExpr::Result(e.eval_const(scope)?));
 					}
-					
+
 					if let Some(result) = result {
 						n.borrow_mut()[idx] = result;
 					}
@@ -979,7 +1142,7 @@ impl Type {
 
 			_ => {}
 		}
-		
+
 		Ok(())
 	}
 }

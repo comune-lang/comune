@@ -1,4 +1,11 @@
-use crate::{semantic::{expression::{Expr, Atom, Operator}, types::Basic, FnScope}, parser::ASTResult};
+use crate::{
+	parser::ASTResult,
+	semantic::{
+		expression::{Atom, Expr, Operator},
+		types::Basic,
+		FnScope,
+	},
+};
 
 // Constant expression evaluation module. For stuff like array lengths, generics, you get the idea
 
@@ -25,29 +32,21 @@ impl ConstEval for Expr {
 	fn eval_const(&self, scope: &FnScope) -> ASTResult<ConstValue> {
 		match self {
 			Expr::Atom(a, _) => a.eval_const(scope),
-			
+
 			Expr::Cons(op, elems, _) => {
-
 				if elems.len() == 1 {
-
 					match elems[0].0.eval_const(scope)? {
-
 						// Unary operators
-						
-						ConstValue::Integral(i, b) => {
-							match op {
-								Operator::UnaryMinus => return Ok(ConstValue::Integral(-i, b)),
-								Operator::UnaryPlus => return Ok(ConstValue::Integral(i, b)),
-								_ => todo!(),
-							}
+						ConstValue::Integral(i, b) => match op {
+							Operator::UnaryMinus => return Ok(ConstValue::Integral(-i, b)),
+							Operator::UnaryPlus => return Ok(ConstValue::Integral(i, b)),
+							_ => todo!(),
 						},
 
-						ConstValue::Float(f, b) => {
-							match op {
-								Operator::UnaryMinus => return Ok(ConstValue::Float(-f, b)),
-								Operator::UnaryPlus => return Ok(ConstValue::Float(f, b)),
-								_ => todo!(),
-							}
+						ConstValue::Float(f, b) => match op {
+							Operator::UnaryMinus => return Ok(ConstValue::Float(-f, b)),
+							Operator::UnaryPlus => return Ok(ConstValue::Float(f, b)),
+							_ => todo!(),
 						},
 
 						ConstValue::Bool(b) => {
@@ -55,43 +54,56 @@ impl ConstEval for Expr {
 								return Ok(ConstValue::Bool(!b));
 							}
 							todo!();
-						},
-						
+						}
 					}
-
 				} else if elems.len() == 2 {
 					let lhs = elems[0].0.eval_const(scope)?;
 					let rhs = elems[1].0.eval_const(scope)?;
-					
-					match lhs {
 
+					match lhs {
 						ConstValue::Integral(i_lhs, b) => {
 							let combined_b = b; // TODO: Actually decide how this is inferred
-							
+
 							if let ConstValue::Integral(i_rhs, _) = rhs {
 								return Ok(match op {
+									Operator::Add => {
+										ConstValue::Integral(i_lhs + i_rhs, combined_b)
+									}
+									Operator::Sub => {
+										ConstValue::Integral(i_lhs - i_rhs, combined_b)
+									}
+									Operator::Mul => {
+										ConstValue::Integral(i_lhs * i_rhs, combined_b)
+									}
+									Operator::Div => {
+										ConstValue::Integral(i_lhs / i_rhs, combined_b)
+									}
 
-									Operator::Add => ConstValue::Integral(i_lhs + i_rhs, combined_b),
-									Operator::Sub => ConstValue::Integral(i_lhs - i_rhs, combined_b),
-									Operator::Mul => ConstValue::Integral(i_lhs * i_rhs, combined_b),
-									Operator::Div => ConstValue::Integral(i_lhs / i_rhs, combined_b),
+									Operator::BitShiftL => {
+										ConstValue::Integral(i_lhs << i_rhs, combined_b)
+									}
+									Operator::BitShiftR => {
+										ConstValue::Integral(i_lhs >> i_rhs, combined_b)
+									}
+									Operator::BitXOR => {
+										ConstValue::Integral(i_lhs ^ i_rhs, combined_b)
+									}
+									Operator::BitAND => {
+										ConstValue::Integral(i_lhs & i_rhs, combined_b)
+									}
+									Operator::BitOR => {
+										ConstValue::Integral(i_lhs | i_rhs, combined_b)
+									}
 
-									Operator::BitShiftL =>	ConstValue::Integral(i_lhs << i_rhs, combined_b),
-									Operator::BitShiftR =>	ConstValue::Integral(i_lhs >> i_rhs, combined_b),
-									Operator::BitXOR =>		ConstValue::Integral(i_lhs ^ i_rhs, combined_b),
-									Operator::BitAND =>		ConstValue::Integral(i_lhs & i_rhs, combined_b),
-									Operator::BitOR =>		ConstValue::Integral(i_lhs | i_rhs, combined_b),
+									Operator::Greater => ConstValue::Bool(i_lhs > i_rhs),
+									Operator::GreaterEq => ConstValue::Bool(i_lhs >= i_rhs),
+									Operator::Less => ConstValue::Bool(i_lhs < i_rhs),
+									Operator::LessEq => ConstValue::Bool(i_lhs <= i_rhs),
+									Operator::Eq => ConstValue::Bool(i_lhs == i_rhs),
+									Operator::NotEq => ConstValue::Bool(i_lhs != i_rhs),
 
-									Operator::Greater =>	ConstValue::Bool(i_lhs > i_rhs),
-									Operator::GreaterEq =>	ConstValue::Bool(i_lhs >= i_rhs),
-									Operator::Less =>		ConstValue::Bool(i_lhs < i_rhs),
-									Operator::LessEq =>		ConstValue::Bool(i_lhs <= i_rhs),
-									Operator::Eq =>			ConstValue::Bool(i_lhs == i_rhs),
-									Operator::NotEq =>		ConstValue::Bool(i_lhs != i_rhs),
-							
 									_ => panic!(),
-
-								})
+								});
 							} else {
 								panic!()
 							}
@@ -99,43 +111,45 @@ impl ConstEval for Expr {
 
 						ConstValue::Float(f_lhs, b) => {
 							let combined_b = b; // TODO: Actually decide how this is inferred
-							
+
 							if let ConstValue::Float(f_rhs, _) = rhs {
 								return Ok(match op {
-
 									Operator::Add => ConstValue::Float(f_lhs + f_rhs, combined_b),
 									Operator::Sub => ConstValue::Float(f_lhs - f_rhs, combined_b),
 									Operator::Mul => ConstValue::Float(f_lhs * f_rhs, combined_b),
 									Operator::Div => ConstValue::Float(f_lhs / f_rhs, combined_b),
 
-									Operator::Greater =>	ConstValue::Bool(f_lhs > f_rhs),
-									Operator::GreaterEq =>	ConstValue::Bool(f_lhs >= f_rhs),
-									Operator::Less =>		ConstValue::Bool(f_lhs < f_rhs),
-									Operator::LessEq =>		ConstValue::Bool(f_lhs <= f_rhs),
-									Operator::Eq =>			ConstValue::Bool(f_lhs == f_rhs),
-									Operator::NotEq =>		ConstValue::Bool(f_lhs != f_rhs),
+									Operator::Greater => ConstValue::Bool(f_lhs > f_rhs),
+									Operator::GreaterEq => ConstValue::Bool(f_lhs >= f_rhs),
+									Operator::Less => ConstValue::Bool(f_lhs < f_rhs),
+									Operator::LessEq => ConstValue::Bool(f_lhs <= f_rhs),
+									Operator::Eq => ConstValue::Bool(f_lhs == f_rhs),
+									Operator::NotEq => ConstValue::Bool(f_lhs != f_rhs),
 
 									_ => panic!(),
-
-								})
+								});
 							} else {
 								panic!()
 							}
 						}
 
-						ConstValue::Bool(b_lhs) => if let ConstValue::Bool(b_rhs) = rhs {
-							return Ok(match op {
-								Operator::LogicAnd => ConstValue::Bool(b_lhs && b_rhs),
-								Operator::LogicOr => ConstValue::Bool(b_lhs || b_rhs),
+						ConstValue::Bool(b_lhs) => {
+							if let ConstValue::Bool(b_rhs) = rhs {
+								return Ok(match op {
+									Operator::LogicAnd => ConstValue::Bool(b_lhs && b_rhs),
+									Operator::LogicOr => ConstValue::Bool(b_lhs || b_rhs),
 
-								_ => panic!(),
-							})
-						} else { panic!() }
+									_ => panic!(),
+								});
+							} else {
+								panic!()
+							}
+						}
 					}
 				}
 
 				todo!()
-			},
+			}
 		}
 	}
 }
