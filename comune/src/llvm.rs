@@ -599,7 +599,6 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 							} else if t.is_boolean() {
 								if lhs_v.is_int_value() {
-									println!("expr {}", expr);
 									let lhs_i = lhs_v.into_int_value();
 									let rhs_i = rhs_v.into_int_value();
 
