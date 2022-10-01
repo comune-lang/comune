@@ -632,22 +632,27 @@ impl Expr {
 					// Special cases for member access and scope resolution
 					Operator::MemberAccess => {
 						let meta = meta.clone();
-						self.get_lvalue_type(scope, meta).ok_or((CMNError::ExpectedIdentifier, meta))
+						self.validate_lvalue(scope, meta).ok_or((CMNError::ExpectedIdentifier, meta))
 					}
 
 					// General case for unary & binary expressions
 					_ => {
 						let first = elems.get_mut(0).unwrap();
-						let first_t = first.0.validate(scope, None, first.1)?;
+						let first_t = first.0.validate(scope, None, first.2)?;
 						let mut second_t = None;
 
+						elems[0].1 = Some(first_t.clone());
+
 						if let Some(item) = elems.get_mut(1) {
-							second_t = Some(item.0.validate(scope, None, item.1)?);
+							second_t = Some(item.0.validate(scope, None, item.2)?);
 
 							if first_t != *second_t.as_ref().unwrap() {
 								return Err((CMNError::ExprTypeMismatch(first_t, second_t.unwrap(), op.clone()), *meta))
 							}
+							elems[1].1 = second_t.clone();
 						}
+						
+						
 
 						// Handle operators that change the expression's type here
 						match op {
@@ -728,7 +733,7 @@ impl Expr {
 	}
 
 
-	pub fn get_lvalue_type<'ctx>(&mut self, scope: &'ctx FnScope<'ctx>, meta: TokenData) -> Option<Type> {
+	pub fn validate_lvalue<'ctx>(&mut self, scope: &'ctx FnScope<'ctx>, meta: TokenData) -> Option<Type> {
 		match self {
 			Expr::Atom(a, _) => a.get_lvalue_type(scope),
 

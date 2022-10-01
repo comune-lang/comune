@@ -203,11 +203,12 @@ impl Operator {
 	}
 }
 
-
+// Expression node
+// Cons' Option<Type> field carries extra type data for when the full expression's type isn't sufficient (like when using relational operators)
 #[derive(Clone, Debug, PartialEq)]
 pub enum Expr {
 	Atom(Atom, TokenData),
-	Cons(Operator, Vec<(Expr, TokenData)>, TokenData)
+	Cons(Operator, Vec<(Expr, Option<Type>, TokenData)>, TokenData)
 }
 
 

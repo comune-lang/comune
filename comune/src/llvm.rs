@@ -9,6 +9,7 @@ use crate::semantic::expression::{Expr, Atom, Operator};
 use crate::semantic::namespace::{Identifier, NamespaceItem};
 use crate::semantic::types::{Type, Basic, TypeDef, DataLayout};
 
+use inkwell::basic_block::BasicBlock;
 use inkwell::targets::{TargetMachine, Target, InitializationConfig, TargetTriple};
 use inkwell::{IntPredicate, AddressSpace, FloatPredicate, GlobalVisibility};
 use inkwell::builder::Builder;
@@ -44,6 +45,7 @@ pub struct LLVMBackend<'ctx> {
 	pub fpm: Option<PassManager<FunctionValue<'ctx>>>,
 	pub fn_value_opt: Option<FunctionValue<'ctx>>,
 	pub type_map: RefCell<HashMap<Type, Rc<dyn AnyType<'ctx> + 'ctx>>>, 
+	pub loop_blocks: RefCell<Vec<[BasicBlock<'ctx>; 2]>>,
 }
 
 struct LLVMScope<'ctx, 'scope> {
@@ -239,15 +241,22 @@ impl<'ctx> LLVMBackend<'ctx> {
 				// Build then block
 				self.builder.position_at_end(then_bb);
 				self.generate_node(body, scope)?;
-				self.builder.build_unconditional_branch(cont_bb);
-
+				
+				if !body.block_is_terminating() {
+					self.builder.build_unconditional_branch(cont_bb);
+				}
 				
 				// Build else block
 				self.builder.position_at_end(else_bb);
 				if let Some(else_body) = else_body {
 					self.generate_node(else_body, scope)?;
+				
+					if !else_body.block_is_terminating() {
+						self.builder.build_unconditional_branch(cont_bb);
+					}
+				} else {
+					self.builder.build_unconditional_branch(cont_bb);
 				}
-				self.builder.build_unconditional_branch(cont_bb);
 
 				self.builder.position_at_end(cont_bb);
 
@@ -265,6 +274,10 @@ impl<'ctx> LLVMBackend<'ctx> {
 				let cond_bb = self.context.append_basic_block(parent, "whilecond");
 				let body_bb = self.context.append_basic_block(parent, "whileblock");
 				let end_bb = self.context.append_basic_block(parent, "whileend");
+
+				self.loop_blocks.borrow_mut().push([
+					body_bb.clone(), end_bb.clone()
+				]);
 
 				self.builder.build_unconditional_branch(cond_bb);
 				self.builder.position_at_end(cond_bb);
@@ -287,6 +300,8 @@ impl<'ctx> LLVMBackend<'ctx> {
 				self.builder.build_unconditional_branch(cond_bb);
 				self.builder.position_at_end(end_bb);
 
+				self.loop_blocks.borrow_mut().pop();
+
 				Ok(None)
 			},
 
@@ -303,6 +318,10 @@ impl<'ctx> LLVMBackend<'ctx> {
 				let cond_bb = self.context.append_basic_block(parent, "forcond");
 				let body_bb = self.context.append_basic_block(parent, "forblock");
 				let end_bb = self.context.append_basic_block(parent, "forend");
+
+				self.loop_blocks.borrow_mut().push([
+					body_bb.clone(), end_bb.clone()
+				]);
 
 				self.builder.build_unconditional_branch(cond_bb);
 				self.builder.position_at_end(cond_bb);
@@ -344,6 +363,8 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 				self.builder.position_at_end(end_bb);
 
+				self.loop_blocks.borrow_mut().pop();
+
 				Ok(None)
 			}
 
@@ -365,8 +386,12 @@ impl<'ctx> LLVMBackend<'ctx> {
 				
 				
 			},
-			ControlFlow::Break => todo!(),
-			ControlFlow::Continue => todo!(),
+			
+			ControlFlow::Break => 
+				Ok(Some(Box::new(self.builder.build_unconditional_branch(self.loop_blocks.borrow().last().unwrap()[1])))),
+
+			ControlFlow::Continue => 
+				Ok(Some(Box::new(self.builder.build_unconditional_branch(self.loop_blocks.borrow().last().unwrap()[0])))),
 		}
 	}
 
@@ -391,6 +416,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 					}
 
 					Atom::BoolLit(b) => Rc::new(self.context.bool_type().const_int(if *b { 1 } else { 0 }, false)),
+
 					Atom::Identifier(v) => Rc::new(self.builder.build_load(self.resolve_identifier(scope, v), "vload")),
 
 					Atom::ArrayLit(_) => todo!(),
@@ -527,8 +553,8 @@ impl<'ctx> LLVMBackend<'ctx> {
 						}
 
 						_ => {
-							let lhs_v = self.generate_expr(&lhs.0, t, scope).as_any_value_enum();
-							let rhs_v = self.generate_expr(&rhs.0, t, scope).as_any_value_enum();
+							let lhs_v = self.generate_expr(&lhs.0, elems[0].1.as_ref().unwrap(), scope).as_any_value_enum();
+							let rhs_v = self.generate_expr(&rhs.0, elems[1].1.as_ref().unwrap(), scope).as_any_value_enum();
 							let result;
 
 							let mut used_op = op.clone();
@@ -573,11 +599,12 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 							} else if t.is_boolean() {
 								if lhs_v.is_int_value() {
+									println!("expr {}", expr);
 									let lhs_i = lhs_v.into_int_value();
 									let rhs_i = rhs_v.into_int_value();
 
 									result = self.builder.build_int_compare(
-										Self::to_int_predicate(&used_op, t.is_signed()), 
+										Self::to_int_predicate(&used_op, elems[0].1.as_ref().unwrap().is_signed()), 
 										lhs_i, 
 										rhs_i, 
 										"icomp"

@@ -205,6 +205,7 @@ pub fn generate_code<'ctx>(state: &Arc<ManagerState>, mod_state: &mut ModuleStat
 		fpm: None,
 		fn_value_opt: None,
 		type_map: RefCell::new(HashMap::new()),
+		loop_blocks: RefCell::new(vec![]),
 	};
 
 	for (_, import) in &namespace.borrow().imported {

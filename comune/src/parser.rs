@@ -914,7 +914,7 @@ impl Parser {
 							let end_index = self.get_current_start_index();
 
 							let meta = (begin_lhs, end_index - begin_lhs);
-							Expr::Cons(op, vec![(rhs,meta)], meta)
+							Expr::Cons(op, vec![(rhs, None, meta)], meta)
 						}
 					}
 
@@ -975,7 +975,7 @@ impl Parser {
 				let lhs_meta = (begin_lhs, end_lhs - begin_lhs);
 				let rhs_meta = (begin_rhs, end_rhs - begin_rhs);
 
-				lhs = Expr::Cons(op, vec![(lhs, lhs_meta), (rhs, rhs_meta)], (begin_rhs, end_rhs - begin_rhs));
+				lhs = Expr::Cons(op, vec![(lhs, None, lhs_meta), (rhs, None, rhs_meta)], (begin_rhs, end_rhs - begin_rhs));
 			}
 		}
 
