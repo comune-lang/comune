@@ -1,10 +1,14 @@
-use std::{ffi::OsString, fmt::Display, sync::Arc};
+use std::{ffi::OsString, fmt::Display, sync::{Arc, atomic::{AtomicU32, Ordering}}};
 
 use backtrace::Backtrace;
+use lazy_static::lazy_static;
 
 use super::types::Type;
 use crate::{semantic::expression::Operator, parser::Parser};
 
+lazy_static!{
+pub(crate) static ref ERROR_COUNT: Arc<AtomicU32> = Arc::new(AtomicU32::new(0));
+}
 
 #[derive(Debug, Clone)]
 pub struct CMNError {
@@ -14,10 +18,14 @@ pub struct CMNError {
 
 impl CMNError {
 	pub fn new(code: CMNErrorCode) -> Self {
+		println!("creating a new error!");
+		ERROR_COUNT.fetch_add(1, Ordering::Acquire);
 		CMNError { code, origin: Backtrace::new() }
 	}
 
 	pub fn new_with_parser(code: CMNErrorCode, _parser: &Parser) -> Self {
+		println!("creating a new error!");
+		ERROR_COUNT.fetch_add(1, Ordering::Acquire);
 		CMNError { code, origin: Backtrace::new() }
 	}
 }
@@ -50,6 +58,7 @@ pub enum CMNErrorCode {
 	InvalidCast { from: Type, to: Type },
 	InvalidCoercion { from: Type, to: Type },
 	InvalidMemberAccess { t: Type, idx: String },
+	InvalidLValue,
 	ReturnTypeMismatch { expected: Type, got: Type },
 	ParamCountMismatch { expected: usize, got: usize },
 	NotCallable(String),
@@ -110,6 +119,7 @@ impl Display for CMNErrorCode {
 			CMNErrorCode::InvalidCoercion { from, to } => {
 				write!(f, "cannot coerce from {} to {}", from, to)
 			}
+			CMNErrorCode::InvalidLValue => write!(f, "invalid lvalue"),
 			CMNErrorCode::ReturnTypeMismatch { expected, got } => write!(
 				f,
 				"return type mismatch; expected {}, got {}",

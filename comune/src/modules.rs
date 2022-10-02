@@ -28,7 +28,6 @@ pub struct ManagerState {
 	pub max_threads: usize,
 	pub verbose_output: bool,
 	pub output_modules: Mutex<Vec<PathBuf>>,
-	pub error_count: AtomicU32,
 	pub emit_llvm: bool,
 }
 

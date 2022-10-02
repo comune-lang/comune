@@ -287,23 +287,28 @@ pub fn resolve_type(
 		Type::Array(ref mut pointee, _size) => resolve_type(pointee, namespace, root),
 
 		Type::Unresolved(ref id) => {
-			let mut result = Err(CMNError::new(CMNErrorCode::UnresolvedTypename(id.to_string())));
+			let mut found = false;
+			let id = id.clone();
 
 			if let Some(b) = Basic::get_basic_type(&id.name) {
 				if id.path.scopes.is_empty() {
 					*ty = Type::Basic(b);
-					result = Ok(());
+					found = true;
 				}
 			} else {
 				namespace.with_item(&id.clone(), &root.borrow(), |item, id| {
 					if let NamespaceItem::Type(t) = &item.0 {
 						*ty = Type::TypeRef(Arc::downgrade(t), id.clone());
-						result = Ok(());
+						found = true;
 					}
 				});
 			}
 
-			result
+			if found {
+				Ok(())
+			} else {
+				Err(CMNError::new(CMNErrorCode::UnresolvedTypename(id.to_string())))
+			}
 		}
 
 		Type::TypeRef(..) | Type::Basic(_) => Ok(()),
@@ -763,7 +768,6 @@ impl Expr {
 					Operator::MemberAccess => {
 						let meta = meta.clone();
 						self.validate_lvalue(scope, meta)
-							.ok_or((CMNError::new(CMNErrorCode::ExpectedIdentifier), meta))
 					}
 
 					// General case for unary & binary expressions
@@ -869,33 +873,32 @@ impl Expr {
 		&mut self,
 		scope: &'ctx FnScope<'ctx>,
 		meta: TokenData,
-	) -> Option<Type> {
+	) -> ASTResult<Type> {
 		match self {
-			Expr::Atom(a, _) => a.get_lvalue_type(scope),
+			Expr::Atom(a, _) => return a.get_lvalue_type(scope),
 
 			Expr::Cons(op, elems, _) => match op {
 				// Only these operators can result in lvalues
-				Operator::Deref => match elems[0].0.validate(scope, None, meta).unwrap() {
-					Type::Pointer(t) => Some(*t),
-					_ => None,
+				Operator::Deref => return match elems[0].0.validate(scope, None, meta).unwrap() {
+					Type::Pointer(t) => Ok(*t),
+					_ => Err((CMNError::new(CMNErrorCode::NonPtrDeref), meta)),
 				},
 
 				Operator::MemberAccess => {
 					if let Type::TypeRef(r, id) = elems[0].0.validate(scope, None, meta).unwrap() {
 						if let (lhs, [rhs, ..]) = elems.split_first_mut().unwrap() {
 							match &mut *r.upgrade().unwrap().write().unwrap() {
+
 								// Dot operator is on an algebraic type, so check if it's a member access or method call
+
 								TypeDef::Algebraic(t) => match &mut rhs.0 {
+									
 									// Member access on algebraic type
 									Expr::Atom(Atom::Identifier(ref mut id), _) => {
 										if let Some((i, m)) = t.get_member(&id.name) {
 											id.mem_idx = i as u32;
-											return Some(m.clone());
+											return Ok(m.clone());
 										}
-
-										// Didn't return Some, so not a valid member access
-
-										None
 									}
 
 									// Method call on algebraic type
@@ -936,29 +939,22 @@ impl Expr {
 													params,
 													scope,
 													meta.clone(),
-												)
-												.ok();
+												);
 											}
 										}
-
-										None
 									}
 
-									_ => None,
+									_ => {},
 								},
-								_ => None,
+								_ => {},
 							}
-						} else {
-							None
 						}
-					} else {
-						None
 					}
 				}
-
-				_ => None,
+				_ => {},
 			},
-		}
+		};
+		return Err((CMNError::new(CMNErrorCode::InvalidLValue), meta));
 	}
 }
 
@@ -1002,7 +998,7 @@ impl Atom {
 
 			Atom::Identifier(name) => scope
 				.resolve_identifier(name)
-				.ok_or((CMNError::new(CMNErrorCode::UndeclaredIdentifier(name.to_string())), meta)),
+				.ok_or_else(|| (CMNError::new(CMNErrorCode::UndeclaredIdentifier(name.to_string())), meta)),
 
 			Atom::Cast(a, t) => {
 				if let ASTNode::Expression(expr) = &a.node {
@@ -1119,13 +1115,13 @@ impl Atom {
 		}
 	}
 
-	pub fn get_lvalue_type<'ctx>(&self, scope: &'ctx FnScope<'ctx>) -> Option<Type> {
+	pub fn get_lvalue_type<'ctx>(&self, scope: &'ctx FnScope<'ctx>) -> ASTResult<Type> {
 		match self {
 			Atom::Identifier(id) => match scope.find_symbol(id) {
-				Some((_, t)) => Some(t),
-				None => None,
+				Some((_, t)) => return Ok(t),
+				None => Err((CMNError::new(CMNErrorCode::UndeclaredIdentifier(id.to_string())), (0, 0))),
 			},
-			_ => None,
+			_ => Err((CMNError::new(CMNErrorCode::InvalidLValue), (0, 0))),
 		}
 	}
 }

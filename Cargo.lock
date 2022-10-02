@@ -162,6 +162,7 @@ dependencies = [
  "color-eyre",
  "colored",
  "inkwell",
+ "lazy_static",
  "mangling",
  "rayon",
 ]

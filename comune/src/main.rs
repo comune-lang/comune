@@ -13,7 +13,7 @@ use std::process::Command;
 use std::{
 	ffi::OsString,
 	io::{self, Write},
-	sync::{Arc, Mutex, atomic::AtomicU32, atomic::Ordering},
+	sync::{Arc, Mutex, atomic::Ordering},
 	time::Instant,
 };
 
@@ -56,29 +56,24 @@ fn main() -> color_eyre::eyre::Result<()> {
 		max_threads: args.num_jobs,
 		verbose_output: args.verbose,
 		output_modules: Mutex::new(vec![]),
-		error_count: AtomicU32::new(0),
 		emit_llvm: args.emit_llvm,
 	});
 
 	// Launch multithreaded compilation
 
 	rayon::scope(|s| {
-		match modules::launch_module_compilation(
+		let _ = modules::launch_module_compilation(
 			manager_state.clone(),
 			Identifier::from_name(args.input_file.clone().to_string_lossy().to_string()),
 			s,
-		) {
-			Ok(_) => {},
-			Err(_) => {
-				println!(
-					"{:>10} build due to {} errors\n",
-					"aborted".bold().red(), manager_state.error_count.load(Ordering::Acquire)
-				);
-			}
-		}
+		);
 	});
 
-	if manager_state.error_count.load(Ordering::Acquire) > 0 {
+	if errors::ERROR_COUNT.load(Ordering::Acquire) > 0 {
+		println!(
+			"{:>10} build due to {} errors\n",
+			"aborted".bold().red(), errors::ERROR_COUNT.load(Ordering::Acquire)
+		);
 		return Ok(());
 	}
 

@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::sync::atomic::AtomicU32;
 use std::sync::{Arc, RwLock};
 
 use crate::constexpr::ConstExpr;
