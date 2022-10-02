@@ -8,7 +8,7 @@ use types::{Basic, Type, TypeDef, Typed};
 
 use crate::{
 	constexpr::{ConstEval, ConstExpr},
-	errors::{CMNErrorCode, CMNError},
+	errors::{CMNError, CMNErrorCode},
 	lexer::Token,
 	parser::{ASTResult, ParseResult},
 };
@@ -307,7 +307,9 @@ pub fn resolve_type(
 			if found {
 				Ok(())
 			} else {
-				Err(CMNError::new(CMNErrorCode::UnresolvedTypename(id.to_string())))
+				Err(CMNError::new(CMNErrorCode::UnresolvedTypename(
+					id.to_string(),
+				)))
 			}
 		}
 
@@ -879,20 +881,19 @@ impl Expr {
 
 			Expr::Cons(op, elems, _) => match op {
 				// Only these operators can result in lvalues
-				Operator::Deref => return match elems[0].0.validate(scope, None, meta).unwrap() {
-					Type::Pointer(t) => Ok(*t),
-					_ => Err((CMNError::new(CMNErrorCode::NonPtrDeref), meta)),
-				},
+				Operator::Deref => {
+					return match elems[0].0.validate(scope, None, meta).unwrap() {
+						Type::Pointer(t) => Ok(*t),
+						_ => Err((CMNError::new(CMNErrorCode::NonPtrDeref), meta)),
+					}
+				}
 
 				Operator::MemberAccess => {
 					if let Type::TypeRef(r, id) = elems[0].0.validate(scope, None, meta).unwrap() {
 						if let (lhs, [rhs, ..]) = elems.split_first_mut().unwrap() {
 							match &mut *r.upgrade().unwrap().write().unwrap() {
-
 								// Dot operator is on an algebraic type, so check if it's a member access or method call
-
 								TypeDef::Algebraic(t) => match &mut rhs.0 {
-									
 									// Member access on algebraic type
 									Expr::Atom(Atom::Identifier(ref mut id), _) => {
 										if let Some((i, m)) = t.get_member(&id.name) {
@@ -944,14 +945,14 @@ impl Expr {
 										}
 									}
 
-									_ => {},
+									_ => {}
 								},
-								_ => {},
+								_ => {}
 							}
 						}
 					}
 				}
-				_ => {},
+				_ => {}
 			},
 		};
 		return Err((CMNError::new(CMNErrorCode::InvalidLValue), meta));
@@ -996,9 +997,12 @@ impl Atom {
 			Atom::BoolLit(_) => Ok(Type::Basic(Basic::BOOL)),
 			Atom::StringLit(_) => Ok(Type::Basic(Basic::STR)),
 
-			Atom::Identifier(name) => scope
-				.resolve_identifier(name)
-				.ok_or_else(|| (CMNError::new(CMNErrorCode::UndeclaredIdentifier(name.to_string())), meta)),
+			Atom::Identifier(name) => scope.resolve_identifier(name).ok_or_else(|| {
+				(
+					CMNError::new(CMNErrorCode::UndeclaredIdentifier(name.to_string())),
+					meta,
+				)
+			}),
 
 			Atom::Cast(a, t) => {
 				if let ASTNode::Expression(expr) = &a.node {
@@ -1033,10 +1037,16 @@ impl Atom {
 						// Identifier is a function, check parameter types
 						validate_fn_call(ret, args, params, scope, meta.clone())
 					} else {
-						Err((CMNError::new(CMNErrorCode::NotCallable(name.to_string())), meta)) // Trying to call a non-function
+						Err((
+							CMNError::new(CMNErrorCode::NotCallable(name.to_string())),
+							meta,
+						)) // Trying to call a non-function
 					}
 				} else {
-					Err((CMNError::new(CMNErrorCode::UndeclaredIdentifier(name.to_string())), meta))
+					Err((
+						CMNError::new(CMNErrorCode::UndeclaredIdentifier(name.to_string())),
+						meta,
+					))
 					// Couldn't find symbol!
 				}
 			}
@@ -1119,7 +1129,10 @@ impl Atom {
 		match self {
 			Atom::Identifier(id) => match scope.find_symbol(id) {
 				Some((_, t)) => return Ok(t),
-				None => Err((CMNError::new(CMNErrorCode::UndeclaredIdentifier(id.to_string())), (0, 0))),
+				None => Err((
+					CMNError::new(CMNErrorCode::UndeclaredIdentifier(id.to_string())),
+					(0, 0),
+				)),
 			},
 			_ => Err((CMNError::new(CMNErrorCode::InvalidLValue), (0, 0))),
 		}

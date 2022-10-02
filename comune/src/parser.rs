@@ -3,7 +3,7 @@ use std::sync::atomic::AtomicU32;
 use std::sync::{Arc, RwLock};
 
 use crate::constexpr::ConstExpr;
-use crate::errors::{CMNErrorCode, CMNError};
+use crate::errors::{CMNError, CMNErrorCode};
 use crate::lexer::{Lexer, Token};
 
 use crate::semantic::ast::{ASTElem, ASTNode, TokenData};
@@ -50,7 +50,6 @@ impl Parser {
 	fn err(&self, code: CMNErrorCode) -> CMNError {
 		CMNError::new_with_parser(code, self)
 	}
-
 
 	fn get_current(&self) -> ParseResult<Token> {
 		match self.lexer.borrow().current() {
@@ -241,7 +240,11 @@ impl Parser {
 												"protected" => {
 													current_visibility = Visibility::Protected;
 												}
-												_ => return Err(self.err(CMNErrorCode::UnexpectedKeyword)),
+												_ => {
+													return Err(
+														self.err(CMNErrorCode::UnexpectedKeyword)
+													)
+												}
 											}
 											self.get_next()?;
 											next = self.get_next()?;

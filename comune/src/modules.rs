@@ -4,7 +4,7 @@ use std::{
 	ffi::{OsStr, OsString},
 	fs,
 	path::{Path, PathBuf},
-	sync::{Arc, Mutex, atomic::AtomicU32},
+	sync::{atomic::AtomicU32, Arc, Mutex},
 };
 
 use colored::Colorize;
@@ -12,7 +12,7 @@ use inkwell::{context::Context, targets::FileType};
 use rayon::prelude::*;
 
 use crate::{
-	errors::{CMNErrorCode, CMNMessage, CMNError},
+	errors::{CMNError, CMNErrorCode, CMNMessage},
 	lexer::Lexer,
 	llvm::{self, LLVMBackend},
 	parser::{ASTResult, Parser},
@@ -92,7 +92,7 @@ pub fn launch_module_compilation<'scope>(
 		target_machine
 			.write_to_file(&result.module, FileType::Object, &out_path)
 			.unwrap();
-			
+
 		println!(
 			"{:>10} {}",
 			"finished".bold().green(),

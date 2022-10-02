@@ -8,7 +8,10 @@ use std::{
 
 use mangling::mangle;
 
-use crate::{errors::{CMNErrorCode, CMNError}, parser::ParseResult};
+use crate::{
+	errors::{CMNError, CMNErrorCode},
+	parser::ParseResult,
+};
 
 use super::{
 	ast::ASTElem,

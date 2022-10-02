@@ -1,13 +1,20 @@
-use std::{ffi::OsString, fmt::Display, sync::{Arc, atomic::{AtomicU32, Ordering}}};
+use std::{
+	ffi::OsString,
+	fmt::Display,
+	sync::{
+		atomic::{AtomicU32, Ordering},
+		Arc,
+	},
+};
 
 use backtrace::Backtrace;
 use lazy_static::lazy_static;
 
 use super::types::Type;
-use crate::{semantic::expression::Operator, parser::Parser};
+use crate::{parser::Parser, semantic::expression::Operator};
 
-lazy_static!{
-pub(crate) static ref ERROR_COUNT: Arc<AtomicU32> = Arc::new(AtomicU32::new(0));
+lazy_static! {
+	pub(crate) static ref ERROR_COUNT: Arc<AtomicU32> = Arc::new(AtomicU32::new(0));
 }
 
 #[derive(Debug, Clone)]
@@ -19,15 +26,20 @@ pub struct CMNError {
 impl CMNError {
 	pub fn new(code: CMNErrorCode) -> Self {
 		ERROR_COUNT.fetch_add(1, Ordering::Acquire);
-		CMNError { code, origin: Backtrace::new() }
+		CMNError {
+			code,
+			origin: Backtrace::new(),
+		}
 	}
 
 	pub fn new_with_parser(code: CMNErrorCode, _parser: &Parser) -> Self {
 		ERROR_COUNT.fetch_add(1, Ordering::Acquire);
-		CMNError { code, origin: Backtrace::new() }
+		CMNError {
+			code,
+			origin: Backtrace::new(),
+		}
 	}
 }
-
 
 #[derive(Debug, Clone)]
 pub enum CMNMessage {
@@ -113,7 +125,9 @@ impl Display for CMNErrorCode {
 				"cannot assign value of type {} to variable of type {}",
 				expr, to
 			),
-			CMNErrorCode::InvalidCast { from, to } => write!(f, "cannot cast from {} to {}", from, to),
+			CMNErrorCode::InvalidCast { from, to } => {
+				write!(f, "cannot cast from {} to {}", from, to)
+			}
 			CMNErrorCode::InvalidCoercion { from, to } => {
 				write!(f, "cannot coerce from {} to {}", from, to)
 			}
@@ -135,7 +149,9 @@ impl Display for CMNErrorCode {
 			CMNErrorCode::NonPtrDeref => write!(f, "attempt to dereference a non-pointer value"),
 			CMNErrorCode::InfiniteSizeType => write!(f, "cyclical type dependency found"),
 
-			CMNErrorCode::ModuleNotFound(m) => write!(f, "module not found: {}", m.to_string_lossy()),
+			CMNErrorCode::ModuleNotFound(m) => {
+				write!(f, "module not found: {}", m.to_string_lossy())
+			}
 
 			CMNErrorCode::LLVMError => write!(f, "an internal compiler error occurred"),
 

@@ -13,7 +13,7 @@ use std::process::Command;
 use std::{
 	ffi::OsString,
 	io::{self, Write},
-	sync::{Arc, Mutex, atomic::Ordering},
+	sync::{atomic::Ordering, Arc, Mutex},
 	time::Instant,
 };
 
@@ -39,7 +39,7 @@ fn main() -> color_eyre::eyre::Result<()> {
 
 	let args = ComuneCLI::parse();
 	let build_time = Instant::now();
-	
+
 	if args.input_file.is_empty() {
 		println!("{} {}", "fatal:".red().bold(), "no input module");
 		return Ok(());
@@ -71,8 +71,9 @@ fn main() -> color_eyre::eyre::Result<()> {
 
 	if errors::ERROR_COUNT.load(Ordering::Acquire) > 0 {
 		println!(
-			"{:>10} build due to {} errors\n",
-			"aborted".bold().red(), errors::ERROR_COUNT.load(Ordering::Acquire)
+			"{:>10} build due to {} previous error(s)\n",
+			"aborted".bold().red(),
+			errors::ERROR_COUNT.load(Ordering::Acquire)
 		);
 		return Ok(());
 	}
