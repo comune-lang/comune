@@ -13,7 +13,7 @@ use std::process::Command;
 use std::{
 	ffi::OsString,
 	io::{self, Write},
-	sync::{Arc, Mutex},
+	sync::{Arc, Mutex, atomic::AtomicU32, atomic::Ordering},
 	time::Instant,
 };
 
@@ -39,7 +39,6 @@ fn main() -> color_eyre::eyre::Result<()> {
 
 	let args = ComuneCLI::parse();
 	let build_time = Instant::now();
-	let mut success = false;
 	
 	if args.input_file.is_empty() {
 		println!("{} {}", "fatal:".red().bold(), "no input module");
@@ -57,6 +56,7 @@ fn main() -> color_eyre::eyre::Result<()> {
 		max_threads: args.num_jobs,
 		verbose_output: args.verbose,
 		output_modules: Mutex::new(vec![]),
+		error_count: AtomicU32::new(0),
 		emit_llvm: args.emit_llvm,
 	});
 
@@ -68,17 +68,17 @@ fn main() -> color_eyre::eyre::Result<()> {
 			Identifier::from_name(args.input_file.clone().to_string_lossy().to_string()),
 			s,
 		) {
-			Ok(_) => success = true,
+			Ok(_) => {},
 			Err(_) => {
 				println!(
-					"{:>10} build due to previous errors\n",
-					"aborted".bold().red(),
+					"{:>10} build due to {} errors\n",
+					"aborted".bold().red(), manager_state.error_count.load(Ordering::Acquire)
 				);
 			}
 		}
 	});
 
-	if !success {
+	if manager_state.error_count.load(Ordering::Acquire) > 0 {
 		return Ok(());
 	}
 

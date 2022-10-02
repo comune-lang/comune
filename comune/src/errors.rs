@@ -5,13 +5,13 @@ use crate::semantic::expression::Operator;
 
 #[derive(Debug, Clone)]
 pub enum CMNMessage {
-	Error(CMNError),
+	Error(CMNErrorCode),
 	Warning(CMNWarning),
 }
 
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
-pub enum CMNError {
+pub enum CMNErrorCode {
 	// Not really used in Results but i don't want an error code 0
 	OK,
 
@@ -64,55 +64,55 @@ impl Display for CMNMessage {
 	}
 }
 
-impl Display for CMNError {
+impl Display for CMNErrorCode {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match self {
-			CMNError::OK => write!(f, "ok (how did you trigger this error???)"),
-			CMNError::UnexpectedEOF => write!(f, "unexpected end of file"),
-			CMNError::UnexpectedToken => write!(f, "unexpected token"),
-			CMNError::UnexpectedKeyword => write!(f, "unexpected keyword"),
-			CMNError::ExpectedIdentifier => write!(f, "expected identifier"),
-			CMNError::InvalidSuffix => write!(f, "invalid suffix"),
+			CMNErrorCode::OK => write!(f, "ok (how did you trigger this error???)"),
+			CMNErrorCode::UnexpectedEOF => write!(f, "unexpected end of file"),
+			CMNErrorCode::UnexpectedToken => write!(f, "unexpected token"),
+			CMNErrorCode::UnexpectedKeyword => write!(f, "unexpected keyword"),
+			CMNErrorCode::ExpectedIdentifier => write!(f, "expected identifier"),
+			CMNErrorCode::InvalidSuffix => write!(f, "invalid suffix"),
 
-			CMNError::UndeclaredIdentifier(id) => write!(f, "undeclared identifier `{}`", id),
-			CMNError::UnresolvedTypename(id) => write!(f, "unresolved typename `{}`", id),
-			CMNError::ExprTypeMismatch(a, b, op) => write!(
+			CMNErrorCode::UndeclaredIdentifier(id) => write!(f, "undeclared identifier `{}`", id),
+			CMNErrorCode::UnresolvedTypename(id) => write!(f, "unresolved typename `{}`", id),
+			CMNErrorCode::ExprTypeMismatch(a, b, op) => write!(
 				f,
 				"type mismatch; cannot apply operator {:?} to {} and {}",
 				op, a, b
 			),
-			CMNError::AssignTypeMismatch { expr, to } => write!(
+			CMNErrorCode::AssignTypeMismatch { expr, to } => write!(
 				f,
 				"cannot assign value of type {} to variable of type {}",
 				expr, to
 			),
-			CMNError::InvalidCast { from, to } => write!(f, "cannot cast from {} to {}", from, to),
-			CMNError::InvalidCoercion { from, to } => {
+			CMNErrorCode::InvalidCast { from, to } => write!(f, "cannot cast from {} to {}", from, to),
+			CMNErrorCode::InvalidCoercion { from, to } => {
 				write!(f, "cannot coerce from {} to {}", from, to)
 			}
-			CMNError::ReturnTypeMismatch { expected, got } => write!(
+			CMNErrorCode::ReturnTypeMismatch { expected, got } => write!(
 				f,
 				"return type mismatch; expected {}, got {}",
 				expected, got
 			),
-			CMNError::ParamCountMismatch { expected, got } => write!(
+			CMNErrorCode::ParamCountMismatch { expected, got } => write!(
 				f,
 				"parameter count mismatch; expected {}, got {}",
 				expected, got
 			),
-			CMNError::InvalidMemberAccess { t, idx } => {
+			CMNErrorCode::InvalidMemberAccess { t, idx } => {
 				write!(f, "variable of type {} has no member '{}'", t, idx)
 			}
-			CMNError::NotCallable(id) => write!(f, "{} is not callable", id),
-			CMNError::NonPtrDeref => write!(f, "attempt to dereference a non-pointer value"),
-			CMNError::InfiniteSizeType => write!(f, "cyclical type dependency found"),
+			CMNErrorCode::NotCallable(id) => write!(f, "{} is not callable", id),
+			CMNErrorCode::NonPtrDeref => write!(f, "attempt to dereference a non-pointer value"),
+			CMNErrorCode::InfiniteSizeType => write!(f, "cyclical type dependency found"),
 
-			CMNError::ModuleNotFound(m) => write!(f, "module not found: {}", m.to_string_lossy()),
+			CMNErrorCode::ModuleNotFound(m) => write!(f, "module not found: {}", m.to_string_lossy()),
 
-			CMNError::LLVMError => write!(f, "an internal compiler error occurred"),
+			CMNErrorCode::LLVMError => write!(f, "an internal compiler error occurred"),
 
-			CMNError::Unimplemented => write!(f, "not yet implemented"),
-			CMNError::Other => write!(f, "an unknown error occurred"),
+			CMNErrorCode::Unimplemented => write!(f, "not yet implemented"),
+			CMNErrorCode::Other => write!(f, "an unknown error occurred"),
 		}
 	}
 }
@@ -138,7 +138,7 @@ impl CMNMessage {
 	}
 }
 
-impl CMNError {
+impl CMNErrorCode {
 	pub fn get_notes(&self) -> Vec<String> {
 		match self {
 			_ => vec![],

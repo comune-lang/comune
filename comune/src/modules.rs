@@ -4,7 +4,7 @@ use std::{
 	ffi::{OsStr, OsString},
 	fs,
 	path::{Path, PathBuf},
-	sync::{Arc, Mutex},
+	sync::{Arc, Mutex, atomic::AtomicU32},
 };
 
 use colored::Colorize;
@@ -12,7 +12,7 @@ use inkwell::{context::Context, targets::FileType};
 use rayon::prelude::*;
 
 use crate::{
-	errors::{CMNError, CMNMessage},
+	errors::{CMNErrorCode, CMNMessage},
 	lexer::Lexer,
 	llvm::{self, LLVMBackend},
 	parser::{ASTResult, Parser},
@@ -28,6 +28,7 @@ pub struct ManagerState {
 	pub max_threads: usize,
 	pub verbose_output: bool,
 	pub output_modules: Mutex<Vec<PathBuf>>,
+	pub error_count: AtomicU32,
 	pub emit_llvm: bool,
 }
 
@@ -42,7 +43,7 @@ pub fn launch_module_compilation<'scope>(
 	state: Arc<ManagerState>,
 	input_module: Identifier,
 	s: &rayon::Scope<'scope>,
-) -> Result<Namespace, CMNError> {
+) -> Result<Namespace, CMNErrorCode> {
 	let src_path = get_module_source_path(&state, &input_module);
 	let out_path = get_module_out_path(&state, &input_module, None);
 	state.output_modules.lock().unwrap().push(out_path.clone());
@@ -92,6 +93,7 @@ pub fn launch_module_compilation<'scope>(
 		target_machine
 			.write_to_file(&result.module, FileType::Object, &out_path)
 			.unwrap();
+			
 		println!(
 			"{:>10} {}",
 			"finished".bold().green(),
@@ -146,7 +148,7 @@ pub fn get_out_folder(state: &Arc<ManagerState>) -> PathBuf {
 	result
 }
 
-pub fn parse_interface(state: &Arc<ManagerState>, path: &Path) -> Result<ModuleState, CMNError> {
+pub fn parse_interface(state: &Arc<ManagerState>, path: &Path) -> Result<ModuleState, CMNErrorCode> {
 	// First phase of module compilation: create Lexer and Parser, and parse the module at the namespace level
 
 	let mut mod_state = ModuleState {
@@ -161,7 +163,7 @@ pub fn parse_interface(state: &Arc<ManagerState>, path: &Path) -> Result<ModuleS
 						path.file_name().unwrap().to_string_lossy(),
 						e
 					);
-					return Err(CMNError::ModuleNotFound(OsString::from(
+					return Err(CMNErrorCode::ModuleNotFound(OsString::from(
 						path.file_name().unwrap(),
 					)));
 				}
@@ -222,7 +224,7 @@ pub fn generate_code<'ctx>(
 	state: &Arc<ManagerState>,
 	mod_state: &mut ModuleState,
 	context: &'ctx Context,
-) -> Result<LLVMBackend<'ctx>, CMNError> {
+) -> Result<LLVMBackend<'ctx>, CMNErrorCode> {
 	// Generate AST
 
 	let namespace = match mod_state.parser.generate_ast() {
@@ -293,7 +295,7 @@ pub fn generate_code<'ctx>(
 		// Output bogus LLVM here, for debugging purposes
 		backend.module.print_to_file("bogus.ll").unwrap();
 
-		return Err(CMNError::LLVMError);
+		return Err(CMNErrorCode::LLVMError);
 	};
 
 	// Optimization passes

@@ -8,7 +8,7 @@ use types::{Basic, Type, TypeDef, Typed};
 
 use crate::{
 	constexpr::{ConstEval, ConstExpr},
-	errors::CMNError,
+	errors::CMNErrorCode,
 	lexer::Token,
 	parser::{ASTResult, ParseResult},
 };
@@ -166,7 +166,7 @@ pub fn validate_function(
 			if ret != void {
 				// No returns in non-void function
 				return Err((
-					CMNError::ReturnTypeMismatch {
+					CMNErrorCode::ReturnTypeMismatch {
 						expected: ret.clone(),
 						got: void,
 					},
@@ -184,7 +184,7 @@ pub fn validate_function(
 			}
 		} else if ret_type.is_some() && !ret_type.as_ref().unwrap().castable_to(&ret) {
 			return Err((
-				CMNError::ReturnTypeMismatch {
+				CMNErrorCode::ReturnTypeMismatch {
 					expected: ret.clone(),
 					got: ret_type.unwrap(),
 				},
@@ -216,7 +216,7 @@ pub fn validate_fn_call(
 				.coercable_to(&arg_type, &params[i].0, scope)
 			{
 				return Err((
-					CMNError::InvalidCoercion {
+					CMNErrorCode::InvalidCoercion {
 						from: arg_type,
 						to: params[i].0.clone(),
 					},
@@ -232,7 +232,7 @@ pub fn validate_fn_call(
 		Ok(ret.clone())
 	} else {
 		Err((
-			CMNError::ParamCountMismatch {
+			CMNErrorCode::ParamCountMismatch {
 				expected: params.len(),
 				got: args.len(),
 			},
@@ -287,7 +287,7 @@ pub fn resolve_type(
 		Type::Array(ref mut pointee, _size) => resolve_type(pointee, namespace, root),
 
 		Type::Unresolved(ref id) => {
-			let mut result = Err(CMNError::UnresolvedTypename(id.to_string()));
+			let mut result = Err(CMNErrorCode::UnresolvedTypename(id.to_string()));
 
 			if let Some(b) = Basic::get_basic_type(&id.name) {
 				if id.path.scopes.is_empty() {
@@ -331,13 +331,13 @@ pub fn resolve_type_def(
 
 			if let Some(layout) = get_attribute(attributes, "layout") {
 				if layout.args.len() != 1 {
-					return Err(CMNError::ParamCountMismatch {
+					return Err(CMNErrorCode::ParamCountMismatch {
 						expected: 1,
 						got: layout.args.len(),
 					});
 				}
 				if layout.args[0].len() != 1 {
-					return Err(CMNError::ParamCountMismatch {
+					return Err(CMNErrorCode::ParamCountMismatch {
 						expected: 1,
 						got: layout.args[0].len(),
 					});
@@ -348,7 +348,7 @@ pub fn resolve_type_def(
 						"declared" => types::DataLayout::Declared,
 						"optimized" => types::DataLayout::Optimized,
 						"packed" => types::DataLayout::Packed,
-						_ => return Err(CMNError::UnexpectedToken),
+						_ => return Err(CMNErrorCode::UnexpectedToken),
 					}
 				}
 			}
@@ -417,7 +417,7 @@ pub fn check_cyclical_deps(
 							.find(|elem| Arc::ptr_eq(elem, &ref_t.upgrade().unwrap()))
 							.is_some()
 						{
-							return Err((CMNError::InfiniteSizeType, (0, 0)));
+							return Err((CMNErrorCode::InfiniteSizeType, (0, 0)));
 						}
 
 						parent_types.push(ty.clone());
@@ -576,7 +576,7 @@ impl ASTElem {
 							expr.wrap_expr_in_cast(Some(expr_type), t.clone());
 						} else {
 							return Err((
-								CMNError::AssignTypeMismatch {
+								CMNErrorCode::AssignTypeMismatch {
 									expr: expr_type,
 									to: t.clone(),
 								},
@@ -606,7 +606,7 @@ impl ASTElem {
 							cond.wrap_expr_in_cast(Some(cond_type), bool_t);
 						} else {
 							return Err((
-								CMNError::InvalidCast {
+								CMNErrorCode::InvalidCast {
 									from: cond_type,
 									to: bool_t,
 								},
@@ -634,7 +634,7 @@ impl ASTElem {
 							cond.wrap_expr_in_cast(Some(cond_type), bool_t);
 						} else {
 							return Err((
-								CMNError::InvalidCast {
+								CMNErrorCode::InvalidCast {
 									from: cond_type,
 									to: bool_t,
 								},
@@ -671,7 +671,7 @@ impl ASTElem {
 								cond.wrap_expr_in_cast(Some(cond_type), bool_t);
 							} else {
 								return Err((
-									CMNError::InvalidCast {
+									CMNErrorCode::InvalidCast {
 										from: cond_type,
 										to: bool_t,
 									},
@@ -705,7 +705,7 @@ impl ASTElem {
 								Ok(Some(ret.clone()))
 							} else {
 								Err((
-									CMNError::ReturnTypeMismatch {
+									CMNErrorCode::ReturnTypeMismatch {
 										expected: ret.clone(),
 										got: t,
 									},
@@ -763,7 +763,7 @@ impl Expr {
 					Operator::MemberAccess => {
 						let meta = meta.clone();
 						self.validate_lvalue(scope, meta)
-							.ok_or((CMNError::ExpectedIdentifier, meta))
+							.ok_or((CMNErrorCode::ExpectedIdentifier, meta))
 					}
 
 					// General case for unary & binary expressions
@@ -779,7 +779,7 @@ impl Expr {
 
 							if first_t != *second_t.as_ref().unwrap() {
 								return Err((
-									CMNError::ExprTypeMismatch(
+									CMNErrorCode::ExprTypeMismatch(
 										first_t,
 										second_t.unwrap(),
 										op.clone(),
@@ -796,7 +796,7 @@ impl Expr {
 
 							Operator::Deref => match first_t {
 								Type::Pointer(t) => Ok(*t.clone()),
-								_ => return Err((CMNError::NonPtrDeref, *meta)),
+								_ => return Err((CMNErrorCode::NonPtrDeref, *meta)),
 							},
 
 							Operator::Eq
@@ -1002,7 +1002,7 @@ impl Atom {
 
 			Atom::Identifier(name) => scope
 				.resolve_identifier(name)
-				.ok_or((CMNError::UndeclaredIdentifier(name.to_string()), meta)),
+				.ok_or((CMNErrorCode::UndeclaredIdentifier(name.to_string()), meta)),
 
 			Atom::Cast(a, t) => {
 				if let ASTNode::Expression(expr) = &a.node {
@@ -1017,7 +1017,7 @@ impl Atom {
 						Ok(t.clone())
 					} else {
 						Err((
-							CMNError::InvalidCast {
+							CMNErrorCode::InvalidCast {
 								from: a_t,
 								to: t.clone(),
 							},
@@ -1037,10 +1037,10 @@ impl Atom {
 						// Identifier is a function, check parameter types
 						validate_fn_call(ret, args, params, scope, meta.clone())
 					} else {
-						Err((CMNError::NotCallable(name.to_string()), meta)) // Trying to call a non-function
+						Err((CMNErrorCode::NotCallable(name.to_string()), meta)) // Trying to call a non-function
 					}
 				} else {
-					Err((CMNError::UndeclaredIdentifier(name.to_string()), meta))
+					Err((CMNErrorCode::UndeclaredIdentifier(name.to_string()), meta))
 					// Couldn't find symbol!
 				}
 			}
@@ -1064,7 +1064,7 @@ impl Atom {
 
 							if !elem.1.borrow().coercable_to(&expr_ty, member_ty, scope) {
 								return Err((
-									CMNError::AssignTypeMismatch {
+									CMNErrorCode::AssignTypeMismatch {
 										expr: expr_ty,
 										to: member_ty.clone(),
 									},
