@@ -8,7 +8,7 @@ use std::{
 
 use mangling::mangle;
 
-use crate::{errors::CMNErrorCode, parser::ParseResult};
+use crate::{errors::{CMNErrorCode, CMNError}, parser::ParseResult};
 
 use super::{
 	ast::ASTElem,
@@ -38,7 +38,7 @@ impl Identifier {
 		if self.path.scopes.is_empty() && !self.path.absolute {
 			Ok(self.name.clone())
 		} else {
-			Err(CMNErrorCode::ExpectedIdentifier) // TODO: Give appropriate error
+			Err(CMNError::new(CMNErrorCode::ExpectedIdentifier)) // TODO: Give appropriate error
 		}
 	}
 }

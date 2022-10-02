@@ -8,7 +8,7 @@ use types::{Basic, Type, TypeDef, Typed};
 
 use crate::{
 	constexpr::{ConstEval, ConstExpr},
-	errors::CMNErrorCode,
+	errors::{CMNErrorCode, CMNError},
 	lexer::Token,
 	parser::{ASTResult, ParseResult},
 };
@@ -166,10 +166,10 @@ pub fn validate_function(
 			if ret != void {
 				// No returns in non-void function
 				return Err((
-					CMNErrorCode::ReturnTypeMismatch {
+					CMNError::new(CMNErrorCode::ReturnTypeMismatch {
 						expected: ret.clone(),
 						got: void,
-					},
+					}),
 					elem.token_data,
 				));
 			} else {
@@ -184,10 +184,10 @@ pub fn validate_function(
 			}
 		} else if ret_type.is_some() && !ret_type.as_ref().unwrap().castable_to(&ret) {
 			return Err((
-				CMNErrorCode::ReturnTypeMismatch {
+				CMNError::new(CMNErrorCode::ReturnTypeMismatch {
 					expected: ret.clone(),
 					got: ret_type.unwrap(),
-				},
+				}),
 				elem.token_data,
 			));
 		}
@@ -216,10 +216,10 @@ pub fn validate_fn_call(
 				.coercable_to(&arg_type, &params[i].0, scope)
 			{
 				return Err((
-					CMNErrorCode::InvalidCoercion {
+					CMNError::new(CMNErrorCode::InvalidCoercion {
 						from: arg_type,
 						to: params[i].0.clone(),
-					},
+					}),
 					args[i].token_data,
 				));
 			}
@@ -232,10 +232,10 @@ pub fn validate_fn_call(
 		Ok(ret.clone())
 	} else {
 		Err((
-			CMNErrorCode::ParamCountMismatch {
+			CMNError::new(CMNErrorCode::ParamCountMismatch {
 				expected: params.len(),
 				got: args.len(),
-			},
+			}),
 			meta,
 		))
 	}
@@ -287,7 +287,7 @@ pub fn resolve_type(
 		Type::Array(ref mut pointee, _size) => resolve_type(pointee, namespace, root),
 
 		Type::Unresolved(ref id) => {
-			let mut result = Err(CMNErrorCode::UnresolvedTypename(id.to_string()));
+			let mut result = Err(CMNError::new(CMNErrorCode::UnresolvedTypename(id.to_string())));
 
 			if let Some(b) = Basic::get_basic_type(&id.name) {
 				if id.path.scopes.is_empty() {
@@ -331,16 +331,16 @@ pub fn resolve_type_def(
 
 			if let Some(layout) = get_attribute(attributes, "layout") {
 				if layout.args.len() != 1 {
-					return Err(CMNErrorCode::ParamCountMismatch {
+					return Err(CMNError::new(CMNErrorCode::ParamCountMismatch {
 						expected: 1,
 						got: layout.args.len(),
-					});
+					}));
 				}
 				if layout.args[0].len() != 1 {
-					return Err(CMNErrorCode::ParamCountMismatch {
+					return Err(CMNError::new(CMNErrorCode::ParamCountMismatch {
 						expected: 1,
 						got: layout.args[0].len(),
-					});
+					}));
 				}
 
 				if let Token::Identifier(layout_name) = &layout.args[0][0] {
@@ -348,7 +348,7 @@ pub fn resolve_type_def(
 						"declared" => types::DataLayout::Declared,
 						"optimized" => types::DataLayout::Optimized,
 						"packed" => types::DataLayout::Packed,
-						_ => return Err(CMNErrorCode::UnexpectedToken),
+						_ => return Err(CMNError::new(CMNErrorCode::UnexpectedToken)),
 					}
 				}
 			}
@@ -417,7 +417,7 @@ pub fn check_cyclical_deps(
 							.find(|elem| Arc::ptr_eq(elem, &ref_t.upgrade().unwrap()))
 							.is_some()
 						{
-							return Err((CMNErrorCode::InfiniteSizeType, (0, 0)));
+							return Err((CMNError::new(CMNErrorCode::InfiniteSizeType), (0, 0)));
 						}
 
 						parent_types.push(ty.clone());
@@ -576,10 +576,10 @@ impl ASTElem {
 							expr.wrap_expr_in_cast(Some(expr_type), t.clone());
 						} else {
 							return Err((
-								CMNErrorCode::AssignTypeMismatch {
+								CMNError::new(CMNErrorCode::AssignTypeMismatch {
 									expr: expr_type,
 									to: t.clone(),
-								},
+								}),
 								self.token_data,
 							));
 						}
@@ -606,10 +606,10 @@ impl ASTElem {
 							cond.wrap_expr_in_cast(Some(cond_type), bool_t);
 						} else {
 							return Err((
-								CMNErrorCode::InvalidCast {
+								CMNError::new(CMNErrorCode::InvalidCast {
 									from: cond_type,
 									to: bool_t,
-								},
+								}),
 								self.token_data,
 							));
 						}
@@ -634,10 +634,10 @@ impl ASTElem {
 							cond.wrap_expr_in_cast(Some(cond_type), bool_t);
 						} else {
 							return Err((
-								CMNErrorCode::InvalidCast {
+								CMNError::new(CMNErrorCode::InvalidCast {
 									from: cond_type,
 									to: bool_t,
-								},
+								}),
 								self.token_data,
 							));
 						}
@@ -671,10 +671,10 @@ impl ASTElem {
 								cond.wrap_expr_in_cast(Some(cond_type), bool_t);
 							} else {
 								return Err((
-									CMNErrorCode::InvalidCast {
+									CMNError::new(CMNErrorCode::InvalidCast {
 										from: cond_type,
 										to: bool_t,
-									},
+									}),
 									self.token_data,
 								));
 							}
@@ -705,10 +705,10 @@ impl ASTElem {
 								Ok(Some(ret.clone()))
 							} else {
 								Err((
-									CMNErrorCode::ReturnTypeMismatch {
+									CMNError::new(CMNErrorCode::ReturnTypeMismatch {
 										expected: ret.clone(),
 										got: t,
-									},
+									}),
 									self.token_data,
 								))
 							}
@@ -763,7 +763,7 @@ impl Expr {
 					Operator::MemberAccess => {
 						let meta = meta.clone();
 						self.validate_lvalue(scope, meta)
-							.ok_or((CMNErrorCode::ExpectedIdentifier, meta))
+							.ok_or((CMNError::new(CMNErrorCode::ExpectedIdentifier), meta))
 					}
 
 					// General case for unary & binary expressions
@@ -779,11 +779,11 @@ impl Expr {
 
 							if first_t != *second_t.as_ref().unwrap() {
 								return Err((
-									CMNErrorCode::ExprTypeMismatch(
+									CMNError::new(CMNErrorCode::ExprTypeMismatch(
 										first_t,
 										second_t.unwrap(),
 										op.clone(),
-									),
+									)),
 									*meta,
 								));
 							}
@@ -796,7 +796,7 @@ impl Expr {
 
 							Operator::Deref => match first_t {
 								Type::Pointer(t) => Ok(*t.clone()),
-								_ => return Err((CMNErrorCode::NonPtrDeref, *meta)),
+								_ => return Err((CMNError::new(CMNErrorCode::NonPtrDeref), *meta)),
 							},
 
 							Operator::Eq
@@ -1002,7 +1002,7 @@ impl Atom {
 
 			Atom::Identifier(name) => scope
 				.resolve_identifier(name)
-				.ok_or((CMNErrorCode::UndeclaredIdentifier(name.to_string()), meta)),
+				.ok_or((CMNError::new(CMNErrorCode::UndeclaredIdentifier(name.to_string())), meta)),
 
 			Atom::Cast(a, t) => {
 				if let ASTNode::Expression(expr) = &a.node {
@@ -1017,10 +1017,10 @@ impl Atom {
 						Ok(t.clone())
 					} else {
 						Err((
-							CMNErrorCode::InvalidCast {
+							CMNError::new(CMNErrorCode::InvalidCast {
 								from: a_t,
 								to: t.clone(),
-							},
+							}),
 							meta,
 						))
 					}
@@ -1037,10 +1037,10 @@ impl Atom {
 						// Identifier is a function, check parameter types
 						validate_fn_call(ret, args, params, scope, meta.clone())
 					} else {
-						Err((CMNErrorCode::NotCallable(name.to_string()), meta)) // Trying to call a non-function
+						Err((CMNError::new(CMNErrorCode::NotCallable(name.to_string())), meta)) // Trying to call a non-function
 					}
 				} else {
-					Err((CMNErrorCode::UndeclaredIdentifier(name.to_string()), meta))
+					Err((CMNError::new(CMNErrorCode::UndeclaredIdentifier(name.to_string())), meta))
 					// Couldn't find symbol!
 				}
 			}
@@ -1064,10 +1064,10 @@ impl Atom {
 
 							if !elem.1.borrow().coercable_to(&expr_ty, member_ty, scope) {
 								return Err((
-									CMNErrorCode::AssignTypeMismatch {
+									CMNError::new(CMNErrorCode::AssignTypeMismatch {
 										expr: expr_ty,
 										to: member_ty.clone(),
-									},
+									}),
 									elem.2,
 								));
 							}

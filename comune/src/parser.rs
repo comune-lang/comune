@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::sync::{Arc, RwLock};
 
 use crate::constexpr::ConstExpr;
-use crate::errors::CMNErrorCode;
+use crate::errors::{CMNErrorCode, CMNError};
 use crate::lexer::{Lexer, Token};
 
 use crate::semantic::ast::{ASTElem, ASTNode, TokenData};
@@ -24,8 +24,8 @@ fn token_compare(token: &Token, text: &str) -> bool {
 	}
 }
 
-pub type ParseResult<T> = Result<T, CMNErrorCode>;
-pub type ASTResult<T> = Result<T, (CMNErrorCode, TokenData)>;
+pub type ParseResult<T> = Result<T, CMNError>;
+pub type ASTResult<T> = Result<T, (CMNError, TokenData)>;
 
 pub struct Parser {
 	active_namespace: Option<RefCell<Namespace>>,
@@ -46,17 +46,22 @@ impl Parser {
 		result
 	}
 
+	fn err(&self, code: CMNErrorCode) -> CMNError {
+		CMNError::new_with_parser(code, self)
+	}
+
+
 	fn get_current(&self) -> ParseResult<Token> {
 		match self.lexer.borrow().current() {
 			Some((_, tk)) => Ok(tk.clone()),
-			None => Err(CMNErrorCode::UnexpectedEOF),
+			None => Err(self.err(CMNErrorCode::UnexpectedEOF)),
 		}
 	}
 
 	fn get_next(&self) -> ParseResult<Token> {
 		match self.lexer.borrow_mut().next() {
 			Some((_, tk)) => Ok(tk.clone()),
-			None => Err(CMNErrorCode::UnexpectedEOF),
+			None => Err(self.err(CMNErrorCode::UnexpectedEOF)),
 		}
 	}
 
@@ -155,7 +160,7 @@ impl Parser {
 		while current != Token::EOF && current != Token::Other('}') {
 			match current {
 				Token::EOF => {
-					return Err(CMNErrorCode::UnexpectedEOF);
+					return Err(self.err(CMNErrorCode::UnexpectedEOF));
 				}
 
 				Token::Other(tk) => {
@@ -174,7 +179,7 @@ impl Parser {
 						}
 
 						_ => {
-							return Err(CMNErrorCode::UnexpectedToken);
+							return Err(self.err(CMNErrorCode::UnexpectedToken));
 						}
 					}
 				}
@@ -195,7 +200,7 @@ impl Parser {
 								let mut next = self.get_next()?;
 
 								if !token_compare(&next, "{") {
-									return Err(CMNErrorCode::UnexpectedToken);
+									return Err(self.err(CMNErrorCode::UnexpectedToken));
 								}
 
 								next = self.get_next()?; // Consume brace
@@ -235,13 +240,13 @@ impl Parser {
 												"protected" => {
 													current_visibility = Visibility::Protected;
 												}
-												_ => return Err(CMNErrorCode::UnexpectedKeyword),
+												_ => return Err(self.err(CMNErrorCode::UnexpectedKeyword)),
 											}
 											self.get_next()?;
 											next = self.get_next()?;
 										}
 
-										_ => return Err(CMNErrorCode::ExpectedIdentifier),
+										_ => return Err(self.err(CMNErrorCode::ExpectedIdentifier)),
 									}
 								}
 
@@ -303,7 +308,7 @@ impl Parser {
 
 								current_attributes = vec![];
 							} else {
-								return Err(CMNErrorCode::ExpectedIdentifier);
+								return Err(self.err(CMNErrorCode::ExpectedIdentifier));
 							}
 						}
 
@@ -327,17 +332,17 @@ impl Parser {
 										if let Token::Identifier(id) = self.get_next()? {
 											impl_name = id;
 										} else {
-											return Err(CMNErrorCode::ExpectedIdentifier);
+											return Err(self.err(CMNErrorCode::ExpectedIdentifier));
 										}
 
 										if !token_compare(&self.get_next()?, "{") {
-											return Err(CMNErrorCode::UnexpectedToken);
+											return Err(self.err(CMNErrorCode::UnexpectedToken));
 										}
 
 										self.get_next()?;
 									}
 
-									_ => return Err(CMNErrorCode::UnexpectedToken),
+									_ => return Err(self.err(CMNErrorCode::UnexpectedToken)),
 								}
 
 								let mut current = self.get_current()?;
@@ -351,7 +356,7 @@ impl Parser {
 										if let Token::Identifier(id) = self.get_current()? {
 											id.expect_scopeless()?
 										} else {
-											return Err(CMNErrorCode::ExpectedIdentifier);
+											return Err(self.err(CMNErrorCode::ExpectedIdentifier));
 										};
 
 									self.get_next()?;
@@ -383,7 +388,7 @@ impl Parser {
 
 								self.get_next()?;
 							} else {
-								return Err(CMNErrorCode::ExpectedIdentifier);
+								return Err(self.err(CMNErrorCode::ExpectedIdentifier));
 							}
 						}
 
@@ -397,7 +402,7 @@ impl Parser {
 								self.get_next()?;
 								self.check_semicolon()?;
 							} else {
-								return Err(CMNErrorCode::ExpectedIdentifier);
+								return Err(self.err(CMNErrorCode::ExpectedIdentifier));
 							}
 						}
 
@@ -414,7 +419,7 @@ impl Parser {
 										self.get_next()?;
 										self.check_semicolon()?;
 									} else {
-										return Err(CMNErrorCode::ExpectedIdentifier);
+										return Err(self.err(CMNErrorCode::ExpectedIdentifier));
 									}
 								} else {
 									// No '=' token, just bring the name into scope
@@ -429,7 +434,7 @@ impl Parser {
 						}
 
 						_ => {
-							return Err(CMNErrorCode::UnexpectedToken);
+							return Err(self.err(CMNErrorCode::UnexpectedToken));
 						}
 					}
 				}
@@ -453,7 +458,7 @@ impl Parser {
 
 				_ => {
 					// Other types of tokens (literals etc) not valid at this point
-					return Err(CMNErrorCode::UnexpectedToken);
+					return Err(self.err(CMNErrorCode::UnexpectedToken));
 				}
 			}
 
@@ -464,14 +469,14 @@ impl Parser {
 			if self.root_namespace.is_none() {
 				Ok(())
 			} else {
-				Err(CMNErrorCode::UnexpectedEOF)
+				Err(self.err(CMNErrorCode::UnexpectedEOF))
 			}
 		} else if current == Token::Other('}') {
 			if self.root_namespace.is_some() {
 				self.get_next()?;
 				Ok(())
 			} else {
-				Err(CMNErrorCode::UnexpectedToken)
+				Err(self.err(CMNErrorCode::UnexpectedToken))
 			}
 		} else {
 			self.get_next()?;
@@ -484,7 +489,7 @@ impl Parser {
 		let mut current = self.get_current()?;
 
 		if current != Token::Other('{') {
-			return Err(CMNErrorCode::UnexpectedToken);
+			return Err(self.err(CMNErrorCode::UnexpectedToken));
 		}
 		let mut bracket_depth = 1;
 
@@ -507,7 +512,7 @@ impl Parser {
 		let mut current = self.get_current()?;
 
 		if current != Token::Other('{') {
-			return Err(CMNErrorCode::UnexpectedToken);
+			return Err(self.err(CMNErrorCode::UnexpectedToken));
 		}
 
 		let mut result = Vec::<ASTElem>::new();
@@ -601,7 +606,7 @@ impl Parser {
 						if token_compare(&current, "(") {
 							self.get_next()?;
 						} else {
-							return Err(CMNErrorCode::UnexpectedToken);
+							return Err(self.err(CMNErrorCode::UnexpectedToken));
 						}
 
 						let cond = self.parse_expression()?;
@@ -612,7 +617,7 @@ impl Parser {
 						if token_compare(&current, ")") {
 							self.get_next()?;
 						} else {
-							return Err(CMNErrorCode::UnexpectedToken);
+							return Err(self.err(CMNErrorCode::UnexpectedToken));
 						}
 
 						// Parse body
@@ -655,14 +660,14 @@ impl Parser {
 						if token_compare(&current, "(") {
 							current = self.get_next()?;
 						} else {
-							return Err(CMNErrorCode::UnexpectedToken);
+							return Err(self.err(CMNErrorCode::UnexpectedToken));
 						}
 
 						let cond;
 
 						if token_compare(&current, ")") {
 							// No condtion in while statement!
-							return Err(CMNErrorCode::UnexpectedToken);
+							return Err(self.err(CMNErrorCode::UnexpectedToken));
 						} else {
 							cond = self.parse_expression()?;
 							current = self.get_current()?;
@@ -672,7 +677,7 @@ impl Parser {
 						if token_compare(&current, ")") {
 							current = self.get_next()?;
 						} else {
-							return Err(CMNErrorCode::UnexpectedToken);
+							return Err(self.err(CMNErrorCode::UnexpectedToken));
 						}
 
 						// Parse body
@@ -697,7 +702,7 @@ impl Parser {
 						if token_compare(&current, "(") {
 							current = self.get_next()?;
 						} else {
-							return Err(CMNErrorCode::UnexpectedToken);
+							return Err(self.err(CMNErrorCode::UnexpectedToken));
 						}
 
 						let mut init = None;
@@ -733,7 +738,7 @@ impl Parser {
 						if token_compare(&current, ")") {
 							current = self.get_next()?;
 						} else {
-							return Err(CMNErrorCode::UnexpectedToken);
+							return Err(self.err(CMNErrorCode::UnexpectedToken));
 						}
 
 						// Parse body
@@ -753,7 +758,7 @@ impl Parser {
 					}
 
 					// Invalid keyword at start of statement
-					_ => return Err(CMNErrorCode::UnexpectedKeyword),
+					_ => return Err(self.err(CMNErrorCode::UnexpectedKeyword)),
 				}
 			}
 		}
@@ -780,7 +785,7 @@ impl Parser {
 			self.get_next()?;
 			Ok(())
 		} else {
-			Err(CMNErrorCode::UnexpectedToken)
+			Err(self.err(CMNErrorCode::UnexpectedToken))
 		}
 	}
 
@@ -809,7 +814,7 @@ impl Parser {
 							ast_elem = NamespaceASTElem::NoElem;
 							self.get_next()?;
 						} else {
-							return Err(CMNErrorCode::UnexpectedToken);
+							return Err(self.err(CMNErrorCode::UnexpectedToken));
 						}
 
 						item = NamespaceItem::Function(
@@ -837,7 +842,7 @@ impl Parser {
 					}
 
 					_ => {
-						return Err(CMNErrorCode::UnexpectedToken);
+						return Err(self.err(CMNErrorCode::UnexpectedToken));
 					}
 				}
 			} else {
@@ -849,7 +854,7 @@ impl Parser {
 			// TODO: Figure out what to do if the identifier has scopes
 			Ok((id.name, item))
 		} else {
-			Err(CMNErrorCode::ExpectedIdentifier)
+			Err(self.err(CMNErrorCode::ExpectedIdentifier))
 		}
 	}
 
@@ -894,12 +899,12 @@ impl Parser {
 
 							if let Token::Operator(op) = current {
 								if op != ")" {
-									return Err(CMNErrorCode::UnexpectedToken);
+									return Err(self.err(CMNErrorCode::UnexpectedToken));
 								}
 								self.get_next()?;
 								sub
 							} else {
-								return Err(CMNErrorCode::UnexpectedToken);
+								return Err(self.err(CMNErrorCode::UnexpectedToken));
 							}
 						} else {
 							let rhs = self.parse_expression_bp(op.get_binding_power())?;
@@ -911,12 +916,12 @@ impl Parser {
 						}
 					}
 
-					None => return Err(CMNErrorCode::UnexpectedToken),
+					None => return Err(self.err(CMNErrorCode::UnexpectedToken)),
 				}
 			}
 
 			_ => {
-				return Err(CMNErrorCode::UnexpectedToken);
+				return Err(self.err(CMNErrorCode::UnexpectedToken));
 			}
 		};
 
@@ -1000,7 +1005,7 @@ impl Parser {
 									while next != Token::Other('}') {
 										if let Token::Identifier(member_name) = self.get_next()? {
 											if self.get_next()? != Token::Other(':') {
-												return Err(CMNErrorCode::UnexpectedToken);
+												return Err(self.err(CMNErrorCode::UnexpectedToken));
 											}
 
 											self.get_next()?;
@@ -1016,7 +1021,7 @@ impl Parser {
 												(0, 0),
 											));
 										} else {
-											return Err(CMNErrorCode::UnexpectedToken);
+											return Err(self.err(CMNErrorCode::UnexpectedToken));
 										}
 
 										next = self.get_current()?;
@@ -1030,7 +1035,7 @@ impl Parser {
 									));
 								}
 
-								_ => return Err(CMNErrorCode::UnexpectedToken),
+								_ => return Err(self.err(CMNErrorCode::UnexpectedToken)),
 							}
 						}
 
@@ -1059,7 +1064,7 @@ impl Parser {
 										} else if current == Token::Operator(")") {
 											break;
 										} else {
-											return Err(CMNErrorCode::UnexpectedToken);
+											return Err(self.err(CMNErrorCode::UnexpectedToken));
 										}
 									}
 								}
@@ -1095,7 +1100,7 @@ impl Parser {
 							// Add special numeric suffixes here
 							"f" => Some(Basic::FLOAT { size_bytes: 4 }),
 
-							_ => return Err(CMNErrorCode::InvalidSuffix),
+							_ => return Err(self.err(CMNErrorCode::InvalidSuffix)),
 						};
 					}
 
@@ -1111,7 +1116,7 @@ impl Parser {
 
 			Token::BoolLiteral(b) => result = Some(Atom::BoolLit(b)),
 
-			_ => return Err(CMNErrorCode::UnexpectedToken),
+			_ => return Err(self.err(CMNErrorCode::UnexpectedToken)),
 		};
 
 		Ok(result.unwrap())
@@ -1191,7 +1196,7 @@ impl Parser {
 		if token_compare(&self.get_current()?, "(") {
 			self.get_next()?;
 		} else {
-			return Err(CMNErrorCode::UnexpectedToken);
+			return Err(self.err(CMNErrorCode::UnexpectedToken));
 		}
 
 		while self.is_at_type_token(false)? {
@@ -1218,7 +1223,7 @@ impl Parser {
 				Token::Operator(")") => break,
 
 				_ => {
-					return Err(CMNErrorCode::UnexpectedToken);
+					return Err(self.err(CMNErrorCode::UnexpectedToken));
 				}
 			}
 		}
@@ -1230,10 +1235,10 @@ impl Parser {
 				self.get_next()?;
 				Ok(result)
 			} else {
-				Err(CMNErrorCode::UnexpectedToken)
+				Err(self.err(CMNErrorCode::UnexpectedToken))
 			}
 		} else {
-			Err(CMNErrorCode::UnexpectedToken)
+			Err(self.err(CMNErrorCode::UnexpectedToken))
 		}
 	}
 
@@ -1255,7 +1260,7 @@ impl Parser {
 					"const" => {}
 					"mut" => {}
 					"ref" => {}
-					_ => return Err(CMNErrorCode::UnexpectedKeyword),
+					_ => return Err(self.err(CMNErrorCode::UnexpectedKeyword)),
 				}
 				current = self.get_next()?;
 			}
@@ -1263,7 +1268,7 @@ impl Parser {
 			if let Token::Identifier(id) = current {
 				typename = id;
 			} else {
-				return Err(CMNErrorCode::ExpectedIdentifier);
+				return Err(self.err(CMNErrorCode::ExpectedIdentifier));
 			}
 
 			// Typename
@@ -1293,7 +1298,7 @@ impl Parser {
 				}
 
 				if !found {
-					return Err(CMNErrorCode::UnresolvedTypename(typename.to_string()));
+					return Err(self.err(CMNErrorCode::UnresolvedTypename(typename.to_string())));
 				}
 			} else {
 				result = Type::Unresolved(typename);
@@ -1317,7 +1322,7 @@ impl Parser {
 							let dummy_expr = Expr::Atom(Atom::IntegerLit(0, None), (0, 0));
 
 							if self.get_current()? != Token::Operator("]") {
-								return Err(CMNErrorCode::UnexpectedToken);
+								return Err(self.err(CMNErrorCode::UnexpectedToken));
 							}
 
 							result = Type::Array(
@@ -1345,7 +1350,7 @@ impl Parser {
 
 							// assert token == '>'
 							if self.get_current()? != Token::Operator(">") {
-								return Err(CMNErrorCode::UnexpectedToken);
+								return Err(self.err(CMNErrorCode::UnexpectedToken));
 							}
 							// consume >
 							self.get_next()?;
@@ -1362,13 +1367,13 @@ impl Parser {
 			}
 			Ok(result)
 		} else {
-			Err(CMNErrorCode::ExpectedIdentifier)
+			Err(self.err(CMNErrorCode::ExpectedIdentifier))
 		}
 	}
 
 	fn parse_attribute(&self) -> ParseResult<Attribute> {
 		if !token_compare(&self.get_current()?, "@") {
-			return Err(CMNErrorCode::UnexpectedToken); // You called this from the wrong place lol
+			return Err(self.err(CMNErrorCode::UnexpectedToken)); // You called this from the wrong place lol
 		}
 
 		let name = self.get_next()?;
@@ -1380,7 +1385,7 @@ impl Parser {
 				args: vec![],
 			};
 		} else {
-			return Err(CMNErrorCode::ExpectedIdentifier);
+			return Err(self.err(CMNErrorCode::ExpectedIdentifier));
 		}
 
 		let mut current = self.get_next()?;

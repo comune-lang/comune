@@ -1,11 +1,31 @@
-use std::{ffi::OsString, fmt::Display};
+use std::{ffi::OsString, fmt::Display, sync::Arc};
+
+use backtrace::Backtrace;
 
 use super::types::Type;
-use crate::semantic::expression::Operator;
+use crate::{semantic::expression::Operator, parser::Parser};
+
+
+#[derive(Debug, Clone)]
+pub struct CMNError {
+	pub code: CMNErrorCode,
+	origin: Backtrace,
+}
+
+impl CMNError {
+	pub fn new(code: CMNErrorCode) -> Self {
+		CMNError { code, origin: Backtrace::new() }
+	}
+
+	pub fn new_with_parser(code: CMNErrorCode, _parser: &Parser) -> Self {
+		CMNError { code, origin: Backtrace::new() }
+	}
+}
+
 
 #[derive(Debug, Clone)]
 pub enum CMNMessage {
-	Error(CMNErrorCode),
+	Error(CMNError),
 	Warning(CMNWarning),
 }
 
@@ -58,7 +78,7 @@ pub enum CMNWarning {
 impl Display for CMNMessage {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match self {
-			CMNMessage::Error(e) => e.fmt(f),
+			CMNMessage::Error(e) => e.code.fmt(f),
 			CMNMessage::Warning(w) => w.fmt(f),
 		}
 	}
@@ -132,7 +152,7 @@ impl Display for CMNWarning {
 impl CMNMessage {
 	pub fn get_notes(&self) -> Vec<String> {
 		match self {
-			CMNMessage::Error(e) => e.get_notes(),
+			CMNMessage::Error(e) => e.code.get_notes(),
 			CMNMessage::Warning(w) => w.get_notes(),
 		}
 	}

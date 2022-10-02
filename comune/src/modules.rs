@@ -12,7 +12,7 @@ use inkwell::{context::Context, targets::FileType};
 use rayon::prelude::*;
 
 use crate::{
-	errors::{CMNErrorCode, CMNMessage},
+	errors::{CMNErrorCode, CMNMessage, CMNError},
 	lexer::Lexer,
 	llvm::{self, LLVMBackend},
 	parser::{ASTResult, Parser},
@@ -43,7 +43,7 @@ pub fn launch_module_compilation<'scope>(
 	state: Arc<ManagerState>,
 	input_module: Identifier,
 	s: &rayon::Scope<'scope>,
-) -> Result<Namespace, CMNErrorCode> {
+) -> Result<Namespace, CMNError> {
 	let src_path = get_module_source_path(&state, &input_module);
 	let out_path = get_module_out_path(&state, &input_module, None);
 	state.output_modules.lock().unwrap().push(out_path.clone());
@@ -148,7 +148,7 @@ pub fn get_out_folder(state: &Arc<ManagerState>) -> PathBuf {
 	result
 }
 
-pub fn parse_interface(state: &Arc<ManagerState>, path: &Path) -> Result<ModuleState, CMNErrorCode> {
+pub fn parse_interface(state: &Arc<ManagerState>, path: &Path) -> Result<ModuleState, CMNError> {
 	// First phase of module compilation: create Lexer and Parser, and parse the module at the namespace level
 
 	let mut mod_state = ModuleState {
@@ -163,9 +163,9 @@ pub fn parse_interface(state: &Arc<ManagerState>, path: &Path) -> Result<ModuleS
 						path.file_name().unwrap().to_string_lossy(),
 						e
 					);
-					return Err(CMNErrorCode::ModuleNotFound(OsString::from(
+					return Err(CMNError::new(CMNErrorCode::ModuleNotFound(OsString::from(
 						path.file_name().unwrap(),
-					)));
+					))));
 				}
 			},
 			state.verbose_output,
@@ -224,7 +224,7 @@ pub fn generate_code<'ctx>(
 	state: &Arc<ManagerState>,
 	mod_state: &mut ModuleState,
 	context: &'ctx Context,
-) -> Result<LLVMBackend<'ctx>, CMNErrorCode> {
+) -> Result<LLVMBackend<'ctx>, CMNError> {
 	// Generate AST
 
 	let namespace = match mod_state.parser.generate_ast() {
@@ -295,7 +295,7 @@ pub fn generate_code<'ctx>(
 		// Output bogus LLVM here, for debugging purposes
 		backend.module.print_to_file("bogus.ll").unwrap();
 
-		return Err(CMNErrorCode::LLVMError);
+		return Err(CMNError::new(CMNErrorCode::LLVMError));
 	};
 
 	// Optimization passes
