@@ -67,15 +67,27 @@ fn main() -> color_eyre::eyre::Result<()> {
 	});
 
 	// Launch multithreaded compilation
+	let mut success = false;
 
 	rayon::scope(|s| {
-		modules::launch_module_compilation(
+		match modules::launch_module_compilation(
 			manager_state.clone(),
 			Identifier::from_name(args.input_file.clone().to_string_lossy().to_string()),
 			s,
-		)
-		.unwrap();
+		) {
+			Ok(_) => success = true,
+			Err(_) => {
+				println!(
+					"{:>10} build due to previous errors\n",
+					"aborted".bold().red(),
+				);
+			}
+		}
 	});
+
+	if !success {
+		return Ok(());
+	}
 
 	let compile_time = build_time.elapsed();
 

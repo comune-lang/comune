@@ -47,7 +47,7 @@ pub fn launch_module_compilation<'scope>(
 	let out_path = get_module_out_path(&state, &input_module, None);
 	state.output_modules.lock().unwrap().push(out_path.clone());
 
-	let mut mod_state = parse_interface(&state, &src_path).unwrap();
+	let mut mod_state = parse_interface(&state, &src_path)?;
 
 	// Resolve module imports
 	let module_names = mod_state
