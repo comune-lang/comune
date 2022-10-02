@@ -18,13 +18,11 @@ pub struct CMNError {
 
 impl CMNError {
 	pub fn new(code: CMNErrorCode) -> Self {
-		println!("creating a new error!");
 		ERROR_COUNT.fetch_add(1, Ordering::Acquire);
 		CMNError { code, origin: Backtrace::new() }
 	}
 
 	pub fn new_with_parser(code: CMNErrorCode, _parser: &Parser) -> Self {
-		println!("creating a new error!");
 		ERROR_COUNT.fetch_add(1, Ordering::Acquire);
 		CMNError { code, origin: Backtrace::new() }
 	}
