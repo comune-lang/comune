@@ -25,7 +25,7 @@ pub struct CMNError {
 
 impl CMNError {
 	pub fn new(code: CMNErrorCode) -> Self {
-		ERROR_COUNT.fetch_add(1, Ordering::Acquire);
+		ERROR_COUNT.fetch_add(1, Ordering::Relaxed);
 		CMNError {
 			code,
 			origin: Backtrace::new(),
@@ -33,7 +33,7 @@ impl CMNError {
 	}
 
 	pub fn new_with_parser(code: CMNErrorCode, _parser: &Parser) -> Self {
-		ERROR_COUNT.fetch_add(1, Ordering::Acquire);
+		ERROR_COUNT.fetch_add(1, Ordering::Relaxed);
 		CMNError {
 			code,
 			origin: Backtrace::new(),
