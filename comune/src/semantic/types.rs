@@ -4,8 +4,6 @@ use std::hash::{Hash, Hasher};
 use std::ptr;
 use std::sync::{Arc, RwLock, Weak};
 
-use once_cell::sync::OnceCell;
-
 use super::namespace::{Identifier, Namespace, NamespaceEntry, NamespaceItem};
 use crate::constexpr::ConstExpr;
 use crate::parser::ASTResult;
@@ -13,8 +11,6 @@ use crate::semantic::FnScope;
 
 pub type BoxedType = Box<Type>;
 pub type FnParamList = Vec<(Type, Option<String>)>;
-
-pub(crate) static PTR_SIZE_BYTES: OnceCell<u32> = OnceCell::new();
 
 pub trait Typed {
 	fn get_type<'ctx>(&self, scope: &'ctx FnScope<'ctx>) -> ASTResult<Type>;

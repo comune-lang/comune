@@ -38,23 +38,17 @@ fn main() -> color_eyre::eyre::Result<()> {
 	color_eyre::install()?;
 
 	let args = ComuneCLI::parse();
-
+	let build_time = Instant::now();
+	let mut success = false;
+	
 	if args.input_file.is_empty() {
 		println!("{} {}", "fatal:".red().bold(), "no input module");
 		return Ok(());
 	}
 
-	let build_time = Instant::now();
-
 	rayon::ThreadPoolBuilder::new()
 		.num_threads(args.num_jobs)
 		.build_global()
-		.unwrap();
-
-	let target_machine = llvm::get_target_machine();
-
-	types::PTR_SIZE_BYTES
-		.set(target_machine.get_target_data().get_pointer_byte_size(None))
 		.unwrap();
 
 	let manager_state = Arc::new(modules::ManagerState {
@@ -67,7 +61,6 @@ fn main() -> color_eyre::eyre::Result<()> {
 	});
 
 	// Launch multithreaded compilation
-	let mut success = false;
 
 	rayon::scope(|s| {
 		match modules::launch_module_compilation(
