@@ -934,13 +934,25 @@ impl Expr {
 													},
 												);
 
-												return validate_fn_call(
+												match validate_fn_call(
 													ret,
 													&args,
 													params,
 													scope,
 													meta.clone(),
-												);
+												) {
+													Ok(res) => return Ok(res),
+													Err(e) => match e.0.code {
+														// If the parameter count doesn't match, adjust the message for the implicit `self` param
+														CMNErrorCode::ParamCountMismatch { expected, got } => {
+															let mut err = e.clone();
+															err.0.code = CMNErrorCode::ParamCountMismatch { expected: expected - 1, got: got - 1 };
+															return Err(err);
+														}
+														
+														_ => return Err(e),
+													}
+												}
 											}
 										}
 									}
