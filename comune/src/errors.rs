@@ -20,7 +20,7 @@ lazy_static! {
 #[derive(Debug, Clone)]
 pub struct CMNError {
 	pub code: CMNErrorCode,
-	origin: Backtrace,
+	pub origin: Backtrace,
 }
 
 impl CMNError {

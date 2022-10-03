@@ -4,7 +4,7 @@ use std::{
 	ffi::{OsStr, OsString},
 	fs,
 	path::{Path, PathBuf},
-	sync::{atomic::AtomicU32, Arc, Mutex},
+	sync::{Arc, Mutex},
 };
 
 use colored::Colorize;
@@ -29,6 +29,7 @@ pub struct ManagerState {
 	pub verbose_output: bool,
 	pub output_modules: Mutex<Vec<PathBuf>>,
 	pub emit_llvm: bool,
+	pub backtrace_on_error: bool,
 }
 
 pub struct ModuleState {
@@ -78,7 +79,7 @@ pub fn launch_module_compilation<'scope>(
 
 		let result = match generate_code(&state, &mut mod_state, &context) {
 			Ok(res) => res,
-			Err(_) => return, // TODO: Add some kind of global compilation result tracker
+			Err(_) => return,
 		};
 
 		let target_machine = llvm::get_target_machine();
@@ -152,7 +153,7 @@ pub fn parse_interface(state: &Arc<ManagerState>, path: &Path) -> Result<ModuleS
 
 	let mut mod_state = ModuleState {
 		parser: Parser::new(
-			match Lexer::new(path) {
+			match Lexer::new(path, state.backtrace_on_error) {
 				// TODO: Take module name instead of filename
 				Ok(f) => f,
 				Err(e) => {

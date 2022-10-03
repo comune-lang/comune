@@ -30,6 +30,9 @@ struct ComuneCLI {
 	#[clap(long = "emit-llvm", default_value_t = false, value_parser)]
 	emit_llvm: bool,
 
+	#[clap(long = "backtrace", default_value_t = false, value_parser)]
+	backtrace: bool,
+
 	#[clap(short = 'j', long = "jobs", default_value_t = 0, value_parser)]
 	num_jobs: usize,
 }
@@ -57,6 +60,7 @@ fn main() -> color_eyre::eyre::Result<()> {
 		verbose_output: args.verbose,
 		output_modules: Mutex::new(vec![]),
 		emit_llvm: args.emit_llvm,
+		backtrace_on_error: args.backtrace,
 	});
 
 	// Launch multithreaded compilation
@@ -71,7 +75,7 @@ fn main() -> color_eyre::eyre::Result<()> {
 
 	if errors::ERROR_COUNT.load(Ordering::Acquire) > 0 {
 		println!(
-			"{:>10} build due to {} previous error(s)\n",
+			"\n{:>10} build due to {} previous error(s)\n",
 			"aborted".bold().red(),
 			errors::ERROR_COUNT.load(Ordering::Acquire)
 		);

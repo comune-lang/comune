@@ -118,17 +118,19 @@ pub struct Lexer {
 	char_buffer: Option<char>,
 	token_buffer: Vec<(usize, Token)>,
 	token_index: usize,
+	backtrace_on_error: bool,
 	pub file_name: OsString,
 }
 
 impl Lexer {
-	pub fn new<P: AsRef<Path>>(path: P) -> std::io::Result<Lexer> {
+	pub fn new<P: AsRef<Path>>(path: P, backtrace_on_error: bool) -> std::io::Result<Lexer> {
 		let mut result = Lexer {
 			file_buffer: String::new(),
 			file_index: 0usize,
 			char_buffer: None,
 			token_buffer: vec![],
 			token_index: 0usize,
+			backtrace_on_error,
 			file_name: path.as_ref().file_name().unwrap().to_os_string(),
 		};
 
@@ -517,7 +519,7 @@ impl Lexer {
 			// Print message
 			match e {
 				CMNMessage::Error(_) => {
-					print!("\n{}: {}", "error".bold().red(), e.to_string().bold())
+					print!("\n{}: {}", "error".bold().red(), e.to_string().bold());
 				}
 				CMNMessage::Warning(_) => {
 					print!("\n{}: {}", "warning".bold().yellow(), e.to_string().bold())
@@ -550,6 +552,13 @@ impl Lexer {
 			let notes = e.get_notes();
 			for note in notes {
 				println!("{} {}\n", "note:".bold().italic(), note.italic());
+			}
+
+			// Print compiler backtrace
+			if let CMNMessage::Error(ref err) = e {
+				if self.backtrace_on_error {
+					println!("\ncompiler backtrace:\n\n{:?}", err.origin);
+				}
 			}
 		} else {
 			println!(
