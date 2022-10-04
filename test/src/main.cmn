@@ -1,0 +1,44 @@
+import module_test;
+
+using module_test::fib;
+using module_test::printf;
+
+@layout(packed)
+struct Test {
+	int a;
+	int b;
+}
+
+
+impl Test {
+	int sum(Test self, Test other) {
+		printf("This is a method call!\n\0");
+		return self.a + self.b;
+	}
+}
+
+
+void no_return() {
+	printf("This void fn doesn't have a return statement!\n\0");
+}
+
+
+int main() {
+	printf("This is main()!\n\0");
+	
+	Test test = Test { 
+		a: 60, 
+		b: 0 
+	};
+	
+	while (test.b < 9) {
+		printf("Begin!\n\0");
+		test.b += 1;
+		if (test.b == 9) {
+			continue;
+		}
+		printf("End!\n\0");
+	}
+	
+	return test.sum();
+}

@@ -65,7 +65,7 @@ fn main() -> color_eyre::eyre::Result<()> {
 
 	// Launch multithreaded compilation
 
-	rayon::scope(|s| {
+	rayon::in_place_scope(|s| {
 		let _ = modules::launch_module_compilation(
 			manager_state.clone(),
 			Identifier::from_name(args.input_file.clone().to_string_lossy().to_string()),
