@@ -207,9 +207,8 @@ impl<'ctx> LLVMBackend<'ctx> {
 			}
 
 			ASTNode::Declaration(t, n, e) => {
-				let name = n.to_string();
 				let alloca = self.create_entry_block_alloca(
-					&name,
+					&n,
 					Self::to_basic_type(self.get_llvm_type(t)).as_basic_type_enum(),
 				);
 
@@ -225,7 +224,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 					}
 				}
 
-				scope.add_variable(&name, alloca);
+				scope.add_variable(&n, alloca);
 			}
 
 			ASTNode::ControlFlow(ctrl) => {
@@ -1139,7 +1138,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 			Type::Array(t_sub, s) => {
 				let mut array_size: u32 = 0;
 
-				for dimension in &*s.borrow() {
+				for dimension in &*s.read().unwrap() {
 					if let ConstExpr::Result(ConstValue::Integral(i, _)) = dimension {
 						array_size += *i as u32;
 					} else {

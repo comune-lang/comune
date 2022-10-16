@@ -3,6 +3,7 @@ use std::fmt::Display;
 
 use super::controlflow::ControlFlow;
 use super::expression::{Atom, Expr};
+use super::namespace::Identifier;
 use super::types::{Basic, Type, Typed};
 use super::FnScope;
 use crate::lexer::Token;
@@ -28,7 +29,7 @@ pub enum ASTNode {
 	Expression(RefCell<Expr>),
 	Declaration(
 		Type,                 // Type
-		Token,                // Identifier
+		String,               // Identifier
 		Option<Box<ASTElem>>, // Expression or Block
 	),
 

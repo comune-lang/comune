@@ -1,3 +1,4 @@
+mod cir;
 mod constexpr;
 mod errors;
 mod lexer;
@@ -5,7 +6,6 @@ mod llvm;
 mod modules;
 mod parser;
 mod semantic;
-mod cir;
 
 use clap::Parser;
 use colored::Colorize;

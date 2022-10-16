@@ -877,27 +877,37 @@ impl Expr {
 		meta: TokenData,
 	) -> ASTResult<Type> {
 		match self {
-			Expr::Atom(a, _) => return a.get_lvalue_type(scope),
+			Expr::Atom(a, _) => {
+				a.validate(scope, None, meta)?;
+				return a.get_lvalue_type(scope)
+			},
 
 			Expr::Cons(op, elems, _) => match op {
 				// Only these operators can result in lvalues
 				Operator::Deref => {
 					return match elems[0].0.validate(scope, None, meta).unwrap() {
-						Type::Pointer(t) => Ok(*t),
+						Type::Pointer(t) => {
+							elems[0].1 = Some(Type::Pointer(t.clone()));
+							Ok(*t)
+						},
 						_ => Err((CMNError::new(CMNErrorCode::NonPtrDeref), meta)),
 					}
 				}
 
 				Operator::MemberAccess => {
-					if let Type::TypeRef(r, id) = elems[0].0.validate(scope, None, meta).unwrap() {
+					if let Type::TypeRef(r, id) = elems[0].0.validate_lvalue(scope, meta).unwrap() {
 						if let (lhs, [rhs, ..]) = elems.split_first_mut().unwrap() {
 							match &mut *r.upgrade().unwrap().write().unwrap() {
+
 								// Dot operator is on an algebraic type, so check if it's a member access or method call
 								TypeDef::Algebraic(t) => match &mut rhs.0 {
+
 									// Member access on algebraic type
 									Expr::Atom(Atom::Identifier(ref mut id), _) => {
 										if let Some((i, m)) = t.get_member(&id.name) {
 											id.mem_idx = i as u32;
+											lhs.1 = Some(Type::TypeRef(r.clone(), id.clone()));
+											rhs.1 = Some(m.clone());
 											return Ok(m.clone());
 										}
 									}
@@ -941,16 +951,27 @@ impl Expr {
 													scope,
 													meta.clone(),
 												) {
-													Ok(res) => return Ok(res),
-													Err(e) => match e.0.code {
-														// If the parameter count doesn't match, adjust the message for the implicit `self` param
-														CMNErrorCode::ParamCountMismatch { expected, got } => {
-															let mut err = e.clone();
-															err.0.code = CMNErrorCode::ParamCountMismatch { expected: expected - 1, got: got - 1 };
-															return Err(err);
+													Ok(res) => {
+														// Method call OK
+														lhs.1 = Some(Type::TypeRef(r.clone(), id.clone()));
+														rhs.1 = Some(ret.clone());
+														return Ok(res);
+													}
+
+													Err(e) => {
+														match e.0.code {
+															// If the parameter count doesn't match, adjust the message for the implicit `self` param
+															CMNErrorCode::ParamCountMismatch {
+																expected,
+																got,
+															} => {
+																let mut err = e.clone();
+																err.0.code = CMNErrorCode::ParamCountMismatch { expected: expected - 1, got: got - 1 };
+																return Err(err);
+															}
+
+															_ => return Err(e),
 														}
-														
-														_ => return Err(e),
 													}
 												}
 											}
@@ -983,13 +1004,15 @@ impl Atom {
 				if let Some(t) = t {
 					Ok(Type::Basic(t.clone()))
 				} else {
-					if goal_t.is_some() && goal_t.unwrap().is_integral() {
+					if let Some(Type::Basic(b)) = goal_t {
+						*t = Some(b.clone());
 						Ok(goal_t.unwrap().clone())
 					} else {
-						Ok(Type::Basic(Basic::INTEGRAL {
+						*t = Some(Basic::INTEGRAL {
 							signed: true,
 							size_bytes: 4,
-						}))
+						});
+						Ok(Type::Basic(t.unwrap().clone()))
 					}
 				}
 			}
@@ -998,10 +1021,14 @@ impl Atom {
 				if let Some(t) = t {
 					Ok(Type::Basic(t.clone()))
 				} else {
-					if goal_t.is_some() && goal_t.unwrap().is_floating_point() {
+					if let Some(Type::Basic(b)) = goal_t {
+						*t = Some(b.clone());
 						Ok(goal_t.unwrap().clone())
 					} else {
-						Ok(Type::Basic(Basic::FLOAT { size_bytes: 4 }))
+						*t = Some(Basic::FLOAT {
+							size_bytes: 4,
+						});
+						Ok(Type::Basic(t.unwrap().clone()))
 					}
 				}
 			}
@@ -1157,17 +1184,17 @@ impl Type {
 			Type::Array(_, n) => {
 				// Old fashioned way to make life easier with the RefCell
 				let mut idx = 0;
-				let len = n.borrow().len();
+				let len = n.read().unwrap().len();
 
 				while idx < len {
 					let mut result = None;
 
-					if let ConstExpr::Expr(e) = &n.borrow()[idx] {
+					if let ConstExpr::Expr(e) = &n.read().unwrap()[idx] {
 						result = Some(ConstExpr::Result(e.eval_const(scope)?));
 					}
 
 					if let Some(result) = result {
-						n.borrow_mut()[idx] = result;
+						n.write().unwrap()[idx] = result;
 					}
 
 					idx += 1;

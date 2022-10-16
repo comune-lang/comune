@@ -4,6 +4,8 @@ use std::hash::{Hash, Hasher};
 use std::ptr;
 use std::sync::{Arc, RwLock, Weak};
 
+use serde::{Serialize, Deserialize, Deserializer};
+
 use super::namespace::{Identifier, Namespace, NamespaceEntry, NamespaceItem};
 use crate::constexpr::ConstExpr;
 use crate::parser::ASTResult;
@@ -16,7 +18,7 @@ pub trait Typed {
 	fn get_type<'ctx>(&self, scope: &'ctx FnScope<'ctx>) -> ASTResult<Type>;
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Basic {
 	INTEGRAL { signed: bool, size_bytes: u32 },
 	SIZEINT { signed: bool },
@@ -29,11 +31,11 @@ pub enum Basic {
 
 #[derive(Clone)]
 pub enum Type {
-	Basic(Basic),                               // Fundamental type
-	Pointer(BoxedType),                         // Pointer-to-<BoxedType>
-	Array(BoxedType, RefCell<Vec<ConstExpr>>),  // N-dimensional array with constant expression for size
-	Unresolved(Identifier),                     // Unresolved type (during parsing phase)
-	TypeRef(Weak<RwLock<TypeDef>>, Identifier), // Reference to type definition, plus Identifier for serialization
+	Basic(Basic),                                   // Fundamental type
+	Pointer(BoxedType),                             // Pointer-to-<BoxedType>
+	Array(BoxedType, Arc<RwLock<Vec<ConstExpr>>>),  // N-dimensional array with constant expression for size
+	Unresolved(Identifier),                         // Unresolved type (during parsing phase)
+	TypeRef(Weak<RwLock<TypeDef>>, Identifier),     // Reference to type definition, plus Identifier for serialization
 }
 
 #[derive(Debug)]
@@ -61,7 +63,7 @@ pub enum Visibility {
 	Protected,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DataLayout {
 	Declared,  // Layout is exactly as declared
 	Optimized, // Layout may be shuffled to minimize padding
@@ -279,7 +281,7 @@ impl Type {
 	}
 
 	// Name mangling
-	pub fn serialize(&self) -> String {
+	pub fn mangle(&self) -> String {
 		let mut result = String::new();
 
 		match &self {
@@ -289,7 +291,7 @@ impl Type {
 			}
 
 			Type::Array(t, _) => {
-				result.push_str(&t.serialize());
+				result.push_str(&t.mangle());
 				result.push_str("[]");
 			}
 
@@ -298,11 +300,11 @@ impl Type {
 			}
 
 			Type::TypeRef(t, _) => {
-				result.push_str(&t.upgrade().unwrap().as_ref().read().unwrap().serialize())
+				result.push_str(&t.upgrade().unwrap().as_ref().read().unwrap().mangle())
 			}
 
 			Type::Unresolved(_) => {
-				panic!("Attempt to serialize an unresolved type!");
+				panic!("Attempt to mangle an unresolved type!");
 			}
 		}
 		// TODO: Generics
@@ -365,13 +367,13 @@ impl Type {
 }
 
 impl TypeDef {
-	pub fn serialize(&self) -> String {
+	pub fn mangle(&self) -> String {
 		let mut result = String::new();
 		match &self {
 			TypeDef::Algebraic(a) => {
 				for t in &a.items {
 					match &t.1 .0 {
-						NamespaceItem::Variable(t, _) => result.push_str(&t.serialize()),
+						NamespaceItem::Variable(t, _) => result.push_str(&t.mangle()),
 						_ => todo!(),
 					}
 				}
@@ -380,10 +382,10 @@ impl TypeDef {
 			TypeDef::Function(ret, args) => {
 				result.push_str("?");
 				for arg in args {
-					result.push_str(&arg.0.serialize());
+					result.push_str(&arg.0.mangle());
 				}
 				result.push_str("!");
-				result.push_str(&ret.serialize());
+				result.push_str(&ret.mangle());
 			}
 		}
 		result

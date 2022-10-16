@@ -96,16 +96,13 @@ impl Parser {
 		}
 	}
 
-	pub fn generate_ast(&mut self) -> ParseResult<&RefCell<Namespace>> {
+	pub fn generate_ast(&mut self) -> ParseResult<()> {
 		self.generate_namespace(self.active_namespace.as_ref().unwrap())?;
 
-		Ok(self.active_namespace.as_ref().unwrap())
+		Ok(())
 	}
 
-	fn generate_namespace<'a>(
-		&self,
-		namespace: &'a RefCell<Namespace>,
-	) -> ParseResult<&'a RefCell<Namespace>> {
+	fn generate_namespace(&self, namespace: &RefCell<Namespace>) -> ParseResult<()> {
 		for child in &namespace.borrow().children {
 			match &child.1 .0 {
 				NamespaceItem::Function(_, ast_elem) => {
@@ -149,7 +146,7 @@ impl Parser {
 			}
 		}
 
-		Ok(namespace)
+		Ok(())
 	}
 
 	pub fn parse_namespace(&mut self) -> ParseResult<()> {
@@ -558,15 +555,18 @@ impl Parser {
 			// This is a variable declaration
 
 			let t = self.parse_type(true)?;
-			let name = self.get_current()?;
-			let mut expr = None;
+			if let Token::Identifier(name) = self.get_current()? {
+				let mut expr = None;
 
-			if token_compare(&self.get_next()?, "=") {
-				self.get_next()?;
-				expr = Some(Box::new(self.parse_expression()?));
+				if token_compare(&self.get_next()?, "=") {
+					self.get_next()?;
+					expr = Some(Box::new(self.parse_expression()?));
+				}
+				self.check_semicolon()?;
+				result = Some(ASTNode::Declaration(t, name.expect_scopeless()?, expr));
+			} else {
+				return Err(self.err(CMNErrorCode::ExpectedIdentifier));
 			}
-			self.check_semicolon()?;
-			result = Some(ASTNode::Declaration(t, name, expr));
 		} else {
 			// This isn't a variable declaration, check if it's a control flow statement
 			if let Token::Keyword(keyword) = &current {
@@ -1330,9 +1330,9 @@ impl Parser {
 
 							result = Type::Array(
 								Box::new(result),
-								RefCell::new(vec![ConstExpr::Expr(
+								Arc::new(RwLock::new(vec![ConstExpr::Expr(
 									const_expr.get_expr().replace(dummy_expr),
-								)]),
+								)])),
 							);
 
 							self.get_next()?;

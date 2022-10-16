@@ -19,7 +19,7 @@ use crate::{
 	semantic::{
 		self,
 		namespace::{Identifier, Namespace, NamespaceASTElem, NamespaceItem},
-	},
+	}, cir::CIRModule,
 };
 
 pub struct ManagerState {
@@ -33,7 +33,7 @@ pub struct ManagerState {
 }
 
 pub struct ModuleState {
-	parser: Parser,
+	pub parser: Parser,
 }
 
 // This is only sound under the condition that Namespaces are ONLY modified by their owning Parsers.
@@ -227,12 +227,11 @@ pub fn generate_code<'ctx>(
 ) -> Result<LLVMBackend<'ctx>, CMNError> {
 	// Generate AST
 
-	let namespace = match mod_state.parser.generate_ast() {
-		Ok(ctx) => {
+	match mod_state.parser.generate_ast() {
+		Ok(()) => {
 			if state.verbose_output {
 				println!("\nvalidating...");
 			}
-			ctx
 		}
 		Err(e) => {
 			mod_state
@@ -246,7 +245,7 @@ pub fn generate_code<'ctx>(
 
 	// Validate code
 
-	match semantic::validate_namespace(namespace, namespace) {
+	match semantic::validate_namespace(mod_state.parser.current_namespace(), mod_state.parser.current_namespace()) {
 		Ok(()) => {
 			if state.verbose_output {
 				println!("generating code...");
@@ -262,8 +261,15 @@ pub fn generate_code<'ctx>(
 		}
 	}
 
-	// Generate code
-	let module = context.create_module("test");
+	// Generate cIR
+	let cir_module = CIRModule::from_ast(mod_state);
+
+	// TODO: add cIR analysis/optimization passes + save to file
+
+	// Generate LLVM IR
+	// TODO: Replace AST-based codegen with cIR-based codegen
+	let namespace = mod_state.parser.current_namespace();
+	let module = context.create_module("module");
 	let builder = context.create_builder();
 
 	let mut backend = LLVMBackend {
@@ -276,14 +282,11 @@ pub fn generate_code<'ctx>(
 		loop_blocks: RefCell::new(vec![]),
 	};
 
+	// Register imports
 	for (_, import) in &namespace.borrow().imported {
 		register_namespace(&mut backend, import, None);
 	}
 
-	// why is this here Twice
-	//register_namespace(&mut backend, &namespace.borrow(), None);
-
-	// Generate LLVM IR
 	register_namespace(&mut backend, &namespace.borrow(), None);
 	compile_namespace(&mut backend, &namespace.borrow(), None);
 

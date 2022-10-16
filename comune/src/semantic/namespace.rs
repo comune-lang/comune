@@ -7,6 +7,7 @@ use std::{
 };
 
 use mangling::mangle;
+use serde::{Serialize, Deserialize};
 
 use crate::{
 	errors::{CMNError, CMNErrorCode},
@@ -19,7 +20,7 @@ use super::{
 	Attribute,
 };
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Identifier {
 	pub name: String,
 	pub path: ScopePath,
@@ -74,7 +75,7 @@ impl Display for Identifier {
 	}
 }
 
-#[derive(Default, Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Default, Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ScopePath {
 	pub scopes: Vec<String>,
 	pub absolute: bool,
@@ -173,7 +174,7 @@ impl Namespace {
 	}
 
 	pub fn mangle_name(path: &ScopePath, name: &str, ty: &TypeDef) -> String {
-		mangle(format!("{}::{}({})", path.to_string(), name, ty.serialize()).as_bytes())
+		mangle(format!("{}::{}({})", path.to_string(), name, ty.mangle()).as_bytes())
 	}
 
 	pub fn with_item<Ret>(
