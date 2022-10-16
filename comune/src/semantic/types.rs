@@ -4,7 +4,7 @@ use std::hash::{Hash, Hasher};
 use std::ptr;
 use std::sync::{Arc, RwLock, Weak};
 
-use serde::{Serialize, Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, Serialize};
 
 use super::namespace::{Identifier, Namespace, NamespaceEntry, NamespaceItem};
 use crate::constexpr::ConstExpr;
@@ -31,11 +31,11 @@ pub enum Basic {
 
 #[derive(Clone)]
 pub enum Type {
-	Basic(Basic),                                   // Fundamental type
-	Pointer(BoxedType),                             // Pointer-to-<BoxedType>
-	Array(BoxedType, Arc<RwLock<Vec<ConstExpr>>>),  // N-dimensional array with constant expression for size
-	Unresolved(Identifier),                         // Unresolved type (during parsing phase)
-	TypeRef(Weak<RwLock<TypeDef>>, Identifier),     // Reference to type definition, plus Identifier for serialization
+	Basic(Basic),                                  // Fundamental type
+	Pointer(BoxedType),                            // Pointer-to-<BoxedType>
+	Array(BoxedType, Arc<RwLock<Vec<ConstExpr>>>), // N-dimensional array with constant expression for size
+	Unresolved(Identifier),                        // Unresolved type (during parsing phase)
+	TypeRef(Weak<RwLock<TypeDef>>, Identifier), // Reference to type definition, plus Identifier for serialization
 }
 
 #[derive(Debug)]

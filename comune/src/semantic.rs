@@ -879,8 +879,8 @@ impl Expr {
 		match self {
 			Expr::Atom(a, _) => {
 				a.validate(scope, None, meta)?;
-				return a.get_lvalue_type(scope)
-			},
+				return a.get_lvalue_type(scope);
+			}
 
 			Expr::Cons(op, elems, _) => match op {
 				// Only these operators can result in lvalues
@@ -889,7 +889,7 @@ impl Expr {
 						Type::Pointer(t) => {
 							elems[0].1 = Some(Type::Pointer(t.clone()));
 							Ok(*t)
-						},
+						}
 						_ => Err((CMNError::new(CMNErrorCode::NonPtrDeref), meta)),
 					}
 				}
@@ -898,10 +898,8 @@ impl Expr {
 					if let Type::TypeRef(r, id) = elems[0].0.validate_lvalue(scope, meta).unwrap() {
 						if let (lhs, [rhs, ..]) = elems.split_first_mut().unwrap() {
 							match &mut *r.upgrade().unwrap().write().unwrap() {
-
 								// Dot operator is on an algebraic type, so check if it's a member access or method call
 								TypeDef::Algebraic(t) => match &mut rhs.0 {
-
 									// Member access on algebraic type
 									Expr::Atom(Atom::Identifier(ref mut id), _) => {
 										if let Some((i, m)) = t.get_member(&id.name) {
@@ -953,7 +951,10 @@ impl Expr {
 												) {
 													Ok(res) => {
 														// Method call OK
-														lhs.1 = Some(Type::TypeRef(r.clone(), id.clone()));
+														lhs.1 = Some(Type::TypeRef(
+															r.clone(),
+															id.clone(),
+														));
 														rhs.1 = Some(ret.clone());
 														return Ok(res);
 													}
@@ -1025,9 +1026,7 @@ impl Atom {
 						*t = Some(b.clone());
 						Ok(goal_t.unwrap().clone())
 					} else {
-						*t = Some(Basic::FLOAT {
-							size_bytes: 4,
-						});
+						*t = Some(Basic::FLOAT { size_bytes: 4 });
 						Ok(Type::Basic(t.unwrap().clone()))
 					}
 				}

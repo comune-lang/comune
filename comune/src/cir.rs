@@ -2,13 +2,17 @@
 
 use std::collections::HashMap;
 
-use crate::{semantic::{
-	ast::{ASTElem, ASTNode},
-	controlflow::ControlFlow,
-	expression::{Atom, Expr, Operator},
-	namespace::{Namespace, NamespaceItem, NamespaceASTElem},
-	types::{Basic, Type, DataLayout, TypeDef},
-}, constexpr::{ConstExpr, ConstValue}, modules::ModuleState};
+use crate::{
+	constexpr::{ConstExpr, ConstValue},
+	modules::ModuleState,
+	semantic::{
+		ast::{ASTElem, ASTNode},
+		controlflow::ControlFlow,
+		expression::{Atom, Expr, Operator},
+		namespace::{Namespace, NamespaceASTElem, NamespaceItem},
+		types::{Basic, DataLayout, Type, TypeDef},
+	},
+};
 
 use serde::{Deserialize, Serialize};
 
@@ -21,7 +25,6 @@ type StmtIndex = usize;
 type VarIndex = usize;
 type FieldIndex = usize;
 type TypeIndex = usize;
-
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct LValue {
@@ -61,19 +64,19 @@ pub enum CIRType {
 	Pointer(Box<CIRType>),
 	Array(Box<CIRType>, Vec<i128>),
 	Reference(Box<CIRType>),
-	TypeRef(TypeIndex)
+	TypeRef(TypeIndex),
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum CIRTypeDef {
-	Algebraic { 
-		members: Vec<CIRType>, 
+	Algebraic {
+		members: Vec<CIRType>,
 		variants: Vec<CIRTypeDef>,
 		layout: DataLayout,
-		
+
 		members_map: HashMap<String, usize>,
 		variants_map: HashMap<String, usize>,
-	}
+	},
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -92,10 +95,11 @@ pub struct CIRFunction {
 	pub variables: Vec<CIRType>,
 	pub blocks: Vec<CIRBlock>,
 	pub ret: CIRType,
+	pub arg_count: usize,
 
 	#[serde(skip)]
 	current_block: BlockIndex,
-	
+
 	#[serde(skip)]
 	name_map: HashMap<String, VarIndex>,
 }
@@ -114,33 +118,40 @@ pub struct CIRModule {
 
 impl CIRModule {
 	pub fn from_ast(ast: &ModuleState) -> Self {
-		let mut result = CIRModule { 
-			types: vec![], 
-			globals: HashMap::new(), 
-			functions: HashMap::new(), 
-			type_map: HashMap::new() 
+		let mut result = CIRModule {
+			types: vec![],
+			globals: HashMap::new(),
+			functions: HashMap::new(),
+			type_map: HashMap::new(),
 		};
 
-		result.generate_namespace(&ast.parser.current_namespace().borrow(), &ast.parser.current_namespace().borrow());
+		result.generate_namespace(
+			&ast.parser.current_namespace().borrow(),
+			&ast.parser.current_namespace().borrow(),
+		);
+
+		println!("{result}");
 
 		result
 	}
 
 	fn generate_namespace(&mut self, namespace: &Namespace, root: &Namespace) {
 		for elem in &namespace.children {
-			match &elem.1.0 {
-				NamespaceItem::Namespace(ns) => self.generate_namespace(&ns.as_ref().borrow(), root),
-				
+			match &elem.1 .0 {
+				NamespaceItem::Namespace(ns) => {
+					self.generate_namespace(&ns.as_ref().borrow(), root)
+				}
+
 				NamespaceItem::Function(ty, node) => {
 					if let NamespaceASTElem::Parsed(ast) = &*node.borrow() {
-
 						let cir_fn = CIRFunction::from_ast(&ast.node, &*ty.read().unwrap(), self);
 
-						self.functions.insert(elem.1.2.as_ref().unwrap().clone(), cir_fn);
+						self.functions
+							.insert(elem.1 .2.as_ref().unwrap().clone(), cir_fn);
 					}
 				}
 
-				_ => {},
+				_ => {}
 			}
 		}
 	}
@@ -161,11 +172,11 @@ impl CIRModule {
 			}
 
 			Type::Pointer(pointee) => CIRType::Pointer(Box::new(self.convert_type(pointee))),
-			
+
 			Type::Array(arr_ty, size) => {
 				let arr_ty_cir = Box::new(self.convert_type(arr_ty));
 				let mut dimensions = vec![];
-				
+
 				for elem in size.read().unwrap().iter() {
 					if let ConstExpr::Result(ConstValue::Integral(dim_size, _)) = elem {
 						dimensions.push(*dim_size);
@@ -175,7 +186,7 @@ impl CIRModule {
 				}
 
 				CIRType::Array(arr_ty_cir, dimensions)
-			},
+			}
 
 			_ => todo!(),
 		}
@@ -189,9 +200,9 @@ impl CIRModule {
 				let mut variants = vec![];
 				let mut members_map = HashMap::new();
 				let mut variants_map = HashMap::new();
-				
+
 				for item in &alg.items {
-					match &item.1.0 {
+					match &item.1 .0 {
 						NamespaceItem::Variable(ty, _) => {
 							members_map.insert(item.0.clone(), members.len());
 							members.push(self.convert_type(ty));
@@ -201,22 +212,21 @@ impl CIRModule {
 							todo!()
 						}
 
-						_ => panic!()
+						_ => panic!(),
 					}
 				}
-				
-				CIRTypeDef::Algebraic { 
-					members, 
-					variants, 
-					layout: alg.layout, 
-					members_map, 
-					variants_map
+
+				CIRTypeDef::Algebraic {
+					members,
+					variants,
+					layout: alg.layout,
+					members_map,
+					variants_map,
 				}
-			},
+			}
 		}
 	}
 }
-
 
 impl CIRFunction {
 	pub fn from_ast(fn_block: &ASTNode, ty: &TypeDef, module: &mut CIRModule) -> Self {
@@ -227,6 +237,7 @@ impl CIRFunction {
 				current_block: 0,
 				name_map: HashMap::new(),
 				ret: module.convert_type(ret),
+				arg_count: args.len(),
 			};
 
 			for param in args {
@@ -246,7 +257,6 @@ impl CIRFunction {
 	}
 
 	fn write(&mut self, stmt: CIRStmt) {
-		println!("{stmt:?}");
 		self.blocks[self.current_block].push(stmt)
 	}
 
@@ -271,10 +281,12 @@ impl CIRFunction {
 					self.write(CIRStmt::Expression(expr_ir));
 				}
 
-				ASTNode::Declaration(ty, name, elem) => elem.as_ref().and_then(|elem| Some(self.generate_decl(ty, name.clone(), elem, module))).unwrap(),
+				ASTNode::Declaration(ty, name, elem) => elem
+					.as_ref()
+					.and_then(|elem| Some(self.generate_decl(ty, name.clone(), elem, module)))
+					.unwrap(),
 
 				ASTNode::ControlFlow(ctrl) => match &**ctrl {
-
 					ControlFlow::Return { expr } => {
 						if let Some(expr) = expr {
 							let expr_ir = self.generate_expr(&expr.get_expr().borrow(), module);
@@ -345,9 +357,9 @@ impl CIRFunction {
 						body,
 					} => {
 						//let init_ir = self.generate_expr(&init.get_expr().borrow());
-						let cond_ir = cond
-							.as_ref()
-							.and_then(|cond| Some(self.generate_expr(&cond.get_expr().borrow(), module)));
+						let cond_ir = cond.as_ref().and_then(|cond| {
+							Some(self.generate_expr(&cond.get_expr().borrow(), module))
+						});
 						//let loop_ir = self.generate_expr(&iter.get_expr().borrow());
 					}
 
@@ -361,14 +373,23 @@ impl CIRFunction {
 		self.current_block
 	}
 
-	fn generate_decl(&mut self, ty: &Type, name: String, elem: &Box<ASTElem>, module: &mut CIRModule) {
+	fn generate_decl(
+		&mut self,
+		ty: &Type,
+		name: String,
+		elem: &Box<ASTElem>,
+		module: &mut CIRModule,
+	) {
 		let cir_ty = module.convert_type(ty);
 
 		self.variables.push(cir_ty);
 		self.name_map.insert(name, self.variables.len() - 1);
 
-		let lval = LValue { local: self.variables.len() - 1, projection: vec![] };
-		let rval = self.generate_expr(&elem.get_expr().borrow(), module);			
+		let lval = LValue {
+			local: self.variables.len() - 1,
+			projection: vec![],
+		};
+		let rval = self.generate_expr(&elem.get_expr().borrow(), module);
 
 		self.write(CIRStmt::Assignment(lval, rval))
 	}
@@ -376,37 +397,64 @@ impl CIRFunction {
 	fn generate_expr(&mut self, expr: &Expr, module: &mut CIRModule) -> RValue {
 		match expr {
 			Expr::Atom(atom, _) => match atom {
-				Atom::IntegerLit(i, b) => RValue::Atom(CIRType::Basic(b.unwrap()), None, Operand::IntegerLit(*i)),
+				Atom::IntegerLit(i, b) => {
+					RValue::Atom(CIRType::Basic(b.unwrap()), None, Operand::IntegerLit(*i))
+				}
 
-				Atom::FloatLit(f, b) => RValue::Atom(CIRType::Basic(b.unwrap()), None, Operand::FloatLit(*f)),
-				
-				Atom::BoolLit(b) => RValue::Atom(CIRType::Basic(Basic::BOOL), None, Operand::BoolLit(*b)),
+				Atom::FloatLit(f, b) => {
+					RValue::Atom(CIRType::Basic(b.unwrap()), None, Operand::FloatLit(*f))
+				}
 
-				Atom::StringLit(s) => RValue::Atom(CIRType::Basic(Basic::STR), None, Operand::StringLit(s.clone())),
+				Atom::BoolLit(b) => {
+					RValue::Atom(CIRType::Basic(Basic::BOOL), None, Operand::BoolLit(*b))
+				}
+
+				Atom::StringLit(s) => RValue::Atom(
+					CIRType::Basic(Basic::STR),
+					None,
+					Operand::StringLit(s.clone()),
+				),
 
 				Atom::ArrayLit(a) => todo!(),
 
 				Atom::AlgebraicLit(ty, elems) => {
 					let cir_ty = module.convert_type(ty);
 					RValue::Atom(cir_ty, None, Operand::BoolLit(false)) // TODO: Implement
-				},
-				
+				}
+
 				Atom::Identifier(id) => {
 					// TODO: Variable lookup
 					let lval_ty = &self.variables[0];
-					RValue::Atom(lval_ty.clone(), None, Operand::LValue(LValue { local: 0, projection: vec![] }))
+					RValue::Atom(
+						lval_ty.clone(),
+						None,
+						Operand::LValue(LValue {
+							local: 0,
+							projection: vec![],
+						}),
+					)
 				}
 
 				Atom::Cast(expr, to) => {
 					let castee = self.generate_expr(&expr.get_expr().borrow(), module);
 					let cir_ty = module.convert_type(to);
-					RValue::Cast(cir_ty.clone(), Operand::LValue(self.insert_temporary(cir_ty, castee)))
-				},
-				
+					RValue::Cast(
+						cir_ty.clone(),
+						Operand::LValue(self.insert_temporary(cir_ty, castee)),
+					)
+				}
+
 				Atom::FnCall { name, args } => {
-					let cir_args = args.iter().map(|arg| self.generate_expr(&arg.get_expr().borrow(), module)).collect();
-					RValue::Atom(CIRType::Basic(Basic::VOID), None, Operand::FnCall(name.resolved.as_ref().unwrap().clone(), cir_args))
-				},
+					let cir_args = args
+						.iter()
+						.map(|arg| self.generate_expr(&arg.get_expr().borrow(), module))
+						.collect();
+					RValue::Atom(
+						CIRType::Basic(Basic::VOID),
+						None,
+						Operand::FnCall(name.resolved.as_ref().unwrap().clone(), cir_args),
+					)
+				}
 			},
 
 			Expr::Cons(op, elems, _) => {
@@ -417,7 +465,11 @@ impl CIRFunction {
 					let l_ty = module.convert_type(elems[0].1.as_ref().unwrap());
 					let r_ty = module.convert_type(elems[1].1.as_ref().unwrap());
 
-					let expr = CIRStmt::Expression(RValue::Atom(l_ty.clone(), None, Operand::LValue(lval_ir.clone())));
+					let expr = CIRStmt::Expression(RValue::Atom(
+						l_ty.clone(),
+						None,
+						Operand::LValue(lval_ir.clone()),
+					));
 					self.write(CIRStmt::Assignment(lval_ir, rval_ir));
 
 					self.generate_expr(&elems[0].0, module)
@@ -435,7 +487,13 @@ impl CIRFunction {
 						let rhs_ty = module.convert_type(elems[1].1.as_ref().unwrap());
 						let lhs_tmp = self.insert_temporary(lhs_ty.clone(), lhs);
 						let rhs_tmp = self.insert_temporary(rhs_ty.clone(), rhs);
-						RValue::Cons([(lhs_ty, Operand::LValue(lhs_tmp)), (rhs_ty, Operand::LValue(rhs_tmp))], op.clone())
+						RValue::Cons(
+							[
+								(lhs_ty, Operand::LValue(lhs_tmp)),
+								(rhs_ty, Operand::LValue(rhs_tmp)),
+							],
+							op.clone(),
+						)
 					}
 				}
 			}
@@ -445,44 +503,40 @@ impl CIRFunction {
 	fn generate_lvalue_expr(&mut self, expr: &Expr, module: &mut CIRModule) -> LValue {
 		match expr {
 			Expr::Atom(atom, _) => match atom {
-				Atom::Identifier(id) => {
-					LValue {
-						local: *self.name_map.get(&id.expect_scopeless().unwrap()).unwrap(),
-						projection: vec![],
-					}
-				}
+				Atom::Identifier(id) => LValue {
+					local: *self.name_map.get(&id.expect_scopeless().unwrap()).unwrap(),
+					projection: vec![],
+				},
 
 				_ => panic!(),
 			},
 
-			Expr::Cons(op, elems, _) => {
-				match op {
-					Operator::MemberAccess => {
-						let mut lhs = self.generate_lvalue_expr(&elems[0].0, module);
-						let lhs_ty = module.convert_type(&elems[0].1.as_ref().unwrap());
-						
-						if let CIRType::TypeRef(id) = lhs_ty {
-							if let CIRTypeDef::Algebraic { members_map, .. } = &module.types[id] {
-								if let Expr::Atom(Atom::Identifier(id), _) = &elems[1].0 {
-									let idx = members_map[&id.expect_scopeless().unwrap()];
+			Expr::Cons(op, elems, _) => match op {
+				Operator::MemberAccess => {
+					let mut lhs = self.generate_lvalue_expr(&elems[0].0, module);
+					let lhs_ty = module.convert_type(&elems[0].1.as_ref().unwrap());
 
-									lhs.projection.push(PlaceElem::Field(idx));
+					if let CIRType::TypeRef(id) = lhs_ty {
+						if let CIRTypeDef::Algebraic { members_map, .. } = &module.types[id] {
+							if let Expr::Atom(Atom::Identifier(id), _) = &elems[1].0 {
+								let idx = members_map[&id.expect_scopeless().unwrap()];
 
-									return lhs;
-								}
+								lhs.projection.push(PlaceElem::Field(idx));
+
+								return lhs;
 							}
 						}
-						panic!()
 					}
-
-					Operator::Deref => {
-						let mut derefee = self.generate_lvalue_expr(&elems[0].0, module);
-						derefee.projection.push(PlaceElem::Deref);
-						derefee
-					}
-
-					_ => panic!()
+					panic!()
 				}
+
+				Operator::Deref => {
+					let mut derefee = self.generate_lvalue_expr(&elems[0].0, module);
+					derefee.projection.push(PlaceElem::Deref);
+					derefee
+				}
+
+				_ => panic!(),
 			},
 		}
 	}
@@ -495,12 +549,12 @@ impl CIRFunction {
 
 	fn insert_temporary(&mut self, ty: CIRType, rval: RValue) -> LValue {
 		self.variables.push(ty.clone());
-		
-		let lval = LValue { 
-			local: self.variables.len() - 1, 
-			projection: vec![] 
+
+		let lval = LValue {
+			local: self.variables.len() - 1,
+			projection: vec![],
 		};
-		
+
 		self.write(CIRStmt::Assignment(lval.clone(), rval));
 		lval
 	}

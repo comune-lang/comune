@@ -7,7 +7,7 @@ use std::{
 };
 
 use mangling::mangle;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 use crate::{
 	errors::{CMNError, CMNErrorCode},

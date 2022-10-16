@@ -12,6 +12,7 @@ use inkwell::{context::Context, targets::FileType};
 use rayon::prelude::*;
 
 use crate::{
+	cir::CIRModule,
 	errors::{CMNError, CMNErrorCode, CMNMessage},
 	lexer::Lexer,
 	llvm::{self, LLVMBackend},
@@ -19,7 +20,7 @@ use crate::{
 	semantic::{
 		self,
 		namespace::{Identifier, Namespace, NamespaceASTElem, NamespaceItem},
-	}, cir::CIRModule,
+	},
 };
 
 pub struct ManagerState {
@@ -245,7 +246,10 @@ pub fn generate_code<'ctx>(
 
 	// Validate code
 
-	match semantic::validate_namespace(mod_state.parser.current_namespace(), mod_state.parser.current_namespace()) {
+	match semantic::validate_namespace(
+		mod_state.parser.current_namespace(),
+		mod_state.parser.current_namespace(),
+	) {
 		Ok(()) => {
 			if state.verbose_output {
 				println!("generating code...");

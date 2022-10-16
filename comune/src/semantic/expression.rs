@@ -1,6 +1,6 @@
 use std::{cell::RefCell, fmt::Display};
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 use super::{
 	ast::{ASTElem, TokenData},
@@ -216,6 +216,56 @@ impl Operator {
 				_ => None,
 			}
 		}
+	}
+}
+
+impl Display for Operator {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		write!(
+			f,
+			"{}",
+			match self {
+				Operator::UnaryPlus | Operator::Add => "+",
+				Operator::UnaryMinus | Operator::Sub => "-",
+				Operator::Mul => "*",
+				Operator::Div => "/",
+				Operator::Mod => "%",
+				Operator::PreInc | Operator::PostInc => "++",
+				Operator::PreDec | Operator::PostDec => "--",
+				Operator::ScopeRes => "::",
+				Operator::MemberAccess => ".",
+				Operator::Call => "()",
+				Operator::Subscr => "[]",
+				Operator::Ref => "&",
+				Operator::Deref => "*",
+				Operator::Eq => "==",
+				Operator::NotEq => "!=",
+				Operator::Less => "<",
+				Operator::LessEq => "<=",
+				Operator::Greater => ">",
+				Operator::GreaterEq => ">=",
+				Operator::LogicAnd => "&&",
+				Operator::LogicOr => "||",
+				Operator::LogicNot => "!",
+				Operator::BitAND => "&",
+				Operator::BitXOR => "^",
+				Operator::BitOR => "|",
+				Operator::BitShiftL => "<<",
+				Operator::BitShiftR => ">>",
+				Operator::Assign => "=",
+				Operator::AssAdd => "+=",
+				Operator::AssSub => "-=",
+				Operator::AssMul => "*=",
+				Operator::AssDiv => "/=",
+				Operator::AssMod => "%=",
+				Operator::AssBitShL => "<<=",
+				Operator::AssBitShR => ">>=",
+				Operator::AssBitAND => "&=",
+				Operator::AssBitXOR => "^=",
+				Operator::AssBitOR => "|=",
+				Operator::Cast => "as",
+			}
+		)
 	}
 }
 
