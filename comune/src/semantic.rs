@@ -848,7 +848,7 @@ impl Expr {
 
 				Atom::Identifier(i) => scope.get_identifier_type(i).unwrap() == *target,
 
-				Atom::FnCall { name, args: _ } => match scope.find_symbol(name).unwrap().1 {
+				Atom::FnCall { name, .. } => match scope.find_symbol(name).unwrap().1 {
 					Type::TypeRef(r, _) => {
 						if let TypeDef::Function(ret, _) =
 							&*r.upgrade().unwrap().as_ref().read().unwrap()
@@ -895,7 +895,7 @@ impl Expr {
 				}
 
 				Operator::MemberAccess => {
-					if let Type::TypeRef(r, id) = elems[0].0.validate_lvalue(scope, meta).unwrap() {
+					if let Type::TypeRef(r, t_id) = elems[0].0.validate_lvalue(scope, meta).unwrap() {
 						if let (lhs, [rhs, ..]) = elems.split_first_mut().unwrap() {
 							match &mut *r.upgrade().unwrap().write().unwrap() {
 								// Dot operator is on an algebraic type, so check if it's a member access or method call
@@ -904,21 +904,21 @@ impl Expr {
 									Expr::Atom(Atom::Identifier(ref mut id), _) => {
 										if let Some((i, m)) = t.get_member(&id.name) {
 											id.mem_idx = i as u32;
-											lhs.1 = Some(Type::TypeRef(r.clone(), id.clone()));
+											lhs.1 = Some(Type::TypeRef(r.clone(), t_id.clone()));
 											rhs.1 = Some(m.clone());
 											return Ok(m.clone());
 										}
 									}
 
 									// Method call on algebraic type
-									Expr::Atom(Atom::FnCall { name, args }, _) => {
+									Expr::Atom(Atom::FnCall { name, args, ret }, _) => {
 										// jesse. we have to call METHods
 
 										if let Some(method) = scope
 											.context
 											.borrow()
 											.impls
-											.get(&id)
+											.get(&t_id)
 											.unwrap_or(&vec![])
 											.iter()
 											.find(|meth| &meth.0 == &name.name)
@@ -937,7 +937,7 @@ impl Expr {
 														)),
 														token_data: (0, 0),
 														type_info: RefCell::new(Some(
-															Type::TypeRef(r.clone(), id.clone()),
+															Type::TypeRef(r.clone(), t_id.clone()),
 														)),
 													},
 												);
@@ -953,7 +953,7 @@ impl Expr {
 														// Method call OK
 														lhs.1 = Some(Type::TypeRef(
 															r.clone(),
-															id.clone(),
+															t_id.clone(),
 														));
 														rhs.1 = Some(ret.clone());
 														return Ok(res);
@@ -1067,13 +1067,14 @@ impl Atom {
 				}
 			}
 
-			Atom::FnCall { name, args } => {
+			Atom::FnCall { name, args, ret } => {
 				if let Some(Type::TypeRef(t, _)) = scope.resolve_identifier(name) {
-					if let TypeDef::Function(ret, params) =
+					if let TypeDef::Function(t_ret, params) =
 						&*t.upgrade().unwrap().as_ref().read().unwrap()
 					{
 						// Identifier is a function, check parameter types
-						validate_fn_call(ret, args, params, scope, meta.clone())
+						*ret = Some(validate_fn_call(t_ret, args, params, scope, meta.clone())?);
+						Ok(ret.as_ref().unwrap().clone())
 					} else {
 						Err((
 							CMNError::new(CMNErrorCode::NotCallable(name.to_string())),

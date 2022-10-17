@@ -1076,6 +1076,7 @@ impl Parser {
 								result = Some(Atom::FnCall {
 									name: name.clone(),
 									args,
+									ret: None
 								});
 								break;
 							}

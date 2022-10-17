@@ -2,7 +2,7 @@ use std::{
 	cell::RefCell,
 	collections::HashMap,
 	ffi::{OsStr, OsString},
-	fs,
+	fs::{self, File},
 	path::{Path, PathBuf},
 	sync::{Arc, Mutex},
 };
@@ -78,7 +78,7 @@ pub fn launch_module_compilation<'scope>(
 	s.spawn(move |_s| {
 		let context = Context::create();
 
-		let result = match generate_code(&state, &mut mod_state, &context) {
+		let result = match generate_code(&state, &mut mod_state, &context, &input_module) {
 			Ok(res) => res,
 			Err(_) => return,
 		};
@@ -225,6 +225,7 @@ pub fn generate_code<'ctx>(
 	state: &Arc<ManagerState>,
 	mod_state: &mut ModuleState,
 	context: &'ctx Context,
+	input_module: &Identifier,
 ) -> Result<LLVMBackend<'ctx>, CMNError> {
 	// Generate AST
 
@@ -267,7 +268,10 @@ pub fn generate_code<'ctx>(
 
 	// Generate cIR
 	let cir_module = CIRModule::from_ast(mod_state);
-
+	let mut cir_out_path = get_module_out_path(&state, input_module, None);
+	cir_out_path.set_extension("cir");
+	fs::write(cir_out_path, cir_module.to_string()).unwrap();
+	
 	// TODO: add cIR analysis/optimization passes + save to file
 
 	// Generate LLVM IR

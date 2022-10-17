@@ -313,6 +313,7 @@ pub enum Atom {
 	FnCall {
 		name: Identifier,
 		args: Vec<ASTElem>,
+		ret: Option<Type>,
 	},
 }
 
@@ -335,7 +336,7 @@ impl Display for Atom {
 
 			Atom::ArrayLit(_elems) => todo!(),
 
-			Atom::FnCall { name, args } => {
+			Atom::FnCall { name, args, ret } => {
 				let mut args_iter = args.iter();
 				write!(f, "FnCall:{}(", name)?;
 

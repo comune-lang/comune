@@ -34,6 +34,10 @@ int main() {
 		printf("This is a while loop!\n\0");
 		test.b += 1;
 	}
+
+	for (int i = 0; i < 10; i += 1) {
+		printf("For loop test!\n\0");
+	}
 	
 	return test.sum();
 }

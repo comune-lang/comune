@@ -13,7 +13,7 @@ impl Display for CIRModule {
 		}
 
 		for func in &self.functions {
-			write!(f, "fn {} {}", func.0, func.1)?;
+			write!(f, "fn {}{}", func.0, func.1)?;
 		}
 
 		Ok(())
@@ -23,15 +23,23 @@ impl Display for CIRModule {
 impl Display for CIRFunction {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		if self.arg_count > 0 {
-			write!(f, "({}", self.variables[0])?;
+			write!(f, "({}", self.variables[0].1.as_ref().unwrap_or(&"0".to_string()))?;
 
 			for i in 1..self.arg_count {
-				write!(f, ", {}", self.variables[i])?;
+				write!(f, ", {}", self.variables[i].1.as_ref().unwrap_or(&i.to_string()))?;
 			}
 
 			write!(f, ") -> {} {{\n", self.ret)?;
 		} else {
 			write!(f, "() -> {} {{\n", self.ret)?;
+		}
+
+		for i in 0..self.variables.len() {
+			if let Some(name) = &self.variables[i].1 {
+				write!(f, "\tlet _{i}: {};\t({name})\n", &self.variables[i].0)?;
+			} else {
+				write!(f, "\tlet _{i}: {};\n", &self.variables[i].0)?;
+			}
 		}
 
 		for block in 0..self.blocks.len() {
@@ -50,9 +58,9 @@ impl Display for CIRStmt {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match self {
 			CIRStmt::Expression(expr) => write!(f, "{expr};\n"),
-			CIRStmt::Assignment(lval, expr) => write!(f, "let {lval} = {expr};\n"),
-			CIRStmt::Jump(block) => write!(f, "jmp {block};\n"),
-			CIRStmt::Branch(cond, a, b) => write!(f, "branch {cond}, {a}, {b};\n"),
+			CIRStmt::Assignment(lval, expr) => write!(f, "{lval} = {expr};\n"),
+			CIRStmt::Jump(block) => write!(f, "jmp bb{block};\n"),
+			CIRStmt::Branch(cond, a, b) => write!(f, "branch {cond}, bb{a}, bb{b};\n"),
 
 			CIRStmt::Return(expr_opt) => {
 				if let Some(expr) = expr_opt {
@@ -80,8 +88,8 @@ impl Display for RValue {
 				write!(f, "({lhs_ty} {lhs} {op} {rhs_ty} {rhs})")
 			}
 
-			RValue::Cast(ty, value) => {
-				write!(f, "{value} as {ty}")
+			RValue::Cast{ from, to, op } => {
+				write!(f, "{from} {op} as {to}")
 			}
 		}
 	}
@@ -89,8 +97,8 @@ impl Display for RValue {
 
 impl Display for LValue {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		write!(f, "%{}", self.local)?;
-
+		write!(f, "_{}", self.local)?;
+		
 		for proj in &self.projection {
 			match proj {
 				PlaceElem::Deref => write!(f, "*"),
@@ -107,9 +115,10 @@ impl Display for Operand {
 		match self {
 			Operand::IntegerLit(num) => write!(f, "{num}"),
 			Operand::FloatLit(num) => write!(f, "{num}"),
-			Operand::StringLit(s) => write!(f, "\"{s}\""),
+			Operand::StringLit(s) => write!(f, "\"{}\"", s.replace("\n", "\\n").replace("\0", "\\0")),
 			Operand::BoolLit(b) => write!(f, "{b}"),
 			Operand::LValue(lval) => write!(f, "{lval}"),
+			Operand::Undef => write!(f, "undef"),
 
 			Operand::FnCall(name, args) => {
 				write!(f, "call {name}(")?;
@@ -161,6 +170,8 @@ impl Display for CIRTypeDef {
 
 				write!(f, "}}\n\n")
 			}
+			
+			CIRTypeDef::Class {  } => todo!()
 		}
 	}
 }
@@ -171,9 +182,9 @@ impl Display for DataLayout {
 			f,
 			"{}",
 			match self {
-				DataLayout::Declared => "@decl",
-				DataLayout::Optimized => "@opt",
-				DataLayout::Packed => "@pack",
+				DataLayout::Declared => "decl",
+				DataLayout::Optimized => "opt",
+				DataLayout::Packed => "pack",
 			}
 		)
 	}

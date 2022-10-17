@@ -550,7 +550,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 						}
 					}
 
-					Atom::FnCall { name, args } => {
+					Atom::FnCall { name, args, ret } => {
 						let fn_v = self
 							.module
 							.get_function(name.resolved.as_ref().unwrap())
@@ -659,7 +659,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 								)
 							}
 
-							Expr::Atom(Atom::FnCall { name, args }, _) => {
+							Expr::Atom(Atom::FnCall { name, args, ret }, _) => {
 								self.generate_fn_call(name, args, t, scope)
 							}
 
