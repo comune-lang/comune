@@ -336,7 +336,7 @@ impl Display for Atom {
 
 			Atom::ArrayLit(_elems) => todo!(),
 
-			Atom::FnCall { name, args, ret } => {
+			Atom::FnCall { name, args, .. } => {
 				let mut args_iter = args.iter();
 				write!(f, "FnCall:{}(", name)?;
 

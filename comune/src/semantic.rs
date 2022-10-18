@@ -911,7 +911,7 @@ impl Expr {
 									}
 
 									// Method call on algebraic type
-									Expr::Atom(Atom::FnCall { name, args, ret }, _) => {
+									Expr::Atom(Atom::FnCall { name, args, .. }, _) => {
 										// jesse. we have to call METHods
 
 										if let Some(method) = scope

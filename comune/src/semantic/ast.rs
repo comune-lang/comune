@@ -3,10 +3,8 @@ use std::fmt::Display;
 
 use super::controlflow::ControlFlow;
 use super::expression::{Atom, Expr};
-use super::namespace::Identifier;
 use super::types::{Basic, Type, Typed};
 use super::FnScope;
-use crate::lexer::Token;
 use crate::parser::ASTResult;
 
 pub type TokenData = (usize, usize); // idx, len

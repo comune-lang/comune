@@ -1,31 +1,8 @@
-use std::cell::{Ref, RefCell};
-use std::collections::HashMap;
 use std::rc::Rc;
 
-use crate::constexpr::{ConstExpr, ConstValue};
-use crate::semantic::ast::{ASTElem, ASTNode};
-use crate::semantic::controlflow::ControlFlow;
-use crate::semantic::expression::{Atom, Expr, Operator};
-use crate::semantic::namespace::{Identifier, NamespaceItem};
-use crate::semantic::types::{Basic, DataLayout, Type, TypeDef};
+use inkwell::{targets::{TargetMachine, InitializationConfig, Target, TargetTriple}, context::Context, module::{Module, Linkage}, values::{FunctionValue, AnyValue, BasicValue, AnyValueEnum, PointerValue, BasicValueEnum, IntValue, StructValue, BasicMetadataValueEnum}, builder::Builder, types::{AnyType, BasicMetadataTypeEnum, FunctionType, AnyTypeEnum, BasicTypeEnum, BasicType, StructType, IntType}, basic_block::BasicBlock, AddressSpace, GlobalVisibility, FloatPredicate, IntPredicate};
 
-use inkwell::basic_block::BasicBlock;
-use inkwell::builder::Builder;
-use inkwell::context::Context;
-use inkwell::module::{Linkage, Module};
-use inkwell::passes::PassManager;
-use inkwell::targets::{InitializationConfig, Target, TargetMachine, TargetTriple};
-use inkwell::types::{
-	AnyType, AnyTypeEnum, BasicMetadataTypeEnum, BasicType, BasicTypeEnum, FunctionType, IntType,
-	StructType,
-};
-use inkwell::values::{
-	AnyValue, AnyValueEnum, BasicMetadataValueEnum, BasicValue, BasicValueEnum, FunctionValue,
-	PointerValue,
-};
-use inkwell::{AddressSpace, FloatPredicate, GlobalVisibility, IntPredicate};
-
-// This shit is a mess of enum conversions. hate it
+use crate::{cir::{CIRType, CIRFunction, CIRModule, CIRStmt, RValue, LValue, PlaceElem, Operand}, semantic::{types::Basic, expression::Operator, namespace::Identifier}};
 
 pub fn get_target_machine() -> TargetMachine {
 	Target::initialize_x86(&InitializationConfig::default());
@@ -48,941 +25,329 @@ type LLVMResult<T> = Result<T, String>;
 pub struct LLVMBackend<'ctx> {
 	pub context: &'ctx Context,
 	pub module: Module<'ctx>,
-	pub builder: Builder<'ctx>,
-	pub fpm: Option<PassManager<FunctionValue<'ctx>>>,
-	pub fn_value_opt: Option<FunctionValue<'ctx>>,
-	pub type_map: RefCell<HashMap<Type, Rc<dyn AnyType<'ctx> + 'ctx>>>,
-	pub loop_blocks: RefCell<Vec<[BasicBlock<'ctx>; 2]>>,
-}
-
-struct LLVMScope<'ctx, 'scope> {
-	variables: RefCell<HashMap<String, PointerValue<'ctx>>>,
-	parent: Option<&'scope LLVMScope<'ctx, 'scope>>,
-}
-
-impl<'ctx, 'scope> LLVMScope<'ctx, 'scope> {
-	fn get_variable<'a>(&'a self, name: &str) -> Option<Ref<'a, PointerValue<'ctx>>> {
-		// Safety: we convert the reference obtained from the guarded borrow
-		// into a pointer. Dropping the reference allows us to consume the
-		// original borrow guard and turn it into a new one (with the same
-		// lifetime) that refers to the value inside the hashmap.
-		let s = self.variables.borrow();
-		let ret = s
-			.get(name)
-			.map(|v| v as *const _)
-			.map(|v| Ref::map(s, |_| unsafe { &*v }));
-
-		if ret.is_some() {
-			ret
-		} else if let Some(parent) = self.parent {
-			parent.get_variable(name)
-		} else {
-			None
-		}
-	}
-
-	fn add_variable(&self, name: &str, var: PointerValue<'ctx>) {
-		self.variables.borrow_mut().insert(name.to_string(), var);
-	}
-
-	fn new() -> Self {
-		LLVMScope {
-			variables: RefCell::new(HashMap::new()),
-			parent: None,
-		}
-	}
-
-	fn from_parent(parent: &'scope LLVMScope<'ctx, 'scope>) -> Self {
-		LLVMScope {
-			variables: RefCell::new(HashMap::new()),
-			parent: Some(parent),
-		}
-	}
+	builder: Builder<'ctx>,
+	fn_value_opt: Option<FunctionValue<'ctx>>,
+	type_map: Vec<Rc<dyn AnyType<'ctx> + 'ctx>>,
+	blocks: Vec<BasicBlock<'ctx>>,
+	variables: Vec<PointerValue<'ctx>>,
 }
 
 impl<'ctx> LLVMBackend<'ctx> {
+	pub fn new(context: &'ctx Context, module_name: &str) -> Self {
+		Self {
+			context,
+			module: context.create_module(module_name),
+			builder: context.create_builder(),
+			fn_value_opt: None,
+			type_map: vec![],
+			blocks: vec![],
+			variables: vec![],
+		}
+	} 
+
+	pub fn compile_module(&mut self, module: &CIRModule) -> LLVMResult<()> {
+		for func in &module.functions {
+			self.register_fn(func.0, func.1)?;
+		}
+
+		for func in &module.functions {
+			self.generate_fn(func.0, func.1)?;
+		}
+
+		Ok(())
+	}
+
 	pub fn generate_libc_bindings(&self) {
 		let exit_t = self.context.void_type().fn_type(
 			&[BasicMetadataTypeEnum::IntType(self.context.i32_type())],
 			false,
 		);
-		self.module
-			.add_function("_exit", exit_t, Some(Linkage::External));
+
+		self.module.add_function("_exit", exit_t, Some(Linkage::External));
 	}
 
-	pub fn register_fn(&mut self, name_mangled: &String, t: &TypeDef) -> LLVMResult<FunctionValue> {
+	fn register_fn(&mut self, name: &Identifier, t: &CIRFunction) -> LLVMResult<FunctionValue> {
 		let fn_t = self.generate_prototype(t)?;
-		let fn_v = self.module.add_function(name_mangled.as_str(), fn_t, None);
+		let fn_v = self.module.add_function(name.resolved.as_ref().unwrap(), fn_t, None);
 
 		Ok(fn_v)
 	}
 
-	pub fn generate_fn(
-		&mut self,
-		name_mangled: &String,
-		t: &TypeDef,
-		body: Option<&ASTElem>,
-	) -> LLVMResult<FunctionValue> {
-		let fn_v = self.module.get_function(name_mangled.as_str()).unwrap();
+	fn generate_fn(&mut self, name: &Identifier, t: &CIRFunction) -> LLVMResult<FunctionValue> {
+		let fn_v = self.module.get_function(name.resolved.as_ref().unwrap()).unwrap();
 
 		self.fn_value_opt = Some(fn_v);
-		self.fpm = Some(PassManager::create(&self.module));
 
-		if let Some(body) = body {
-			let entry = self.context.append_basic_block(fn_v, "entry");
-			self.builder.position_at_end(entry);
-
-			let mut scope = LLVMScope::new();
-
-			// Add parameters to variable list
-			if let TypeDef::Function(_ret, args) = &t {
-				for (i, param) in fn_v.get_param_iter().enumerate() {
-					// Only add parameter to scope is it is named
-					if let Some(arg_name) = &args[i].1 {
-						let alloca = self.create_entry_block_alloca(&arg_name, param.get_type());
-
-						self.builder.build_store(alloca, param);
-
-						scope.add_variable(arg_name.as_str(), alloca);
-					}
-				}
-			} else {
-				panic!();
-			}
-
-			self.generate_node(body, &mut scope)?;
+		for i in 0..t.variables.len() {
+			let ty = Self::to_basic_type(self.get_llvm_type(&t.variables[i].0));
+			self.variables.push(self.create_entry_block_alloca(&format!("_{i}"), ty.as_basic_type_enum()));
 		}
 
-		Ok(fn_v)
-	}
-
-	fn generate_prototype(&self, t: &TypeDef) -> LLVMResult<FunctionType<'ctx>> {
-		if let TypeDef::Function(ret, args) = &t {
-			let types_mapped: Vec<_> = args
-				.iter()
-				.map(|t| Self::to_basic_metadata_enum(self.get_llvm_type(&t.0)).unwrap())
-				.collect();
-
-			Ok(match self.get_llvm_type(&ret).as_any_type_enum() {
-				AnyTypeEnum::ArrayType(a) => a.fn_type(&types_mapped, false),
-				AnyTypeEnum::FloatType(f) => f.fn_type(&types_mapped, false),
-				AnyTypeEnum::IntType(i) => i.fn_type(&types_mapped, false),
-				AnyTypeEnum::PointerType(p) => p.fn_type(&types_mapped, false),
-				AnyTypeEnum::StructType(s) => s.fn_type(&types_mapped, false),
-				AnyTypeEnum::VectorType(v) => v.fn_type(&types_mapped, false),
-				AnyTypeEnum::VoidType(v) => v.fn_type(&types_mapped, false),
-
-				_ => panic!(),
-			})
-		} else {
-			panic!()
+		for i in 0..t.blocks.len() {
+			self.blocks.push(self.context.append_basic_block(self.fn_value_opt.unwrap(), &format!("bb{i}")));
 		}
-	}
 
-	fn generate_node(
-		&self,
-		elem: &ASTElem,
-		scope: &LLVMScope<'ctx, '_>,
-	) -> LLVMResult<Option<Box<dyn BasicValue<'ctx> + 'ctx>>> {
-		let mut ret = None;
+		for i in 0..t.blocks.len() {
+			let block = &t.blocks[i];
 
-		match &elem.node {
-			ASTNode::Block(elems) => {
-				let subscope = LLVMScope::from_parent(scope);
+			self.builder.position_at_end(self.blocks[i]);
 
-				for elem in elems {
-					let node_ret = self.generate_node(elem, &subscope)?;
-					if node_ret.is_some() {
-						ret = node_ret;
-					}
-				}
-			}
-
-			ASTNode::Expression(e) => {
-				self.generate_expr(
-					&e.borrow(),
-					elem.type_info.borrow().as_ref().unwrap(),
-					scope,
-				);
-			}
-
-			ASTNode::Declaration(t, n, e) => {
-				let alloca = self.create_entry_block_alloca(
-					&n,
-					Self::to_basic_type(self.get_llvm_type(t)).as_basic_type_enum(),
-				);
-
-				if let Some(expr) = e {
-					if let ASTNode::Expression(expr) = &expr.as_ref().node {
-						self.builder.build_store(
-							alloca,
-							Self::into_basic_value(self.generate_expr(&expr.borrow(), t, scope))
-								.as_basic_value_enum(),
-						);
-					} else {
-						unreachable!(); //idk
-					}
-				}
-
-				scope.add_variable(&n, alloca);
-			}
-
-			ASTNode::ControlFlow(ctrl) => {
-				self.generate_control_flow(ctrl.as_ref(), scope)?;
-			}
-		};
-
-		Ok(ret)
-	}
-
-	fn generate_control_flow(
-		&self,
-		ctrl: &ControlFlow,
-		scope: &LLVMScope<'ctx, '_>,
-	) -> LLVMResult<Option<Box<dyn AnyValue<'ctx> + 'ctx>>> {
-		match ctrl {
-			ControlFlow::If {
-				cond,
-				body,
-				else_body,
-			} => {
-				let parent = self.fn_value_opt.unwrap();
-
-				let expr;
-				if let ASTNode::Expression(e) = &cond.node {
-					expr = e;
-				} else {
-					unreachable!();
-				}
-
-				let cond = self.generate_expr(
-					&expr.borrow(),
-					cond.type_info
-						.borrow()
-						.as_ref()
-						.unwrap_or(&Type::Basic(Basic::VOID)),
-					scope,
-				);
-
-				let cond = self.builder.build_int_compare(
-					IntPredicate::NE,
-					cond.as_any_value_enum().into_int_value(),
-					self.context.bool_type().const_zero(),
-					"ifcond",
-				);
-
-				let then_bb = self.context.append_basic_block(parent, "then");
-				let else_bb = self.context.append_basic_block(parent, "else");
-				let cont_bb = self.context.append_basic_block(parent, "ifcont");
-
-				self.builder
-					.build_conditional_branch(cond, then_bb, else_bb);
-
-				// Build then block
-				self.builder.position_at_end(then_bb);
-				self.generate_node(body, scope)?;
-
-				if !body.block_is_terminating() {
-					self.builder.build_unconditional_branch(cont_bb);
-				}
-
-				// Build else block
-				self.builder.position_at_end(else_bb);
-				if let Some(else_body) = else_body {
-					self.generate_node(else_body, scope)?;
-
-					if !else_body.block_is_terminating() {
-						self.builder.build_unconditional_branch(cont_bb);
-					}
-				} else {
-					self.builder.build_unconditional_branch(cont_bb);
-				}
-
-				self.builder.position_at_end(cont_bb);
-
-				Ok(None)
-			}
-
-			ControlFlow::While { cond, body } => {
-				let parent = self.fn_value_opt.unwrap();
-
-				let expr;
-				if let ASTNode::Expression(e) = &cond.node {
-					expr = e;
-				} else {
-					unreachable!();
-				}
-
-				let cond_bb = self.context.append_basic_block(parent, "whilecond");
-				let body_bb = self.context.append_basic_block(parent, "whileblock");
-				let end_bb = self.context.append_basic_block(parent, "whileend");
-
-				self.loop_blocks
-					.borrow_mut()
-					.push([cond_bb.clone(), end_bb.clone()]);
-
-				self.builder.build_unconditional_branch(cond_bb);
-				self.builder.position_at_end(cond_bb);
-
-				let cond = self.generate_expr(
-					&expr.borrow(),
-					cond.type_info
-						.borrow()
-						.as_ref()
-						.unwrap_or(&Type::Basic(Basic::VOID)),
-					scope,
-				);
-
-				let cond = self.builder.build_int_compare(
-					IntPredicate::NE,
-					cond.as_any_value_enum().into_int_value(),
-					self.context.bool_type().const_zero(),
-					"whilecond",
-				);
-
-				self.builder.build_conditional_branch(cond, body_bb, end_bb);
-
-				self.builder.position_at_end(body_bb);
-
-				// Generate body
-				self.generate_node(body, scope)?;
-				self.builder.build_unconditional_branch(cond_bb);
-				self.builder.position_at_end(end_bb);
-
-				self.loop_blocks.borrow_mut().pop();
-
-				Ok(None)
-			}
-
-			ControlFlow::For {
-				init,
-				cond,
-				iter,
-				body,
-			} => {
-				let parent = self.fn_value_opt.unwrap();
-				let subscope = LLVMScope::from_parent(scope);
-
-				if let Some(init) = init {
-					self.generate_node(init, &subscope)?;
-				}
-
-				let cond_bb = self.context.append_basic_block(parent, "forcond");
-				let body_bb = self.context.append_basic_block(parent, "forblock");
-				let end_bb = self.context.append_basic_block(parent, "forend");
-
-				self.loop_blocks
-					.borrow_mut()
-					.push([cond_bb.clone(), end_bb.clone()]);
-
-				self.builder.build_unconditional_branch(cond_bb);
-				self.builder.position_at_end(cond_bb);
-
-				if let Some(cond) = cond {
-					if let ASTNode::Expression(expr) = &cond.node {
-						let cond_expr = self.generate_expr(
-							&expr.borrow(),
-							&cond.type_info.borrow().as_ref().unwrap(),
-							&subscope,
-						);
-
-						let cond_ir = self.builder.build_int_compare(
-							IntPredicate::NE,
-							cond_expr.as_any_value_enum().into_int_value(),
-							self.context.bool_type().const_zero(),
-							"forcond",
-						);
-
-						self.builder
-							.build_conditional_branch(cond_ir, body_bb, end_bb);
-					} else {
-						panic!();
-					}
-				} else {
-					self.builder.build_unconditional_branch(body_bb);
-				}
-
-				self.builder.position_at_end(body_bb);
-
-				// Generate body
-				self.generate_node(body, &subscope)?;
-
-				if let Some(iter) = iter {
-					if let ASTNode::Expression(expr) = &iter.node {
-						self.generate_expr(
-							&expr.borrow(),
-							&iter.type_info.borrow().as_ref().unwrap(),
-							&subscope,
-						);
-					} else {
-						panic!();
-					}
-				}
-
-				self.builder.build_unconditional_branch(cond_bb);
-
-				self.builder.position_at_end(end_bb);
-
-				self.loop_blocks.borrow_mut().pop();
-
-				Ok(None)
-			}
-
-			ControlFlow::Return { expr } => {
-				if let Some(expr) = expr {
-					let expr_inner = match &expr.node {
-						ASTNode::Expression(expr_inner) => expr_inner,
-						_ => panic!(),
-					};
-
-					let e = self.generate_expr(
-						&expr_inner.borrow(),
-						expr.type_info.borrow().as_ref().unwrap(),
-						scope,
-					);
-
-					if let Some(e) = Self::try_into_basic_value(e) {
-						return Ok(Some(Box::new(self.builder.build_return(Some(e.as_ref())))));
-					}
-				}
-				Ok(Some(Box::new(self.builder.build_return(None))))
-			}
-
-			ControlFlow::Break => Ok(Some(Box::new(
-				self.builder
-					.build_unconditional_branch(self.loop_blocks.borrow().last().unwrap()[1]),
-			))),
-
-			ControlFlow::Continue => Ok(Some(Box::new(
-				self.builder
-					.build_unconditional_branch(self.loop_blocks.borrow().last().unwrap()[0]),
-			))),
-		}
-	}
-
-	fn generate_expr(
-		&self,
-		expr: &Expr,
-		t: &Type,
-		scope: &LLVMScope<'ctx, '_>,
-	) -> Rc<dyn AnyValue<'ctx> + 'ctx> {
-		match expr {
-			Expr::Atom(a, _meta) => {
-				match a {
-					Atom::IntegerLit(i, _) => match self.get_llvm_type(t).as_any_type_enum() {
-						AnyTypeEnum::IntType(i_t) => {
-							return Rc::new(i_t.const_int(*i as u64, false))
-						}
-						_ => panic!(),
+			for stmt in block {
+				match stmt {
+        			CIRStmt::Expression(expr) => {
+						self.generate_rvalue(expr);
 					},
 
-					Atom::FloatLit(f, _) => match self.get_llvm_type(t).as_any_type_enum() {
-						AnyTypeEnum::FloatType(f_t) => return Rc::new(f_t.const_float(*f)),
-						_ => panic!(),
+        			CIRStmt::Assignment(lval, expr) => {
+						self.builder.build_store(self.generate_lvalue(lval), self.generate_rvalue(expr).as_basic_value_enum());
 					},
 
-					Atom::BoolLit(b) => Rc::new(
-						self.context
-							.bool_type()
-							.const_int(if *b { 1 } else { 0 }, false),
-					),
+        			CIRStmt::Jump(block) => { 
+						self.builder.build_unconditional_branch(self.blocks[*block]); 
+					},
 
-					Atom::Identifier(v) => Rc::new(
-						self.builder
-							.build_load(self.resolve_identifier(scope, v), "vload"),
-					),
+        			CIRStmt::Branch(cond, a, b) => {
+						let cond_ir = self.generate_rvalue(cond).as_basic_value_enum().into_int_value();
+						self.builder.build_conditional_branch(cond_ir, self.blocks[*a], self.blocks[*b]);
+					},
 
-					Atom::ArrayLit(_) => todo!(),
-
-					Atom::AlgebraicLit(ty, elems) => {
-						if let Type::TypeRef(ty_r, _) = ty {
-							if let TypeDef::Algebraic(alg) =
-								&*ty_r.upgrade().unwrap().read().unwrap()
-							{
-								let struct_ty =
-									self.get_llvm_type(ty).as_any_type_enum().into_struct_type();
-								let mut undef = struct_ty.get_undef();
-
-								// Redundant work; could probably be stored in the AlgebraicLit from sem. analysis
-								for elem in elems {
-									if let Some((idx, elem_ty)) =
-										alg.get_member(&elem.0.as_ref().unwrap())
-									{
-										undef = self
-											.builder
-											.build_insert_value(
-												undef,
-												Self::into_basic_value(self.generate_expr(
-													&elem.1.borrow(),
-													elem_ty,
-													scope,
-												))
-												.as_basic_value_enum(),
-												idx as u32,
-												"con_struct_or",
-											)
-											.unwrap()
-											.into_struct_value();
-									} else {
-										panic!()
-									}
-								}
-
-								Rc::new(undef)
-							} else {
-								panic!()
-							}
+        			CIRStmt::Return(expr) => {
+						if let Some(expr) = expr {
+							self.builder.build_return(Some(&*self.generate_rvalue(&expr)));
 						} else {
-							panic!()
+							self.builder.build_return(None);
 						}
-					}
-
-					Atom::Cast(elem, to) => {
-						if let ASTNode::Expression(expr) = &elem.node {
-							self.generate_cast(
-								&expr.borrow(),
-								elem.type_info.borrow().as_ref().unwrap(),
-								&to,
-								scope,
-							)
-						} else {
-							panic!();
-						}
-					}
-
-					Atom::FnCall { name, args, ret } => {
-						let fn_v = self
-							.module
-							.get_function(name.resolved.as_ref().unwrap())
-							.unwrap();
-
-						let args_mapped: Vec<_> = args
-							.iter()
-							.map(|x| {
-								let expr;
-								if let ASTNode::Expression(e) = &x.node {
-									expr = e.borrow();
-								} else {
-									panic!()
-								}
-								Self::into_basic_metadata_value(self.generate_expr(&expr, t, scope))
-							})
-							.collect();
-
-						Rc::new(self.builder.build_call(
-							fn_v,
-							&args_mapped,
-							name.resolved.as_ref().unwrap(),
-						))
-					}
-
-					Atom::StringLit(s) => {
-						let len = s.as_bytes().len().try_into().unwrap();
-						let string_t = self.context.i8_type().array_type(len);
-
-						let val =
-							self.module
-								.add_global(string_t, Some(AddressSpace::Const), ".str");
-						val.set_visibility(GlobalVisibility::Hidden);
-						val.set_linkage(Linkage::Private);
-						val.set_unnamed_addr(true);
-
-						let literal: Vec<_> = s
-							.as_bytes()
-							.iter()
-							.map(|x| self.context.i8_type().const_int(*x as u64, false))
-							.collect();
-
-						val.set_initializer(&IntType::const_array(
-							self.context.i8_type(),
-							&literal,
-						));
-
-						Rc::new(
-							self.str_type().const_named_struct(&[
-								val.as_pointer_value().as_basic_value_enum(),
-								self.context
-									.i64_type()
-									.const_int(len.into(), false)
-									.as_basic_value_enum(),
-							]),
-						)
-					}
-				}
-			}
-
-			Expr::Cons(op, elems, _meta) => {
-				if elems.len() == 1 {
-					match op {
-						Operator::Ref => {
-							if let Expr::Atom(a, _) = &elems[0].0 {
-								if let Atom::Identifier(v) = &a {
-									return Rc::new(self.resolve_identifier(scope, v));
-								}
-							}
-							panic!()
-						}
-
-						Operator::Deref => {
-							if let Expr::Atom(a, _) = &elems[0].0 {
-								if let Atom::Identifier(v) = &a {
-									let ptr = self
-										.builder
-										.build_load(self.resolve_identifier(scope, v), "loadptr")
-										.as_basic_value_enum()
-										.into_pointer_value();
-									return Rc::new(self.builder.build_load(ptr, "deref"));
-								}
-							}
-							panic!()
-						}
-
-						_ => todo!(),
-					}
-				} else {
-					// Not a unary expression
-
-					let lhs = &elems[0];
-					let rhs = &elems[1];
-
-					match op {
-						Operator::MemberAccess => match &rhs.0 {
-							Expr::Atom(Atom::Identifier(id), _) => {
-								let lhs_s = self
-									.generate_expr(&lhs.0, t, scope)
-									.as_any_value_enum()
-									.into_struct_value();
-								Rc::new(
-									self.builder
-										.build_extract_value(lhs_s, id.mem_idx, "memberaccess")
-										.unwrap(),
-								)
-							}
-
-							Expr::Atom(Atom::FnCall { name, args, ret }, _) => {
-								self.generate_fn_call(name, args, t, scope)
-							}
-
-							_ => panic!(),
-						},
-
-						Operator::Assign => {
-							let rhs_val =
-								Self::into_basic_value(self.generate_expr(&rhs.0, t, scope))
-									.as_basic_value_enum();
-							self.builder
-								.build_store(self.generate_lvalue_expr(&lhs.0, t, scope), rhs_val);
-							Rc::new(rhs_val)
-						}
-
-						_ => {
-							let lhs_v = self
-								.generate_expr(&lhs.0, elems[0].1.as_ref().unwrap(), scope)
-								.as_any_value_enum();
-							let rhs_v = self
-								.generate_expr(&rhs.0, elems[1].1.as_ref().unwrap(), scope)
-								.as_any_value_enum();
-							let result;
-
-							let mut used_op = op.clone();
-
-							if op.is_compound_assignment() {
-								used_op = used_op.get_compound_operator();
-							}
-
-							if t.is_integral() {
-								let lhs_i = lhs_v.into_int_value();
-								let rhs_i = rhs_v.into_int_value();
-
-								result = match used_op {
-									Operator::Add => {
-										self.builder.build_int_add(lhs_i, rhs_i, "iadd")
-									}
-									Operator::Sub => {
-										self.builder.build_int_sub(lhs_i, rhs_i, "isub")
-									}
-									Operator::Mul => {
-										self.builder.build_int_mul(lhs_i, rhs_i, "imul")
-									}
-									Operator::Div => {
-										if t.is_signed() {
-											self.builder.build_int_signed_div(lhs_i, rhs_i, "idiv")
-										} else {
-											self.builder
-												.build_int_unsigned_div(lhs_i, rhs_i, "udiv")
-										}
-									}
-
-									_ => panic!(),
-								}
-								.as_basic_value_enum();
-							} else if t.is_floating_point() {
-								let lhs_f = lhs_v.into_float_value();
-								let rhs_f = rhs_v.into_float_value();
-
-								result = match op {
-									Operator::Add => {
-										self.builder.build_float_add(lhs_f, rhs_f, "fadd")
-									}
-									Operator::Sub => {
-										self.builder.build_float_sub(lhs_f, rhs_f, "fsub")
-									}
-									Operator::Mul => {
-										self.builder.build_float_mul(lhs_f, rhs_f, "fmul")
-									}
-									Operator::Div => {
-										self.builder.build_float_div(lhs_f, rhs_f, "fdiv")
-									}
-
-									// Relational operators
-									_ => panic!(),
-								}
-								.as_basic_value_enum()
-							} else if t.is_boolean() {
-								if lhs_v.is_int_value() {
-									let lhs_i = lhs_v.into_int_value();
-									let rhs_i = rhs_v.into_int_value();
-
-									result = self
-										.builder
-										.build_int_compare(
-											Self::to_int_predicate(
-												&used_op,
-												elems[0].1.as_ref().unwrap().is_signed(),
-											),
-											lhs_i,
-											rhs_i,
-											"icomp",
-										)
-										.as_basic_value_enum();
-								} else if lhs_v.is_float_value() {
-									let lhs_f = lhs_v.into_float_value();
-									let rhs_f = rhs_v.into_float_value();
-
-									result = self
-										.builder
-										.build_float_compare(
-											Self::to_float_predicate(op),
-											lhs_f,
-											rhs_f,
-											"fcomp",
-										)
-										.as_basic_value_enum();
-								} else {
-									panic!()
-								}
-							} else {
-								panic!()
-							}
-
-							if op.is_compound_assignment() {
-								let lhs_store = self.generate_lvalue_expr(&lhs.0, t, scope);
-								self.builder.build_store(lhs_store, result);
-							}
-
-							Rc::new(result)
-						}
-					}
-				}
+					},
+    			}
 			}
 		}
+
+		self.blocks.clear();
+		self.variables.clear();
+
+		Ok(self.fn_value_opt.unwrap())
 	}
 
-	// an lvalue expression is an expression that is assignable
-	fn generate_lvalue_expr(
-		&self,
-		expr: &Expr,
-		t: &Type,
-		scope: &LLVMScope<'ctx, '_>,
-	) -> PointerValue<'ctx> {
-		match expr {
-			Expr::Atom(Atom::Identifier(id), _) => self.resolve_identifier(scope, id),
+	fn generate_rvalue(&self, expr: &RValue) -> Rc<dyn BasicValue<'ctx> + 'ctx> {
+		Self::to_basic_value(self.generate_expr(expr))
+	}
 
-			Expr::Cons(op, elems, _) => {
-				match op {
-					Operator::Deref => {
-						if let Expr::Atom(Atom::Identifier(id), _) = &elems[0].0 {
-							// In LLVM, pointers are really pointers-to-pointers, so for lvalue expressions we only
-							// load through the pointer to get the pointer it points to. are ya confused yet
-							self.builder
-								.build_load(self.resolve_identifier(scope, id), "loadptr")
-								.as_basic_value_enum()
-								.into_pointer_value()
+	fn generate_expr(&self, expr: &RValue) -> Rc<dyn AnyValue<'ctx> + 'ctx> {
+		match expr {
+			RValue::Atom(ty, op_opt, atom) => {
+				
+				match op_opt {
+					Some(Operator::Deref) => {
+						let atom_ir = Self::to_basic_value(self.generate_operand(ty, atom));
+						Rc::new(self.builder.build_load(atom_ir.as_basic_value_enum().into_pointer_value(), "deref").as_basic_value_enum())
+					}
+
+					Some(Operator::Ref) => {
+						if let Operand::LValue(lval) = atom {
+							Rc::new(self.generate_lvalue(lval))
 						} else {
 							panic!()
 						}
 					}
 
-					Operator::MemberAccess => {
-						let lhs = self.generate_lvalue_expr(&elems[0].0, t, scope);
+					// TODO: Unary minus, logical NOT, etc
 
-						if let Expr::Atom(Atom::Identifier(id), _) = &elems[1].0 {
-							self.builder
-								.build_struct_gep(lhs, id.mem_idx, "memberaccess")
-								.unwrap()
-						} else {
-							panic!();
-						}
-					}
+					None => self.generate_operand(ty, atom),
+					
 					_ => panic!(),
 				}
 			}
-			_ => panic!(),
-		}
-	}
 
-	fn generate_cast(
-		&self,
-		expr: &Expr,
-		from: &Type,
-		to: &Type,
-		scope: &LLVMScope<'ctx, '_>,
-	) -> Rc<dyn AnyValue<'ctx> + 'ctx> {
-		match from {
-			Type::Basic(b) => {
-				if from.is_numeric() {
-					let val = self.generate_expr(expr, from, scope);
+			RValue::Cons([(lhs_ty, lhs), (rhs_ty, rhs)], op) => {
+				let lhs_v = Self::to_basic_value(self.generate_operand(lhs_ty, lhs)).as_basic_value_enum();
+				let rhs_v = Self::to_basic_value(self.generate_operand(rhs_ty, rhs)).as_basic_value_enum();
+				let result;
 
-					match val.as_any_value_enum() {
-						AnyValueEnum::IntValue(i) => match &to {
-							Type::Basic(Basic::BOOL) => {
-								return Rc::new(self.builder.build_int_compare(
-									IntPredicate::NE,
-									i,
-									i.get_type().const_zero(),
-									"boolcast",
-								))
-							}
+				if lhs_ty.is_integral() {
+					let lhs_i = lhs_v.into_int_value();
+					let rhs_i = rhs_v.into_int_value();
 
-							_ => match self.get_llvm_type(to).as_any_type_enum() {
-								AnyTypeEnum::IntType(t) => {
-									return Rc::new(self.builder.build_int_cast(i, t, "icast"))
-								}
-
-								AnyTypeEnum::FloatType(t) => {
-									return Rc::new(if from.is_signed() {
-										self.builder.build_signed_int_to_float(i, t, "fcast")
-									} else {
-										self.builder.build_unsigned_int_to_float(i, t, "fcast")
-									})
-								}
-
-								_ => panic!(),
-							},
-						},
-
-						AnyValueEnum::FloatValue(f) => {
-							match self.get_llvm_type(to).as_any_type_enum() {
-								AnyTypeEnum::FloatType(t) => {
-									return Rc::new(self.builder.build_float_cast(f, t, "fcast"))
-								}
-
-								AnyTypeEnum::IntType(t) => {
-									return Rc::new(if to.is_signed() {
-										self.builder.build_float_to_signed_int(f, t, "icast")
-									} else {
-										self.builder.build_float_to_unsigned_int(f, t, "icast")
-									})
-								}
-
-								_ => panic!(),
+					result = match op {
+						Operator::Add => {
+							self.builder.build_int_add(lhs_i, rhs_i, "iadd")
+						}
+						Operator::Sub => {
+							self.builder.build_int_sub(lhs_i, rhs_i, "isub")
+						}
+						Operator::Mul => {
+							self.builder.build_int_mul(lhs_i, rhs_i, "imul")
+						}
+						Operator::Div => {
+							if lhs_ty.is_signed() {
+								self.builder.build_int_signed_div(lhs_i, rhs_i, "idiv")
+							} else {
+								self.builder
+									.build_int_unsigned_div(lhs_i, rhs_i, "udiv")
 							}
 						}
+
 						_ => panic!(),
 					}
-				} else {
-					// Not numeric, match other Basics
+					.as_basic_value_enum();
+				} else if lhs_ty.is_floating_point() {
+					let lhs_f = lhs_v.into_float_value();
+					let rhs_f = rhs_v.into_float_value();
 
-					match b {
-						Basic::STR => {
-							if let Type::Pointer(other_p) = &to {
-								if let Type::Basic(other_b) = **other_p {
-									if let Basic::CHAR = other_b {
-										// Cast from `str` to char*
-										let val = self.generate_expr(expr, from, scope);
-
-										match val.as_any_value_enum() {
-											AnyValueEnum::StructValue(struct_val) => {
-												let val_extracted = match self
-													.builder
-													.build_extract_value(struct_val, 0, "cast")
-													.unwrap()
-												{
-													BasicValueEnum::PointerValue(p) => p,
-													_ => panic!(),
-												};
-
-												return Rc::new(
-													self.builder.build_pointer_cast(
-														val_extracted,
-														self.context
-															.i8_type()
-															.ptr_type(AddressSpace::Generic),
-														"charcast",
-													),
-												);
-											}
-											_ => panic!(),
-										}
-									}
-								}
-							}
-							panic!()
+					result = match op {
+						Operator::Add => {
+							self.builder.build_float_add(lhs_f, rhs_f, "fadd")
+						}
+						Operator::Sub => {
+							self.builder.build_float_sub(lhs_f, rhs_f, "fsub")
+						}
+						Operator::Mul => {
+							self.builder.build_float_mul(lhs_f, rhs_f, "fmul")
+						}
+						Operator::Div => {
+							self.builder.build_float_div(lhs_f, rhs_f, "fdiv")
 						}
 
-						Basic::BOOL => todo!(),
-
-						_ => todo!(),
+						// Relational operators
+						_ => panic!(),
 					}
-				}
-			}
+					.as_basic_value_enum()
+				} else if lhs_ty.is_boolean() {
+					if lhs_v.is_int_value() {
+						let lhs_i = lhs_v.into_int_value();
+						let rhs_i = rhs_v.into_int_value();
 
-			_ => todo!(),
-		}
-	}
+						result = self
+							.builder
+							.build_int_compare(
+								Self::to_int_predicate(
+									&op,
+									lhs_ty.is_signed(),
+								),
+								lhs_i,
+								rhs_i,
+								"icomp",
+							)
+							.as_basic_value_enum();
+					} else if lhs_v.is_float_value() {
+						let lhs_f = lhs_v.into_float_value();
+						let rhs_f = rhs_v.into_float_value();
 
-	fn generate_fn_call(
-		&self,
-		name: &Identifier,
-		args: &Vec<ASTElem>,
-		t: &Type,
-		scope: &LLVMScope<'ctx, '_>,
-	) -> Rc<dyn AnyValue<'ctx> + 'ctx> {
-		let fn_v = self
-			.module
-			.get_function(name.resolved.as_ref().unwrap())
-			.unwrap();
-
-		let args_mapped: Vec<_> = args
-			.iter()
-			.map(|x| {
-				let expr;
-				if let ASTNode::Expression(e) = &x.node {
-					expr = e.borrow();
+						result = self
+							.builder
+							.build_float_compare(
+								Self::to_float_predicate(op),
+								lhs_f,
+								rhs_f,
+								"fcomp",
+							)
+							.as_basic_value_enum();
+					} else {
+						panic!()
+					}
 				} else {
 					panic!()
 				}
 
-				Self::into_basic_metadata_value(self.generate_expr(&expr, t, scope))
-			})
+				Rc::new(result)
+			}
+			
+			RValue::Cast { from, to, val } => {
+				todo!()
+			}
+		}
+	}
+
+	fn generate_operand(&self, ty: &CIRType, expr: &Operand) -> Rc<dyn AnyValue<'ctx> + 'ctx> {
+		match expr {
+			Operand::FnCall(name, args) => {
+				let fn_v = self
+					.module
+					.get_function(name.resolved.as_ref().unwrap())
+					.unwrap();
+
+				let args_mapped: Vec<_> = args
+					.iter()
+					.map(|x| {
+						Self::to_basic_metadata_value(self.generate_expr(x))
+					})
+					.collect();
+
+				Rc::new(self.builder.build_call(fn_v, &args_mapped, "fncall"))
+			},
+
+			Operand::StringLit(s) => {
+				let len = s.as_bytes().len().try_into().unwrap();
+				let string_t = self.context.i8_type().array_type(len);
+				let val = self.module.add_global(string_t, Some(AddressSpace::Const), ".str");
+				
+				val.set_visibility(GlobalVisibility::Hidden);
+				val.set_linkage(Linkage::Private);
+				val.set_unnamed_addr(true);
+
+				let literal: Vec<_> = s
+					.as_bytes()
+					.iter()
+					.map(|x| self.context.i8_type().const_int(*x as u64, false))
+					.collect();
+
+				val.set_initializer(&IntType::const_array(
+					self.context.i8_type(),
+					&literal,
+				));
+
+				Rc::new(
+					self.slice_type(&self.context.i8_type()).const_named_struct(&[
+						val.as_pointer_value().as_basic_value_enum(),
+						self.context
+							.i64_type()
+							.const_int(len.into(), false)
+							.as_basic_value_enum(),
+					]),
+				)
+			},
+
+			Operand::IntegerLit(i) => Rc::new(Self::to_basic_type(self.get_llvm_type(ty)).as_basic_type_enum().into_int_type().const_int(*i as u64, true)),
+			Operand::FloatLit(f) => Rc::new(Self::to_basic_type(self.get_llvm_type(ty)).as_basic_type_enum().into_float_type().const_float(*f)),
+			Operand::BoolLit(b) => Rc::new(self.context.bool_type().const_int(if *b { 1 } else { 0 }, false)),
+			Operand::LValue(l) => Rc::new(self.builder.build_load(self.generate_lvalue(l), "lread")),
+			Operand::Undef => Rc::new(self.get_llvm_type(ty).as_any_type_enum().into_struct_type().get_undef()),
+		}
+	}
+
+	fn generate_lvalue(&self, expr: &LValue) -> PointerValue<'ctx> {
+		let mut local = self.variables[expr.local];
+
+		for proj in &expr.projection {
+			local = match proj {
+				PlaceElem::Deref => self.builder.build_load(local, "deref").as_basic_value_enum().into_pointer_value(),
+				PlaceElem::Field(i) => self.builder.build_struct_gep(local, *i as u32, "field").unwrap(),
+				PlaceElem::Index(expr) => unsafe { self.builder.build_gep(local, &[self.generate_rvalue(expr).as_basic_value_enum().into_int_value()], "index") },
+			}
+		}
+
+		todo!()
+	}
+
+	fn generate_prototype(&mut self, t: &CIRFunction) -> LLVMResult<FunctionType<'ctx>> {
+		let types_mapped: Vec<_> = t.variables[0..t.arg_count]
+			.iter()
+			.map(|t| Self::to_basic_metadata_type(self.get_llvm_type(&t.0)))
 			.collect();
 
-		Rc::new(self.builder.build_call(fn_v, &args_mapped, "fncall"))
-	}
+		Ok(match self.get_llvm_type(&t.ret).as_any_type_enum() {
+			AnyTypeEnum::ArrayType(a) => a.fn_type(&types_mapped, false),
+			AnyTypeEnum::FloatType(f) => f.fn_type(&types_mapped, false),
+			AnyTypeEnum::IntType(i) => i.fn_type(&types_mapped, false),
+			AnyTypeEnum::PointerType(p) => p.fn_type(&types_mapped, false),
+			AnyTypeEnum::StructType(s) => s.fn_type(&types_mapped, false),
+			AnyTypeEnum::VectorType(v) => v.fn_type(&types_mapped, false),
+			AnyTypeEnum::VoidType(v) => v.fn_type(&types_mapped, false),
 
-	fn resolve_identifier(
-		&self,
-		scope: &LLVMScope<'ctx, '_>,
-		id: &Identifier,
-	) -> PointerValue<'ctx> {
-		*scope.get_variable(id.resolved.as_ref().unwrap()).unwrap()
+			_ => panic!(),
+		})
 	}
-
-	pub fn create_entry_block_alloca<T: BasicType<'ctx>>(
-		&self,
-		name: &str,
-		ty: T,
-	) -> PointerValue<'ctx> {
+	
+	fn create_entry_block_alloca<T: BasicType<'ctx>>(&self, name: &str, ty: T) -> PointerValue<'ctx> {
 		let builder = self.context.create_builder();
 		let entry = self.fn_value_opt.unwrap().get_first_basic_block().unwrap();
 
@@ -994,59 +359,19 @@ impl<'ctx> LLVMBackend<'ctx> {
 		builder.build_alloca(ty, name)
 	}
 
-	fn into_basic_metadata_value<'scope>(
-		t: Rc<dyn AnyValue<'scope> + 'scope>,
-	) -> BasicMetadataValueEnum<'scope> {
-		Self::try_into_basic_metadata_value(t).unwrap()
-	}
-
-	fn try_into_basic_metadata_value<'scope>(
-		t: Rc<dyn AnyValue<'scope> + 'scope>,
-	) -> Option<BasicMetadataValueEnum<'scope>> {
+	fn to_basic_value(t: Rc<dyn AnyValue<'ctx> + 'ctx>) -> Rc<dyn BasicValue<'ctx> + 'ctx> {
 		match (*t).as_any_value_enum() {
-			AnyValueEnum::ArrayValue(a) => {
-				Some(inkwell::values::BasicMetadataValueEnum::ArrayValue(a))
-			}
-			AnyValueEnum::FloatValue(f) => {
-				Some(inkwell::values::BasicMetadataValueEnum::FloatValue(f))
-			}
-			AnyValueEnum::IntValue(i) => Some(inkwell::values::BasicMetadataValueEnum::IntValue(i)),
-			AnyValueEnum::PointerValue(p) => {
-				Some(inkwell::values::BasicMetadataValueEnum::PointerValue(p))
-			}
-			AnyValueEnum::StructValue(s) => {
-				Some(inkwell::values::BasicMetadataValueEnum::StructValue(s))
-			}
-			AnyValueEnum::VectorValue(v) => {
-				Some(inkwell::values::BasicMetadataValueEnum::VectorValue(v))
-			}
+			AnyValueEnum::ArrayValue(a) => Rc::new(a),
+			AnyValueEnum::FloatValue(f) => Rc::new(f),
+			AnyValueEnum::IntValue(i) => Rc::new(i),
+			AnyValueEnum::PointerValue(p) => Rc::new(p),
+			AnyValueEnum::StructValue(s) => Rc::new(s),
+			AnyValueEnum::VectorValue(v) => Rc::new(v),
 			_ => panic!(),
 		}
 	}
 
-	fn into_basic_value<'scope>(
-		t: Rc<dyn AnyValue<'scope> + 'scope>,
-	) -> Rc<dyn BasicValue<'scope> + 'scope> {
-		Self::try_into_basic_value(t).unwrap()
-	}
-
-	fn try_into_basic_value<'scope>(
-		t: Rc<dyn AnyValue<'scope> + 'scope>,
-	) -> Option<Rc<dyn BasicValue<'scope> + 'scope>> {
-		match (*t).as_any_value_enum() {
-			AnyValueEnum::ArrayValue(a) => Some(Rc::new(a)),
-			AnyValueEnum::FloatValue(f) => Some(Rc::new(f)),
-			AnyValueEnum::IntValue(i) => Some(Rc::new(i)),
-			AnyValueEnum::PointerValue(p) => Some(Rc::new(p)),
-			AnyValueEnum::StructValue(s) => Some(Rc::new(s)),
-			AnyValueEnum::VectorValue(v) => Some(Rc::new(v)),
-			_ => panic!(),
-		}
-	}
-
-	fn to_basic_type<'scope>(
-		t: Rc<dyn AnyType<'scope> + 'scope>,
-	) -> Rc<dyn BasicType<'scope> + 'scope> {
+	fn to_basic_type(t: Rc<dyn AnyType<'ctx> + 'ctx>) -> Rc<dyn BasicType<'ctx> + 'ctx> {
 		match (*t).as_any_type_enum() {
 			AnyTypeEnum::ArrayType(a) => Rc::new(a),
 			AnyTypeEnum::FloatType(f) => Rc::new(f),
@@ -1058,24 +383,33 @@ impl<'ctx> LLVMBackend<'ctx> {
 		}
 	}
 
-	fn to_basic_metadata_enum(
-		t: Rc<dyn AnyType<'ctx> + 'ctx>,
-	) -> Option<BasicMetadataTypeEnum<'ctx>> {
+	fn to_basic_metadata_type(t: Rc<dyn AnyType<'ctx> + 'ctx>) -> BasicMetadataTypeEnum<'ctx> {
 		match t.as_any_type_enum() {
-			AnyTypeEnum::ArrayType(a) => Some(BasicMetadataTypeEnum::ArrayType(a)),
-			AnyTypeEnum::FloatType(f) => Some(BasicMetadataTypeEnum::FloatType(f)),
-			AnyTypeEnum::IntType(i) => Some(BasicMetadataTypeEnum::IntType(i)),
-			AnyTypeEnum::PointerType(p) => Some(BasicMetadataTypeEnum::PointerType(p)),
-			AnyTypeEnum::StructType(s) => Some(BasicMetadataTypeEnum::StructType(s)),
-			AnyTypeEnum::VectorType(v) => Some(BasicMetadataTypeEnum::VectorType(v)),
-			AnyTypeEnum::VoidType(_) => None,
-			AnyTypeEnum::FunctionType(_) => None,
+			AnyTypeEnum::ArrayType(a) => BasicMetadataTypeEnum::ArrayType(a),
+			AnyTypeEnum::FloatType(f) => BasicMetadataTypeEnum::FloatType(f),
+			AnyTypeEnum::IntType(i) => BasicMetadataTypeEnum::IntType(i),
+			AnyTypeEnum::PointerType(p) => BasicMetadataTypeEnum::PointerType(p),
+			AnyTypeEnum::StructType(s) => BasicMetadataTypeEnum::StructType(s),
+			AnyTypeEnum::VectorType(v) => BasicMetadataTypeEnum::VectorType(v),
+			_ => panic!(),
 		}
 	}
 
-	fn get_llvm_type(&self, t: &Type) -> Rc<dyn AnyType<'ctx> + 'ctx> {
-		match &t {
-			Type::Basic(b) => match b {
+	fn to_basic_metadata_value(t: Rc<dyn AnyValue<'ctx> + 'ctx>) -> BasicMetadataValueEnum<'ctx> {
+		match t.as_any_value_enum() {
+			AnyValueEnum::ArrayValue(a) => BasicMetadataValueEnum::ArrayValue(a),
+			AnyValueEnum::FloatValue(f) => BasicMetadataValueEnum::FloatValue(f),
+			AnyValueEnum::IntValue(i) => BasicMetadataValueEnum::IntValue(i),
+			AnyValueEnum::PointerValue(p) => BasicMetadataValueEnum::PointerValue(p),
+			AnyValueEnum::StructValue(s) => BasicMetadataValueEnum::StructValue(s),
+			AnyValueEnum::VectorValue(v) => BasicMetadataValueEnum::VectorValue(v),
+			_ => panic!(),
+		}
+	}
+
+	fn get_llvm_type(&self, ty: &CIRType) -> Rc<dyn AnyType<'ctx> + 'ctx> {
+		match ty {
+			CIRType::Basic(basic) => match basic {
 				Basic::INTEGRAL { size_bytes, .. } => Rc::new(match size_bytes {
 					8 => self.context.i64_type(),
 					4 => self.context.i32_type(),
@@ -1088,69 +422,37 @@ impl<'ctx> LLVMBackend<'ctx> {
 					self.context
 						.ptr_sized_int_type(&get_target_machine().get_target_data(), None),
 				),
-				Basic::FLOAT { size_bytes } => Rc::new(if *size_bytes == 8 {
-					self.context.f64_type()
-				} else {
-					self.context.f32_type()
-				}),
+
+				Basic::FLOAT { size_bytes } => Rc::new(
+					if *size_bytes == 8 {
+						self.context.f64_type()
+					} else {
+						self.context.f32_type()
+					}
+				),
 
 				Basic::CHAR => Rc::new(self.context.i8_type()),
 				Basic::BOOL => Rc::new(self.context.bool_type()),
 				Basic::VOID => Rc::new(self.context.void_type()),
-				Basic::STR => Rc::new(self.str_type()),
-			},
-
-			Type::TypeRef(t_ref, id) => match &*t_ref.upgrade().unwrap().read().unwrap() {
-				TypeDef::Algebraic(aggregate) => {
-					let mapped_t = { self.type_map.borrow().get(t).cloned() };
-
-					if let Some(mapped_t) = mapped_t {
-						mapped_t.clone()
-					} else {
-						let result_type = Rc::new(self.context.opaque_struct_type(&id.name));
-						self.type_map
-							.borrow_mut()
-							.insert(t.clone(), result_type.clone());
-
-						let mut types_mapped = vec![];
-
-						for m in aggregate.items.iter() {
-							if let NamespaceItem::Variable(t, _) = &m.1 .0 {
-								types_mapped.push(
-									Self::to_basic_type(self.get_llvm_type(t)).as_basic_type_enum(),
-								)
-							}
-						}
-
-						result_type.set_body(&types_mapped, aggregate.layout == DataLayout::Packed);
-
-						result_type
-					}
-				}
-
-				TypeDef::Function(_, _) => todo!(),
-			},
-
-			Type::Pointer(t_sub) => Rc::new(
-				Self::to_basic_type(self.get_llvm_type(t_sub)).ptr_type(AddressSpace::Generic),
-			),
-
-			Type::Array(t_sub, s) => {
-				let mut array_size: u32 = 0;
-
-				for dimension in &*s.read().unwrap() {
-					if let ConstExpr::Result(ConstValue::Integral(i, _)) = dimension {
-						array_size += *i as u32;
-					} else {
-						panic!()
-					}
-				}
-
-				Rc::new(Self::to_basic_type(self.get_llvm_type(t_sub)).array_type(array_size))
+				Basic::STR => Rc::new(self.slice_type(&self.context.i8_type())),
 			}
 
-			Type::Unresolved(_) => panic!(),
+			CIRType::Array(arr_ty, size) => Rc::new(Self::to_basic_type(self.get_llvm_type(arr_ty)).array_type(size.iter().sum::<i128>() as u32)),
+			
+			CIRType::Pointer(pointee) | CIRType::Reference(pointee) => Rc::new(Self::to_basic_type(self.get_llvm_type(pointee)).ptr_type(AddressSpace::Generic)),
+
+			CIRType::TypeRef(idx) => self.type_map[*idx].clone(),
 		}
+	}
+
+	fn slice_type(&self, ty: &dyn BasicType<'ctx>) -> StructType<'ctx> {
+		self.context.struct_type(
+			&[
+				BasicTypeEnum::PointerType(ty.ptr_type(AddressSpace::Generic)),
+				BasicTypeEnum::IntType(self.context.i64_type()),
+			],
+			true,
+		)
 	}
 
 	fn to_int_predicate(op: &Operator, signed: bool) -> IntPredicate {
@@ -1190,15 +492,5 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 			_ => panic!(),
 		}
-	}
-
-	fn str_type(&self) -> StructType<'ctx> {
-		self.context.struct_type(
-			&[
-				BasicTypeEnum::PointerType(self.context.i8_type().ptr_type(AddressSpace::Generic)),
-				BasicTypeEnum::IntType(self.context.i64_type()),
-			],
-			false,
-		)
 	}
 }

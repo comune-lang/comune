@@ -1,10 +1,7 @@
 use std::{
-	cell::RefCell,
-	collections::HashMap,
 	ffi::{OsStr, OsString},
-	fs::{self, File},
 	path::{Path, PathBuf},
-	sync::{Arc, Mutex},
+	sync::{Arc, Mutex}, fs,
 };
 
 use colored::Colorize;
@@ -19,7 +16,7 @@ use crate::{
 	parser::{ASTResult, Parser},
 	semantic::{
 		self,
-		namespace::{Identifier, Namespace, NamespaceASTElem, NamespaceItem},
+		namespace::{Identifier, Namespace},
 	},
 };
 
@@ -271,33 +268,13 @@ pub fn generate_code<'ctx>(
 	let mut cir_out_path = get_module_out_path(&state, input_module, None);
 	cir_out_path.set_extension("cir");
 	fs::write(cir_out_path, cir_module.to_string()).unwrap();
-	
-	// TODO: add cIR analysis/optimization passes + save to file
+
+	// TODO: add cIR analysis/optimization passes
 
 	// Generate LLVM IR
-	// TODO: Replace AST-based codegen with cIR-based codegen
-	let namespace = mod_state.parser.current_namespace();
-	let module = context.create_module("module");
-	let builder = context.create_builder();
+	let mut backend = LLVMBackend::new(context, "module");
 
-	let mut backend = LLVMBackend {
-		context,
-		module,
-		builder,
-		fpm: None,
-		fn_value_opt: None,
-		type_map: RefCell::new(HashMap::new()),
-		loop_blocks: RefCell::new(vec![]),
-	};
-
-	// Register imports
-	for (_, import) in &namespace.borrow().imported {
-		register_namespace(&mut backend, import, None);
-	}
-
-	register_namespace(&mut backend, &namespace.borrow(), None);
-	compile_namespace(&mut backend, &namespace.borrow(), None);
-
+	backend.compile_module(&cir_module).unwrap();
 	backend.generate_libc_bindings();
 
 	if let Err(e) = backend.module.verify() {
@@ -324,8 +301,8 @@ pub fn generate_code<'ctx>(
 	*/
 	Ok(backend)
 }
-
-fn register_namespace(backend: &mut LLVMBackend, namespace: &Namespace, root: Option<&Namespace>) {
+/* 
+fn register_namespace(backend: &mut LLVMBackend, module: &Namespace, root: Option<&Namespace>) {
 	if root.is_some() {
 		assert!(namespace as *const _ != root.unwrap() as *const _);
 	}
@@ -400,3 +377,4 @@ fn compile_namespace(backend: &mut LLVMBackend, namespace: &Namespace, root: Opt
 		}
 	}
 }
+*/

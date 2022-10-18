@@ -1,10 +1,7 @@
-use std::cell::RefCell;
 use std::fmt::Display;
 use std::hash::{Hash, Hasher};
 use std::ptr;
 use std::sync::{Arc, RwLock, Weak};
-
-use serde::{Deserialize, Deserializer, Serialize};
 
 use super::namespace::{Identifier, Namespace, NamespaceEntry, NamespaceItem};
 use crate::constexpr::ConstExpr;
@@ -18,7 +15,7 @@ pub trait Typed {
 	fn get_type<'ctx>(&self, scope: &'ctx FnScope<'ctx>) -> ASTResult<Type>;
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Basic {
 	INTEGRAL { signed: bool, size_bytes: u32 },
 	SIZEINT { signed: bool },
@@ -63,7 +60,7 @@ pub enum Visibility {
 	Protected,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum DataLayout {
 	Declared,  // Layout is exactly as declared
 	Optimized, // Layout may be shuffled to minimize padding
@@ -333,33 +330,9 @@ impl Type {
 		}
 	}
 
-	pub fn is_integral(&self) -> bool {
-		if let Type::Basic(b) = self {
-			b.is_integral()
-		} else {
-			false
-		}
-	}
-
 	pub fn is_boolean(&self) -> bool {
 		if let Type::Basic(b) = self {
 			b.is_boolean()
-		} else {
-			false
-		}
-	}
-
-	pub fn is_floating_point(&self) -> bool {
-		if let Type::Basic(b) = self {
-			b.is_floating_point()
-		} else {
-			false
-		}
-	}
-
-	pub fn is_signed(&self) -> bool {
-		if let Type::Basic(b) = self {
-			b.is_signed()
 		} else {
 			false
 		}

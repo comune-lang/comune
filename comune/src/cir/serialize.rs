@@ -88,7 +88,7 @@ impl Display for RValue {
 				write!(f, "({lhs_ty} {lhs} {op} {rhs_ty} {rhs})")
 			}
 
-			RValue::Cast{ from, to, op } => {
+			RValue::Cast{ from, to, val: op } => {
 				write!(f, "{from} {op} as {to}")
 			}
 		}

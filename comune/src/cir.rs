@@ -34,19 +34,19 @@ pub struct LValue {
 pub enum PlaceElem {
 	Deref,
 	Field(FieldIndex),
-	Index(u64),
+	Index(RValue),
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum RValue {
 	Atom(CIRType, Option<Operator>, Operand),
 	Cons([(CIRType, Operand); 2], Operator),
-	Cast{ from: CIRType, to: CIRType, op: Operand},
+	Cast{ from: CIRType, to: CIRType, val: Operand},
 }
 
 // An Operand represents a single element of a CIR expression.
 // This may either be a constant, or a copy or move of an lvalue.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum Operand {
 	FnCall(Identifier, Vec<RValue>),
 	IntegerLit(i128),
@@ -57,7 +57,7 @@ pub enum Operand {
 	Undef,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Hash)]
 pub enum CIRType {
 	Basic(Basic),
 	Pointer(Box<CIRType>),
@@ -106,8 +106,8 @@ pub struct CIRFunction {
 
 pub struct CIRModule {
 	pub types: Vec<CIRTypeDef>,
-	pub globals: HashMap<String, (CIRType, RValue)>,
-	pub functions: HashMap<String, CIRFunction>,
+	pub globals: HashMap<Identifier, (CIRType, RValue)>,
+	pub functions: HashMap<Identifier, CIRFunction>,
 
 	// We use this during cIR generation to keep track of which TypeRefs map to which CIR type indices.
 	// Once cIR generation is complete, we don't use any AST `Type`s anymore, so this field isn't serialized.
@@ -141,9 +141,8 @@ impl CIRModule {
 				NamespaceItem::Function(ty, node) => {
 					if let NamespaceASTElem::Parsed(ast) = &*node.borrow() {
 						let cir_fn = CIRFunction::from_ast(&ast.node, &*ty.read().unwrap(), self);
-
-						self.functions
-							.insert(elem.1 .2.as_ref().unwrap().clone(), cir_fn);
+						
+						self.functions.insert(Identifier { name: elem.0.clone(), path: namespace.path.clone(), mem_idx: 0, resolved: None }, cir_fn);
 					}
 				}
 
@@ -507,7 +506,7 @@ impl CIRFunction {
 					let from = module.convert_type(expr.type_info.borrow().as_ref().unwrap());
 					let to = module.convert_type(to);
 					RValue::Cast {
-						op: self.get_as_operand(from.clone(), castee),
+						val: self.get_as_operand(from.clone(), castee),
 						from,
 						to,
 					}
@@ -668,5 +667,39 @@ impl CIRFunction {
 		self.write(CIRStmt::Assignment(lval.clone(), rval));
 
 		lval
+	}
+}
+
+impl CIRType {
+	pub fn is_integral(&self) -> bool {
+		if let CIRType::Basic(b) = self {
+			b.is_integral()
+		} else { 
+			false
+		}
+	}
+
+	pub fn is_floating_point(&self) -> bool {
+		if let CIRType::Basic(b) = self {
+			b.is_floating_point()
+		} else {
+			false
+		}
+	}
+	
+	pub fn is_boolean(&self) -> bool {
+		if let CIRType::Basic(b) = self {
+			b.is_boolean()
+		} else { 
+			false
+		}
+	}
+
+	pub fn is_signed(&self) -> bool {
+		if let CIRType::Basic(b) = self {
+			b.is_signed()
+		} else { 
+			false
+		}
 	}
 }
