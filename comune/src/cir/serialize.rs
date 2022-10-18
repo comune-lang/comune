@@ -36,7 +36,7 @@ impl Display for CIRFunction {
 
 		for i in 0..self.variables.len() {
 			if let Some(name) = &self.variables[i].1 {
-				write!(f, "\tlet _{i}: {};\t({name})\n", &self.variables[i].0)?;
+				write!(f, "\tlet _{i}: {}; ({name})\n", &self.variables[i].0)?;
 			} else {
 				write!(f, "\tlet _{i}: {};\n", &self.variables[i].0)?;
 			}

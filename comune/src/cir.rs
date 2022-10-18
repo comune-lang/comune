@@ -193,9 +193,9 @@ impl CIRModule {
 			TypeDef::Function(_, _) => todo!(),
 			TypeDef::Algebraic(alg) => {
 				let mut members = vec![];
-				let mut variants = vec![];
+				let variants = vec![];
 				let mut members_map = HashMap::new();
-				let mut variants_map = HashMap::new();
+				let variants_map = HashMap::new();
 
 				for item in &alg.items {
 					match &item.1 .0 {
@@ -204,7 +204,7 @@ impl CIRModule {
 							members.push(self.convert_type(ty));
 						}
 
-						NamespaceItem::Type(ty) => {
+						NamespaceItem::Type(_ty) => {
 							todo!()
 						}
 
@@ -459,7 +459,7 @@ impl CIRFunction {
 					Operand::StringLit(s.clone()),
 				),
 
-				Atom::ArrayLit(a) => todo!(),
+				Atom::ArrayLit(_a) => todo!(),
 
 				Atom::AlgebraicLit(ty, elems) => {
 					let cir_ty = module.convert_type(ty);
@@ -560,7 +560,7 @@ impl CIRFunction {
 							Operator::MemberAccess => {
 
 								match &elems[1].0 {
-									Expr::Atom(Atom::FnCall { name, args, ret }, _) => {
+									Expr::Atom(Atom::FnCall { name, args, .. }, _) => {
 										let rhs_ty = module.convert_type(elems[1].1.as_ref().unwrap());
 
 										let cir_args = args.iter().map(|arg| self.generate_expr(&arg.get_expr().borrow(), module)).collect();
