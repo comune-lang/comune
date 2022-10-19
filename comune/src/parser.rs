@@ -1251,7 +1251,6 @@ impl Parser {
 			name: "(none)".to_string(),
 			path: ScopePath::new(false),
 			mem_idx: 0,
-			resolved: None,
 		});
 
 		if self.is_at_type_token(immediate_resolve)? {

@@ -74,17 +74,15 @@ impl<'ctx> FnScope<'ctx> {
 		}
 	}
 
-	pub fn find_symbol(&self, id: &Identifier) -> Option<(String, Type)> {
+	pub fn find_symbol(&self, id: &Identifier) -> Option<(Identifier, Type)> {
 		let mut result = None;
+
 		if id.path.scopes.is_empty() {
 			// Unqualified name, perform scope-level lookup first
 			let local_lookup;
 
 			if self.variables.contains_key(&id.name) {
-				local_lookup = Some((
-					id.name.clone(),
-					self.variables.get(&id.name).cloned().unwrap(),
-				));
+				local_lookup = Some((id.clone(), self.variables.get(&id.name).cloned().unwrap()));
 			} else if let Some(parent) = self.parent {
 				local_lookup = parent.find_symbol(id);
 			} else {
@@ -92,7 +90,7 @@ impl<'ctx> FnScope<'ctx> {
 			}
 
 			if local_lookup.is_some() {
-				// Identifier refers to a local variable, so resolve it to the plain name
+				
 				result = local_lookup;
 			}
 		}
@@ -104,32 +102,12 @@ impl<'ctx> FnScope<'ctx> {
 
 			namespace.with_item(&id, &root, |item, id| {
 				if let NamespaceItem::Function(fn_type, _) = &item.0 {
-					result = Some((
-						item.2.as_ref().unwrap().clone(),
-						Type::TypeRef(Arc::downgrade(fn_type), id.clone()),
-					));
+					result = Some((id.clone(), Type::TypeRef(Arc::downgrade(fn_type), id.clone())));
 				}
 			});
 		}
 
 		return result;
-	}
-
-	pub fn get_identifier_type(&self, id: &Identifier) -> Option<Type> {
-		if let Some(result) = self.find_symbol(id) {
-			Some(result.1)
-		} else {
-			None
-		}
-	}
-
-	pub fn resolve_identifier(&self, id: &mut Identifier) -> Option<Type> {
-		if let Some(find_result) = self.find_symbol(id) {
-			id.resolved = Some(find_result.0);
-			Some(find_result.1.clone())
-		} else {
-			None
-		}
 	}
 
 	pub fn add_variable(&mut self, t: Type, n: String) {
@@ -493,53 +471,6 @@ pub fn register_impls(namespace: &RefCell<Namespace>, root: &RefCell<Namespace>)
 	Ok(())
 }
 
-pub fn mangle_names(namespace: &RefCell<Namespace>) -> ASTResult<()> {
-	for child in &namespace.borrow().children {
-		if let NamespaceItem::Namespace(ref ns) = child.1 .0 {
-			mangle_names(ns)?;
-		}
-	}
-
-	// Generate mangled names
-	{
-		let path = { namespace.borrow().path.clone() };
-		let mut namespace = namespace.borrow_mut();
-
-		for child in &mut namespace.children {
-			// Check if the function has a `no_mangle` attribute, or if it's `main`. If not, mangle the name
-			if get_attribute(&child.1 .1, "no_mangle").is_some()
-				|| (child.0 == "main" && path.scopes.is_empty())
-			{
-				child.1 .2 = Some(child.0.clone());
-			} else {
-				// Mangle name
-				child.1 .2 = match &child.1 .0 {
-					NamespaceItem::Function(ty, _) | NamespaceItem::Type(ty) => Some(
-						Namespace::mangle_name(&path, child.0, &ty.as_ref().read().unwrap()),
-					),
-
-					_ => None,
-				}
-			}
-		}
-
-		for im in &mut namespace.impls {
-			let mut path = im.0.path.clone();
-			path.scopes.push(im.0.name.clone());
-
-			for method in im.1 {
-				method.3 = Some(Namespace::mangle_name(
-					&path,
-					&method.0,
-					&method.1.read().unwrap(),
-				));
-			}
-		}
-	}
-
-	Ok(())
-}
-
 impl ASTElem {
 	// Recursively validate ASTNode types and check if blocks have matching return types
 	pub fn validate(&self, scope: &mut FnScope, ret: &Type) -> ASTResult<Option<Type>> {
@@ -554,9 +485,15 @@ impl ASTElem {
 					if let Some(t) = t {
 						// Only compare against return type for control flow nodes
 						if let ASTNode::ControlFlow(_) = elem.node {
-							//if !t.coercable_to(ret) {
-							//	return Err((CMNError::TypeMismatch(t, ret.clone()), elem.token_data))
-							//}
+							if t != *ret {
+								return Err((
+									CMNError::new(CMNErrorCode::ReturnTypeMismatch {
+										got: t,
+										expected: ret.clone(),
+									}),
+									elem.token_data,
+								));
+							}
 							last_ret = Some(t);
 						}
 					}
@@ -846,10 +783,10 @@ impl Expr {
 					false
 				}
 
-				Atom::Identifier(i) => scope.get_identifier_type(i).unwrap() == *target,
+				Atom::Identifier(i) => scope.find_symbol(i).unwrap().1 == *target,
 
-				Atom::FnCall { name, .. } => match scope.find_symbol(name).unwrap().1 {
-					Type::TypeRef(r, _) => {
+				Atom::FnCall { name, .. } => match scope.find_symbol(name).unwrap() {
+					(_, Type::TypeRef(r, _)) => {
 						if let TypeDef::Function(ret, _) =
 							&*r.upgrade().unwrap().as_ref().read().unwrap()
 						{
@@ -927,8 +864,6 @@ impl Expr {
 											if let TypeDef::Function(ret, params) =
 												&mut *method.1.as_ref().write().unwrap()
 											{
-												name.resolved = method.3.clone();
-
 												// Insert `this` into the arg list
 												args.insert(
 													0,
@@ -1036,12 +971,15 @@ impl Atom {
 			Atom::BoolLit(_) => Ok(Type::Basic(Basic::BOOL)),
 			Atom::StringLit(_) => Ok(Type::Basic(Basic::STR)),
 
-			Atom::Identifier(name) => scope.resolve_identifier(name).ok_or_else(|| {
-				(
-					CMNError::new(CMNErrorCode::UndeclaredIdentifier(name.to_string())),
-					meta,
-				)
-			}),
+			Atom::Identifier(name) => {
+				if let Some((id, ty)) = scope.find_symbol(name) {
+					// Replace name with fully-qualified ID
+					*name = id;
+					Ok(ty)
+				} else {
+					Err((CMNError::new(CMNErrorCode::UndeclaredIdentifier(name.to_string())), meta))
+				}
+			},
 
 			Atom::Cast(a, t) => {
 				if let ASTNode::Expression(expr) = &a.node {
@@ -1069,12 +1007,14 @@ impl Atom {
 			}
 
 			Atom::FnCall { name, args, ret } => {
-				if let Some(Type::TypeRef(t, _)) = scope.resolve_identifier(name) {
+				if let Some((full_id, Type::TypeRef(t, _))) = scope.find_symbol(name) {
 					if let TypeDef::Function(t_ret, params) =
 						&*t.upgrade().unwrap().as_ref().read().unwrap()
 					{
 						// Identifier is a function, check parameter types
 						*ret = Some(validate_fn_call(t_ret, args, params, scope, meta.clone())?);
+						*name = full_id;
+
 						Ok(ret.as_ref().unwrap().clone())
 					} else {
 						Err((
@@ -1168,7 +1108,7 @@ impl Atom {
 	pub fn get_lvalue_type<'ctx>(&self, scope: &'ctx FnScope<'ctx>) -> ASTResult<Type> {
 		match self {
 			Atom::Identifier(id) => match scope.find_symbol(id) {
-				Some((_, t)) => return Ok(t),
+				Some(t) => return Ok(t.1),
 				None => Err((
 					CMNError::new(CMNErrorCode::UndeclaredIdentifier(id.to_string())),
 					(0, 0),

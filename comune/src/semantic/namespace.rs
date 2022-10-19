@@ -24,7 +24,6 @@ pub struct Identifier {
 	pub name: String,
 	pub path: ScopePath,
 	pub mem_idx: u32,
-	pub resolved: Option<String>, // Mangled name, resolved during semantic analysis
 }
 
 impl Identifier {
@@ -33,7 +32,6 @@ impl Identifier {
 			name,
 			path: ScopePath::new(false),
 			mem_idx: 0,
-			resolved: None,
 		}
 	}
 
@@ -53,7 +51,6 @@ impl Hash for Identifier {
 		self.name.hash(state);
 		self.path.hash(state);
 		self.mem_idx.hash(state);
-		self.resolved.hash(state);
 	}
 }
 
@@ -169,10 +166,6 @@ impl Namespace {
 		}
 	}
 
-	pub fn mangle_name(path: &ScopePath, name: &str, ty: &TypeDef) -> String {
-		mangle(format!("{}::{}({})", path.to_string(), name, ty.mangle()).as_bytes())
-	}
-
 	pub fn with_item<Ret>(
 		&self,
 		name: &Identifier,
@@ -199,7 +192,6 @@ impl Namespace {
 						name: name.name.clone(),
 						path: self.path.clone(),
 						mem_idx: 0,
-						resolved: None,
 					};
 
 					return Some(closure(&self.children.get(&name.name).unwrap(), &id));
@@ -244,7 +236,6 @@ impl Namespace {
 									absolute: alias_id.path.absolute,
 								},
 								mem_idx: 0,
-								resolved: None,
 							},
 							root,
 							closure,

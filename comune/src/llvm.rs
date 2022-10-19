@@ -23,7 +23,6 @@ use crate::{
 	},
 	semantic::{
 		expression::Operator,
-		namespace::Identifier,
 		types::{Basic, DataLayout},
 	},
 };
@@ -101,11 +100,11 @@ impl<'ctx> LLVMBackend<'ctx> {
 		}
 
 		for func in &module.functions {
-			self.register_fn(func.0, func.1)?;
+			self.register_fn(func.1 .1.as_ref().unwrap(), &func.1 .0)?;
 		}
 
 		for func in &module.functions {
-			self.generate_fn(func.0, func.1)?;
+			self.generate_fn(func.1 .1.as_ref().unwrap(), &func.1 .0)?;
 		}
 
 		Ok(())
@@ -121,34 +120,29 @@ impl<'ctx> LLVMBackend<'ctx> {
 			.add_function("_exit", exit_t, Some(Linkage::External));
 	}
 
-	fn register_fn(&mut self, name: &Identifier, t: &CIRFunction) -> LLVMResult<FunctionValue> {
+	fn register_fn(&mut self, name: &str, t: &CIRFunction) -> LLVMResult<FunctionValue> {
 		let fn_t = self.generate_prototype(t)?;
-		let fn_v = self
-			.module
-			.add_function(name.resolved.as_ref().unwrap(), fn_t, None);
+		let fn_v = self.module.add_function(name, fn_t, None);
 
 		Ok(fn_v)
 	}
 
-	fn generate_fn(&mut self, name: &Identifier, t: &CIRFunction) -> LLVMResult<FunctionValue> {
-		let fn_v = self
-			.module
-			.get_function(name.resolved.as_ref().unwrap())
-			.unwrap();
+	fn generate_fn(&mut self, name: &str, t: &CIRFunction) -> LLVMResult<FunctionValue> {
+		let fn_v = self.module.get_function(name).unwrap();
 
 		self.fn_value_opt = Some(fn_v);
-
-		for i in 0..t.variables.len() {
-			let ty = Self::to_basic_type(self.get_llvm_type(&t.variables[i].0).as_any_type_enum());
-			self.variables
-				.push(self.create_entry_block_alloca(&format!("_{i}"), ty.as_basic_type_enum()));
-		}
 
 		for i in 0..t.blocks.len() {
 			self.blocks.push(
 				self.context
 					.append_basic_block(self.fn_value_opt.unwrap(), &format!("bb{i}")),
 			);
+		}
+
+		for i in 0..t.variables.len() {
+			let ty = Self::to_basic_type(self.get_llvm_type(&t.variables[i].0).as_any_type_enum());
+			self.variables
+				.push(self.create_entry_block_alloca(&format!("_{i}"), ty.as_basic_type_enum()));
 		}
 
 		for i in 0..t.blocks.len() {
@@ -331,10 +325,10 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 	fn generate_operand(&self, ty: &CIRType, expr: &Operand) -> Option<BasicValueEnum<'ctx>> {
 		match expr {
-			Operand::FnCall(name, args) => {
+			Operand::FnCall(_, args, mangled) => {
 				let fn_v = self
 					.module
-					.get_function(name.resolved.as_ref().unwrap())
+					.get_function(mangled.borrow().as_ref().unwrap())
 					.unwrap();
 
 				let args_mapped: Vec<_> = args

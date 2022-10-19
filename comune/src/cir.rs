@@ -1,17 +1,20 @@
 #![allow(dead_code)]
 
-use std::collections::HashMap;
+use std::{cell::RefCell, collections::HashMap};
 
 use crate::semantic::{
 	expression::Operator,
 	namespace::Identifier,
 	types::{Basic, DataLayout},
+	Attribute,
 };
 
 pub mod builder;
-mod serialize;
+pub mod monoize;
+pub mod serialize;
 
 // Bunch of type aliases to make code more readable
+type CIRFnMap = HashMap<Identifier, (CIRFunction, Option<String>)>;
 type CIRBlock = Vec<CIRStmt>;
 type BlockIndex = usize;
 type StmtIndex = usize;
@@ -51,7 +54,7 @@ pub enum RValue {
 // This may either be a constant, an undef value, or an lvalue access.
 #[derive(Clone, Debug)]
 pub enum Operand {
-	FnCall(Identifier, Vec<RValue>),
+	FnCall(Identifier, Vec<RValue>, RefCell<Option<String>>), // Fully-qualified name + args + mangled name
 	IntegerLit(i128),
 	FloatLit(f64),
 	StringLit(String),
@@ -101,12 +104,14 @@ pub struct CIRFunction {
 	pub blocks: Vec<CIRBlock>,
 	pub ret: CIRType,
 	pub arg_count: usize,
+	pub attributes: Vec<Attribute>,
+	pub is_extern: bool,
 }
 
 pub struct CIRModule {
 	pub types: Vec<CIRTypeDef>,
 	pub globals: HashMap<Identifier, (CIRType, RValue)>,
-	pub functions: HashMap<Identifier, CIRFunction>,
+	pub functions: CIRFnMap,
 }
 
 impl CIRType {

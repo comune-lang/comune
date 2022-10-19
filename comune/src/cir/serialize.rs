@@ -13,7 +13,7 @@ impl Display for CIRModule {
 		}
 
 		for func in &self.functions {
-			write!(f, "fn {}{}", func.0, func.1)?;
+			write!(f, "fn {}{}", func.0, func.1 .0)?;
 		}
 
 		Ok(())
@@ -130,7 +130,7 @@ impl Display for Operand {
 			Operand::LValue(lval) => write!(f, "{lval}"),
 			Operand::Undef => write!(f, "undef"),
 
-			Operand::FnCall(name, args) => {
+			Operand::FnCall(name, args, _) => {
 				write!(f, "call {name}(")?;
 
 				if !args.is_empty() {

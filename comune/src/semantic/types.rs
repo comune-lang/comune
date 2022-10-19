@@ -110,7 +110,6 @@ impl AlgebraicType {
 						name: name.name.clone(),
 						path: parent.path.clone(),
 						mem_idx: 0,
-						resolved: None,
 					};
 
 					return Some(closure(&item.1, &id));
@@ -277,38 +276,6 @@ impl Type {
 		Type::Pointer(Box::new(self.clone()))
 	}
 
-	// Name mangling
-	pub fn mangle(&self) -> String {
-		let mut result = String::new();
-
-		match &self {
-			Type::Basic(b) => {
-				// TODO: Shorten
-				result.push_str(b.as_str());
-			}
-
-			Type::Array(t, _) => {
-				result.push_str(&t.mangle());
-				result.push_str("[]");
-			}
-
-			Type::Pointer(_) => {
-				result.push_str("*");
-			}
-
-			Type::TypeRef(t, _) => {
-				result.push_str(&t.upgrade().unwrap().as_ref().read().unwrap().mangle())
-			}
-
-			Type::Unresolved(_) => {
-				panic!("Attempt to mangle an unresolved type!");
-			}
-		}
-		// TODO: Generics
-
-		result
-	}
-
 	pub fn castable_to(&self, target: &Type) -> bool {
 		if *self == *target {
 			true
@@ -336,32 +303,6 @@ impl Type {
 		} else {
 			false
 		}
-	}
-}
-
-impl TypeDef {
-	pub fn mangle(&self) -> String {
-		let mut result = String::new();
-		match &self {
-			TypeDef::Algebraic(a) => {
-				for t in &a.items {
-					match &t.1 .0 {
-						NamespaceItem::Variable(t, _) => result.push_str(&t.mangle()),
-						_ => todo!(),
-					}
-				}
-			}
-
-			TypeDef::Function(ret, args) => {
-				result.push_str("?");
-				for arg in args {
-					result.push_str(&arg.0.mangle());
-				}
-				result.push_str("!");
-				result.push_str(&ret.mangle());
-			}
-		}
-		result
 	}
 }
 

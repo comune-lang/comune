@@ -209,9 +209,6 @@ pub fn resolve_types(state: &Arc<ManagerState>, mod_state: &mut ModuleState) -> 
 	// Then register impls to their types
 	semantic::register_impls(root, root)?;
 
-	// And then mangle names
-	semantic::mangle_names(root)?;
-
 	if state.verbose_output {
 		println!("\ntype resolution output:\n\n{}", root.borrow());
 	}
@@ -266,19 +263,19 @@ pub fn generate_code<'ctx>(
 
 	// Generate cIR
 
+	let module_name = input_module.to_string();
 	let cir_module = CIRModuleBuilder::from_ast(mod_state).module;
 	let cir_out_path = get_module_out_path(&state, input_module, None).with_extension("cir");
 
 	fs::write(cir_out_path, cir_module.to_string()).unwrap();
 
-	// TODO: Monomorphize code
 	// TODO: add cIR analysis/optimization passes
 
 	// Generate LLVM IR
+	let mut backend = LLVMBackend::new(context, &module_name);
+	let module_mono = cir_module.monoize();
 
-	let mut backend = LLVMBackend::new(context, "module");
-
-	backend.compile_module(&cir_module).unwrap();
+	backend.compile_module(&module_mono).unwrap();
 	backend.generate_libc_bindings();
 
 	if let Err(e) = backend.module.verify() {

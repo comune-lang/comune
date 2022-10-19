@@ -359,7 +359,6 @@ impl Lexer {
 						name,
 						path,
 						mem_idx: 0,
-						resolved: None,
 					}));
 				}
 			} else if token.is_numeric() {
