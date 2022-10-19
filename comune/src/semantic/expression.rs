@@ -1,14 +1,12 @@
 use std::{cell::RefCell, fmt::Display};
 
-use serde::{Deserialize, Serialize};
-
 use super::{
 	ast::{ASTElem, TokenData},
 	namespace::Identifier,
 	types::{Basic, Type},
 };
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Operator {
 	Add,
 	Sub,

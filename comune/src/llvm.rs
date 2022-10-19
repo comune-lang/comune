@@ -1,8 +1,32 @@
 use std::rc::Rc;
 
-use inkwell::{targets::{TargetMachine, InitializationConfig, Target, TargetTriple}, context::Context, module::{Module, Linkage}, values::{FunctionValue, AnyValue, BasicValue, AnyValueEnum, PointerValue, BasicValueEnum, IntValue, StructValue, BasicMetadataValueEnum}, builder::Builder, types::{AnyType, BasicMetadataTypeEnum, FunctionType, AnyTypeEnum, BasicTypeEnum, BasicType, StructType, IntType}, basic_block::BasicBlock, AddressSpace, GlobalVisibility, FloatPredicate, IntPredicate};
+use inkwell::{
+	basic_block::BasicBlock,
+	builder::Builder,
+	context::Context,
+	module::{Linkage, Module},
+	targets::{InitializationConfig, Target, TargetMachine, TargetTriple},
+	types::{
+		AnyType, AnyTypeEnum, BasicMetadataTypeEnum, BasicType, BasicTypeEnum, FunctionType,
+		IntType, StructType,
+	},
+	values::{
+		AnyValue, AnyValueEnum, BasicMetadataValueEnum, BasicValue, BasicValueEnum, FunctionValue,
+		PointerValue,
+	},
+	AddressSpace, FloatPredicate, GlobalVisibility, IntPredicate,
+};
 
-use crate::{cir::{CIRType, CIRFunction, CIRModule, CIRStmt, RValue, LValue, PlaceElem, Operand}, semantic::{types::Basic, expression::Operator, namespace::Identifier}};
+use crate::{
+	cir::{
+		CIRFunction, CIRModule, CIRStmt, CIRType, CIRTypeDef, LValue, Operand, PlaceElem, RValue,
+	},
+	semantic::{
+		expression::Operator,
+		namespace::Identifier,
+		types::{Basic, DataLayout},
+	},
+};
 
 pub fn get_target_machine() -> TargetMachine {
 	Target::initialize_x86(&InitializationConfig::default());
@@ -13,7 +37,7 @@ pub fn get_target_machine() -> TargetMachine {
 			&TargetTriple::create("x86_64-pc-linux-gnu"),
 			"x86-64",
 			"+avx2",
-			inkwell::OptimizationLevel::Aggressive,
+			inkwell::OptimizationLevel::Default,
 			inkwell::targets::RelocMode::Default,
 			inkwell::targets::CodeModel::Default,
 		)
@@ -43,9 +67,39 @@ impl<'ctx> LLVMBackend<'ctx> {
 			blocks: vec![],
 			variables: vec![],
 		}
-	} 
+	}
 
 	pub fn compile_module(&mut self, module: &CIRModule) -> LLVMResult<()> {
+		for i in 0..module.types.len() {
+			self.type_map
+				.push(Rc::new(self.context.opaque_struct_type(&i.to_string())));
+		}
+
+		for i in 0..module.types.len() {
+			let current = &module.types[i];
+
+			match current {
+				CIRTypeDef::Algebraic {
+					members, layout, ..
+				} => {
+					let mut members_ir = vec![];
+
+					for mem in members {
+						members_ir.push(
+							Self::to_basic_type(self.get_llvm_type(&mem).as_any_type_enum())
+								.as_basic_type_enum(),
+						);
+					}
+
+					let type_ir = self.type_map[i].as_any_type_enum().into_struct_type();
+
+					type_ir.set_body(&members_ir, *layout == DataLayout::Packed);
+				}
+
+				CIRTypeDef::Class {} => todo!(),
+			}
+		}
+
 		for func in &module.functions {
 			self.register_fn(func.0, func.1)?;
 		}
@@ -63,28 +117,38 @@ impl<'ctx> LLVMBackend<'ctx> {
 			false,
 		);
 
-		self.module.add_function("_exit", exit_t, Some(Linkage::External));
+		self.module
+			.add_function("_exit", exit_t, Some(Linkage::External));
 	}
 
 	fn register_fn(&mut self, name: &Identifier, t: &CIRFunction) -> LLVMResult<FunctionValue> {
 		let fn_t = self.generate_prototype(t)?;
-		let fn_v = self.module.add_function(name.resolved.as_ref().unwrap(), fn_t, None);
+		let fn_v = self
+			.module
+			.add_function(name.resolved.as_ref().unwrap(), fn_t, None);
 
 		Ok(fn_v)
 	}
 
 	fn generate_fn(&mut self, name: &Identifier, t: &CIRFunction) -> LLVMResult<FunctionValue> {
-		let fn_v = self.module.get_function(name.resolved.as_ref().unwrap()).unwrap();
+		let fn_v = self
+			.module
+			.get_function(name.resolved.as_ref().unwrap())
+			.unwrap();
 
 		self.fn_value_opt = Some(fn_v);
 
 		for i in 0..t.variables.len() {
-			let ty = Self::to_basic_type(self.get_llvm_type(&t.variables[i].0));
-			self.variables.push(self.create_entry_block_alloca(&format!("_{i}"), ty.as_basic_type_enum()));
+			let ty = Self::to_basic_type(self.get_llvm_type(&t.variables[i].0).as_any_type_enum());
+			self.variables
+				.push(self.create_entry_block_alloca(&format!("_{i}"), ty.as_basic_type_enum()));
 		}
 
 		for i in 0..t.blocks.len() {
-			self.blocks.push(self.context.append_basic_block(self.fn_value_opt.unwrap(), &format!("bb{i}")));
+			self.blocks.push(
+				self.context
+					.append_basic_block(self.fn_value_opt.unwrap(), &format!("bb{i}")),
+			);
 		}
 
 		for i in 0..t.blocks.len() {
@@ -94,31 +158,44 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 			for stmt in block {
 				match stmt {
-        			CIRStmt::Expression(expr) => {
+					CIRStmt::Expression(expr) => {
 						self.generate_rvalue(expr);
-					},
+					}
 
-        			CIRStmt::Assignment(lval, expr) => {
-						self.builder.build_store(self.generate_lvalue(lval), self.generate_rvalue(expr).as_basic_value_enum());
-					},
+					CIRStmt::Assignment(lval, expr) => {
+						self.builder.build_store(
+							self.generate_lvalue(lval),
+							self.generate_rvalue(expr).unwrap().as_basic_value_enum(),
+						);
+					}
 
-        			CIRStmt::Jump(block) => { 
-						self.builder.build_unconditional_branch(self.blocks[*block]); 
-					},
+					CIRStmt::Jump(block) => {
+						self.builder.build_unconditional_branch(self.blocks[*block]);
+					}
 
-        			CIRStmt::Branch(cond, a, b) => {
-						let cond_ir = self.generate_rvalue(cond).as_basic_value_enum().into_int_value();
-						self.builder.build_conditional_branch(cond_ir, self.blocks[*a], self.blocks[*b]);
-					},
+					CIRStmt::Branch(cond, a, b) => {
+						let cond_ir = self
+							.generate_rvalue(cond)
+							.unwrap()
+							.as_basic_value_enum()
+							.into_int_value();
 
-        			CIRStmt::Return(expr) => {
+						self.builder.build_conditional_branch(
+							cond_ir,
+							self.blocks[*a],
+							self.blocks[*b],
+						);
+					}
+
+					CIRStmt::Return(expr) => {
 						if let Some(expr) = expr {
-							self.builder.build_return(Some(&*self.generate_rvalue(&expr)));
+							self.builder
+								.build_return(Some(&self.generate_rvalue(&expr).unwrap()));
 						} else {
 							self.builder.build_return(None);
 						}
-					},
-    			}
+					}
+				}
 			}
 		}
 
@@ -128,39 +205,52 @@ impl<'ctx> LLVMBackend<'ctx> {
 		Ok(self.fn_value_opt.unwrap())
 	}
 
-	fn generate_rvalue(&self, expr: &RValue) -> Rc<dyn BasicValue<'ctx> + 'ctx> {
-		Self::to_basic_value(self.generate_expr(expr))
-	}
-
-	fn generate_expr(&self, expr: &RValue) -> Rc<dyn AnyValue<'ctx> + 'ctx> {
+	fn generate_rvalue(&self, expr: &RValue) -> Option<BasicValueEnum<'ctx>> {
 		match expr {
 			RValue::Atom(ty, op_opt, atom) => {
-				
 				match op_opt {
 					Some(Operator::Deref) => {
-						let atom_ir = Self::to_basic_value(self.generate_operand(ty, atom));
-						Rc::new(self.builder.build_load(atom_ir.as_basic_value_enum().into_pointer_value(), "deref").as_basic_value_enum())
+						let atom_ir = Self::to_basic_value(
+							self.generate_operand(ty, atom).unwrap().as_any_value_enum(),
+						);
+						Some(
+							self.builder
+								.build_load(
+									atom_ir.as_basic_value_enum().into_pointer_value(),
+									"deref",
+								)
+								.as_basic_value_enum(),
+						)
 					}
 
 					Some(Operator::Ref) => {
 						if let Operand::LValue(lval) = atom {
-							Rc::new(self.generate_lvalue(lval))
+							Some(self.generate_lvalue(lval).as_basic_value_enum())
 						} else {
 							panic!()
 						}
 					}
 
 					// TODO: Unary minus, logical NOT, etc
-
 					None => self.generate_operand(ty, atom),
-					
+
 					_ => panic!(),
 				}
 			}
 
 			RValue::Cons([(lhs_ty, lhs), (rhs_ty, rhs)], op) => {
-				let lhs_v = Self::to_basic_value(self.generate_operand(lhs_ty, lhs)).as_basic_value_enum();
-				let rhs_v = Self::to_basic_value(self.generate_operand(rhs_ty, rhs)).as_basic_value_enum();
+				let lhs_v = Self::to_basic_value(
+					self.generate_operand(lhs_ty, lhs)
+						.unwrap()
+						.as_any_value_enum(),
+				)
+				.as_basic_value_enum();
+				let rhs_v = Self::to_basic_value(
+					self.generate_operand(rhs_ty, rhs)
+						.unwrap()
+						.as_any_value_enum(),
+				)
+				.as_basic_value_enum();
 				let result;
 
 				if lhs_ty.is_integral() {
@@ -168,21 +258,14 @@ impl<'ctx> LLVMBackend<'ctx> {
 					let rhs_i = rhs_v.into_int_value();
 
 					result = match op {
-						Operator::Add => {
-							self.builder.build_int_add(lhs_i, rhs_i, "iadd")
-						}
-						Operator::Sub => {
-							self.builder.build_int_sub(lhs_i, rhs_i, "isub")
-						}
-						Operator::Mul => {
-							self.builder.build_int_mul(lhs_i, rhs_i, "imul")
-						}
+						Operator::Add => self.builder.build_int_add(lhs_i, rhs_i, "iadd"),
+						Operator::Sub => self.builder.build_int_sub(lhs_i, rhs_i, "isub"),
+						Operator::Mul => self.builder.build_int_mul(lhs_i, rhs_i, "imul"),
 						Operator::Div => {
 							if lhs_ty.is_signed() {
 								self.builder.build_int_signed_div(lhs_i, rhs_i, "idiv")
 							} else {
-								self.builder
-									.build_int_unsigned_div(lhs_i, rhs_i, "udiv")
+								self.builder.build_int_unsigned_div(lhs_i, rhs_i, "udiv")
 							}
 						}
 
@@ -194,18 +277,10 @@ impl<'ctx> LLVMBackend<'ctx> {
 					let rhs_f = rhs_v.into_float_value();
 
 					result = match op {
-						Operator::Add => {
-							self.builder.build_float_add(lhs_f, rhs_f, "fadd")
-						}
-						Operator::Sub => {
-							self.builder.build_float_sub(lhs_f, rhs_f, "fsub")
-						}
-						Operator::Mul => {
-							self.builder.build_float_mul(lhs_f, rhs_f, "fmul")
-						}
-						Operator::Div => {
-							self.builder.build_float_div(lhs_f, rhs_f, "fdiv")
-						}
+						Operator::Add => self.builder.build_float_add(lhs_f, rhs_f, "fadd"),
+						Operator::Sub => self.builder.build_float_sub(lhs_f, rhs_f, "fsub"),
+						Operator::Mul => self.builder.build_float_mul(lhs_f, rhs_f, "fmul"),
+						Operator::Div => self.builder.build_float_div(lhs_f, rhs_f, "fdiv"),
 
 						// Relational operators
 						_ => panic!(),
@@ -219,10 +294,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 						result = self
 							.builder
 							.build_int_compare(
-								Self::to_int_predicate(
-									&op,
-									lhs_ty.is_signed(),
-								),
+								Self::to_int_predicate(&op, lhs_ty.is_signed()),
 								lhs_i,
 								rhs_i,
 								"icomp",
@@ -248,16 +320,16 @@ impl<'ctx> LLVMBackend<'ctx> {
 					panic!()
 				}
 
-				Rc::new(result)
+				Some(result)
 			}
-			
+
 			RValue::Cast { from, to, val } => {
 				todo!()
 			}
 		}
 	}
 
-	fn generate_operand(&self, ty: &CIRType, expr: &Operand) -> Rc<dyn AnyValue<'ctx> + 'ctx> {
+	fn generate_operand(&self, ty: &CIRType, expr: &Operand) -> Option<BasicValueEnum<'ctx>> {
 		match expr {
 			Operand::FnCall(name, args) => {
 				let fn_v = self
@@ -268,18 +340,31 @@ impl<'ctx> LLVMBackend<'ctx> {
 				let args_mapped: Vec<_> = args
 					.iter()
 					.map(|x| {
-						Self::to_basic_metadata_value(self.generate_expr(x))
+						Self::to_basic_metadata_value(
+							self.generate_rvalue(x).unwrap().as_any_value_enum(),
+						)
 					})
 					.collect();
 
-				Rc::new(self.builder.build_call(fn_v, &args_mapped, "fncall"))
-			},
+				if let Some(val) = self
+					.builder
+					.build_call(fn_v, &args_mapped, "fncall")
+					.try_as_basic_value()
+					.left()
+				{
+					Some(val)
+				} else {
+					None
+				}
+			}
 
 			Operand::StringLit(s) => {
 				let len = s.as_bytes().len().try_into().unwrap();
 				let string_t = self.context.i8_type().array_type(len);
-				let val = self.module.add_global(string_t, Some(AddressSpace::Const), ".str");
-				
+				let val = self
+					.module
+					.add_global(string_t, Some(AddressSpace::Const), ".str");
+
 				val.set_visibility(GlobalVisibility::Hidden);
 				val.set_linkage(Linkage::Private);
 				val.set_unnamed_addr(true);
@@ -290,27 +375,49 @@ impl<'ctx> LLVMBackend<'ctx> {
 					.map(|x| self.context.i8_type().const_int(*x as u64, false))
 					.collect();
 
-				val.set_initializer(&IntType::const_array(
-					self.context.i8_type(),
-					&literal,
-				));
+				val.set_initializer(&IntType::const_array(self.context.i8_type(), &literal));
 
-				Rc::new(
-					self.slice_type(&self.context.i8_type()).const_named_struct(&[
-						val.as_pointer_value().as_basic_value_enum(),
-						self.context
-							.i64_type()
-							.const_int(len.into(), false)
-							.as_basic_value_enum(),
-					]),
+				Some(
+					self.slice_type(&self.context.i8_type())
+						.const_named_struct(&[
+							val.as_pointer_value().as_basic_value_enum(),
+							self.context
+								.i64_type()
+								.const_int(len.into(), false)
+								.as_basic_value_enum(),
+						])
+						.as_basic_value_enum(),
 				)
-			},
+			}
 
-			Operand::IntegerLit(i) => Rc::new(Self::to_basic_type(self.get_llvm_type(ty)).as_basic_type_enum().into_int_type().const_int(*i as u64, true)),
-			Operand::FloatLit(f) => Rc::new(Self::to_basic_type(self.get_llvm_type(ty)).as_basic_type_enum().into_float_type().const_float(*f)),
-			Operand::BoolLit(b) => Rc::new(self.context.bool_type().const_int(if *b { 1 } else { 0 }, false)),
-			Operand::LValue(l) => Rc::new(self.builder.build_load(self.generate_lvalue(l), "lread")),
-			Operand::Undef => Rc::new(self.get_llvm_type(ty).as_any_type_enum().into_struct_type().get_undef()),
+			Operand::IntegerLit(i) => Some(
+				Self::to_basic_type(self.get_llvm_type(ty).as_any_type_enum())
+					.as_basic_type_enum()
+					.into_int_type()
+					.const_int(*i as u64, true)
+					.as_basic_value_enum(),
+			),
+			Operand::FloatLit(f) => Some(
+				Self::to_basic_type(self.get_llvm_type(ty).as_any_type_enum())
+					.as_basic_type_enum()
+					.into_float_type()
+					.const_float(*f)
+					.as_basic_value_enum(),
+			),
+			Operand::BoolLit(b) => Some(
+				self.context
+					.bool_type()
+					.const_int(if *b { 1 } else { 0 }, false)
+					.as_basic_value_enum(),
+			),
+			Operand::LValue(l) => Some(self.builder.build_load(self.generate_lvalue(l), "lread")),
+			Operand::Undef => Some(
+				self.get_llvm_type(ty)
+					.as_any_type_enum()
+					.into_struct_type()
+					.get_undef()
+					.as_basic_value_enum(),
+			),
 		}
 	}
 
@@ -319,9 +426,26 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 		for proj in &expr.projection {
 			local = match proj {
-				PlaceElem::Deref => self.builder.build_load(local, "deref").as_basic_value_enum().into_pointer_value(),
-				PlaceElem::Field(i) => self.builder.build_struct_gep(local, *i as u32, "field").unwrap(),
-				PlaceElem::Index(expr) => unsafe { self.builder.build_gep(local, &[self.generate_rvalue(expr).as_basic_value_enum().into_int_value()], "index") },
+				PlaceElem::Deref => self
+					.builder
+					.build_load(local, "deref")
+					.as_basic_value_enum()
+					.into_pointer_value(),
+				PlaceElem::Field(i) => self
+					.builder
+					.build_struct_gep(local, *i as u32, "field")
+					.unwrap(),
+				PlaceElem::Index(expr) => unsafe {
+					self.builder.build_gep(
+						local,
+						&[self
+							.generate_rvalue(expr)
+							.unwrap()
+							.as_basic_value_enum()
+							.into_int_value()],
+						"index",
+					)
+				},
 			}
 		}
 
@@ -331,7 +455,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 	fn generate_prototype(&mut self, t: &CIRFunction) -> LLVMResult<FunctionType<'ctx>> {
 		let types_mapped: Vec<_> = t.variables[0..t.arg_count]
 			.iter()
-			.map(|t| Self::to_basic_metadata_type(self.get_llvm_type(&t.0)))
+			.map(|t| Self::to_basic_metadata_type(self.get_llvm_type(&t.0).as_any_type_enum()))
 			.collect();
 
 		Ok(match self.get_llvm_type(&t.ret).as_any_type_enum() {
@@ -346,8 +470,12 @@ impl<'ctx> LLVMBackend<'ctx> {
 			_ => panic!(),
 		})
 	}
-	
-	fn create_entry_block_alloca<T: BasicType<'ctx>>(&self, name: &str, ty: T) -> PointerValue<'ctx> {
+
+	fn create_entry_block_alloca<T: BasicType<'ctx>>(
+		&self,
+		name: &str,
+		ty: T,
+	) -> PointerValue<'ctx> {
 		let builder = self.context.create_builder();
 		let entry = self.fn_value_opt.unwrap().get_first_basic_block().unwrap();
 
@@ -359,8 +487,8 @@ impl<'ctx> LLVMBackend<'ctx> {
 		builder.build_alloca(ty, name)
 	}
 
-	fn to_basic_value(t: Rc<dyn AnyValue<'ctx> + 'ctx>) -> Rc<dyn BasicValue<'ctx> + 'ctx> {
-		match (*t).as_any_value_enum() {
+	fn to_basic_value(t: AnyValueEnum<'ctx>) -> Rc<dyn BasicValue<'ctx> + 'ctx> {
+		match t {
 			AnyValueEnum::ArrayValue(a) => Rc::new(a),
 			AnyValueEnum::FloatValue(f) => Rc::new(f),
 			AnyValueEnum::IntValue(i) => Rc::new(i),
@@ -371,8 +499,8 @@ impl<'ctx> LLVMBackend<'ctx> {
 		}
 	}
 
-	fn to_basic_type(t: Rc<dyn AnyType<'ctx> + 'ctx>) -> Rc<dyn BasicType<'ctx> + 'ctx> {
-		match (*t).as_any_type_enum() {
+	fn to_basic_type(t: AnyTypeEnum<'ctx>) -> Rc<dyn BasicType<'ctx> + 'ctx> {
+		match t {
 			AnyTypeEnum::ArrayType(a) => Rc::new(a),
 			AnyTypeEnum::FloatType(f) => Rc::new(f),
 			AnyTypeEnum::IntType(i) => Rc::new(i),
@@ -383,8 +511,8 @@ impl<'ctx> LLVMBackend<'ctx> {
 		}
 	}
 
-	fn to_basic_metadata_type(t: Rc<dyn AnyType<'ctx> + 'ctx>) -> BasicMetadataTypeEnum<'ctx> {
-		match t.as_any_type_enum() {
+	fn to_basic_metadata_type(t: AnyTypeEnum<'ctx>) -> BasicMetadataTypeEnum<'ctx> {
+		match t {
 			AnyTypeEnum::ArrayType(a) => BasicMetadataTypeEnum::ArrayType(a),
 			AnyTypeEnum::FloatType(f) => BasicMetadataTypeEnum::FloatType(f),
 			AnyTypeEnum::IntType(i) => BasicMetadataTypeEnum::IntType(i),
@@ -395,8 +523,8 @@ impl<'ctx> LLVMBackend<'ctx> {
 		}
 	}
 
-	fn to_basic_metadata_value(t: Rc<dyn AnyValue<'ctx> + 'ctx>) -> BasicMetadataValueEnum<'ctx> {
-		match t.as_any_value_enum() {
+	fn to_basic_metadata_value(t: AnyValueEnum<'ctx>) -> BasicMetadataValueEnum<'ctx> {
+		match t {
 			AnyValueEnum::ArrayValue(a) => BasicMetadataValueEnum::ArrayValue(a),
 			AnyValueEnum::FloatValue(f) => BasicMetadataValueEnum::FloatValue(f),
 			AnyValueEnum::IntValue(i) => BasicMetadataValueEnum::IntValue(i),
@@ -423,23 +551,27 @@ impl<'ctx> LLVMBackend<'ctx> {
 						.ptr_sized_int_type(&get_target_machine().get_target_data(), None),
 				),
 
-				Basic::FLOAT { size_bytes } => Rc::new(
-					if *size_bytes == 8 {
-						self.context.f64_type()
-					} else {
-						self.context.f32_type()
-					}
-				),
+				Basic::FLOAT { size_bytes } => Rc::new(if *size_bytes == 8 {
+					self.context.f64_type()
+				} else {
+					self.context.f32_type()
+				}),
 
 				Basic::CHAR => Rc::new(self.context.i8_type()),
 				Basic::BOOL => Rc::new(self.context.bool_type()),
 				Basic::VOID => Rc::new(self.context.void_type()),
 				Basic::STR => Rc::new(self.slice_type(&self.context.i8_type())),
-			}
+			},
 
-			CIRType::Array(arr_ty, size) => Rc::new(Self::to_basic_type(self.get_llvm_type(arr_ty)).array_type(size.iter().sum::<i128>() as u32)),
-			
-			CIRType::Pointer(pointee) | CIRType::Reference(pointee) => Rc::new(Self::to_basic_type(self.get_llvm_type(pointee)).ptr_type(AddressSpace::Generic)),
+			CIRType::Array(arr_ty, size) => Rc::new(
+				Self::to_basic_type(self.get_llvm_type(arr_ty).as_any_type_enum())
+					.array_type(size.iter().sum::<i128>() as u32),
+			),
+
+			CIRType::Pointer(pointee) | CIRType::Reference(pointee) => Rc::new(
+				Self::to_basic_type(self.get_llvm_type(pointee).as_any_type_enum())
+					.ptr_type(AddressSpace::Generic),
+			),
 
 			CIRType::TypeRef(idx) => self.type_map[*idx].clone(),
 		}

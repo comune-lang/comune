@@ -7,7 +7,6 @@ use std::{
 };
 
 use mangling::mangle;
-use serde::{Deserialize, Serialize};
 
 use crate::{
 	errors::{CMNError, CMNErrorCode},
@@ -20,7 +19,7 @@ use super::{
 	Attribute,
 };
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Identifier {
 	pub name: String,
 	pub path: ScopePath,
@@ -60,22 +59,15 @@ impl Hash for Identifier {
 
 impl Display for Identifier {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		write!(
-			f,
-			"{}",
-			if self.path.scopes.is_empty() {
-				self.name.clone()
-			} else {
-				let mut result = self.path.to_string();
-				result.push_str("::");
-				result.push_str(&self.name);
-				result
-			}
-		)
+		write!(f, "{}", {
+			let mut result = self.path.to_string();
+			result.push_str(&self.name);
+			result
+		})
 	}
 }
 
-#[derive(Default, Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ScopePath {
 	pub scopes: Vec<String>,
 	pub absolute: bool,
@@ -99,18 +91,22 @@ impl ScopePath {
 	}
 }
 
-impl ToString for ScopePath {
-	fn to_string(&self) -> String {
-		if self.scopes.is_empty() {
-			return String::new();
+impl Display for ScopePath {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		let mut result = if self.absolute {
+			"::".to_string()
+		} else {
+			String::new()
+		};
+
+		if !self.scopes.is_empty() {
+			for scope in &self.scopes {
+				result.push_str(scope);
+				result.push_str("::");
+			}
 		}
-		let mut iter = self.scopes.iter();
-		let mut result = iter.next().unwrap().clone();
-		for scope in iter {
-			result.push_str("::");
-			result.push_str(scope);
-		}
-		result
+
+		write!(f, "{result}")
 	}
 }
 

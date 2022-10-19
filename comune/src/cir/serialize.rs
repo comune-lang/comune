@@ -23,10 +23,18 @@ impl Display for CIRModule {
 impl Display for CIRFunction {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		if self.arg_count > 0 {
-			write!(f, "({}", self.variables[0].1.as_ref().unwrap_or(&"0".to_string()))?;
+			write!(
+				f,
+				"({}",
+				self.variables[0].1.as_ref().unwrap_or(&"0".to_string())
+			)?;
 
 			for i in 1..self.arg_count {
-				write!(f, ", {}", self.variables[i].1.as_ref().unwrap_or(&i.to_string()))?;
+				write!(
+					f,
+					", {}",
+					self.variables[i].1.as_ref().unwrap_or(&i.to_string())
+				)?;
 			}
 
 			write!(f, ") -> {} {{\n", self.ret)?;
@@ -88,7 +96,7 @@ impl Display for RValue {
 				write!(f, "({lhs_ty} {lhs} {op} {rhs_ty} {rhs})")
 			}
 
-			RValue::Cast{ from, to, val: op } => {
+			RValue::Cast { from, to, val: op } => {
 				write!(f, "{from} {op} as {to}")
 			}
 		}
@@ -98,7 +106,7 @@ impl Display for RValue {
 impl Display for LValue {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		write!(f, "_{}", self.local)?;
-		
+
 		for proj in &self.projection {
 			match proj {
 				PlaceElem::Deref => write!(f, "*"),
@@ -115,22 +123,24 @@ impl Display for Operand {
 		match self {
 			Operand::IntegerLit(num) => write!(f, "{num}"),
 			Operand::FloatLit(num) => write!(f, "{num}"),
-			Operand::StringLit(s) => write!(f, "\"{}\"", s.replace("\n", "\\n").replace("\0", "\\0")),
+			Operand::StringLit(s) => {
+				write!(f, "\"{}\"", s.replace("\n", "\\n").replace("\0", "\\0"))
+			}
 			Operand::BoolLit(b) => write!(f, "{b}"),
 			Operand::LValue(lval) => write!(f, "{lval}"),
 			Operand::Undef => write!(f, "undef"),
 
 			Operand::FnCall(name, args) => {
 				write!(f, "call {name}(")?;
-			
+
 				if !args.is_empty() {
 					write!(f, "{}", args[0])?;
-					
+
 					for i in 1..args.len() {
 						write!(f, ", {}", args[i])?;
 					}
 				}
-			
+
 				write!(f, ")")
 			}
 		}
@@ -170,8 +180,8 @@ impl Display for CIRTypeDef {
 
 				write!(f, "}}\n\n")
 			}
-			
-			CIRTypeDef::Class {  } => todo!()
+
+			CIRTypeDef::Class {} => todo!(),
 		}
 	}
 }

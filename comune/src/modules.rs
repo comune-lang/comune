@@ -10,7 +10,7 @@ use inkwell::{context::Context, targets::FileType};
 use rayon::prelude::*;
 
 use crate::{
-	cir::{CIRModule, CIRModuleBuilder},
+	cir::builder::CIRModuleBuilder,
 	errors::{CMNError, CMNErrorCode, CMNMessage},
 	lexer::Lexer,
 	llvm::{self, LLVMBackend},
@@ -265,10 +265,10 @@ pub fn generate_code<'ctx>(
 	}
 
 	// Generate cIR
-	
+
 	let cir_module = CIRModuleBuilder::from_ast(mod_state).module;
 	let cir_out_path = get_module_out_path(&state, input_module, None).with_extension("cir");
-	
+
 	fs::write(cir_out_path, cir_module.to_string()).unwrap();
 
 	// TODO: Monomorphize code

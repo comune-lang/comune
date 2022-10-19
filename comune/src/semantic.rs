@@ -895,7 +895,8 @@ impl Expr {
 				}
 
 				Operator::MemberAccess => {
-					if let Type::TypeRef(r, t_id) = elems[0].0.validate_lvalue(scope, meta).unwrap() {
+					if let Type::TypeRef(r, t_id) = elems[0].0.validate_lvalue(scope, meta).unwrap()
+					{
 						if let (lhs, [rhs, ..]) = elems.split_first_mut().unwrap() {
 							match &mut *r.upgrade().unwrap().write().unwrap() {
 								// Dot operator is on an algebraic type, so check if it's a member access or method call
