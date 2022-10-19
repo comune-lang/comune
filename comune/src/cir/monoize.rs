@@ -37,7 +37,11 @@ impl CIRModule {
 						CIRStmt::Branch(cond, _, _) => {
 							self.monoize_rvalue(&cond);
 						}
-						
+
+						CIRStmt::Return(Some(expr)) => {
+							self.monoize_rvalue(expr);
+						}
+
 						_ => {}
 					}
 				}
@@ -51,7 +55,7 @@ impl CIRModule {
 		match expr {
 			RValue::Atom(_, _, op) => self.monoize_operand(op),
 
-			RValue::Cons([(_, lhs), (_, rhs)], _) => {
+			RValue::Cons(_, [(_, lhs), (_, rhs)], _) => {
 				self.monoize_operand(lhs);
 				self.monoize_operand(rhs);
 			}

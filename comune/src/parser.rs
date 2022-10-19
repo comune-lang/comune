@@ -1013,10 +1013,7 @@ impl Parser {
 
 											self.get_next()?;
 
-											let expr = match self.parse_expression()?.node {
-												ASTNode::Expression(expr) => expr,
-												_ => panic!(),
-											};
+											let expr = self.parse_expression()?;
 
 											inits.push((
 												Some(member_name.expect_scopeless()?),

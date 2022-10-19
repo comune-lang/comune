@@ -302,7 +302,7 @@ pub enum Atom {
 	ArrayLit(Vec<ASTElem>),
 
 	// Struct/enum literal
-	AlgebraicLit(Type, Vec<(Option<String>, RefCell<Expr>, TokenData)>),
+	AlgebraicLit(Type, Vec<(Option<String>, ASTElem, TokenData)>),
 
 	Identifier(Identifier),
 

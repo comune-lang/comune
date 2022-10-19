@@ -86,18 +86,18 @@ impl Display for RValue {
 		match self {
 			RValue::Atom(ty, op_opt, value) => {
 				if let Some(op) = op_opt {
-					write!(f, "{op} {ty} {value}")
+					write!(f, "{op} {ty}:{value}")
 				} else {
-					write!(f, "{ty} {value}")
+					write!(f, "{ty}:{value}")
 				}
 			}
 
-			RValue::Cons([(lhs_ty, lhs), (rhs_ty, rhs)], op) => {
-				write!(f, "({lhs_ty} {lhs} {op} {rhs_ty} {rhs})")
+			RValue::Cons(expr_ty, [(lhs_ty, lhs), (rhs_ty, rhs)], op) => {
+				write!(f, "{expr_ty}:({lhs_ty}:{lhs} {op} {rhs_ty}:{rhs})")
 			}
 
 			RValue::Cast { from, to, val: op } => {
-				write!(f, "{from} {op} as {to}")
+				write!(f, "{from}:{op} as {to}")
 			}
 		}
 	}

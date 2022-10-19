@@ -42,7 +42,7 @@ pub enum PlaceElem {
 #[derive(Clone, Debug)]
 pub enum RValue {
 	Atom(CIRType, Option<Operator>, Operand),
-	Cons([(CIRType, Operand); 2], Operator),
+	Cons(CIRType, [(CIRType, Operand); 2], Operator),
 	Cast {
 		from: CIRType,
 		to: CIRType,

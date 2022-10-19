@@ -1046,9 +1046,11 @@ impl Atom {
 								};
 
 							let expr_ty =
-								elem.1.get_mut().validate(scope, Some(member_ty), elem.2)?;
+								elem.1.get_expr().borrow_mut().validate(scope, Some(member_ty), elem.2)?;
+							
+							elem.1.type_info.borrow_mut().replace(expr_ty.clone());
 
-							if !elem.1.borrow().coercable_to(&expr_ty, member_ty, scope) {
+							if !elem.1.get_expr().borrow().coercable_to(&expr_ty, member_ty, scope) {
 								return Err((
 									CMNError::new(CMNErrorCode::AssignTypeMismatch {
 										expr: expr_ty,
