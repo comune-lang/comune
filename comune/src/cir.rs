@@ -9,7 +9,7 @@ use crate::{
 		ast::{ASTElem, ASTNode},
 		controlflow::ControlFlow,
 		expression::{Atom, Expr, Operator},
-		namespace::{Namespace, NamespaceASTElem, NamespaceItem, Identifier},
+		namespace::{Identifier, Namespace, NamespaceASTElem, NamespaceItem},
 		types::{Basic, DataLayout, Type, TypeDef},
 	},
 };
@@ -41,7 +41,11 @@ pub enum PlaceElem {
 pub enum RValue {
 	Atom(CIRType, Option<Operator>, Operand),
 	Cons([(CIRType, Operand); 2], Operator),
-	Cast{ from: CIRType, to: CIRType, val: Operand},
+	Cast {
+		from: CIRType,
+		to: CIRType,
+		val: Operand,
+	},
 }
 
 // An Operand represents a single element of a CIR expression.
@@ -77,9 +81,7 @@ pub enum CIRTypeDef {
 		variants_map: HashMap<String, usize>,
 	},
 
-	Class {
-
-	},
+	Class {},
 }
 
 #[derive(Debug)]
@@ -108,18 +110,22 @@ pub struct CIRModule {
 	pub types: Vec<CIRTypeDef>,
 	pub globals: HashMap<Identifier, (CIRType, RValue)>,
 	pub functions: HashMap<Identifier, CIRFunction>,
+}
 
-	// We use this during cIR generation to keep track of which TypeRefs map to which CIR type indices.
-	// Once cIR generation is complete, we don't use any AST `Type`s anymore, so this field isn't serialized.
+pub struct CIRModuleBuilder {
+	pub module: CIRModule,
+
 	type_map: HashMap<Type, TypeIndex>,
 }
 
-impl CIRModule {
+impl CIRModuleBuilder {
 	pub fn from_ast(ast: &ModuleState) -> Self {
-		let mut result = CIRModule {
-			types: vec![],
-			globals: HashMap::new(),
-			functions: HashMap::new(),
+		let mut result = CIRModuleBuilder {
+			module: CIRModule {
+				types: vec![],
+				globals: HashMap::new(),
+				functions: HashMap::new(), 
+			},
 			type_map: HashMap::new(),
 		};
 
@@ -141,8 +147,16 @@ impl CIRModule {
 				NamespaceItem::Function(ty, node) => {
 					if let NamespaceASTElem::Parsed(ast) = &*node.borrow() {
 						let cir_fn = CIRFunction::from_ast(&ast.node, &*ty.read().unwrap(), self);
-						
-						self.functions.insert(Identifier { name: elem.0.clone(), path: namespace.path.clone(), mem_idx: 0, resolved: None }, cir_fn);
+
+						self.module.functions.insert(
+							Identifier {
+								name: elem.0.clone(),
+								path: namespace.path.clone(),
+								mem_idx: 0,
+								resolved: None,
+							},
+							cir_fn,
+						);
 					}
 				}
 
@@ -160,9 +174,9 @@ impl CIRModule {
 					CIRType::TypeRef(*ty_ref)
 				} else {
 					let cir_def = self.convert_type_def(&def.upgrade().unwrap().read().unwrap());
-					self.types.push(cir_def);
-					self.type_map.insert(ty.clone(), self.types.len() - 1);
-					CIRType::TypeRef(self.types.len() - 1)
+					self.module.types.push(cir_def);
+					self.type_map.insert(ty.clone(), self.module.types.len() - 1);
+					CIRType::TypeRef(self.module.types.len() - 1)
 				}
 			}
 
@@ -224,25 +238,25 @@ impl CIRModule {
 }
 
 impl CIRFunction {
-	pub fn from_ast(fn_block: &ASTNode, ty: &TypeDef, module: &mut CIRModule) -> Self {
+	pub fn from_ast(fn_block: &ASTNode, ty: &TypeDef, builder: &mut CIRModuleBuilder) -> Self {
 		if let TypeDef::Function(ret, args) = ty {
 			let mut result = CIRFunction {
 				variables: vec![],
 				blocks: vec![],
 				current_block: 0,
 				name_map: HashMap::new(),
-				ret: module.convert_type(ret),
+				ret: builder.convert_type(ret),
 				arg_count: args.len(),
 			};
 
 			for param in args {
 				if let Some(name) = &param.1 {
-					result.insert_variable(name.clone(), param.0.clone(), module);
+					result.insert_variable(name.clone(), param.0.clone(), builder);
 				}
 			}
 
 			if let ASTNode::Block(elems) = fn_block {
-				result.generate_block(elems, module);
+				result.generate_block(elems, builder);
 			}
 
 			result
@@ -261,30 +275,30 @@ impl CIRFunction {
 		self.current_block
 	}
 
-	fn generate_block(&mut self, block: &Vec<ASTElem>, module: &mut CIRModule) -> BlockIndex {
+	fn generate_block(&mut self, block: &Vec<ASTElem>, builder: &mut CIRModuleBuilder) -> BlockIndex {
 		self.append_block();
 
 		for elem in block {
 			match &elem.node {
 				ASTNode::Block(elems) => {
-					self.generate_block(elems, module);
+					self.generate_block(elems, builder);
 					self.append_block();
 				}
 
 				ASTNode::Expression(expr) => {
-					let expr_ir = self.generate_expr(&expr.borrow(), module);
+					let expr_ir = self.generate_expr(&expr.borrow(), builder);
 					self.write(CIRStmt::Expression(expr_ir));
 				}
 
 				ASTNode::Declaration(ty, name, elem) => elem
 					.as_ref()
-					.and_then(|elem| Some(self.generate_decl(ty, name.clone(), elem, module)))
+					.and_then(|elem| Some(self.generate_decl(ty, name.clone(), elem, builder)))
 					.unwrap(),
 
 				ASTNode::ControlFlow(ctrl) => match &**ctrl {
 					ControlFlow::Return { expr } => {
 						if let Some(expr) = expr {
-							let expr_ir = self.generate_expr(&expr.get_expr().borrow(), module);
+							let expr_ir = self.generate_expr(&expr.get_expr().borrow(), builder);
 							self.write(CIRStmt::Return(Some(expr_ir)));
 						} else {
 							self.write(CIRStmt::Return(None));
@@ -296,17 +310,17 @@ impl CIRFunction {
 						body,
 						else_body,
 					} => {
-						let cond_ir = self.generate_expr(&cond.get_expr().borrow(), module);
+						let cond_ir = self.generate_expr(&cond.get_expr().borrow(), builder);
 						let start_block = self.current_block;
 						let if_block = if let ASTNode::Block(elems) = &body.node {
-							self.generate_block(elems, module)
+							self.generate_block(elems, builder)
 						} else {
 							panic!()
 						};
 
 						if let Some(else_body) = else_body {
 							let else_block = if let ASTNode::Block(elems) = &else_body.node {
-								self.generate_block(elems, module)
+								self.generate_block(elems, builder)
 							} else {
 								panic!()
 							};
@@ -332,27 +346,27 @@ impl CIRFunction {
 					ControlFlow::While { cond, body } => {
 						let start_block = self.current_block;
 						let cond_block = self.append_block();
-						
+
 						// Write jump-to-cond to start block
 						self.current_block = start_block;
 						self.write(CIRStmt::Jump(cond_block));
-						
+
 						// Generate body
 						let body_block = if let ASTNode::Block(elems) = &body.node {
-							self.generate_block(elems, module)
+							self.generate_block(elems, builder)
 						} else {
 							panic!()
 						};
 
 						// Write jump-to-cond to body block
 						self.write(CIRStmt::Jump(cond_block));
-						
+
 						let next_block = self.append_block();
 
 						self.current_block = cond_block;
-						let cond_ir = self.generate_expr(&cond.get_expr().borrow(), module);
+						let cond_ir = self.generate_expr(&cond.get_expr().borrow(), builder);
 						self.write(CIRStmt::Branch(cond_ir, body_block, next_block));
-						
+
 						self.current_block = next_block;
 					}
 
@@ -363,40 +377,40 @@ impl CIRFunction {
 						body,
 					} => {
 						let start_block = self.current_block;
-						
+
 						// Write init and jump to start block
 
 						if let Some(init) = init {
 							if let ASTNode::Declaration(ty, name, Some(elem)) = &init.node {
-								self.generate_decl(ty, name.clone(), elem, module);
+								self.generate_decl(ty, name.clone(), elem, builder);
 							}
 						}
 
 						let loop_block = self.append_block();
 						self.current_block = start_block;
 						self.write(CIRStmt::Jump(loop_block));
-						
+
 						// Generate body
 						let body_block = if let ASTNode::Block(elems) = &body.node {
-							self.generate_block(elems, module)
+							self.generate_block(elems, builder)
 						} else {
 							panic!()
 						};
 
 						// Add iter statement to body
 						if let Some(iter) = iter {
-							let iter_ir = self.generate_expr(&iter.get_expr().borrow(), module);
+							let iter_ir = self.generate_expr(&iter.get_expr().borrow(), builder);
 							self.write(CIRStmt::Expression(iter_ir));
 						}
 
 						// Write jump-to-loop to body block
 						self.write(CIRStmt::Jump(loop_block));
-						
+
 						let next_block = self.append_block();
 						self.current_block = loop_block;
 
 						if let Some(cond) = cond {
-							let cond_ir = self.generate_expr(&cond.get_expr().borrow(), module);
+							let cond_ir = self.generate_expr(&cond.get_expr().borrow(), builder);
 							self.write(CIRStmt::Branch(cond_ir, body_block, next_block));
 						} else {
 							self.write(CIRStmt::Jump(body_block));
@@ -420,11 +434,11 @@ impl CIRFunction {
 		ty: &Type,
 		name: String,
 		elem: &Box<ASTElem>,
-		module: &mut CIRModule,
+		builder: &mut CIRModuleBuilder,
 	) {
-		let cir_ty = module.convert_type(ty);
+		let cir_ty = builder.convert_type(ty);
 
-		let rval = self.generate_expr(&elem.get_expr().borrow(), module);
+		let rval = self.generate_expr(&elem.get_expr().borrow(), builder);
 
 		self.variables.push((cir_ty, Some(name.clone())));
 		self.name_map.insert(name.clone(), self.variables.len() - 1);
@@ -437,7 +451,7 @@ impl CIRFunction {
 		self.write(CIRStmt::Assignment(lval, rval))
 	}
 
-	fn generate_expr(&mut self, expr: &Expr, module: &mut CIRModule) -> RValue {
+	fn generate_expr(&mut self, expr: &Expr, builder: &mut CIRModuleBuilder) -> RValue {
 		match expr {
 			Expr::Atom(atom, _) => match atom {
 				Atom::IntegerLit(i, b) => {
@@ -461,12 +475,16 @@ impl CIRFunction {
 				Atom::ArrayLit(_a) => todo!(),
 
 				Atom::AlgebraicLit(ty, elems) => {
-					let cir_ty = module.convert_type(ty);
-					let ty_idx = if let CIRType::TypeRef(idx) = cir_ty { idx } else { panic!() };
+					let cir_ty = builder.convert_type(ty);
+					let ty_idx = if let CIRType::TypeRef(idx) = cir_ty {
+						idx
+					} else {
+						panic!()
+					};
 
 					let mut indices = vec![];
 
-					if let CIRTypeDef::Algebraic { members_map, .. } = &module.types[ty_idx] {
+					if let CIRTypeDef::Algebraic { members_map, .. } = &builder.module.types[ty_idx] {
 						for elem in elems {
 							indices.push(members_map[elem.0.as_ref().unwrap()]);
 						}
@@ -474,14 +492,17 @@ impl CIRFunction {
 						panic!()
 					}
 
-					let tmp = self.insert_temporary(cir_ty.clone(), RValue::Atom(cir_ty.clone(), None, Operand::Undef));
-					
+					let tmp = self.insert_temporary(
+						cir_ty.clone(),
+						RValue::Atom(cir_ty.clone(), None, Operand::Undef),
+					);
+
 					for i in 0..indices.len() {
-						let mem_expr = self.generate_expr(&elems[i].1.borrow(), module);
-						let mut mem_lval = tmp.clone(); 
+						let mem_expr = self.generate_expr(&elems[i].1.borrow(), builder);
+						let mut mem_lval = tmp.clone();
 
 						mem_lval.projection.push(PlaceElem::Field(indices[i]));
-						
+
 						self.write(CIRStmt::Assignment(mem_lval, mem_expr))
 					}
 
@@ -502,9 +523,9 @@ impl CIRFunction {
 				}
 
 				Atom::Cast(expr, to) => {
-					let castee = self.generate_expr(&expr.get_expr().borrow(), module);
-					let from = module.convert_type(expr.type_info.borrow().as_ref().unwrap());
-					let to = module.convert_type(to);
+					let castee = self.generate_expr(&expr.get_expr().borrow(), builder);
+					let from = builder.convert_type(expr.type_info.borrow().as_ref().unwrap());
+					let to = builder.convert_type(to);
 					RValue::Cast {
 						val: self.get_as_operand(from.clone(), castee),
 						from,
@@ -515,10 +536,10 @@ impl CIRFunction {
 				Atom::FnCall { name, args, ret } => {
 					let cir_args = args
 						.iter()
-						.map(|arg| self.generate_expr(&arg.get_expr().borrow(), module))
+						.map(|arg| self.generate_expr(&arg.get_expr().borrow(), builder))
 						.collect();
 					RValue::Atom(
-						module.convert_type(ret.as_ref().unwrap()),
+						builder.convert_type(ret.as_ref().unwrap()),
 						None,
 						Operand::FnCall(name.clone(), cir_args),
 					)
@@ -528,71 +549,72 @@ impl CIRFunction {
 			Expr::Cons(op, elems, _) => {
 				if op.is_compound_assignment() {
 					let op = op.get_compound_operator();
-					let lval_ir = self.generate_lvalue_expr(&elems[0].0, module);
-					let rval_ir = self.generate_expr(&elems[1].0, module);
-					let l_ty = module.convert_type(elems[0].1.as_ref().unwrap());
-					let r_ty = module.convert_type(elems[1].1.as_ref().unwrap());
+					let lval_ir = self.generate_lvalue_expr(&elems[0].0, builder);
+					let rval_ir = self.generate_expr(&elems[1].0, builder);
+					let l_ty = builder.convert_type(elems[0].1.as_ref().unwrap());
+					let r_ty = builder.convert_type(elems[1].1.as_ref().unwrap());
 
 					let r_tmp = self.get_as_operand(r_ty.clone(), rval_ir);
 
 					let expr = RValue::Cons(
 						[
 							(l_ty.clone(), Operand::LValue(lval_ir.clone())),
-							(r_ty.clone(), r_tmp)
+							(r_ty.clone(), r_tmp),
 						],
-						op
+						op,
 					);
 
 					let expr_tmp = self.get_as_operand(l_ty.clone(), expr);
-					self.write(CIRStmt::Assignment(lval_ir.clone(), RValue::Atom(r_ty, None, expr_tmp)));
+					self.write(CIRStmt::Assignment(
+						lval_ir.clone(),
+						RValue::Atom(r_ty, None, expr_tmp),
+					));
 
 					RValue::Atom(l_ty, None, Operand::LValue(lval_ir))
 				} else {
 					if elems.len() == 1 {
-						let sub_expr = self.generate_expr(&elems[0].0, module);
-						let cir_ty = module.convert_type(elems[0].1.as_ref().unwrap());
+						let sub_expr = self.generate_expr(&elems[0].0, builder);
+						let cir_ty = builder.convert_type(elems[0].1.as_ref().unwrap());
 						let temp = self.get_as_operand(cir_ty.clone(), sub_expr);
 
 						RValue::Atom(cir_ty, Some(op.clone()), temp)
 					} else {
 						match op {
-							Operator::MemberAccess => {
+							Operator::MemberAccess => match &elems[1].0 {
+								Expr::Atom(Atom::FnCall { name, args, .. }, _) => {
+									let rhs_ty = builder.convert_type(elems[1].1.as_ref().unwrap());
 
-								match &elems[1].0 {
-									Expr::Atom(Atom::FnCall { name, args, .. }, _) => {
-										let rhs_ty = module.convert_type(elems[1].1.as_ref().unwrap());
+									let cir_args = args
+										.iter()
+										.map(|arg| {
+											self.generate_expr(&arg.get_expr().borrow(), builder)
+										})
+										.collect();
 
-										let cir_args = args.iter().map(|arg| self.generate_expr(&arg.get_expr().borrow(), module)).collect();
-
-										RValue::Atom(rhs_ty, None, Operand::FnCall(name.clone(), cir_args))
-									}
-
-									Expr::Atom(Atom::Identifier(_), _) => {
-										let lval = self.generate_lvalue_expr(expr, module);
-										let cir_ty = module.convert_type(elems[1].1.as_ref().unwrap());
-										RValue::Atom(cir_ty, None, Operand::LValue(lval))
-									}
-
-									_ => panic!(),
+									RValue::Atom(
+										rhs_ty,
+										None,
+										Operand::FnCall(name.clone(), cir_args),
+									)
 								}
 
-								
-							}
+								Expr::Atom(Atom::Identifier(_), _) => {
+									let lval = self.generate_lvalue_expr(expr, builder);
+									let cir_ty = builder.convert_type(elems[1].1.as_ref().unwrap());
+									RValue::Atom(cir_ty, None, Operand::LValue(lval))
+								}
+
+								_ => panic!(),
+							},
 
 							_ => {
-								let lhs = self.generate_expr(&elems[0].0, module);
-								let rhs = self.generate_expr(&elems[1].0, module);
-								let lhs_ty = module.convert_type(elems[0].1.as_ref().unwrap());
-								let rhs_ty = module.convert_type(elems[1].1.as_ref().unwrap());
+								let lhs = self.generate_expr(&elems[0].0, builder);
+								let rhs = self.generate_expr(&elems[1].0, builder);
+								let lhs_ty = builder.convert_type(elems[0].1.as_ref().unwrap());
+								let rhs_ty = builder.convert_type(elems[1].1.as_ref().unwrap());
 								let lhs_tmp = self.get_as_operand(lhs_ty.clone(), lhs);
 								let rhs_tmp = self.get_as_operand(rhs_ty.clone(), rhs);
-								RValue::Cons(
-									[
-										(lhs_ty, lhs_tmp),
-										(rhs_ty, rhs_tmp),
-									],
-									op.clone(),
-								)
+								RValue::Cons([(lhs_ty, lhs_tmp), (rhs_ty, rhs_tmp)], op.clone())
 							}
 						}
 					}
@@ -601,7 +623,7 @@ impl CIRFunction {
 		}
 	}
 
-	fn generate_lvalue_expr(&mut self, expr: &Expr, module: &mut CIRModule) -> LValue {
+	fn generate_lvalue_expr(&mut self, expr: &Expr, builder: &mut CIRModuleBuilder) -> LValue {
 		match expr {
 			Expr::Atom(atom, _) => match atom {
 				Atom::Identifier(id) => LValue {
@@ -614,11 +636,11 @@ impl CIRFunction {
 
 			Expr::Cons(op, elems, _) => match op {
 				Operator::MemberAccess => {
-					let mut lhs = self.generate_lvalue_expr(&elems[0].0, module);
-					let lhs_ty = module.convert_type(&elems[0].1.as_ref().unwrap());
+					let mut lhs = self.generate_lvalue_expr(&elems[0].0, builder);
+					let lhs_ty = builder.convert_type(&elems[0].1.as_ref().unwrap());
 
 					if let CIRType::TypeRef(id) = lhs_ty {
-						if let CIRTypeDef::Algebraic { members_map, .. } = &module.types[id] {
+						if let CIRTypeDef::Algebraic { members_map, .. } = &builder.module.types[id] {
 							if let Expr::Atom(Atom::Identifier(id), _) = &elems[1].0 {
 								let idx = members_map[&id.expect_scopeless().unwrap()];
 
@@ -632,7 +654,7 @@ impl CIRFunction {
 				}
 
 				Operator::Deref => {
-					let mut derefee = self.generate_lvalue_expr(&elems[0].0, module);
+					let mut derefee = self.generate_lvalue_expr(&elems[0].0, builder);
 					derefee.projection.push(PlaceElem::Deref);
 					derefee
 				}
@@ -642,9 +664,10 @@ impl CIRFunction {
 		}
 	}
 
-	fn insert_variable(&mut self, name: String, ty: Type, module: &mut CIRModule) {
+	fn insert_variable(&mut self, name: String, ty: Type, builder: &mut CIRModuleBuilder) {
 		// TODO: Deal with shadowing and scopes
-		self.variables.push((module.convert_type(&ty), Some(name.clone())));
+		self.variables
+			.push((builder.convert_type(&ty), Some(name.clone())));
 		self.name_map.insert(name, self.variables.len() - 1);
 	}
 
@@ -674,7 +697,7 @@ impl CIRType {
 	pub fn is_integral(&self) -> bool {
 		if let CIRType::Basic(b) = self {
 			b.is_integral()
-		} else { 
+		} else {
 			false
 		}
 	}
@@ -686,11 +709,11 @@ impl CIRType {
 			false
 		}
 	}
-	
+
 	pub fn is_boolean(&self) -> bool {
 		if let CIRType::Basic(b) = self {
 			b.is_boolean()
-		} else { 
+		} else {
 			false
 		}
 	}
@@ -698,7 +721,7 @@ impl CIRType {
 	pub fn is_signed(&self) -> bool {
 		if let CIRType::Basic(b) = self {
 			b.is_signed()
-		} else { 
+		} else {
 			false
 		}
 	}

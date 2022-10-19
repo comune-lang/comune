@@ -1,7 +1,8 @@
 use std::{
 	ffi::{OsStr, OsString},
+	fs,
 	path::{Path, PathBuf},
-	sync::{Arc, Mutex}, fs,
+	sync::{Arc, Mutex},
 };
 
 use colored::Colorize;
@@ -9,7 +10,7 @@ use inkwell::{context::Context, targets::FileType};
 use rayon::prelude::*;
 
 use crate::{
-	cir::CIRModule,
+	cir::{CIRModule, CIRModuleBuilder},
 	errors::{CMNError, CMNErrorCode, CMNMessage},
 	lexer::Lexer,
 	llvm::{self, LLVMBackend},
@@ -264,14 +265,17 @@ pub fn generate_code<'ctx>(
 	}
 
 	// Generate cIR
-	let cir_module = CIRModule::from_ast(mod_state);
-	let mut cir_out_path = get_module_out_path(&state, input_module, None);
-	cir_out_path.set_extension("cir");
+	
+	let cir_module = CIRModuleBuilder::from_ast(mod_state).module;
+	let cir_out_path = get_module_out_path(&state, input_module, None).with_extension("cir");
+	
 	fs::write(cir_out_path, cir_module.to_string()).unwrap();
 
+	// TODO: Monomorphize code
 	// TODO: add cIR analysis/optimization passes
 
 	// Generate LLVM IR
+
 	let mut backend = LLVMBackend::new(context, "module");
 
 	backend.compile_module(&cir_module).unwrap();
@@ -301,7 +305,7 @@ pub fn generate_code<'ctx>(
 	*/
 	Ok(backend)
 }
-/* 
+/*
 fn register_namespace(backend: &mut LLVMBackend, module: &Namespace, root: Option<&Namespace>) {
 	if root.is_some() {
 		assert!(namespace as *const _ != root.unwrap() as *const _);
