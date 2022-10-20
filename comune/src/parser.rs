@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
 use crate::constexpr::ConstExpr;
@@ -133,16 +134,23 @@ impl Parser {
 		for im in &namespace.borrow().impls {
 			// Generate impl function bodies
 			for method in im.1 {
-				let mut elem = method.2.borrow_mut();
-				match *elem {
-					NamespaceASTElem::Unparsed(idx) => {
-						// Parse method block
-						self.lexer.borrow_mut().seek_token_idx(idx);
-						*elem = NamespaceASTElem::Parsed(self.parse_block()?)
+				match &method.1.0 {
+					NamespaceItem::Function(_, elem) => {
+						let mut elem = elem.borrow_mut();
+						match *elem {
+							NamespaceASTElem::Unparsed(idx) => {
+								// Parse method block
+								self.lexer.borrow_mut().seek_token_idx(idx);
+								*elem = NamespaceASTElem::Parsed(self.parse_block()?)
+							}
+		
+							_ => {}
+						}
 					}
 
-					_ => {}
+					_ => panic!(),
 				}
+				
 			}
 		}
 
@@ -371,16 +379,21 @@ impl Parser {
 									let impls = &mut self.current_namespace().borrow_mut().impls;
 
 									let current_impl = (
-										fn_name,
-										Arc::new(RwLock::new(TypeDef::Function(fn_ret, fn_params))),
-										RefCell::new(ast_elem),
+										NamespaceItem::Function(
+											Arc::new(RwLock::new(TypeDef::Function(fn_ret, fn_params))),
+											RefCell::new(ast_elem)
+										),
+										current_attributes,
 										None,
 									);
+									current_attributes = vec![];
 
 									if let Some(impls) = impls.get_mut(&impl_name) {
-										impls.push(current_impl);
+										impls.insert(fn_name, current_impl);
 									} else {
-										impls.insert(impl_name.clone(), vec![current_impl]);
+										let mut new_impls = HashMap::new();
+										new_impls.insert(fn_name, current_impl);
+										impls.insert(impl_name.clone(), new_impls);
 									}
 
 									current = self.get_current()?;

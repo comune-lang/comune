@@ -58,13 +58,19 @@ impl CIRModuleBuilder {
 
 	fn register_namespace(&mut self, namespace: &Namespace, root: &Namespace) {
 		for im in &namespace.impls {
-			for meth in im.1 {
-				let cir_fn = self.generate_prototype(&*meth.1.read().unwrap(), vec![]);
+			for elem in im.1 {
+				match &elem.1.0 {
+					NamespaceItem::Function(fn_type, _) => {
+						let cir_fn = self.generate_prototype(&*fn_type.read().unwrap(), vec![]);
 
-				self.module.functions.insert(
-					Identifier::from_parent(im.0, &meth.0),
-					(cir_fn, None),
-				);
+						self.module.functions.insert(
+							Identifier::from_parent(im.0, &elem.0),
+							(cir_fn, None),
+						);
+					}
+
+					_ => panic!(),
+				}
 			}
 		}
 		
@@ -90,18 +96,23 @@ impl CIRModuleBuilder {
 
 	fn generate_namespace(&mut self, namespace: &Namespace, root: &Namespace) {
 		for im in &namespace.impls {
-			for meth in im.1 {
-				let name = Identifier::from_parent(im.0, &meth.0);
-				let mut cir_fn = self.module.functions.remove(&name).unwrap();
+			for elem in im.1 {
+				match &elem.1.0 {
+					NamespaceItem::Function(_, ast) => {
+						let name = Identifier::from_parent(im.0, &elem.0);
+						let mut cir_fn = self.module.functions.remove(&name).unwrap();
 
-				if let NamespaceASTElem::Parsed(ast) = &*meth.2.borrow() {
-					cir_fn.0 = self.generate_function(cir_fn.0, &ast.node);
+						if let NamespaceASTElem::Parsed(ast) = &*ast.borrow() {
+							cir_fn.0 = self.generate_function(cir_fn.0, &ast.node);
+						}
+
+						self.module.functions.insert(name, cir_fn);			
+					}
+
+					_ => panic!()
 				}
-
-				self.module.functions.insert(name, cir_fn);			
-
 			}
-		}
+	}
 
 		for elem in &namespace.children {
 			match &elem.1 .0 {

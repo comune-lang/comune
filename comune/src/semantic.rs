@@ -241,13 +241,17 @@ pub fn validate_namespace(
 	}
 
 	for im in &namespace.borrow().impls {
-		for method in im.1 {
-			validate_function(
-				&method.1.read().unwrap(),
-				&method.2,
-				namespace,
-				root_namespace,
-			)?;
+		for item in im.1 {
+			match &item.1.0 {
+				NamespaceItem::Function(sym_type, sym_elem) => validate_function(
+					&sym_type.read().unwrap(),
+					sym_elem,
+					namespace,
+					root_namespace,
+				)?,
+
+				_ => panic!(),
+			}
 		}
 	}
 
@@ -439,34 +443,44 @@ pub fn register_impls(namespace: &RefCell<Namespace>, root: &RefCell<Namespace>)
 	let mut impls_remapped = HashMap::new();
 
 	for im in &namespace.borrow().impls {
-		// Impls can be defined with relative Identifiers, so we monomorphize them here
+		// Impls can be defined with relative Identifiers, so we make them all fully-qualified members of the root namespace here
 
 		namespace
 			.borrow()
-			.with_item(im.0, &root.borrow(), |item, id| {
+			.with_item(&im.0, &root.borrow(), |item, id| {
 				if let NamespaceItem::Type(t_def) = &item.0 {
 					if let TypeDef::Algebraic(_alg) = &mut *t_def.write().unwrap() {
-						let mut this_impl = vec![];
+						let mut this_impl = HashMap::new();
 
-						for func in im.1 {
-							// Resolve function types
+						for elem in im.1 {
+							// Match impl item
+							match &elem.1.0 {
+								NamespaceItem::Function(func, ast) => {
+								// Resolve function types
+									if let TypeDef::Function(ret, args) = &mut *func.write().unwrap() {
+										resolve_type(ret, &namespace.borrow(), root).unwrap();
 
-							if let TypeDef::Function(ret, args) = &mut *func.1.write().unwrap() {
-								resolve_type(ret, &namespace.borrow(), root).unwrap();
+										for arg in args {
+											resolve_type(&mut arg.0, &namespace.borrow(), root).unwrap();
+										}
+									}
 
-								for arg in args {
-									resolve_type(&mut arg.0, &namespace.borrow(), root).unwrap();
+									this_impl.insert(
+										elem.0.clone(),
+										(NamespaceItem::Function(func.clone(), ast.clone()), elem.1.1.clone(), None)
+									);
 								}
+
+								_ => todo!()
 							}
-							this_impl.push((func.0.clone(), func.1.clone(), func.2.clone(), None));
 						}
 						impls_remapped.insert(id.clone(), this_impl);
 					}
 				}
-			});
+			}).unwrap();
 	}
 
-	namespace.borrow_mut().impls = impls_remapped;
+	root.borrow_mut().impls = impls_remapped;
 
 	Ok(())
 }
@@ -832,8 +846,7 @@ impl Expr {
 				}
 
 				Operator::MemberAccess => {
-					if let Type::TypeRef(r, t_id) = elems[0].0.validate_lvalue(scope, meta).unwrap()
-					{
+					if let Type::TypeRef(r, t_id) = elems[0].0.validate_lvalue(scope, meta).unwrap() {
 						if let (lhs, [rhs, ..]) = elems.split_first_mut().unwrap() {
 							match &mut *r.upgrade().unwrap().write().unwrap() {
 								// Dot operator is on an algebraic type, so check if it's a member access or method call
@@ -851,17 +864,16 @@ impl Expr {
 									Expr::Atom(Atom::FnCall { name, args, .. }, _) => {
 										// jesse. we have to call METHods
 
-										if let Some(method) = scope
-											.context
+										if let Some((_, (NamespaceItem::Function(method, _), _, _))) = scope
+											.root_namespace
 											.borrow()
 											.impls
 											.get(&t_id)
-											.unwrap_or(&vec![])
+											.unwrap_or(&HashMap::new())
 											.iter()
-											.find(|meth| &meth.0 == name.name())
+											.find(|meth| meth.0 == name.name())
 										{
-											if let TypeDef::Function(ret, params) =
-												&mut *method.1.as_ref().write().unwrap()
+											if let TypeDef::Function(ret, params) = &*method.read().unwrap()
 											{
 												// Insert `this` into the arg list
 												args.insert(

@@ -109,15 +109,7 @@ pub struct Namespace {
 	pub referenced_modules: HashSet<Identifier>,
 	pub imported: HashMap<Identifier, Namespace>,
 	pub children: HashMap<String, NamespaceEntry>,
-	pub impls: HashMap<
-		Identifier,
-		Vec<(
-			String,
-			Arc<RwLock<TypeDef>>,
-			RefCell<NamespaceASTElem>,
-			Option<String>,
-		)>,
-	>, // Impls defined in this namespace
+	pub impls: HashMap<Identifier, HashMap<String, NamespaceEntry>>, // Impls defined in this namespace
 }
 
 impl Namespace {

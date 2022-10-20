@@ -39,5 +39,5 @@ int main() {
 		printf("For loop test!\n\0");
 	}
 	
-	return test.sum();
+	return Test::sum(test);
 }
