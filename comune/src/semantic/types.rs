@@ -97,8 +97,8 @@ impl AlgebraicType {
 		root: &Namespace,
 		mut closure: impl FnMut(&NamespaceEntry, &Identifier) -> Ret,
 	) -> Option<Ret> {
-		if name.path.scopes.is_empty() {
-			if let Some(item) = self.items.iter().find(|item| item.0 == name.name) {
+		if !name.is_qualified() {
+			if let Some(item) = self.items.iter().find(|item| item.0 == name.name()) {
 				// It's one of this namespace's children!
 
 				if let NamespaceItem::Alias(id) = &item.1 .0 {
@@ -106,22 +106,18 @@ impl AlgebraicType {
 					return parent.with_item(&id, root, closure);
 				} else {
 					// Generate absolute identifier
-					let id = Identifier {
-						name: name.name.clone(),
-						path: parent.path.clone(),
-						mem_idx: 0,
-					};
+					let id = Identifier::from_parent(&parent.path, name.name());
 
 					return Some(closure(&item.1, &id));
 				}
 			}
 		} else {
-			if let Some(item) = self.items.iter().find(|item| item.0 == name.path.scopes[0]) {
+			if let Some(item) = self.items.iter().find(|item| item.0 == name.path[0]) {
 				match &item.1 .0 {
 					NamespaceItem::Type(ty) => match &*ty.read().unwrap() {
 						TypeDef::Algebraic(alg) => {
 							let mut name_clone = name.clone();
-							name_clone.path.scopes.remove(0);
+							name_clone.path.remove(0);
 
 							return alg.with_item(&name_clone, parent, root, closure);
 						}

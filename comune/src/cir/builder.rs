@@ -43,6 +43,11 @@ impl CIRModuleBuilder {
 			current_block: 0,
 		};
 
+		result.register_namespace(
+			&ast.parser.current_namespace().borrow(),
+			&ast.parser.current_namespace().borrow(),
+		);
+
 		result.generate_namespace(
 			&ast.parser.current_namespace().borrow(),
 			&ast.parser.current_namespace().borrow(),
@@ -51,7 +56,53 @@ impl CIRModuleBuilder {
 		result
 	}
 
+	fn register_namespace(&mut self, namespace: &Namespace, root: &Namespace) {
+		for im in &namespace.impls {
+			for meth in im.1 {
+				let cir_fn = self.generate_prototype(&*meth.1.read().unwrap(), vec![]);
+
+				self.module.functions.insert(
+					Identifier::from_parent(im.0, &meth.0),
+					(cir_fn, None),
+				);
+			}
+		}
+		
+		for elem in &namespace.children {
+			match &elem.1 .0 {
+				NamespaceItem::Namespace(ns) => {
+					self.register_namespace(&ns.as_ref().borrow(), root)
+				}
+
+				NamespaceItem::Function(ty, node) => {
+					let cir_fn = self.generate_prototype(&*ty.read().unwrap(), elem.1.1.clone());
+
+					self.module.functions.insert(
+						Identifier::from_parent(&namespace.path, elem.0),
+						(cir_fn, None),
+					);
+				}
+
+				_ => {}
+			}
+		}
+	}
+
 	fn generate_namespace(&mut self, namespace: &Namespace, root: &Namespace) {
+		for im in &namespace.impls {
+			for meth in im.1 {
+				let name = Identifier::from_parent(im.0, &meth.0);
+				let mut cir_fn = self.module.functions.remove(&name).unwrap();
+
+				if let NamespaceASTElem::Parsed(ast) = &*meth.2.borrow() {
+					cir_fn.0 = self.generate_function(cir_fn.0, &ast.node);
+				}
+
+				self.module.functions.insert(name, cir_fn);			
+
+			}
+		}
+
 		for elem in &namespace.children {
 			match &elem.1 .0 {
 				NamespaceItem::Namespace(ns) => {
@@ -59,21 +110,14 @@ impl CIRModuleBuilder {
 				}
 
 				NamespaceItem::Function(ty, node) => {
-					let mut cir_fn =
-						self.generate_prototype(&*ty.read().unwrap(), elem.1 .1.clone());
+					let name = Identifier::from_parent(&namespace.path, elem.0);
+					let mut cir_fn = self.module.functions.remove(&name).unwrap();
 
 					if let NamespaceASTElem::Parsed(ast) = &*node.borrow() {
-						cir_fn = self.generate_function(cir_fn, &ast.node);
+						cir_fn.0 = self.generate_function(cir_fn.0, &ast.node);
 					}
 
-					self.module.functions.insert(
-						Identifier {
-							name: elem.0.clone(),
-							path: namespace.path.clone(),
-							mem_idx: 0,
-						},
-						(cir_fn, None),
-					);
+					self.module.functions.insert(name, cir_fn);
 				}
 
 				_ => {}
@@ -440,7 +484,7 @@ impl CIRModuleBuilder {
 				}
 
 				Atom::Identifier(id) => {
-					let idx = self.name_map[&id.expect_scopeless().unwrap()];
+					let idx = self.name_map[id.expect_scopeless().unwrap()];
 					let lval_ty = &self.get_fn().variables[idx].0;
 					RValue::Atom(
 						lval_ty.clone(),
@@ -556,7 +600,7 @@ impl CIRModuleBuilder {
 		match expr {
 			Expr::Atom(atom, _) => match atom {
 				Atom::Identifier(id) => LValue {
-					local: *self.name_map.get(&id.expect_scopeless().unwrap()).unwrap(),
+					local: *self.name_map.get(id.expect_scopeless().unwrap()).unwrap(),
 					projection: vec![],
 				},
 
@@ -571,7 +615,7 @@ impl CIRModuleBuilder {
 					if let CIRType::TypeRef(id) = lhs_ty {
 						if let CIRTypeDef::Algebraic { members_map, .. } = &self.module.types[id] {
 							if let Expr::Atom(Atom::Identifier(id), _) = &elems[1].0 {
-								let idx = members_map[&id.expect_scopeless().unwrap()];
+								let idx = members_map[id.expect_scopeless().unwrap()];
 
 								lhs.projection.push(PlaceElem::Field(idx));
 

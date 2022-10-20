@@ -109,7 +109,7 @@ pub fn get_module_source_path(state: &Arc<ManagerState>, module: &Identifier) ->
 
 	fs::create_dir_all(result.clone()).unwrap();
 
-	result.push(&module.name);
+	result.push(module.name());
 	result.set_extension("cmn");
 	result
 }
@@ -130,7 +130,7 @@ pub fn get_module_out_path(
 
 	fs::create_dir_all(result.clone()).unwrap();
 
-	result.push(&module.name);
+	result.push(module.name());
 	result.set_extension("o");
 	result
 }

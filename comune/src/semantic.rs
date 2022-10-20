@@ -77,12 +77,12 @@ impl<'ctx> FnScope<'ctx> {
 	pub fn find_symbol(&self, id: &Identifier) -> Option<(Identifier, Type)> {
 		let mut result = None;
 
-		if id.path.scopes.is_empty() {
+		if !id.is_qualified() {
 			// Unqualified name, perform scope-level lookup first
 			let local_lookup;
 
-			if self.variables.contains_key(&id.name) {
-				local_lookup = Some((id.clone(), self.variables.get(&id.name).cloned().unwrap()));
+			if self.variables.contains_key(id.name()) {
+				local_lookup = Some((id.clone(), self.variables.get(id.name()).cloned().unwrap()));
 			} else if let Some(parent) = self.parent {
 				local_lookup = parent.find_symbol(id);
 			} else {
@@ -268,8 +268,8 @@ pub fn resolve_type(
 			let mut found = false;
 			let id = id.clone();
 
-			if let Some(b) = Basic::get_basic_type(&id.name) {
-				if id.path.scopes.is_empty() {
+			if let Some(b) = Basic::get_basic_type(id.name()) {
+				if !id.is_qualified() {
 					*ty = Type::Basic(b);
 					found = true;
 				}
@@ -329,7 +329,7 @@ pub fn resolve_type_def(
 				}
 
 				if let Token::Identifier(layout_name) = &layout.args[0][0] {
-					agg.layout = match layout_name.expect_scopeless().unwrap().as_str() {
+					agg.layout = match layout_name.expect_scopeless().unwrap() {
 						"declared" => types::DataLayout::Declared,
 						"optimized" => types::DataLayout::Optimized,
 						"packed" => types::DataLayout::Packed,
@@ -840,8 +840,7 @@ impl Expr {
 								TypeDef::Algebraic(t) => match &mut rhs.0 {
 									// Member access on algebraic type
 									Expr::Atom(Atom::Identifier(ref mut id), _) => {
-										if let Some((i, m)) = t.get_member(&id.name) {
-											id.mem_idx = i as u32;
+										if let Some((i, m)) = t.get_member(id.name()) {
 											lhs.1 = Some(Type::TypeRef(r.clone(), t_id.clone()));
 											rhs.1 = Some(m.clone());
 											return Ok(m.clone());
@@ -859,7 +858,7 @@ impl Expr {
 											.get(&t_id)
 											.unwrap_or(&vec![])
 											.iter()
-											.find(|meth| &meth.0 == &name.name)
+											.find(|meth| &meth.0 == name.name())
 										{
 											if let TypeDef::Function(ret, params) =
 												&mut *method.1.as_ref().write().unwrap()
@@ -892,6 +891,11 @@ impl Expr {
 															t_id.clone(),
 														));
 														rhs.1 = Some(ret.clone());
+
+														let method_name = name.path.pop().unwrap();
+														*name = t_id.clone();
+														name.path.push(method_name);
+														
 														return Ok(res);
 													}
 

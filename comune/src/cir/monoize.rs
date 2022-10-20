@@ -13,9 +13,9 @@ impl CIRModule {
 		for func in &mut self.functions {
 			// Check if the function has a `no_mangle` attribute, or if it's `main`. If not, mangle the name
 			if get_attribute(&func.1 .0.attributes, "no_mangle").is_some()
-				|| (func.0.name == "main" && func.0.path.scopes.is_empty())
+				|| (func.0.name() == "main" && !func.0.is_qualified())
 			{
-				func.1 .1 = Some(func.0.name.clone());
+				func.1 .1 = Some(func.0.name().to_string());
 			} else {
 				// Mangle name
 				func.1 .1 = Some(mangle_name(func.0, &func.1 .0));
@@ -80,11 +80,11 @@ impl CIRModule {
 fn mangle_name(name: &Identifier, func: &CIRFunction) -> String {
 	let mut result = String::from("_Z");
 
-	assert!(name.path.absolute);
+	assert!(name.absolute);
 
-	if name.path.scopes.is_empty() {
-		result.push_str(&name.name.len().to_string());
-		result.push_str(&name.name);
+	if !name.is_qualified() {
+		result.push_str(&name.name().len().to_string());
+		result.push_str(name.name());
 	}
 
 	if func.arg_count == 0 {
@@ -104,6 +104,7 @@ impl CIRType {
 			CIRType::Basic(b) => String::from(b.mangle()),
 			CIRType::Pointer(p) => String::from("P") + &p.mangle(),
 			CIRType::Reference(r) => String::from("R") + &r.mangle(),
+			CIRType::TypeRef(idx) => format!("T{idx}"), // Temporary
 			_ => todo!(),
 		}
 	}

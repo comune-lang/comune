@@ -9,7 +9,7 @@ use crate::semantic::ast::{ASTElem, ASTNode, TokenData};
 use crate::semantic::controlflow::ControlFlow;
 use crate::semantic::expression::{Atom, Expr, Operator};
 use crate::semantic::namespace::{
-	Identifier, Namespace, NamespaceASTElem, NamespaceItem, ScopePath,
+	Identifier, Namespace, NamespaceASTElem, NamespaceItem,
 };
 use crate::semantic::types::{AlgebraicType, Basic, FnParamList, Type, TypeDef, Visibility};
 use crate::semantic::Attribute;
@@ -78,7 +78,7 @@ impl Parser {
 
 	pub fn parse_module(&mut self) -> ParseResult<&RefCell<Namespace>> {
 		self.lexer.borrow_mut().tokenize_file().unwrap();
-		self.active_namespace = Some(RefCell::new(Namespace::new()));
+		self.active_namespace = Some(RefCell::new(Namespace::new(Identifier { path: vec![], absolute: true })));
 		self.root_namespace = None;
 
 		match self.parse_namespace() {
@@ -255,7 +255,7 @@ impl Parser {
 								let aggregate = TypeDef::Algebraic(Box::new(aggregate));
 
 								self.current_namespace().borrow_mut().children.insert(
-									name.expect_scopeless()?,
+									name.expect_scopeless()?.to_string(),
 									(
 										NamespaceItem::Type(Arc::new(RwLock::new(aggregate))),
 										current_attributes,
@@ -296,7 +296,7 @@ impl Parser {
 								parsed_namespace = self.current_namespace().replace(old_namespace);
 
 								self.current_namespace().borrow_mut().children.insert(
-									namespace_name.name,
+									namespace_name.name().to_string(),
 									(
 										NamespaceItem::Namespace(Box::new(RefCell::new(
 											parsed_namespace,
@@ -354,7 +354,7 @@ impl Parser {
 
 									let fn_name =
 										if let Token::Identifier(id) = self.get_current()? {
-											id.expect_scopeless()?
+											id.expect_scopeless()?.to_string()
 										} else {
 											return Err(self.err(CMNErrorCode::ExpectedIdentifier));
 										};
@@ -412,7 +412,7 @@ impl Parser {
 									// Found a '=' token, so fetch the name to alias
 									if let Token::Identifier(aliased) = self.get_next()? {
 										self.current_namespace().borrow_mut().children.insert(
-											name.expect_scopeless()?,
+											name.expect_scopeless()?.to_string(),
 											(NamespaceItem::Alias(aliased), vec![], None),
 										);
 
@@ -424,7 +424,7 @@ impl Parser {
 								} else {
 									// No '=' token, just bring the name into scope
 									self.current_namespace().borrow_mut().children.insert(
-										name.name.clone(),
+										name.name().to_string(),
 										(NamespaceItem::Alias(name), vec![], None),
 									);
 
@@ -563,7 +563,7 @@ impl Parser {
 					expr = Some(Box::new(self.parse_expression()?));
 				}
 				self.check_semicolon()?;
-				result = Some(ASTNode::Declaration(t, name.expect_scopeless()?, expr));
+				result = Some(ASTNode::Declaration(t, name.expect_scopeless()?.to_string(), expr));
 			} else {
 				return Err(self.err(CMNErrorCode::ExpectedIdentifier));
 			}
@@ -855,7 +855,7 @@ impl Parser {
 
 			// Register declaration to symbol table
 			// TODO: Figure out what to do if the identifier has scopes
-			Ok((id.name, item))
+			Ok((id.name().to_string(), item))
 		} else {
 			Err(self.err(CMNErrorCode::ExpectedIdentifier))
 		}
@@ -1016,7 +1016,7 @@ impl Parser {
 											let expr = self.parse_expression()?;
 
 											inits.push((
-												Some(member_name.expect_scopeless()?),
+												Some(member_name.expect_scopeless()?.to_string()),
 												expr,
 												(0, 0),
 											));
@@ -1124,8 +1124,8 @@ impl Parser {
 	}
 
 	fn find_type(&self, typename: &Identifier) -> Option<Type> {
-		if typename.path.scopes.is_empty() {
-			if let Some(basic) = Basic::get_basic_type(&typename.name) {
+		if !typename.is_qualified() {
+			if let Some(basic) = Basic::get_basic_type(typename.name()) {
 				return Some(Type::Basic(basic));
 			}
 		}
@@ -1156,8 +1156,8 @@ impl Parser {
 				if resolve_idents {
 					let mut found = false;
 
-					if Basic::get_basic_type(&typename.name).is_some()
-						&& typename.path.scopes.is_empty()
+					if Basic::get_basic_type(typename.name()).is_some()
+						&& !typename.is_qualified()
 					{
 						found = true;
 					} else {
@@ -1206,7 +1206,7 @@ impl Parser {
 			// Check for param name
 			let mut current = self.get_current()?;
 			if let Token::Identifier(id) = current {
-				param.1 = Some(id.expect_scopeless()?);
+				param.1 = Some(id.expect_scopeless()?.to_string());
 				self.get_next()?;
 			}
 
@@ -1245,9 +1245,8 @@ impl Parser {
 
 	fn parse_type(&self, immediate_resolve: bool) -> ParseResult<Type> {
 		let mut result = Type::Unresolved(Identifier {
-			name: "(none)".to_string(),
-			path: ScopePath::new(false),
-			mem_idx: 0,
+			path: vec![],
+			absolute: false,
 		});
 
 		if self.is_at_type_token(immediate_resolve)? {
@@ -1283,8 +1282,8 @@ impl Parser {
 
 				let mut found = false;
 
-				if let Some(b) = Basic::get_basic_type(&typename.name) {
-					if typename.path.scopes.is_empty() {
+				if let Some(b) = Basic::get_basic_type(typename.name()) {
+					if !typename.is_qualified() {
 						result = Type::Basic(b);
 						found = true;
 					}
@@ -1381,7 +1380,7 @@ impl Parser {
 
 		if let Token::Identifier(name) = name {
 			result = Attribute {
-				name: name.expect_scopeless()?,
+				name: name.expect_scopeless()?.to_string(),
 				args: vec![],
 			};
 		} else {

@@ -8,7 +8,7 @@ use colored::Colorize;
 
 use crate::errors::CMNMessage;
 
-use crate::semantic::namespace::{Identifier, ScopePath};
+use crate::semantic::namespace::Identifier;
 
 const KEYWORDS: &[&'static str] = &[
 	"if",
@@ -67,8 +67,8 @@ impl Token {
 	pub fn len(&self) -> usize {
 		match self {
 			// TODO: Actually implement these
-			Token::Identifier(x) => x.name.len(),
-			Token::MultiIdentifier(x) => x[0].name.len(),
+			Token::Identifier(x) => x.to_string().len(),
+			Token::MultiIdentifier(x) => x[0].to_string().len(),
 
 			Token::NumLiteral(x, _) => x.len(),
 
@@ -326,8 +326,8 @@ impl Lexer {
 				} else {
 					// Result is not a keyword or an operator, so parse an Identifier
 					// This is a mess i sure hope it works
-					let mut path = ScopePath {
-						scopes: vec![result.clone()],
+					let mut id = Identifier {
+						path: vec![result.clone()],
 						absolute: false,
 					};
 
@@ -350,16 +350,13 @@ impl Lexer {
 								todo!(); // TODO: Return appropriate error
 							}
 
-							path.scopes.push(scope);
+							id.path.push(scope);
 						} else if current == '{' {
+							todo!()
 						}
 					}
-					let name = path.scopes.pop().unwrap();
-					result_token = Ok(Token::Identifier(Identifier {
-						name,
-						path,
-						mem_idx: 0,
-					}));
+
+					result_token = Ok(Token::Identifier(id));
 				}
 			} else if token.is_numeric() {
 				// Numeric literal

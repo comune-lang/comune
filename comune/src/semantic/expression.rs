@@ -1,4 +1,4 @@
-use std::{cell::RefCell, fmt::Display};
+use std::fmt::Display;
 
 use super::{
 	ast::{ASTElem, TokenData},
