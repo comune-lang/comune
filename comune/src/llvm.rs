@@ -289,7 +289,6 @@ impl<'ctx> LLVMBackend<'ctx> {
 						Operator::Mul => self.builder.build_float_mul(lhs_f, rhs_f, "fmul"),
 						Operator::Div => self.builder.build_float_div(lhs_f, rhs_f, "fdiv"),
 
-						// Relational operators
 						_ => panic!(),
 					}
 					.as_basic_value_enum()

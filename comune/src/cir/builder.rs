@@ -73,6 +73,10 @@ impl CIRModuleBuilder {
 				}
 			}
 		}
+
+		for import in &namespace.imported {
+			self.register_namespace(import.1, root);
+		}
 		
 		for elem in &namespace.children {
 			match &elem.1 .0 {
@@ -416,7 +420,7 @@ impl CIRModuleBuilder {
 			}
 		}
 		self.name_map_stack.pop();
-		
+
 		self.current_block
 	}
 
@@ -500,7 +504,7 @@ impl CIRModuleBuilder {
 				}
 
 				Atom::Identifier(id) => {
-					let idx = self.name_map_stack.last().unwrap()[id.expect_scopeless().unwrap()];
+					let idx = self.get_var_index(id.expect_scopeless().unwrap()).unwrap();
 					let lval_ty = &self.get_fn().variables[idx].0;
 					RValue::Atom(
 						lval_ty.clone(),
@@ -594,7 +598,23 @@ impl CIRModuleBuilder {
 								}
 
 								_ => panic!(),
-							},
+							}
+
+							Operator::Assign => {
+								let lval_ir = self.generate_lvalue_expr(&elems[0].0);
+								let rval_ir = self.generate_expr(&elems[1].0, elems[1].1.as_ref().unwrap());
+								let l_ty = self.convert_type(elems[0].1.as_ref().unwrap());
+								let r_ty = self.convert_type(elems[1].1.as_ref().unwrap());
+			
+								let r_tmp = self.get_as_operand(r_ty.clone(), rval_ir);
+								
+								self.write(CIRStmt::Assignment(
+									lval_ir.clone(),
+									RValue::Atom(r_ty, None, r_tmp),
+								));
+
+								RValue::Atom(l_ty, None, Operand::LValue(lval_ir))
+							}
 
 							_ => {
 								let lhs = self.generate_expr(&elems[0].0, elems[0].1.as_ref().unwrap());

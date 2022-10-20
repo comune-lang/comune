@@ -1,6 +1,6 @@
-//import module_test;
+import module_test;
 
-//using module_test::fib;
+using module_test::fib;
 
 @no_mangle 
 void printf(char* fmt);
@@ -40,5 +40,5 @@ int main() {
 		printf("For loop test!\n\0");
 	}
 	
-	return test.sum();
+	return fib(10u64) as i32;
 }
