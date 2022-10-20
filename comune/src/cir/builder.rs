@@ -24,7 +24,7 @@ pub struct CIRModuleBuilder {
 	type_map: HashMap<Type, TypeIndex>,
 
 	current_fn: Option<CIRFunction>,
-	name_map: HashMap<String, VarIndex>,
+	name_map_stack: Vec<HashMap<String, VarIndex>>,
 	current_block: BlockIndex,
 }
 
@@ -39,7 +39,7 @@ impl CIRModuleBuilder {
 
 			current_fn: None,
 			type_map: HashMap::new(),
-			name_map: HashMap::new(),
+			name_map_stack: vec![HashMap::new()],
 			current_block: 0,
 		};
 
@@ -80,7 +80,7 @@ impl CIRModuleBuilder {
 					self.register_namespace(&ns.as_ref().borrow(), root)
 				}
 
-				NamespaceItem::Function(ty, node) => {
+				NamespaceItem::Function(ty, _) => {
 					let cir_fn = self.generate_prototype(&*ty.read().unwrap(), elem.1.1.clone());
 
 					self.module.functions.insert(
@@ -120,7 +120,7 @@ impl CIRModuleBuilder {
 					self.generate_namespace(&ns.as_ref().borrow(), root)
 				}
 
-				NamespaceItem::Function(ty, node) => {
+				NamespaceItem::Function(_, node) => {
 					let name = Identifier::from_parent(&namespace.path, elem.0);
 					let mut cir_fn = self.module.functions.remove(&name).unwrap();
 
@@ -264,8 +264,9 @@ impl CIRModuleBuilder {
 		self.current_block
 	}
 
-	fn generate_block(&mut self, block: &Vec<ASTElem>) -> BlockIndex {
+	fn generate_block<'ctx>(&mut self, block: &Vec<ASTElem>) -> BlockIndex {
 		self.append_block();
+		self.name_map_stack.push(HashMap::new());
 
 		for elem in block {
 			match &elem.node {
@@ -414,19 +415,23 @@ impl CIRModuleBuilder {
 				},
 			}
 		}
-
+		self.name_map_stack.pop();
+		
 		self.current_block
 	}
 
 	fn generate_decl(&mut self, ty: &Type, name: String, elem: &Box<ASTElem>) {
 		let cir_ty = self.convert_type(ty);
 		let rval = self.generate_expr(&elem.get_expr().borrow(), ty);
+		let idx = self.get_fn().variables.len();
 
 		self.get_fn_mut()
 			.variables
 			.push((cir_ty, Some(name.clone())));
-		self.name_map
-			.insert(name.clone(), self.get_fn().variables.len() - 1);
+		self.name_map_stack
+			.last_mut()
+			.unwrap()
+			.insert(name.clone(), idx);
 
 		let lval = LValue {
 			local: self.get_fn().variables.len() - 1,
@@ -495,7 +500,7 @@ impl CIRModuleBuilder {
 				}
 
 				Atom::Identifier(id) => {
-					let idx = self.name_map[id.expect_scopeless().unwrap()];
+					let idx = self.name_map_stack.last().unwrap()[id.expect_scopeless().unwrap()];
 					let lval_ty = &self.get_fn().variables[idx].0;
 					RValue::Atom(
 						lval_ty.clone(),
@@ -611,7 +616,7 @@ impl CIRModuleBuilder {
 		match expr {
 			Expr::Atom(atom, _) => match atom {
 				Atom::Identifier(id) => LValue {
-					local: *self.name_map.get(id.expect_scopeless().unwrap()).unwrap(),
+					local: self.get_var_index(id.expect_scopeless().unwrap()).unwrap(),
 					projection: vec![],
 				},
 
@@ -648,14 +653,28 @@ impl CIRModuleBuilder {
 		}
 	}
 
+	fn get_var_index(&self, name: &str) -> Option<VarIndex> {
+		for stack_frame in self.name_map_stack.iter().rev() {
+			if let Some(idx) = stack_frame.get(name) {
+				return Some(*idx);
+			}
+		}
+		None
+	}
+
 	fn insert_variable(&mut self, name: String, ty: Type) {
 		// TODO: Deal with shadowing and scopes
 		let cir_ty = self.convert_type(&ty);
+		let idx = self.get_fn().variables.len();
+
 		self.get_fn_mut()
 			.variables
 			.push((cir_ty, Some(name.clone())));
-		self.name_map
-			.insert(name, self.get_fn().variables.len() - 1);
+
+		self.name_map_stack
+			.last_mut()
+			.unwrap()
+			.insert(name, idx);
 	}
 
 	fn get_as_operand(&mut self, ty: CIRType, rval: RValue) -> Operand {

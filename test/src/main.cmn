@@ -36,8 +36,9 @@ int main() {
 	}
 
 	for (int i = 0; i < 10; i += 1) {
+		int test = 2;
 		printf("For loop test!\n\0");
 	}
 	
-	return Test::sum(test);
+	return test.sum();
 }
