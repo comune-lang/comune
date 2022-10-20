@@ -6,7 +6,7 @@ use std::{
 };
 
 use colored::Colorize;
-use inkwell::{context::Context, targets::FileType};
+use inkwell::{context::Context, targets::FileType, passes::PassManager, module::Module};
 use rayon::prelude::*;
 
 use crate::{
@@ -288,7 +288,7 @@ pub fn generate_code<'ctx>(
 	};
 
 	// Optimization passes
-	/*let mpm = PassManager::<Module>::create(());
+	let mpm = PassManager::<Module>::create(());
 	mpm.add_instruction_combining_pass();
 	mpm.add_reassociate_pass();
 	mpm.add_gvn_pass();
@@ -297,85 +297,8 @@ pub fn generate_code<'ctx>(
 	mpm.add_promote_memory_to_register_pass();
 	mpm.add_instruction_combining_pass();
 	mpm.add_reassociate_pass();
-
+	
 	mpm.run_on(&backend.module);
-	*/
+	
 	Ok(backend)
 }
-/*
-fn register_namespace(backend: &mut LLVMBackend, module: &Namespace, root: Option<&Namespace>) {
-	if root.is_some() {
-		assert!(namespace as *const _ != root.unwrap() as *const _);
-	}
-
-	// Register child namespaces
-	for child in &namespace.children {
-		match &child.1 .0 {
-			NamespaceItem::Namespace(namespace) => {
-				register_namespace(backend, &namespace.borrow(), root)
-			}
-
-			NamespaceItem::Function(sym_type, _) => {
-				backend
-					.register_fn(child.1 .2.as_ref().unwrap(), &sym_type.read().unwrap())
-					.unwrap();
-			}
-
-			_ => {}
-		}
-	}
-
-	for im in &namespace.impls {
-		for meth in im.1 {
-			backend
-				.register_fn(meth.3.as_ref().unwrap(), &meth.1.read().unwrap())
-				.unwrap();
-		}
-	}
-}
-
-fn compile_namespace(backend: &mut LLVMBackend, namespace: &Namespace, root: Option<&Namespace>) {
-	if root.is_some() {
-		assert!(namespace as *const _ != root.unwrap() as *const _);
-	}
-
-	for child in &namespace.children {
-		if let NamespaceItem::Namespace(namespace) = &child.1 .0 {
-			compile_namespace(backend, &namespace.borrow(), root);
-		}
-	}
-
-	// Generate function bodies
-	for child in &namespace.children {
-		if let NamespaceItem::Function(sym_type, sym_elem) = &child.1 .0 {
-			backend
-				.generate_fn(
-					child.1 .2.as_ref().unwrap(),
-					&sym_type.read().unwrap(),
-					if let NamespaceASTElem::Parsed(elem) = &*sym_elem.borrow() {
-						Some(elem)
-					} else {
-						None
-					},
-				)
-				.unwrap();
-		}
-	}
-
-	for im in &namespace.impls {
-		for method in im.1 {
-			backend
-				.generate_fn(
-					method.3.as_ref().unwrap(),
-					&method.1.read().unwrap(),
-					if let NamespaceASTElem::Parsed(elem) = &*method.2.borrow() {
-						Some(elem)
-					} else {
-						None
-					},
-				)
-				.unwrap();
-		}
-	}
-}
-*/

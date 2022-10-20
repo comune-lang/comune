@@ -146,6 +146,17 @@ impl<'ctx> LLVMBackend<'ctx> {
 			self.variables
 				.push(self.create_entry_block_alloca(&format!("_{i}"), ty.as_basic_type_enum()));
 		}
+		
+		// Build parameter stores
+		{
+			let mut idx = 0;
+			self.builder.position_at_end(self.blocks[0]);
+
+			for param in self.fn_value_opt.as_ref().unwrap().get_param_iter() {
+				self.builder.build_store(self.variables[idx], param);
+				idx += 1;	
+			}
+		}
 
 		for i in 0..t.blocks.len() {
 			let block = &t.blocks[i];
