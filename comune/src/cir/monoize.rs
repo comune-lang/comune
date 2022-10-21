@@ -85,6 +85,13 @@ fn mangle_name(name: &Identifier, func: &CIRFunction) -> String {
 	if !name.is_qualified() {
 		result.push_str(&name.name().len().to_string());
 		result.push_str(name.name());
+	} else {
+		result.push('N');
+		for scope in &name.path {
+			result.push_str(&scope.len().to_string());
+			result.push_str(scope);
+		}
+		result.push('E');
 	}
 
 	if func.arg_count == 0 {
@@ -104,7 +111,7 @@ impl CIRType {
 			CIRType::Basic(b) => String::from(b.mangle()),
 			CIRType::Pointer(p) => String::from("P") + &p.mangle(),
 			CIRType::Reference(r) => String::from("R") + &r.mangle(),
-			CIRType::TypeRef(idx) => format!("T{idx}"), // Temporary
+			CIRType::TypeRef(_) => format!("S_"),
 			_ => todo!(),
 		}
 	}

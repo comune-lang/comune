@@ -327,7 +327,7 @@ impl Lexer {
 					// Result is not a keyword or an operator, so parse an Identifier
 					// This is a mess i sure hope it works
 					let mut id = Identifier {
-						path: vec![result.clone()],
+						path: vec![result.into()],
 						absolute: false,
 					};
 
@@ -350,7 +350,7 @@ impl Lexer {
 								todo!(); // TODO: Return appropriate error
 							}
 
-							id.path.push(scope);
+							id.path.push(scope.into());
 						} else if current == '{' {
 							todo!()
 						}

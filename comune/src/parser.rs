@@ -263,7 +263,7 @@ impl Parser {
 								let aggregate = TypeDef::Algebraic(Box::new(aggregate));
 
 								self.current_namespace().borrow_mut().children.insert(
-									name.expect_scopeless()?.to_string(),
+									name.expect_scopeless()?.into(),
 									(
 										NamespaceItem::Type(Arc::new(RwLock::new(aggregate))),
 										current_attributes,
@@ -304,7 +304,7 @@ impl Parser {
 								parsed_namespace = self.current_namespace().replace(old_namespace);
 
 								self.current_namespace().borrow_mut().children.insert(
-									namespace_name.name().to_string(),
+									namespace_name.name().into(),
 									(
 										NamespaceItem::Namespace(Box::new(RefCell::new(
 											parsed_namespace,
@@ -425,7 +425,7 @@ impl Parser {
 									// Found a '=' token, so fetch the name to alias
 									if let Token::Identifier(aliased) = self.get_next()? {
 										self.current_namespace().borrow_mut().children.insert(
-											name.expect_scopeless()?.to_string(),
+											name.expect_scopeless()?.into(),
 											(NamespaceItem::Alias(aliased), vec![], None),
 										);
 
@@ -437,7 +437,7 @@ impl Parser {
 								} else {
 									// No '=' token, just bring the name into scope
 									self.current_namespace().borrow_mut().children.insert(
-										name.name().to_string(),
+										name.name().into(),
 										(NamespaceItem::Alias(name), vec![], None),
 									);
 
@@ -461,7 +461,7 @@ impl Parser {
 							.current_namespace()
 							.borrow_mut()
 							.children
-							.insert(result.0, (result.1, current_attributes, None)),
+							.insert(result.0.into(), (result.1, current_attributes, None)),
 
 						_ => todo!(),
 					};

@@ -853,7 +853,7 @@ impl Expr {
 								TypeDef::Algebraic(t) => match &mut rhs.0 {
 									// Member access on algebraic type
 									Expr::Atom(Atom::Identifier(ref mut id), _) => {
-										if let Some((i, m)) = t.get_member(id.name()) {
+										if let Some((_, m)) = t.get_member(id.name()) {
 											lhs.1 = Some(Type::TypeRef(r.clone(), t_id.clone()));
 											rhs.1 = Some(m.clone());
 											return Ok(m.clone());

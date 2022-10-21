@@ -112,7 +112,7 @@ impl AlgebraicType {
 				}
 			}
 		} else {
-			if let Some(item) = self.items.iter().find(|item| item.0 == name.path[0]) {
+			if let Some(item) = self.items.iter().find(|item| item.0 == name.path[0].as_ref()) {
 				match &item.1 .0 {
 					NamespaceItem::Type(ty) => match &*ty.read().unwrap() {
 						TypeDef::Algebraic(alg) => {

@@ -25,40 +25,47 @@ impl Display for CIRFunction {
 		if self.arg_count > 0 {
 			write!(
 				f,
-				"({}",
-				self.variables[0].1.as_ref().unwrap_or(&"0".to_string())
+				"({}:{}",
+				self.variables[0].1.as_ref().unwrap_or(&"_".to_string()),
+				&self.variables[0].0,
 			)?;
 
 			for i in 1..self.arg_count {
 				write!(
 					f,
-					", {}",
-					self.variables[i].1.as_ref().unwrap_or(&i.to_string())
+					", {}:{}",
+					self.variables[i].1.as_ref().unwrap_or(&i.to_string()),
+					&self.variables[i].0
 				)?;
 			}
 
-			write!(f, ") -> {} {{\n", self.ret)?;
+			write!(f, ") -> {}", self.ret)?;
 		} else {
-			write!(f, "() -> {} {{\n", self.ret)?;
+			write!(f, "() -> {}", self.ret)?;
 		}
 
-		for i in 0..self.variables.len() {
-			if let Some(name) = &self.variables[i].1 {
-				write!(f, "\tlet _{i}: {}; ({name})\n", &self.variables[i].0)?;
-			} else {
-				write!(f, "\tlet _{i}: {};\n", &self.variables[i].0)?;
+		if self.is_extern {
+			write!(f, ";\n\n")
+		} else {
+			write!(f, " {{\n")?;
+
+			for i in 0..self.variables.len() {
+				if let Some(name) = &self.variables[i].1 {
+					write!(f, "\tlet _{i}: {}; ({name})\n", &self.variables[i].0)?;
+				} else {
+					write!(f, "\tlet _{i}: {};\n", &self.variables[i].0)?;
+				}
 			}
-		}
 
-		for block in 0..self.blocks.len() {
-			write!(f, "bb{block}:\n")?;
+			for block in 0..self.blocks.len() {
+				write!(f, "bb{block}:\n")?;
 
-			for stmt in &self.blocks[block] {
-				write!(f, "\t{stmt}")?;
+				for stmt in &self.blocks[block] {
+					write!(f, "\t{stmt}")?;
+				}
 			}
+			write!(f, "}}\n\n")
 		}
-
-		write!(f, "}}\n\n")
 	}
 }
 

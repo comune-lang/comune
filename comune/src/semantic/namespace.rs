@@ -19,21 +19,21 @@ use super::{
 
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
 pub struct Identifier {
-	pub path: Vec<String>,
+	pub path: Vec<Arc<str>>,
 	pub absolute: bool,
 }
 
 impl Identifier {
 	pub fn from_name(name: &str, absolute: bool) -> Self {
 		Identifier {
-			path: vec![name.to_string()],
+			path: vec![name.into()],
 			absolute,
 		}
 	}
 
 	pub fn from_parent(parent: &Identifier, name: &str) -> Self {
 		let mut result = parent.clone();
-		result.path.push(name.to_string());
+		result.path.push(name.into());
 		result
 	}
 
@@ -108,7 +108,7 @@ pub struct Namespace {
 	pub path: Identifier,
 	pub referenced_modules: HashSet<Identifier>,
 	pub imported: HashMap<Identifier, Namespace>,
-	pub children: HashMap<String, NamespaceEntry>,
+	pub children: HashMap<Arc<str>, NamespaceEntry>,
 	pub impls: HashMap<Identifier, HashMap<String, NamespaceEntry>>, // Impls defined in this namespace
 }
 
