@@ -9,10 +9,12 @@ impl CIRPassMut for RemoveNoOps {
 		let mut indices = vec![];
 
 		for i in 0..func.blocks.len() {
+			let mut offset = 0;
 			for j in 0..func.blocks[i].len() {
 				if let CIRStmt::Expression(expr) = &func.blocks[i][j] {
 					if !rval_has_side_effects(expr) {
-						indices.push((i, j));
+						indices.push((i, j - offset));
+						offset += 1;
 					}
 				}
 			}
@@ -37,7 +39,6 @@ fn rval_has_side_effects(expr: &RValue) -> bool {
 fn op_has_side_effects(expr: &Operand) -> bool {
 	match expr {
 		Operand::FnCall(_, _, _) => true,
-		Operand::LValue(_) => true, // TODO: Refine this
 		_ => false,
 	}
 }

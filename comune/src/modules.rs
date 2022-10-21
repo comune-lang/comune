@@ -268,17 +268,18 @@ pub fn generate_code<'ctx>(
 
 	let module_name = input_module.to_string();
 	let mut cir_module = CIRModuleBuilder::from_ast(mod_state).module;
-	let cir_out_path = get_module_out_path(&state, input_module, None).with_extension("cir");
-
-	fs::write(cir_out_path, cir_module.to_string()).unwrap();
 
 	// Analyze & optimize cIR
 	let mut cir_man = CIRPassManager::new();
 
 	cir_man.add_pass(verify::Verify);
 	cir_man.add_mut_pass(cleanup::RemoveNoOps);
+	cir_man.add_pass(verify::Verify);
 
 	cir_man.run_on_module(&mut cir_module);
+
+	let cir_out_path = get_module_out_path(&state, input_module, None).with_extension("cir");
+	fs::write(cir_out_path, cir_module.to_string()).unwrap();
 
 	// Generate LLVM IR
 	let mut backend = LLVMBackend::new(context, &module_name);
