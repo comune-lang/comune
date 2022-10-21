@@ -10,7 +10,7 @@ use crate::semantic::ast::{ASTElem, ASTNode, TokenData};
 use crate::semantic::controlflow::ControlFlow;
 use crate::semantic::expression::{Atom, Expr, Operator};
 use crate::semantic::namespace::{Identifier, Namespace, NamespaceASTElem, NamespaceItem};
-use crate::semantic::types::{AlgebraicType, Basic, FnParamList, Type, TypeDef, Visibility};
+use crate::semantic::types::{AlgebraicDef, Basic, FnParamList, Type, TypeDef, Visibility, FnDef};
 use crate::semantic::Attribute;
 
 // Convenience function that matches a &str against various token kinds
@@ -197,7 +197,7 @@ impl Parser {
 						"struct" => {
 							// Register algebraic type
 							let mut current_visibility = Visibility::Public;
-							let mut aggregate = AlgebraicType::new();
+							let mut aggregate = AlgebraicDef::new();
 							let name_token = self.get_next()?;
 
 							if let Token::Identifier(name) = name_token {
@@ -261,7 +261,7 @@ impl Parser {
 								self.get_next()?; // Consume closing brace
 
 								let aggregate =
-									TypeDef::Algebraic(Box::new(aggregate), HashMap::new());
+									TypeDef::Algebraic(aggregate, HashMap::new());
 
 								self.current_namespace().borrow_mut().children.insert(
 									name.expect_scopeless()?.clone(),
@@ -381,11 +381,11 @@ impl Parser {
 
 									let current_impl = (
 										NamespaceItem::Function(
-											Arc::new(RwLock::new(TypeDef::Function {
+											Arc::new(RwLock::new(TypeDef::Function(FnDef {
 												ret: fn_ret,
 												args: fn_params,
 												generics: HashMap::new(),
-											})),
+											}))),
 											RefCell::new(ast_elem),
 										),
 										current_attributes,
@@ -826,11 +826,11 @@ impl Parser {
 				match op {
 					// Function declaration
 					"(" => {
-						let t = TypeDef::Function {
+						let t = TypeDef::Function(FnDef {
 							ret: t,
 							args: self.parse_parameter_list()?,
 							generics: HashMap::new(),
-						};
+						});
 
 						// Past the parameter list, check if we're at a function body or not
 						let current = self.get_current()?;

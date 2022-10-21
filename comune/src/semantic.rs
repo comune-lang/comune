@@ -17,7 +17,7 @@ use self::{
 	ast::{ASTElem, ASTNode, TokenData},
 	controlflow::ControlFlow,
 	expression::{Atom, Expr, Operator},
-	namespace::{Identifier, Name, Namespace, NamespaceASTElem, NamespaceItem},
+	namespace::{Identifier, Name, Namespace, NamespaceASTElem, NamespaceItem}, types::FnDef,
 };
 
 pub mod ast;
@@ -126,9 +126,9 @@ pub fn validate_function(
 	let mut scope;
 	let ret;
 
-	if let TypeDef::Function {
+	if let TypeDef::Function(FnDef {
 		ret: fn_ret, args, ..
-	} = sym_type
+	}) = sym_type
 	{
 		ret = fn_ret.clone();
 		scope = FnScope::new(namespace, root, ret.clone());
@@ -371,7 +371,7 @@ pub fn resolve_namespace_types(
 		for child in &namespace.children {
 			match &child.1 .0 {
 				NamespaceItem::Function(ty, _) => {
-					if let TypeDef::Function { ret, args, .. } = &mut *ty.write().unwrap() {
+					if let TypeDef::Function(FnDef { ret, args, .. }) = &mut *ty.write().unwrap() {
 						resolve_type(ret, &namespace, root).unwrap();
 
 						for arg in args {
@@ -462,7 +462,7 @@ pub fn register_impls(namespace: &RefCell<Namespace>, root: &RefCell<Namespace>)
 							match &elem.1 .0 {
 								NamespaceItem::Function(func, ast) => {
 									// Resolve function types
-									if let TypeDef::Function { ret, args, .. } =
+									if let TypeDef::Function(FnDef { ret, args, .. }) =
 										&mut *func.write().unwrap()
 									{
 										resolve_type(ret, &namespace.borrow(), root).unwrap();
@@ -816,7 +816,7 @@ impl Expr {
 
 				Atom::FnCall { name, .. } => match scope.find_symbol(name).unwrap() {
 					(_, Type::TypeRef(r, _)) => {
-						if let TypeDef::Function { ret, .. } =
+						if let TypeDef::Function(FnDef { ret, .. }) =
 							&*r.upgrade().unwrap().as_ref().read().unwrap()
 						{
 							*ret == *target
@@ -892,9 +892,9 @@ impl Expr {
 											.iter()
 											.find(|meth| meth.0 == name.name())
 										{
-											if let TypeDef::Function {
+											if let TypeDef::Function(FnDef {
 												ret, args: params, ..
-											} = &*method.read().unwrap()
+											}) = &*method.read().unwrap()
 											{
 												// Insert `this` into the arg list
 												args.insert(
@@ -1048,11 +1048,11 @@ impl Atom {
 
 			Atom::FnCall { name, args, ret } => {
 				if let Some((full_id, Type::TypeRef(t, _))) = scope.find_symbol(name) {
-					if let TypeDef::Function {
+					if let TypeDef::Function(FnDef {
 						ret: t_ret,
 						args: params,
 						..
-					} = &*t.upgrade().unwrap().as_ref().read().unwrap()
+					}) = &*t.upgrade().unwrap().as_ref().read().unwrap()
 					{
 						// Identifier is a function, check parameter types
 						*ret = Some(validate_fn_call(t_ret, args, params, scope, meta.clone())?);

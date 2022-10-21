@@ -18,6 +18,31 @@ pub trait Typed {
 	fn get_type<'ctx>(&self, scope: &'ctx FnScope<'ctx>) -> ASTResult<Type>;
 }
 
+#[derive(Debug)]
+pub struct FnDef {
+	pub ret: Type,
+	pub args: Vec<(Type, Option<Name>)>,
+	pub generics: TypeParamList,
+}
+
+#[derive(Debug)]
+pub struct TraitDef {
+	pub items: HashMap<Name, NamespaceEntry>,
+	pub supers: Vec<Identifier>,
+}
+
+// The internal representation of algebraic types, like structs, enums, and (shocker) struct enums
+//
+// Algebraics (strums?) can contain member variables, inner type aliases, variants (aka subtype definitions), etc...
+// Hence we give them the same data structure as Namespaces, a list of `String`s and `NamespaceEntry`s
+// However, since declaration order *is* meaningful in strums, we store them as a Vec, rather than a HashMap
+#[derive(Debug)]
+pub struct AlgebraicDef {
+	pub items: Vec<(Name, NamespaceEntry, Visibility)>,
+	pub layout: DataLayout,
+}
+
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Basic {
 	INTEGRAL { signed: bool, size_bytes: u32 },
@@ -43,28 +68,10 @@ pub enum Type {
 pub enum TypeDef {
 	// Generic type parameter, defined in other TypeDefs
 	Generic(TypeParam),
-
-	// Function type
-	Function {
-		ret: Type,
-		args: Vec<(Type, Option<Name>)>,
-		generics: TypeParamList,
-	},
-
-	// Data type for structs & enums
-	Algebraic(Box<AlgebraicType>, TypeParamList),
+	Trait(TraitDef),
+	Function(FnDef),
+	Algebraic(AlgebraicDef, TypeParamList),
 	// TODO: Add Class TypeDef
-}
-
-// The internal representation of algebraic types, like structs, enums, and (shocker) struct enums
-//
-// Algebraics (strums?) can contain member variables, inner type aliases, variants (aka subtype definitions), etc...
-// Hence we give them the same data structure as Namespaces, a list of `String`s and `NamespaceEntry`s
-// However, since declaration order *is* meaningful in strums, we store them as a Vec, rather than a HashMap
-#[derive(Clone, Debug)]
-pub struct AlgebraicType {
-	pub items: Vec<(Name, NamespaceEntry, Visibility)>,
-	pub layout: DataLayout,
 }
 
 #[derive(Clone, Debug)]
@@ -81,9 +88,9 @@ pub enum DataLayout {
 	Packed,    // Layout is packed in declaration order with no padding (inner alignment is 1 byte)
 }
 
-impl AlgebraicType {
+impl AlgebraicDef {
 	pub fn new() -> Self {
-		AlgebraicType {
+		AlgebraicDef {
 			items: vec![],
 			layout: DataLayout::Declared,
 		}
@@ -391,7 +398,7 @@ impl Display for TypeDef {
 				write!(f, "{}", agg)?;
 			}
 
-			TypeDef::Function { ret, args, .. } => {
+			TypeDef::Function(FnDef { ret, args, .. }) => {
 				write!(f, "{}(", ret)?;
 				for arg in args {
 					write!(f, "{}, ", arg.0)?;
@@ -399,12 +406,13 @@ impl Display for TypeDef {
 				write!(f, ")")?;
 			}
 			TypeDef::Generic(_) => todo!(),
+    		TypeDef::Trait(_) => todo!(),
 		}
 		Ok(())
 	}
 }
 
-impl Display for AlgebraicType {
+impl Display for AlgebraicDef {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		let mut members = self.items.iter();
 
@@ -417,7 +425,7 @@ impl Display for AlgebraicType {
 	}
 }
 
-impl Hash for AlgebraicType {
+impl Hash for AlgebraicDef {
 	fn hash<H: Hasher>(&self, state: &mut H) {
 		// We hash based on Type only, so two aggregates with the same layout have the same Hash
 		// Hashing is only relevant for LLVM codegen, so semantic analysis will already have happened

@@ -8,7 +8,7 @@ use crate::{
 		controlflow::ControlFlow,
 		expression::{Atom, Expr, Operator},
 		namespace::{Identifier, Name, Namespace, NamespaceASTElem, NamespaceItem},
-		types::{Basic, Type, TypeDef},
+		types::{Basic, Type, TypeDef, FnDef},
 		Attribute,
 	},
 };
@@ -179,7 +179,7 @@ impl CIRModuleBuilder {
 
 	fn convert_type_def(&mut self, def: &TypeDef) -> CIRTypeDef {
 		match def {
-			TypeDef::Function { .. } => todo!(),
+			TypeDef::Function(..) => todo!(),
 			TypeDef::Algebraic(alg, _) => {
 				let mut members = vec![];
 				let variants = vec![];
@@ -210,13 +210,14 @@ impl CIRModuleBuilder {
 				}
 			}
 			TypeDef::Generic(_) => todo!(),
+    		TypeDef::Trait(_) => todo!(),
 		}
 	}
 }
 
 impl CIRModuleBuilder {
 	pub fn generate_prototype(&mut self, ty: &TypeDef, attributes: Vec<Attribute>) -> CIRFunction {
-		if let TypeDef::Function { ret, args, .. } = ty {
+		if let TypeDef::Function( FnDef { ret, args, .. } ) = ty {
 			self.current_fn = Some(CIRFunction {
 				variables: vec![],
 				blocks: vec![],
