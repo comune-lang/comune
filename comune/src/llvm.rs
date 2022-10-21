@@ -104,7 +104,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 		}
 
 		for func in &module.functions {
-			if !func.1.0.is_extern {
+			if !func.1 .0.is_extern {
 				self.generate_fn(func.1 .1.as_ref().unwrap(), &func.1 .0)?;
 			}
 		}
@@ -146,7 +146,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 			self.variables
 				.push(self.create_entry_block_alloca(&format!("_{i}"), ty.as_basic_type_enum()));
 		}
-		
+
 		// Build parameter stores
 		{
 			let mut idx = 0;
@@ -154,7 +154,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 			for param in self.fn_value_opt.as_ref().unwrap().get_param_iter() {
 				self.builder.build_store(self.variables[idx], param);
-				idx += 1;	
+				idx += 1;
 			}
 		}
 
@@ -334,50 +334,77 @@ impl<'ctx> LLVMBackend<'ctx> {
 					CIRType::Basic(b) => {
 						if from.is_integral() || from.is_floating_point() {
 							let val = self.generate_operand(from, val).unwrap();
-		
+
 							match val {
 								BasicValueEnum::IntValue(i) => match &to {
-									
 									CIRType::Basic(Basic::BOOL) => {
-										return Some(self.builder.build_int_compare(
-											IntPredicate::NE,
-											i,
-											i.get_type().const_zero(),
-											"boolcast",
-										).as_basic_value_enum())
+										return Some(
+											self.builder
+												.build_int_compare(
+													IntPredicate::NE,
+													i,
+													i.get_type().const_zero(),
+													"boolcast",
+												)
+												.as_basic_value_enum(),
+										)
 									}
-		
+
 									_ => match self.get_llvm_type(to).as_any_type_enum() {
 										AnyTypeEnum::IntType(t) => {
-											return Some(self.builder.build_int_cast(i, t, "icast").as_basic_value_enum())
+											return Some(
+												self.builder
+													.build_int_cast(i, t, "icast")
+													.as_basic_value_enum(),
+											)
 										}
-		
+
 										AnyTypeEnum::FloatType(t) => {
 											if from.is_signed() {
-												return Some(self.builder.build_signed_int_to_float(i, t, "fcast").as_basic_value_enum());
+												return Some(
+													self.builder
+														.build_signed_int_to_float(i, t, "fcast")
+														.as_basic_value_enum(),
+												);
 											} else {
-												return Some(self.builder.build_unsigned_int_to_float(i, t, "fcast").as_basic_value_enum());
+												return Some(
+													self.builder
+														.build_unsigned_int_to_float(i, t, "fcast")
+														.as_basic_value_enum(),
+												);
 											}
 										}
-		
+
 										_ => panic!(),
 									},
 								},
-		
+
 								BasicValueEnum::FloatValue(f) => {
 									match self.get_llvm_type(to).as_any_type_enum() {
 										AnyTypeEnum::FloatType(t) => {
-											return Some(self.builder.build_float_cast(f, t, "fcast").as_basic_value_enum())
+											return Some(
+												self.builder
+													.build_float_cast(f, t, "fcast")
+													.as_basic_value_enum(),
+											)
 										}
-		
+
 										AnyTypeEnum::IntType(t) => {
 											if to.is_signed() {
-												return Some(self.builder.build_float_to_signed_int(f, t, "icast").as_basic_value_enum());
+												return Some(
+													self.builder
+														.build_float_to_signed_int(f, t, "icast")
+														.as_basic_value_enum(),
+												);
 											} else {
-												return Some(self.builder.build_float_to_unsigned_int(f, t, "icast").as_basic_value_enum());
+												return Some(
+													self.builder
+														.build_float_to_unsigned_int(f, t, "icast")
+														.as_basic_value_enum(),
+												);
 											}
 										}
-		
+
 										_ => panic!(),
 									}
 								}
@@ -386,7 +413,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 							}
 						} else {
 							// Not numeric, match other Basics
-		
+
 							match b {
 								Basic::STR => {
 									if let CIRType::Pointer(other_p) = &to {
@@ -394,26 +421,32 @@ impl<'ctx> LLVMBackend<'ctx> {
 											if let Basic::CHAR = other_b {
 												// Cast from `str` to char*
 												let val = self.generate_operand(from, val).unwrap();
-		
+
 												match val {
 													BasicValueEnum::StructValue(struct_val) => {
 														let val_extracted = match self
 															.builder
-															.build_extract_value(struct_val, 0, "cast")
+															.build_extract_value(
+																struct_val, 0, "cast",
+															)
 															.unwrap()
 														{
 															BasicValueEnum::PointerValue(p) => p,
 															_ => panic!(),
 														};
-		
+
 														return Some(
-															self.builder.build_pointer_cast(
-																val_extracted,
-																self.context
-																	.i8_type()
-																	.ptr_type(AddressSpace::Generic),
-																"charcast",
-															).as_basic_value_enum(),
+															self.builder
+																.build_pointer_cast(
+																	val_extracted,
+																	self.context
+																		.i8_type()
+																		.ptr_type(
+																			AddressSpace::Generic,
+																		),
+																	"charcast",
+																)
+																.as_basic_value_enum(),
 														);
 													}
 													_ => panic!(),
@@ -423,14 +456,14 @@ impl<'ctx> LLVMBackend<'ctx> {
 									}
 									panic!()
 								}
-		
+
 								Basic::BOOL => todo!(),
-		
+
 								_ => todo!(),
 							}
 						}
 					}
-		
+
 					_ => todo!(),
 				}
 			}

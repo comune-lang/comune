@@ -7,7 +7,7 @@ use crate::{
 		ast::{ASTElem, ASTNode},
 		controlflow::ControlFlow,
 		expression::{Atom, Expr, Operator},
-		namespace::{Identifier, Namespace, NamespaceASTElem, NamespaceItem, Name},
+		namespace::{Identifier, Name, Namespace, NamespaceASTElem, NamespaceItem},
 		types::{Basic, Type, TypeDef},
 		Attribute,
 	},
@@ -59,7 +59,7 @@ impl CIRModuleBuilder {
 	fn register_namespace(&mut self, namespace: &Namespace, root: &Namespace) {
 		for im in &namespace.impls {
 			for elem in im.1 {
-				match &elem.1.0 {
+				match &elem.1 .0 {
 					NamespaceItem::Function(fn_type, _) => {
 						let cir_fn = self.generate_prototype(&*fn_type.read().unwrap(), vec![]);
 
@@ -77,7 +77,7 @@ impl CIRModuleBuilder {
 		for import in &namespace.imported {
 			self.register_namespace(import.1, root);
 		}
-		
+
 		for elem in &namespace.children {
 			match &elem.1 .0 {
 				NamespaceItem::Namespace(ns) => {
@@ -85,7 +85,7 @@ impl CIRModuleBuilder {
 				}
 
 				NamespaceItem::Function(ty, _) => {
-					let cir_fn = self.generate_prototype(&*ty.read().unwrap(), elem.1.1.clone());
+					let cir_fn = self.generate_prototype(&*ty.read().unwrap(), elem.1 .1.clone());
 
 					self.module.functions.insert(
 						Identifier::from_parent(&namespace.path, elem.0.clone()),
@@ -101,7 +101,7 @@ impl CIRModuleBuilder {
 	fn generate_namespace(&mut self, namespace: &Namespace, root: &Namespace) {
 		for im in &namespace.impls {
 			for elem in im.1 {
-				match &elem.1.0 {
+				match &elem.1 .0 {
 					NamespaceItem::Function(_, ast) => {
 						let name = Identifier::from_parent(im.0, elem.0.clone());
 						let mut cir_fn = self.module.functions.remove(&name).unwrap();
@@ -110,13 +110,13 @@ impl CIRModuleBuilder {
 							cir_fn.0 = self.generate_function(cir_fn.0, &ast.node);
 						}
 
-						self.module.functions.insert(name, cir_fn);			
+						self.module.functions.insert(name, cir_fn);
 					}
 
-					_ => panic!()
+					_ => panic!(),
 				}
 			}
-	}
+		}
 
 		for elem in &namespace.children {
 			match &elem.1 .0 {
@@ -209,7 +209,7 @@ impl CIRModuleBuilder {
 					variants_map,
 				}
 			}
-    		TypeDef::Generic(_) => todo!(),
+			TypeDef::Generic(_) => todo!(),
 		}
 	}
 }
@@ -281,7 +281,8 @@ impl CIRModuleBuilder {
 				}
 
 				ASTNode::Expression(expr) => {
-					let expr_ir = self.generate_expr(&expr.borrow(), elem.type_info.borrow().as_ref().unwrap());
+					let expr_ir = self
+						.generate_expr(&expr.borrow(), elem.type_info.borrow().as_ref().unwrap());
 					self.write(CIRStmt::Expression(expr_ir));
 				}
 
@@ -293,7 +294,10 @@ impl CIRModuleBuilder {
 				ASTNode::ControlFlow(ctrl) => match &**ctrl {
 					ControlFlow::Return { expr } => {
 						if let Some(expr) = expr {
-							let expr_ir = self.generate_expr(&expr.get_expr().borrow(), expr.type_info.borrow().as_ref().unwrap());
+							let expr_ir = self.generate_expr(
+								&expr.get_expr().borrow(),
+								expr.type_info.borrow().as_ref().unwrap(),
+							);
 							self.write(CIRStmt::Return(Some(expr_ir)));
 						} else {
 							self.write(CIRStmt::Return(None));
@@ -305,7 +309,10 @@ impl CIRModuleBuilder {
 						body,
 						else_body,
 					} => {
-						let cond_ir = self.generate_expr(&cond.get_expr().borrow(), cond.type_info.borrow().as_ref().unwrap());
+						let cond_ir = self.generate_expr(
+							&cond.get_expr().borrow(),
+							cond.type_info.borrow().as_ref().unwrap(),
+						);
 						let start_block = self.current_block;
 						let if_block = if let ASTNode::Block(elems) = &body.node {
 							self.generate_block(elems)
@@ -359,7 +366,10 @@ impl CIRModuleBuilder {
 						let next_block = self.append_block();
 
 						self.current_block = cond_block;
-						let cond_ir = self.generate_expr(&cond.get_expr().borrow(), cond.type_info.borrow().as_ref().unwrap());
+						let cond_ir = self.generate_expr(
+							&cond.get_expr().borrow(),
+							cond.type_info.borrow().as_ref().unwrap(),
+						);
 						self.write(CIRStmt::Branch(cond_ir, body_block, next_block));
 
 						self.current_block = next_block;
@@ -394,7 +404,10 @@ impl CIRModuleBuilder {
 
 						// Add iter statement to body
 						if let Some(iter) = iter {
-							let iter_ir = self.generate_expr(&iter.get_expr().borrow(), iter.type_info.borrow().as_ref().unwrap());
+							let iter_ir = self.generate_expr(
+								&iter.get_expr().borrow(),
+								iter.type_info.borrow().as_ref().unwrap(),
+							);
 							self.write(CIRStmt::Expression(iter_ir));
 						}
 
@@ -405,7 +418,10 @@ impl CIRModuleBuilder {
 						self.current_block = loop_block;
 
 						if let Some(cond) = cond {
-							let cond_ir = self.generate_expr(&cond.get_expr().borrow(), cond.type_info.borrow().as_ref().unwrap());
+							let cond_ir = self.generate_expr(
+								&cond.get_expr().borrow(),
+								cond.type_info.borrow().as_ref().unwrap(),
+							);
 							self.write(CIRStmt::Branch(cond_ir, body_block, next_block));
 						} else {
 							self.write(CIRStmt::Jump(body_block));
@@ -493,7 +509,10 @@ impl CIRModuleBuilder {
 					);
 
 					for i in 0..indices.len() {
-						let mem_expr = self.generate_expr(&elems[i].1.get_expr().borrow(), elems[i].1.type_info.borrow().as_ref().unwrap());
+						let mem_expr = self.generate_expr(
+							&elems[i].1.get_expr().borrow(),
+							elems[i].1.type_info.borrow().as_ref().unwrap(),
+						);
 						let mut mem_lval = tmp.clone();
 
 						mem_lval.projection.push(PlaceElem::Field(indices[i]));
@@ -518,7 +537,10 @@ impl CIRModuleBuilder {
 				}
 
 				Atom::Cast(expr, to) => {
-					let castee = self.generate_expr(&expr.get_expr().borrow(), expr.type_info.borrow().as_ref().unwrap());
+					let castee = self.generate_expr(
+						&expr.get_expr().borrow(),
+						expr.type_info.borrow().as_ref().unwrap(),
+					);
 					let from = self.convert_type(expr.type_info.borrow().as_ref().unwrap());
 					let to = self.convert_type(to);
 					RValue::Cast {
@@ -531,7 +553,12 @@ impl CIRModuleBuilder {
 				Atom::FnCall { name, args, ret } => {
 					let cir_args = args
 						.iter()
-						.map(|arg| self.generate_expr(&arg.get_expr().borrow(), arg.type_info.borrow().as_ref().unwrap()))
+						.map(|arg| {
+							self.generate_expr(
+								&arg.get_expr().borrow(),
+								arg.type_info.borrow().as_ref().unwrap(),
+							)
+						})
 						.collect();
 					RValue::Atom(
 						self.convert_type(ret.as_ref().unwrap()),
@@ -569,7 +596,8 @@ impl CIRModuleBuilder {
 					RValue::Atom(l_ty, None, Operand::LValue(lval_ir))
 				} else {
 					if elems.len() == 1 {
-						let sub_expr = self.generate_expr(&elems[0].0, elems[0].1.as_ref().unwrap());
+						let sub_expr =
+							self.generate_expr(&elems[0].0, elems[0].1.as_ref().unwrap());
 						let cir_ty = self.convert_type(elems[0].1.as_ref().unwrap());
 						let temp = self.get_as_operand(cir_ty.clone(), sub_expr);
 
@@ -582,7 +610,12 @@ impl CIRModuleBuilder {
 
 									let cir_args = args
 										.iter()
-										.map(|arg| self.generate_expr(&arg.get_expr().borrow(), arg.type_info.borrow().as_ref().unwrap()))
+										.map(|arg| {
+											self.generate_expr(
+												&arg.get_expr().borrow(),
+												arg.type_info.borrow().as_ref().unwrap(),
+											)
+										})
 										.collect();
 
 									RValue::Atom(
@@ -599,16 +632,17 @@ impl CIRModuleBuilder {
 								}
 
 								_ => panic!(),
-							}
+							},
 
 							Operator::Assign => {
 								let lval_ir = self.generate_lvalue_expr(&elems[0].0);
-								let rval_ir = self.generate_expr(&elems[1].0, elems[1].1.as_ref().unwrap());
+								let rval_ir =
+									self.generate_expr(&elems[1].0, elems[1].1.as_ref().unwrap());
 								let l_ty = self.convert_type(elems[0].1.as_ref().unwrap());
 								let r_ty = self.convert_type(elems[1].1.as_ref().unwrap());
-			
+
 								let r_tmp = self.get_as_operand(r_ty.clone(), rval_ir);
-								
+
 								self.write(CIRStmt::Assignment(
 									lval_ir.clone(),
 									RValue::Atom(r_ty, None, r_tmp),
@@ -618,13 +652,19 @@ impl CIRModuleBuilder {
 							}
 
 							_ => {
-								let lhs = self.generate_expr(&elems[0].0, elems[0].1.as_ref().unwrap());
-								let rhs = self.generate_expr(&elems[1].0, elems[1].1.as_ref().unwrap());
+								let lhs =
+									self.generate_expr(&elems[0].0, elems[0].1.as_ref().unwrap());
+								let rhs =
+									self.generate_expr(&elems[1].0, elems[1].1.as_ref().unwrap());
 								let lhs_ty = self.convert_type(elems[0].1.as_ref().unwrap());
 								let rhs_ty = self.convert_type(elems[1].1.as_ref().unwrap());
 								let lhs_tmp = self.get_as_operand(lhs_ty.clone(), lhs);
 								let rhs_tmp = self.get_as_operand(rhs_ty.clone(), rhs);
-								RValue::Cons(self.convert_type(expr_ty), [(lhs_ty, lhs_tmp), (rhs_ty, rhs_tmp)], op.clone())
+								RValue::Cons(
+									self.convert_type(expr_ty),
+									[(lhs_ty, lhs_tmp), (rhs_ty, rhs_tmp)],
+									op.clone(),
+								)
 							}
 						}
 					}
@@ -692,10 +732,7 @@ impl CIRModuleBuilder {
 			.variables
 			.push((cir_ty, Some(name.clone())));
 
-		self.name_map_stack
-			.last_mut()
-			.unwrap()
-			.insert(name, idx);
+		self.name_map_stack.last_mut().unwrap().insert(name, idx);
 	}
 
 	fn get_as_operand(&mut self, ty: CIRType, rval: RValue) -> Operand {

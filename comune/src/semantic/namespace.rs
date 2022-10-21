@@ -19,7 +19,6 @@ use super::{
 
 pub type Name = Arc<str>;
 
-
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
 pub struct Identifier {
 	pub path: Vec<Name>,
@@ -74,18 +73,16 @@ impl Display for Identifier {
 			String::new()
 		};
 
-		
 		for scope in &self.path {
 			result.push_str(scope);
 			if scope != self.path.last().unwrap() {
 				result.push_str("::");
 			}
 		}
-		
+
 		write!(f, "{result}")
 	}
 }
-
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum NamespaceASTElem {

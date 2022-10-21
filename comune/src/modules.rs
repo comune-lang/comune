@@ -6,11 +6,14 @@ use std::{
 };
 
 use colored::Colorize;
-use inkwell::{context::Context, targets::FileType, passes::PassManager, module::Module};
+use inkwell::{context::Context, module::Module, passes::PassManager, targets::FileType};
 use rayon::prelude::*;
 
 use crate::{
-	cir::{builder::CIRModuleBuilder, analyze::{CIRPassManager, verify, cleanup}},
+	cir::{
+		analyze::{cleanup, verify, CIRPassManager},
+		builder::CIRModuleBuilder,
+	},
 	errors::{CMNError, CMNErrorCode, CMNMessage},
 	lexer::Lexer,
 	llvm::{self, LLVMBackend},
@@ -269,15 +272,13 @@ pub fn generate_code<'ctx>(
 
 	fs::write(cir_out_path, cir_module.to_string()).unwrap();
 
-
 	// Analyze & optimize cIR
 	let mut cir_man = CIRPassManager::new();
-	
+
 	cir_man.add_pass(verify::Verify);
 	cir_man.add_mut_pass(cleanup::RemoveNoOps);
 
 	cir_man.run_on_module(&mut cir_module);
-
 
 	// Generate LLVM IR
 	let mut backend = LLVMBackend::new(context, &module_name);
@@ -305,8 +306,8 @@ pub fn generate_code<'ctx>(
 	mpm.add_promote_memory_to_register_pass();
 	mpm.add_instruction_combining_pass();
 	mpm.add_reassociate_pass();
-	
+
 	mpm.run_on(&backend.module);
-	
+
 	Ok(backend)
 }

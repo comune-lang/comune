@@ -9,9 +9,7 @@ use crate::lexer::{Lexer, Token};
 use crate::semantic::ast::{ASTElem, ASTNode, TokenData};
 use crate::semantic::controlflow::ControlFlow;
 use crate::semantic::expression::{Atom, Expr, Operator};
-use crate::semantic::namespace::{
-	Identifier, Namespace, NamespaceASTElem, NamespaceItem,
-};
+use crate::semantic::namespace::{Identifier, Namespace, NamespaceASTElem, NamespaceItem};
 use crate::semantic::types::{AlgebraicType, Basic, FnParamList, Type, TypeDef, Visibility};
 use crate::semantic::Attribute;
 
@@ -79,7 +77,10 @@ impl Parser {
 
 	pub fn parse_module(&mut self) -> ParseResult<&RefCell<Namespace>> {
 		self.lexer.borrow_mut().tokenize_file().unwrap();
-		self.active_namespace = Some(RefCell::new(Namespace::new(Identifier { path: vec![], absolute: true })));
+		self.active_namespace = Some(RefCell::new(Namespace::new(Identifier {
+			path: vec![],
+			absolute: true,
+		})));
 		self.root_namespace = None;
 
 		match self.parse_namespace() {
@@ -134,7 +135,7 @@ impl Parser {
 		for im in &namespace.borrow().impls {
 			// Generate impl function bodies
 			for method in im.1 {
-				match &method.1.0 {
+				match &method.1 .0 {
 					NamespaceItem::Function(_, elem) => {
 						let mut elem = elem.borrow_mut();
 						match *elem {
@@ -143,14 +144,13 @@ impl Parser {
 								self.lexer.borrow_mut().seek_token_idx(idx);
 								*elem = NamespaceASTElem::Parsed(self.parse_block()?)
 							}
-		
+
 							_ => {}
 						}
 					}
 
 					_ => panic!(),
 				}
-				
 			}
 		}
 
@@ -260,7 +260,8 @@ impl Parser {
 
 								self.get_next()?; // Consume closing brace
 
-								let aggregate = TypeDef::Algebraic(Box::new(aggregate), HashMap::new());
+								let aggregate =
+									TypeDef::Algebraic(Box::new(aggregate), HashMap::new());
 
 								self.current_namespace().borrow_mut().children.insert(
 									name.expect_scopeless()?.clone(),
@@ -380,8 +381,12 @@ impl Parser {
 
 									let current_impl = (
 										NamespaceItem::Function(
-											Arc::new(RwLock::new(TypeDef::Function{ ret: fn_ret, args: fn_params, generics: HashMap::new() })),
-											RefCell::new(ast_elem)
+											Arc::new(RwLock::new(TypeDef::Function {
+												ret: fn_ret,
+												args: fn_params,
+												generics: HashMap::new(),
+											})),
+											RefCell::new(ast_elem),
 										),
 										current_attributes,
 										None,
@@ -576,7 +581,11 @@ impl Parser {
 					expr = Some(Box::new(self.parse_expression()?));
 				}
 				self.check_semicolon()?;
-				result = Some(ASTNode::Declaration(t, name.expect_scopeless()?.clone(), expr));
+				result = Some(ASTNode::Declaration(
+					t,
+					name.expect_scopeless()?.clone(),
+					expr,
+				));
 			} else {
 				return Err(self.err(CMNErrorCode::ExpectedIdentifier));
 			}
@@ -817,10 +826,10 @@ impl Parser {
 				match op {
 					// Function declaration
 					"(" => {
-						let t = TypeDef::Function { 
-							ret: t, 
-							args: self.parse_parameter_list()?, 
-							generics: HashMap::new()
+						let t = TypeDef::Function {
+							ret: t,
+							args: self.parse_parameter_list()?,
+							generics: HashMap::new(),
 						};
 
 						// Past the parameter list, check if we're at a function body or not
@@ -979,25 +988,47 @@ impl Parser {
 
 			let begin_rhs = self.get_current_start_index();
 
-			if op == Operator::Cast {
-				let goal_t = self.parse_type(true)?;
+			match op {
+				Operator::Cast => {
+					let goal_t = self.parse_type(true)?;
 
-				let end_index = self.get_current_start_index();
-				let meta = (begin_lhs, end_index - begin_lhs);
+					let end_index = self.get_current_start_index();
+					let meta = (begin_lhs, end_index - begin_lhs);
 
-				lhs = Expr::create_cast(lhs, None, goal_t, meta);
-			} else {
-				let rhs = self.parse_expression_bp(rbp)?;
+					lhs = Expr::create_cast(lhs, None, goal_t, meta);
+				}
 
-				let end_rhs = self.get_current_start_index();
-				let lhs_meta = (begin_lhs, end_lhs - begin_lhs);
-				let rhs_meta = (begin_rhs, end_rhs - begin_rhs);
+				Operator::PostInc | Operator::PostDec => {
+					let meta = (begin_lhs, self.get_current_start_index() - begin_lhs);
 
-				lhs = Expr::Cons(
-					op,
-					vec![(lhs, None, lhs_meta), (rhs, None, rhs_meta)],
-					(begin_rhs, end_rhs - begin_rhs),
-				);
+					// Create compound assignment expression
+					lhs = Expr::Cons(
+						match op {
+							Operator::PostInc => Operator::AssAdd,
+							Operator::PostDec => Operator::AssSub,
+							_ => panic!(),
+						},
+						vec![
+							(lhs, None, meta),
+							(Expr::Atom(Atom::IntegerLit(1, None), (0, 0)), None, (0, 0)),
+						],
+						meta,
+					);
+				}
+
+				_ => {
+					let rhs = self.parse_expression_bp(rbp)?;
+
+					let end_rhs = self.get_current_start_index();
+					let lhs_meta = (begin_lhs, end_lhs - begin_lhs);
+					let rhs_meta = (begin_rhs, end_rhs - begin_rhs);
+
+					lhs = Expr::Cons(
+						op,
+						vec![(lhs, None, lhs_meta), (rhs, None, rhs_meta)],
+						(begin_rhs, end_rhs - begin_rhs),
+					);
+				}
 			}
 		}
 
@@ -1173,8 +1204,7 @@ impl Parser {
 				if resolve_idents {
 					let mut found = false;
 
-					if Basic::get_basic_type(typename.name()).is_some()
-						&& !typename.is_qualified()
+					if Basic::get_basic_type(typename.name()).is_some() && !typename.is_qualified()
 					{
 						found = true;
 					} else {

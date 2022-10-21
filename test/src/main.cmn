@@ -27,13 +27,13 @@ int main() {
 	
 	while (test.b < 9) {
 		printf("This is a while loop!\n\0");
-		test.b += 1;
+		test.b++;
 	}
 
-	for (int i = 0; i < 10; i += 1) {
+	for (int i = 0; i < 10; i++) {
 		int test = 2;
 		printf("For loop test!\n\0");
 	}
 	
-	return fib(10u64) as i32;
+	return test.sum();
 }

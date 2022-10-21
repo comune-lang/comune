@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use crate::{semantic::types::DataLayout, lexer};
+use crate::{lexer, semantic::types::DataLayout};
 
 use super::{
 	CIRFunction, CIRModule, CIRStmt, CIRType, CIRTypeDef, LValue, Operand, PlaceElem, RValue,
@@ -34,7 +34,10 @@ impl Display for CIRFunction {
 				write!(
 					f,
 					", {}:{}",
-					self.variables[i].1.as_ref().unwrap_or(&i.to_string().into()),
+					self.variables[i]
+						.1
+						.as_ref()
+						.unwrap_or(&i.to_string().into()),
 					&self.variables[i].0
 				)?;
 			}

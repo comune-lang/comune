@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use std::{cell::RefCell, collections::HashMap, sync::RwLock};
+use std::{collections::HashMap, sync::RwLock};
 
 use crate::semantic::{
 	expression::Operator,
@@ -67,9 +67,11 @@ pub enum Operand {
 impl Clone for Operand {
 	fn clone(&self) -> Self {
 		match self {
-			Operand::FnCall(id, rval, name) => {
-				Operand::FnCall(id.clone(), rval.clone(), RwLock::new(name.read().unwrap().clone()))
-			}
+			Operand::FnCall(id, rval, name) => Operand::FnCall(
+				id.clone(),
+				rval.clone(),
+				RwLock::new(name.read().unwrap().clone()),
+			),
 			Operand::IntegerLit(lit) => Operand::IntegerLit(*lit),
 			Operand::FloatLit(lit) => Operand::FloatLit(*lit),
 			Operand::StringLit(lit) => Operand::StringLit(lit.clone()),

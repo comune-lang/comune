@@ -17,7 +17,7 @@ use self::{
 	ast::{ASTElem, ASTNode, TokenData},
 	controlflow::ControlFlow,
 	expression::{Atom, Expr, Operator},
-	namespace::{Identifier, Namespace, NamespaceASTElem, NamespaceItem, Name},
+	namespace::{Identifier, Name, Namespace, NamespaceASTElem, NamespaceItem},
 };
 
 pub mod ast;
@@ -90,7 +90,6 @@ impl<'ctx> FnScope<'ctx> {
 			}
 
 			if local_lookup.is_some() {
-				
 				result = local_lookup;
 			}
 		}
@@ -102,7 +101,10 @@ impl<'ctx> FnScope<'ctx> {
 
 			namespace.with_item(&id, &root, |item, id| {
 				if let NamespaceItem::Function(fn_type, _) = &item.0 {
-					result = Some((id.clone(), Type::TypeRef(Arc::downgrade(fn_type), id.clone())));
+					result = Some((
+						id.clone(),
+						Type::TypeRef(Arc::downgrade(fn_type), id.clone()),
+					));
 				}
 			});
 		}
@@ -124,7 +126,10 @@ pub fn validate_function(
 	let mut scope;
 	let ret;
 
-	if let TypeDef::Function { ret: fn_ret, args, .. } = sym_type {
+	if let TypeDef::Function {
+		ret: fn_ret, args, ..
+	} = sym_type
+	{
 		ret = fn_ret.clone();
 		scope = FnScope::new(namespace, root, ret.clone());
 
@@ -242,7 +247,7 @@ pub fn validate_namespace(
 
 	for im in &namespace.borrow().impls {
 		for item in im.1 {
-			match &item.1.0 {
+			match &item.1 .0 {
 				NamespaceItem::Function(sym_type, sym_elem) => validate_function(
 					&sym_type.read().unwrap(),
 					sym_elem,
@@ -454,30 +459,38 @@ pub fn register_impls(namespace: &RefCell<Namespace>, root: &RefCell<Namespace>)
 
 						for elem in im.1 {
 							// Match impl item
-							match &elem.1.0 {
+							match &elem.1 .0 {
 								NamespaceItem::Function(func, ast) => {
-								// Resolve function types
-									if let TypeDef::Function { ret, args, .. } = &mut *func.write().unwrap() {
+									// Resolve function types
+									if let TypeDef::Function { ret, args, .. } =
+										&mut *func.write().unwrap()
+									{
 										resolve_type(ret, &namespace.borrow(), root).unwrap();
 
 										for arg in args {
-											resolve_type(&mut arg.0, &namespace.borrow(), root).unwrap();
+											resolve_type(&mut arg.0, &namespace.borrow(), root)
+												.unwrap();
 										}
 									}
 
 									this_impl.insert(
 										elem.0.clone(),
-										(NamespaceItem::Function(func.clone(), ast.clone()), elem.1.1.clone(), None)
+										(
+											NamespaceItem::Function(func.clone(), ast.clone()),
+											elem.1 .1.clone(),
+											None,
+										),
 									);
 								}
 
-								_ => todo!()
+								_ => todo!(),
 							}
 						}
 						impls_remapped.insert(id.clone(), this_impl);
 					}
 				}
-			}).unwrap();
+			})
+			.unwrap();
 	}
 
 	root.borrow_mut().impls = impls_remapped;
@@ -763,6 +776,8 @@ impl Expr {
 							| Operator::LessEq
 							| Operator::GreaterEq => return Ok(Type::Basic(Basic::BOOL)),
 
+							Operator::PostDec | Operator::PostInc => return Ok(first_t),
+
 							_ => Ok(second_t.unwrap()),
 						}
 					}
@@ -846,7 +861,8 @@ impl Expr {
 				}
 
 				Operator::MemberAccess => {
-					if let Type::TypeRef(r, t_id) = elems[0].0.validate_lvalue(scope, meta).unwrap() {
+					if let Type::TypeRef(r, t_id) = elems[0].0.validate_lvalue(scope, meta).unwrap()
+					{
 						if let (lhs, [rhs, ..]) = elems.split_first_mut().unwrap() {
 							match &mut *r.upgrade().unwrap().write().unwrap() {
 								// Dot operator is on an algebraic type, so check if it's a member access or method call
@@ -864,7 +880,10 @@ impl Expr {
 									Expr::Atom(Atom::FnCall { name, args, .. }, _) => {
 										// jesse. we have to call METHods
 
-										if let Some((_, (NamespaceItem::Function(method, _), _, _))) = scope
+										if let Some((
+											_,
+											(NamespaceItem::Function(method, _), _, _),
+										)) = scope
 											.root_namespace
 											.borrow()
 											.impls
@@ -873,7 +892,9 @@ impl Expr {
 											.iter()
 											.find(|meth| meth.0 == name.name())
 										{
-											if let TypeDef::Function { ret, args: params, .. } = &*method.read().unwrap()
+											if let TypeDef::Function {
+												ret, args: params, ..
+											} = &*method.read().unwrap()
 											{
 												// Insert `this` into the arg list
 												args.insert(
@@ -907,7 +928,7 @@ impl Expr {
 														let method_name = name.path.pop().unwrap();
 														*name = t_id.clone();
 														name.path.push(method_name);
-														
+
 														return Ok(res);
 													}
 
@@ -993,9 +1014,12 @@ impl Atom {
 					*name = id;
 					Ok(ty)
 				} else {
-					Err((CMNError::new(CMNErrorCode::UndeclaredIdentifier(name.to_string())), meta))
+					Err((
+						CMNError::new(CMNErrorCode::UndeclaredIdentifier(name.to_string())),
+						meta,
+					))
 				}
-			},
+			}
 
 			Atom::Cast(a, t) => {
 				if let ASTNode::Expression(expr) = &a.node {
@@ -1024,8 +1048,11 @@ impl Atom {
 
 			Atom::FnCall { name, args, ret } => {
 				if let Some((full_id, Type::TypeRef(t, _))) = scope.find_symbol(name) {
-					if let TypeDef::Function { ret: t_ret, args: params, .. } =
-						&*t.upgrade().unwrap().as_ref().read().unwrap()
+					if let TypeDef::Function {
+						ret: t_ret,
+						args: params,
+						..
+					} = &*t.upgrade().unwrap().as_ref().read().unwrap()
 					{
 						// Identifier is a function, check parameter types
 						*ret = Some(validate_fn_call(t_ret, args, params, scope, meta.clone())?);
@@ -1061,12 +1088,20 @@ impl Atom {
 									todo!()
 								};
 
-							let expr_ty =
-								elem.1.get_expr().borrow_mut().validate(scope, Some(member_ty), elem.2)?;
-							
+							let expr_ty = elem.1.get_expr().borrow_mut().validate(
+								scope,
+								Some(member_ty),
+								elem.2,
+							)?;
+
 							elem.1.type_info.borrow_mut().replace(expr_ty.clone());
 
-							if !elem.1.get_expr().borrow().coercable_to(&expr_ty, member_ty, scope) {
+							if !elem
+								.1
+								.get_expr()
+								.borrow()
+								.coercable_to(&expr_ty, member_ty, scope)
+							{
 								return Err((
 									CMNError::new(CMNErrorCode::AssignTypeMismatch {
 										expr: expr_ty,

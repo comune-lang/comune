@@ -4,14 +4,14 @@ use std::hash::{Hash, Hasher};
 use std::ptr;
 use std::sync::{Arc, RwLock, Weak};
 
-use super::namespace::{Identifier, Namespace, NamespaceEntry, NamespaceItem, Name};
+use super::namespace::{Identifier, Name, Namespace, NamespaceEntry, NamespaceItem};
 use crate::constexpr::ConstExpr;
 use crate::parser::ASTResult;
 use crate::semantic::FnScope;
 
 pub type BoxedType = Box<Type>;
 pub type FnParamList = Vec<(Type, Option<Name>)>;
-pub type TypeParam = Vec<Identifier>; 				// Generic type parameter, with trait bounds
+pub type TypeParam = Vec<Identifier>; // Generic type parameter, with trait bounds
 pub type TypeParamList = HashMap<Name, Arc<RwLock<TypeDef>>>;
 
 pub trait Typed {
@@ -34,9 +34,9 @@ pub enum Type {
 	Basic(Basic),                                  // Fundamental type
 	Pointer(BoxedType),                            // Pointer-to-<BoxedType>
 	Array(BoxedType, Arc<RwLock<Vec<ConstExpr>>>), // N-dimensional array with constant expression for size
-	TypeRef(Weak<RwLock<TypeDef>>, Identifier),    // Reference to type definition, plus Identifier for serialization
+	TypeRef(Weak<RwLock<TypeDef>>, Identifier), // Reference to type definition, plus Identifier for serialization
 
-	Unresolved(Identifier),                        // Unresolved type (during parsing phase)
+	Unresolved(Identifier), // Unresolved type (during parsing phase)
 }
 
 #[derive(Debug)]
@@ -45,15 +45,14 @@ pub enum TypeDef {
 	Generic(TypeParam),
 
 	// Function type
-	Function { 
-		ret: Type, 
-		args: Vec<(Type, Option<Name>)>, 
-		generics: TypeParamList
+	Function {
+		ret: Type,
+		args: Vec<(Type, Option<Name>)>,
+		generics: TypeParamList,
 	},
 
 	// Data type for structs & enums
 	Algebraic(Box<AlgebraicType>, TypeParamList),
-
 	// TODO: Add Class TypeDef
 }
 
@@ -392,14 +391,14 @@ impl Display for TypeDef {
 				write!(f, "{}", agg)?;
 			}
 
-			TypeDef::Function{ ret, args, .. } => {
+			TypeDef::Function { ret, args, .. } => {
 				write!(f, "{}(", ret)?;
 				for arg in args {
 					write!(f, "{}, ", arg.0)?;
 				}
 				write!(f, ")")?;
 			}
-    		TypeDef::Generic(_) => todo!(),
+			TypeDef::Generic(_) => todo!(),
 		}
 		Ok(())
 	}

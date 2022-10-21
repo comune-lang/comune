@@ -567,7 +567,6 @@ impl Lexer {
 	}
 }
 
-
 pub fn get_escaped_char(c: char) -> Option<char> {
 	match c {
 		'n' => Some('\n'),
@@ -576,7 +575,7 @@ pub fn get_escaped_char(c: char) -> Option<char> {
 		'0' => Some('\0'),
 		'"' => Some('"'),
 
-		_ => None
+		_ => None,
 	}
 }
 
@@ -588,7 +587,7 @@ pub fn get_unescaped_char(c: char) -> Option<&'static str> {
 		'\0' => Some("\\0"),
 		'"' => Some("\\\""),
 
-		_ => None
+		_ => None,
 	}
 }
 
