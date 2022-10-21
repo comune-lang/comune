@@ -423,14 +423,7 @@ impl Lexer {
 
 				while token != '"' {
 					if escaped {
-						match token {
-							'n' => result.push('\n'),
-							't' => result.push('\t'),
-							'\\' => result.push('\\'),
-							'0' => result.push('\0'),
-
-							_ => panic!(), // TODO: proper error handling
-						}
+						result.push(get_escaped_char(token).unwrap());
 						escaped = false;
 					} else {
 						if token == '\\' {
@@ -572,4 +565,68 @@ impl Lexer {
 			self.log_msg_at(0, 0, e)
 		}
 	}
+}
+
+
+pub fn get_escaped_char(c: char) -> Option<char> {
+	match c {
+		'n' => Some('\n'),
+		't' => Some('\t'),
+		'\\' => Some('\\'),
+		'0' => Some('\0'),
+		'"' => Some('"'),
+
+		_ => None
+	}
+}
+
+pub fn get_unescaped_char(c: char) -> Option<&'static str> {
+	match c {
+		'\n' => Some("\\n"),
+		'\t' => Some("\\t"),
+		'\\' => Some("\\\\"),
+		'\0' => Some("\\0"),
+		'"' => Some("\\\""),
+
+		_ => None
+	}
+}
+
+pub fn get_escaped(string: &str) -> String {
+	let mut result = String::new();
+	let mut escaped = false;
+
+	result.reserve(string.len());
+
+	for c in string.chars() {
+		if escaped {
+			result.push(get_escaped_char(c).unwrap());
+			escaped = false;
+		} else {
+			if c == '\\' {
+				escaped = true;
+			} else {
+				result.push(c);
+			}
+		}
+	}
+
+	result.shrink_to_fit();
+
+	result
+}
+
+pub fn get_unescaped(string: &str) -> String {
+	let mut result = String::new();
+	result.reserve(string.len());
+
+	for c in string.chars() {
+		if let Some(unesc) = get_unescaped_char(c) {
+			result.push_str(unesc);
+		} else {
+			result.push(c);
+		}
+	}
+
+	result
 }

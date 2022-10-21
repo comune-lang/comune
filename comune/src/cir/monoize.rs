@@ -67,7 +67,7 @@ impl CIRModule {
 	fn monoize_operand(&self, op: &Operand) {
 		match op {
 			Operand::FnCall(id, _, mangled) => {
-				mangled.replace(Some(self.functions[&id].1.as_ref().unwrap().clone()));
+				mangled.write().unwrap().replace(self.functions[&id].1.as_ref().unwrap().clone());
 			}
 			_ => {}
 		}

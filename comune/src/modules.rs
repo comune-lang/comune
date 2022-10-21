@@ -10,7 +10,7 @@ use inkwell::{context::Context, targets::FileType, passes::PassManager, module::
 use rayon::prelude::*;
 
 use crate::{
-	cir::builder::CIRModuleBuilder,
+	cir::{builder::CIRModuleBuilder, analyze::{CIRPassManager, verify}},
 	errors::{CMNError, CMNErrorCode, CMNMessage},
 	lexer::Lexer,
 	llvm::{self, LLVMBackend},
@@ -264,12 +264,15 @@ pub fn generate_code<'ctx>(
 	// Generate cIR
 
 	let module_name = input_module.to_string();
-	let cir_module = CIRModuleBuilder::from_ast(mod_state).module;
+	let mut cir_module = CIRModuleBuilder::from_ast(mod_state).module;
 	let cir_out_path = get_module_out_path(&state, input_module, None).with_extension("cir");
 
 	fs::write(cir_out_path, cir_module.to_string()).unwrap();
 
-	// TODO: add cIR analysis/optimization passes
+	// Analyze cIR
+	let mut cir_man = CIRPassManager::new();
+	cir_man.add_pass(verify::Verify);
+	cir_man.run_on_module(&mut cir_module);
 
 	// Generate LLVM IR
 	let mut backend = LLVMBackend::new(context, &module_name);

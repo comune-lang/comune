@@ -442,7 +442,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 			Operand::FnCall(_, args, mangled) => {
 				let fn_v = self
 					.module
-					.get_function(mangled.borrow().as_ref().unwrap())
+					.get_function(mangled.read().unwrap().as_ref().unwrap())
 					.unwrap();
 
 				let args_mapped: Vec<_> = args

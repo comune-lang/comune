@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use std::{cell::RefCell, collections::HashMap};
+use std::{cell::RefCell, collections::HashMap, sync::RwLock};
 
 use crate::semantic::{
 	expression::Operator,
@@ -9,6 +9,7 @@ use crate::semantic::{
 	Attribute,
 };
 
+pub mod analyze;
 pub mod builder;
 pub mod monoize;
 pub mod serialize;
@@ -52,15 +53,31 @@ pub enum RValue {
 
 // An Operand represents a single element of a CIR expression.
 // This may either be a constant, an undef value, or an lvalue access.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub enum Operand {
-	FnCall(Identifier, Vec<RValue>, RefCell<Option<String>>), // Fully-qualified name + args + mangled name
+	FnCall(Identifier, Vec<RValue>, RwLock<Option<String>>), // Fully-qualified name + args + mangled name
 	IntegerLit(i128),
 	FloatLit(f64),
 	StringLit(String),
 	BoolLit(bool),
 	LValue(LValue),
 	Undef,
+}
+
+impl Clone for Operand {
+	fn clone(&self) -> Self {
+		match self {
+			Operand::FnCall(id, rval, name) => {
+				Operand::FnCall(id.clone(), rval.clone(), RwLock::new(name.read().unwrap().clone()))
+			}
+			Operand::IntegerLit(lit) => Operand::IntegerLit(*lit),
+			Operand::FloatLit(lit) => Operand::FloatLit(*lit),
+			Operand::StringLit(lit) => Operand::StringLit(lit.clone()),
+			Operand::BoolLit(lit) => Operand::BoolLit(*lit),
+			Operand::LValue(lval) => Operand::LValue(lval.clone()),
+			Operand::Undef => Operand::Undef,
+		}
+	}
 }
 
 // A CIRType represents a non-unique instance of a comune type.

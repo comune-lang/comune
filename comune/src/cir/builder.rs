@@ -1,4 +1,4 @@
-use std::{borrow::BorrowMut, cell::RefCell, collections::HashMap};
+use std::{borrow::BorrowMut, cell::RefCell, collections::HashMap, sync::RwLock};
 
 use crate::{
 	constexpr::{ConstExpr, ConstValue},
@@ -535,7 +535,7 @@ impl CIRModuleBuilder {
 					RValue::Atom(
 						self.convert_type(ret.as_ref().unwrap()),
 						None,
-						Operand::FnCall(name.clone(), cir_args, RefCell::new(None)),
+						Operand::FnCall(name.clone(), cir_args, RwLock::new(None)),
 					)
 				}
 			},
@@ -587,7 +587,7 @@ impl CIRModuleBuilder {
 									RValue::Atom(
 										rhs_ty,
 										None,
-										Operand::FnCall(name.clone(), cir_args, RefCell::new(None)),
+										Operand::FnCall(name.clone(), cir_args, RwLock::new(None)),
 									)
 								}
 

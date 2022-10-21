@@ -97,26 +97,6 @@ impl ASTElem {
 			_ => panic!(),
 		}
 	}
-
-	pub fn block_is_terminating(&self) -> bool {
-		if let ASTNode::Block(elems) = &self.node {
-			for elem in elems {
-				match &elem.node {
-					ASTNode::ControlFlow(ctrl) => match &**ctrl {
-						ControlFlow::Break | ControlFlow::Continue | ControlFlow::Return { .. } => {
-							return true
-						}
-						_ => {}
-					},
-
-					_ => {}
-				}
-			}
-		} else {
-			panic!();
-		}
-		return false;
-	}
 }
 
 impl Display for ASTElem {

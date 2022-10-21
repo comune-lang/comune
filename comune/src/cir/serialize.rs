@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use crate::semantic::types::DataLayout;
+use crate::{semantic::types::DataLayout, lexer};
 
 use super::{
 	CIRFunction, CIRModule, CIRStmt, CIRType, CIRTypeDef, LValue, Operand, PlaceElem, RValue,
@@ -131,7 +131,7 @@ impl Display for Operand {
 			Operand::IntegerLit(num) => write!(f, "{num}"),
 			Operand::FloatLit(num) => write!(f, "{num}"),
 			Operand::StringLit(s) => {
-				write!(f, "\"{}\"", s.replace("\n", "\\n").replace("\0", "\\0"))
+				write!(f, "\"{}\"", lexer::get_unescaped(s))
 			}
 			Operand::BoolLit(b) => write!(f, "{b}"),
 			Operand::LValue(lval) => write!(f, "{lval}"),
