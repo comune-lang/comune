@@ -17,7 +17,7 @@ use self::{
 	ast::{ASTElem, ASTNode, TokenData},
 	controlflow::ControlFlow,
 	expression::{Atom, Expr, Operator},
-	namespace::{Identifier, Namespace, NamespaceASTElem, NamespaceItem},
+	namespace::{Identifier, Namespace, NamespaceASTElem, NamespaceItem, Name},
 };
 
 pub mod ast;
@@ -46,7 +46,7 @@ pub struct FnScope<'ctx> {
 	fn_return_type: Type,
 	root_namespace: &'ctx RefCell<Namespace>,
 
-	variables: HashMap<String, Type>,
+	variables: HashMap<Name, Type>,
 }
 
 impl<'ctx> FnScope<'ctx> {
@@ -110,7 +110,7 @@ impl<'ctx> FnScope<'ctx> {
 		return result;
 	}
 
-	pub fn add_variable(&mut self, t: Type, n: String) {
+	pub fn add_variable(&mut self, t: Type, n: Name) {
 		self.variables.insert(n, t);
 	}
 }
@@ -176,7 +176,7 @@ pub fn validate_function(
 pub fn validate_fn_call(
 	ret: &Type,
 	args: &Vec<ASTElem>,
-	params: &Vec<(Type, Option<String>)>,
+	params: &Vec<(Type, Option<Name>)>,
 	scope: &FnScope,
 	meta: TokenData,
 ) -> ASTResult<Type> {
@@ -333,7 +333,7 @@ pub fn resolve_type_def(
 				}
 
 				if let Token::Identifier(layout_name) = &layout.args[0][0] {
-					agg.layout = match layout_name.expect_scopeless().unwrap() {
+					agg.layout = match &**layout_name.expect_scopeless().unwrap() {
 						"declared" => types::DataLayout::Declared,
 						"optimized" => types::DataLayout::Optimized,
 						"packed" => types::DataLayout::Packed,
@@ -544,7 +544,7 @@ impl ASTElem {
 					}
 				}
 
-				scope.add_variable(t.clone(), n.to_string());
+				scope.add_variable(t.clone(), n.clone().into());
 
 				Ok(None)
 			}

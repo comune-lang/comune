@@ -217,7 +217,7 @@ impl Parser {
 											match result.1 {
 												NamespaceItem::Variable(t, n) => {
 													aggregate.items.push((
-														result.0,
+														result.0.into(),
 														(
 															NamespaceItem::Variable(t, n),
 															vec![],
@@ -263,7 +263,7 @@ impl Parser {
 								let aggregate = TypeDef::Algebraic(Box::new(aggregate));
 
 								self.current_namespace().borrow_mut().children.insert(
-									name.expect_scopeless()?.into(),
+									name.expect_scopeless()?.clone(),
 									(
 										NamespaceItem::Type(Arc::new(RwLock::new(aggregate))),
 										current_attributes,
@@ -285,7 +285,7 @@ impl Parser {
 
 								let new_namespace = Namespace::from_parent(
 									&self.current_namespace().borrow().path,
-									namespace_name.expect_scopeless()?,
+									namespace_name.expect_scopeless()?.clone(),
 								);
 
 								let mut old_namespace =
@@ -304,7 +304,7 @@ impl Parser {
 								parsed_namespace = self.current_namespace().replace(old_namespace);
 
 								self.current_namespace().borrow_mut().children.insert(
-									namespace_name.name().into(),
+									namespace_name.name().clone(),
 									(
 										NamespaceItem::Namespace(Box::new(RefCell::new(
 											parsed_namespace,
@@ -362,7 +362,7 @@ impl Parser {
 
 									let fn_name =
 										if let Token::Identifier(id) = self.get_current()? {
-											id.expect_scopeless()?.to_string()
+											id.expect_scopeless()?.clone()
 										} else {
 											return Err(self.err(CMNErrorCode::ExpectedIdentifier));
 										};
@@ -425,7 +425,7 @@ impl Parser {
 									// Found a '=' token, so fetch the name to alias
 									if let Token::Identifier(aliased) = self.get_next()? {
 										self.current_namespace().borrow_mut().children.insert(
-											name.expect_scopeless()?.into(),
+											name.expect_scopeless()?.clone(),
 											(NamespaceItem::Alias(aliased), vec![], None),
 										);
 
@@ -437,7 +437,7 @@ impl Parser {
 								} else {
 									// No '=' token, just bring the name into scope
 									self.current_namespace().borrow_mut().children.insert(
-										name.name().into(),
+										name.name().clone(),
 										(NamespaceItem::Alias(name), vec![], None),
 									);
 
@@ -576,7 +576,7 @@ impl Parser {
 					expr = Some(Box::new(self.parse_expression()?));
 				}
 				self.check_semicolon()?;
-				result = Some(ASTNode::Declaration(t, name.expect_scopeless()?.to_string(), expr));
+				result = Some(ASTNode::Declaration(t, name.expect_scopeless()?.clone(), expr));
 			} else {
 				return Err(self.err(CMNErrorCode::ExpectedIdentifier));
 			}
@@ -1029,7 +1029,7 @@ impl Parser {
 											let expr = self.parse_expression()?;
 
 											inits.push((
-												Some(member_name.expect_scopeless()?.to_string()),
+												Some(member_name.expect_scopeless()?.clone()),
 												expr,
 												(0, 0),
 											));
@@ -1219,7 +1219,7 @@ impl Parser {
 			// Check for param name
 			let mut current = self.get_current()?;
 			if let Token::Identifier(id) = current {
-				param.1 = Some(id.expect_scopeless()?.to_string());
+				param.1 = Some(id.expect_scopeless()?.clone());
 				self.get_next()?;
 			}
 

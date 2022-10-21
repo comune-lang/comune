@@ -26,7 +26,7 @@ impl Display for CIRFunction {
 			write!(
 				f,
 				"({}:{}",
-				self.variables[0].1.as_ref().unwrap_or(&"_".to_string()),
+				self.variables[0].1.as_ref().unwrap_or(&"_".into()),
 				&self.variables[0].0,
 			)?;
 
@@ -34,7 +34,7 @@ impl Display for CIRFunction {
 				write!(
 					f,
 					", {}:{}",
-					self.variables[i].1.as_ref().unwrap_or(&i.to_string()),
+					self.variables[i].1.as_ref().unwrap_or(&i.to_string().into()),
 					&self.variables[i].0
 				)?;
 			}

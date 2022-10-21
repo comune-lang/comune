@@ -10,7 +10,7 @@ use inkwell::{context::Context, targets::FileType, passes::PassManager, module::
 use rayon::prelude::*;
 
 use crate::{
-	cir::{builder::CIRModuleBuilder, analyze::{CIRPassManager, verify}},
+	cir::{builder::CIRModuleBuilder, analyze::{CIRPassManager, verify, cleanup}},
 	errors::{CMNError, CMNErrorCode, CMNMessage},
 	lexer::Lexer,
 	llvm::{self, LLVMBackend},
@@ -109,7 +109,7 @@ pub fn get_module_source_path(state: &Arc<ManagerState>, module: &Identifier) ->
 
 	fs::create_dir_all(result.clone()).unwrap();
 
-	result.push(module.name());
+	result.push(&**module.name());
 	result.set_extension("cmn");
 	result
 }
@@ -130,7 +130,7 @@ pub fn get_module_out_path(
 
 	fs::create_dir_all(result.clone()).unwrap();
 
-	result.push(module.name());
+	result.push(&**module.name());
 	result.set_extension("o");
 	result
 }
@@ -269,10 +269,15 @@ pub fn generate_code<'ctx>(
 
 	fs::write(cir_out_path, cir_module.to_string()).unwrap();
 
-	// Analyze cIR
+
+	// Analyze & optimize cIR
 	let mut cir_man = CIRPassManager::new();
+	
 	cir_man.add_pass(verify::Verify);
+	cir_man.add_mut_pass(cleanup::RemoveNoOps);
+
 	cir_man.run_on_module(&mut cir_module);
+
 
 	// Generate LLVM IR
 	let mut backend = LLVMBackend::new(context, &module_name);

@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use super::{
 	ast::{ASTElem, TokenData},
-	namespace::Identifier,
+	namespace::{Identifier, Name},
 	types::{Basic, Type},
 };
 
@@ -302,7 +302,7 @@ pub enum Atom {
 	ArrayLit(Vec<ASTElem>),
 
 	// Struct/enum literal
-	AlgebraicLit(Type, Vec<(Option<String>, ASTElem, TokenData)>),
+	AlgebraicLit(Type, Vec<(Option<Name>, ASTElem, TokenData)>),
 
 	Identifier(Identifier),
 

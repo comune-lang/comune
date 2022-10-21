@@ -2,6 +2,7 @@ use rayon::prelude::{IntoParallelRefIterator, ParallelIterator};
 
 use super::{CIRFunction, CIRModule};
 
+pub mod cleanup;
 pub mod verify;
 
 pub trait CIRPass: Send + Sync {

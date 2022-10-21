@@ -17,27 +17,30 @@ use super::{
 	Attribute,
 };
 
+pub type Name = Arc<str>;
+
+
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
 pub struct Identifier {
-	pub path: Vec<Arc<str>>,
+	pub path: Vec<Name>,
 	pub absolute: bool,
 }
 
 impl Identifier {
-	pub fn from_name(name: &str, absolute: bool) -> Self {
+	pub fn from_name(name: Name, absolute: bool) -> Self {
 		Identifier {
-			path: vec![name.into()],
+			path: vec![name],
 			absolute,
 		}
 	}
 
-	pub fn from_parent(parent: &Identifier, name: &str) -> Self {
+	pub fn from_parent(parent: &Identifier, name: Name) -> Self {
 		let mut result = parent.clone();
-		result.path.push(name.into());
+		result.path.push(name);
 		result
 	}
 
-	pub fn name(&self) -> &str {
+	pub fn name(&self) -> &Name {
 		self.path.last().unwrap()
 	}
 
@@ -45,7 +48,7 @@ impl Identifier {
 		self.path.len() > 1
 	}
 
-	pub fn expect_scopeless(&self) -> ParseResult<&str> {
+	pub fn expect_scopeless(&self) -> ParseResult<&Name> {
 		if self.path.len() == 1 && !self.absolute {
 			Ok(self.path.last().unwrap())
 		} else {
@@ -108,8 +111,8 @@ pub struct Namespace {
 	pub path: Identifier,
 	pub referenced_modules: HashSet<Identifier>,
 	pub imported: HashMap<Identifier, Namespace>,
-	pub children: HashMap<Arc<str>, NamespaceEntry>,
-	pub impls: HashMap<Identifier, HashMap<String, NamespaceEntry>>, // Impls defined in this namespace
+	pub children: HashMap<Name, NamespaceEntry>,
+	pub impls: HashMap<Identifier, HashMap<Name, NamespaceEntry>>, // Impls defined in this namespace
 }
 
 impl Namespace {
@@ -125,7 +128,7 @@ impl Namespace {
 	}
 
 	// Children take temporary ownership of their parent to avoid lifetime hell
-	pub fn from_parent(parent: &Identifier, name: &str) -> Self {
+	pub fn from_parent(parent: &Identifier, name: Name) -> Self {
 		Namespace {
 			children: HashMap::new(),
 			path: Identifier::from_parent(parent, name),
@@ -157,7 +160,7 @@ impl Namespace {
 					return self.with_item(&id, root, closure);
 				} else {
 					// Generate absolute identifier
-					let id = Identifier::from_parent(&self.path, name.name());
+					let id = Identifier::from_parent(&self.path, name.name().clone());
 
 					return Some(closure(&self.children.get(name.name()).unwrap(), &id));
 				}
@@ -207,7 +210,7 @@ impl Namespace {
 				}
 			} else if let Some(imported) = self
 				.imported
-				.get(&Identifier::from_name(&name.path[0], false))
+				.get(&Identifier::from_name(name.path[0].clone(), false))
 			{
 				// Found imported namespace matching scope path
 

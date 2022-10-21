@@ -7,7 +7,7 @@ use crate::{
 		ast::{ASTElem, ASTNode},
 		controlflow::ControlFlow,
 		expression::{Atom, Expr, Operator},
-		namespace::{Identifier, Namespace, NamespaceASTElem, NamespaceItem},
+		namespace::{Identifier, Namespace, NamespaceASTElem, NamespaceItem, Name},
 		types::{Basic, Type, TypeDef},
 		Attribute,
 	},
@@ -24,7 +24,7 @@ pub struct CIRModuleBuilder {
 	type_map: HashMap<Type, TypeIndex>,
 
 	current_fn: Option<CIRFunction>,
-	name_map_stack: Vec<HashMap<String, VarIndex>>,
+	name_map_stack: Vec<HashMap<Name, VarIndex>>,
 	current_block: BlockIndex,
 }
 
@@ -64,7 +64,7 @@ impl CIRModuleBuilder {
 						let cir_fn = self.generate_prototype(&*fn_type.read().unwrap(), vec![]);
 
 						self.module.functions.insert(
-							Identifier::from_parent(im.0, &elem.0),
+							Identifier::from_parent(im.0, elem.0.clone()),
 							(cir_fn, None),
 						);
 					}
@@ -88,7 +88,7 @@ impl CIRModuleBuilder {
 					let cir_fn = self.generate_prototype(&*ty.read().unwrap(), elem.1.1.clone());
 
 					self.module.functions.insert(
-						Identifier::from_parent(&namespace.path, elem.0),
+						Identifier::from_parent(&namespace.path, elem.0.clone()),
 						(cir_fn, None),
 					);
 				}
@@ -103,7 +103,7 @@ impl CIRModuleBuilder {
 			for elem in im.1 {
 				match &elem.1.0 {
 					NamespaceItem::Function(_, ast) => {
-						let name = Identifier::from_parent(im.0, &elem.0);
+						let name = Identifier::from_parent(im.0, elem.0.clone());
 						let mut cir_fn = self.module.functions.remove(&name).unwrap();
 
 						if let NamespaceASTElem::Parsed(ast) = &*ast.borrow() {
@@ -125,7 +125,7 @@ impl CIRModuleBuilder {
 				}
 
 				NamespaceItem::Function(_, node) => {
-					let name = Identifier::from_parent(&namespace.path, elem.0);
+					let name = Identifier::from_parent(&namespace.path, elem.0.clone());
 					let mut cir_fn = self.module.functions.remove(&name).unwrap();
 
 					if let NamespaceASTElem::Parsed(ast) = &*node.borrow() {
@@ -209,6 +209,7 @@ impl CIRModuleBuilder {
 					variants_map,
 				}
 			}
+    		TypeDef::Generic(_) => todo!(),
 		}
 	}
 }
@@ -424,7 +425,7 @@ impl CIRModuleBuilder {
 		self.current_block
 	}
 
-	fn generate_decl(&mut self, ty: &Type, name: String, elem: &Box<ASTElem>) {
+	fn generate_decl(&mut self, ty: &Type, name: Name, elem: &Box<ASTElem>) {
 		let cir_ty = self.convert_type(ty);
 		let rval = self.generate_expr(&elem.get_expr().borrow(), ty);
 		let idx = self.get_fn().variables.len();
@@ -682,7 +683,7 @@ impl CIRModuleBuilder {
 		None
 	}
 
-	fn insert_variable(&mut self, name: String, ty: Type) {
+	fn insert_variable(&mut self, name: Name, ty: Type) {
 		// TODO: Deal with shadowing and scopes
 		let cir_ty = self.convert_type(&ty);
 		let idx = self.get_fn().variables.len();

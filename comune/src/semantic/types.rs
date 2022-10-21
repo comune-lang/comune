@@ -1,15 +1,18 @@
+use std::collections::HashMap;
 use std::fmt::Display;
 use std::hash::{Hash, Hasher};
 use std::ptr;
 use std::sync::{Arc, RwLock, Weak};
 
-use super::namespace::{Identifier, Namespace, NamespaceEntry, NamespaceItem};
+use super::namespace::{Identifier, Namespace, NamespaceEntry, NamespaceItem, Name};
 use crate::constexpr::ConstExpr;
 use crate::parser::ASTResult;
 use crate::semantic::FnScope;
 
 pub type BoxedType = Box<Type>;
-pub type FnParamList = Vec<(Type, Option<String>)>;
+pub type FnParamList = Vec<(Type, Option<Name>)>;
+pub type TypeParam = Vec<Identifier>; 				// Generic type parameter, with trait bounds
+pub type TypeParamList = HashMap<Name, Arc<RwLock<TypeDef>>>;
 
 pub trait Typed {
 	fn get_type<'ctx>(&self, scope: &'ctx FnScope<'ctx>) -> ASTResult<Type>;
@@ -31,13 +34,15 @@ pub enum Type {
 	Basic(Basic),                                  // Fundamental type
 	Pointer(BoxedType),                            // Pointer-to-<BoxedType>
 	Array(BoxedType, Arc<RwLock<Vec<ConstExpr>>>), // N-dimensional array with constant expression for size
+	TypeRef(Weak<RwLock<TypeDef>>, Identifier),    // Reference to type definition, plus Identifier for serialization
+
 	Unresolved(Identifier),                        // Unresolved type (during parsing phase)
-	TypeRef(Weak<RwLock<TypeDef>>, Identifier), // Reference to type definition, plus Identifier for serialization
 }
 
 #[derive(Debug)]
 pub enum TypeDef {
-	Function(Type, Vec<(Type, Option<String>)>), // Return type + parameter types
+	Generic(TypeParam),                          // Generic type parameter
+	Function(Type, Vec<(Type, Option<Name>)>), // Return type + parameter types
 	Algebraic(Box<AlgebraicType>),               // Data type for structs & enums
 	                                             // TODO: Add Class TypeDef
 }
@@ -49,7 +54,7 @@ pub enum TypeDef {
 // However, since declaration order *is* meaningful in strums, we store them as a Vec, rather than a HashMap
 #[derive(Clone, Debug)]
 pub struct AlgebraicType {
-	pub items: Vec<(String, NamespaceEntry, Visibility)>,
+	pub items: Vec<(Name, NamespaceEntry, Visibility)>,
 	pub layout: DataLayout,
 }
 
@@ -75,7 +80,7 @@ impl AlgebraicType {
 		}
 	}
 
-	pub fn get_member(&self, name: &str) -> Option<(usize, &Type)> {
+	pub fn get_member(&self, name: &Name) -> Option<(usize, &Type)> {
 		let mut index = 0;
 
 		for item in &self.items {
@@ -98,7 +103,7 @@ impl AlgebraicType {
 		mut closure: impl FnMut(&NamespaceEntry, &Identifier) -> Ret,
 	) -> Option<Ret> {
 		if !name.is_qualified() {
-			if let Some(item) = self.items.iter().find(|item| item.0 == name.name()) {
+			if let Some(item) = self.items.iter().find(|item| &item.0 == name.name()) {
 				// It's one of this namespace's children!
 
 				if let NamespaceItem::Alias(id) = &item.1 .0 {
@@ -106,13 +111,13 @@ impl AlgebraicType {
 					return parent.with_item(&id, root, closure);
 				} else {
 					// Generate absolute identifier
-					let id = Identifier::from_parent(&parent.path, name.name());
+					let id = Identifier::from_parent(&parent.path, name.name().clone());
 
 					return Some(closure(&item.1, &id));
 				}
 			}
 		} else {
-			if let Some(item) = self.items.iter().find(|item| item.0 == name.path[0].as_ref()) {
+			if let Some(item) = self.items.iter().find(|item| item.0 == name.path[0]) {
 				match &item.1 .0 {
 					NamespaceItem::Type(ty) => match &*ty.read().unwrap() {
 						TypeDef::Algebraic(alg) => {
@@ -384,6 +389,7 @@ impl Display for TypeDef {
 				}
 				write!(f, ")")?;
 			}
+    		TypeDef::Generic(_) => todo!(),
 		}
 		Ok(())
 	}

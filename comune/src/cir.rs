@@ -4,7 +4,7 @@ use std::{cell::RefCell, collections::HashMap, sync::RwLock};
 
 use crate::semantic::{
 	expression::Operator,
-	namespace::Identifier,
+	namespace::{Identifier, Name},
 	types::{Basic, DataLayout},
 	Attribute,
 };
@@ -98,8 +98,8 @@ pub enum CIRTypeDef {
 		variants: Vec<CIRTypeDef>,
 		layout: DataLayout,
 
-		members_map: HashMap<String, usize>,
-		variants_map: HashMap<String, usize>,
+		members_map: HashMap<Name, usize>,
+		variants_map: HashMap<Name, usize>,
 	},
 
 	Class {},
@@ -117,7 +117,7 @@ pub enum CIRStmt {
 pub struct CIRFunction {
 	// In cIR, variables are referenced by an index, not a name.
 	// (They may still have a name for pretty-printing, though.)
-	pub variables: Vec<(CIRType, Option<String>)>,
+	pub variables: Vec<(CIRType, Option<Name>)>,
 	pub blocks: Vec<CIRBlock>,
 	pub ret: CIRType,
 	pub arg_count: usize,

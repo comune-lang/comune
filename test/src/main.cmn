@@ -10,6 +10,14 @@ struct Test {
 	int b;
 }
 
+
+struct Vector<T> {
+	T* data;
+	usize length;
+	usize capacity;
+}
+
+
 impl Test {
 	int sum(Test self) {
 		printf("This is a method call!\n\0");

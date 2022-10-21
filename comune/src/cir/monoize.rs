@@ -13,7 +13,7 @@ impl CIRModule {
 		for func in &mut self.functions {
 			// Check if the function has a `no_mangle` attribute, or if it's `main`. If not, mangle the name
 			if get_attribute(&func.1 .0.attributes, "no_mangle").is_some()
-				|| (func.0.name() == "main" && !func.0.is_qualified())
+				|| (&**func.0.name() == "main" && !func.0.is_qualified())
 			{
 				func.1 .1 = Some(func.0.name().to_string());
 			} else {
