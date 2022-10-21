@@ -1,4 +1,4 @@
-use std::{borrow::BorrowMut, cell::RefCell, collections::HashMap, sync::RwLock};
+use std::{borrow::BorrowMut, collections::HashMap, sync::RwLock};
 
 use crate::{
 	constexpr::{ConstExpr, ConstValue},
@@ -179,8 +179,8 @@ impl CIRModuleBuilder {
 
 	fn convert_type_def(&mut self, def: &TypeDef) -> CIRTypeDef {
 		match def {
-			TypeDef::Function(_, _) => todo!(),
-			TypeDef::Algebraic(alg) => {
+			TypeDef::Function { .. } => todo!(),
+			TypeDef::Algebraic(alg, _) => {
 				let mut members = vec![];
 				let variants = vec![];
 				let mut members_map = HashMap::new();
@@ -216,7 +216,7 @@ impl CIRModuleBuilder {
 
 impl CIRModuleBuilder {
 	pub fn generate_prototype(&mut self, ty: &TypeDef, attributes: Vec<Attribute>) -> CIRFunction {
-		if let TypeDef::Function(ret, args) = ty {
+		if let TypeDef::Function { ret, args, .. } = ty {
 			self.current_fn = Some(CIRFunction {
 				variables: vec![],
 				blocks: vec![],

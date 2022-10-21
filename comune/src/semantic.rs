@@ -124,7 +124,7 @@ pub fn validate_function(
 	let mut scope;
 	let ret;
 
-	if let TypeDef::Function(fn_ret, args) = sym_type {
+	if let TypeDef::Function { ret: fn_ret, args, .. } = sym_type {
 		ret = fn_ret.clone();
 		scope = FnScope::new(namespace, root, ret.clone());
 
@@ -306,7 +306,7 @@ pub fn resolve_type_def(
 	root: &RefCell<Namespace>,
 ) -> ParseResult<()> {
 	match ty {
-		TypeDef::Algebraic(ref mut agg) => {
+		TypeDef::Algebraic(ref mut agg, _) => {
 			for item in &mut agg.items {
 				match &mut item.1 .0 {
 					NamespaceItem::Variable(t, _) => resolve_type(t, &namespace, root).unwrap(),
@@ -366,7 +366,7 @@ pub fn resolve_namespace_types(
 		for child in &namespace.children {
 			match &child.1 .0 {
 				NamespaceItem::Function(ty, _) => {
-					if let TypeDef::Function(ret, args) = &mut *ty.write().unwrap() {
+					if let TypeDef::Function { ret, args, .. } = &mut *ty.write().unwrap() {
 						resolve_type(ret, &namespace, root).unwrap();
 
 						for arg in args {
@@ -395,7 +395,7 @@ pub fn check_cyclical_deps(
 	ty: &Arc<RwLock<TypeDef>>,
 	parent_types: &mut Vec<Arc<RwLock<TypeDef>>>,
 ) -> ASTResult<()> {
-	if let TypeDef::Algebraic(agg) = &*ty.as_ref().read().unwrap() {
+	if let TypeDef::Algebraic(agg, _) = &*ty.as_ref().read().unwrap() {
 		for member in agg.items.iter() {
 			match &member.1 .0 {
 				NamespaceItem::Variable(t, _) => {
@@ -449,7 +449,7 @@ pub fn register_impls(namespace: &RefCell<Namespace>, root: &RefCell<Namespace>)
 			.borrow()
 			.with_item(&im.0, &root.borrow(), |item, id| {
 				if let NamespaceItem::Type(t_def) = &item.0 {
-					if let TypeDef::Algebraic(_alg) = &mut *t_def.write().unwrap() {
+					if let TypeDef::Algebraic(_, _) = &mut *t_def.write().unwrap() {
 						let mut this_impl = HashMap::new();
 
 						for elem in im.1 {
@@ -457,7 +457,7 @@ pub fn register_impls(namespace: &RefCell<Namespace>, root: &RefCell<Namespace>)
 							match &elem.1.0 {
 								NamespaceItem::Function(func, ast) => {
 								// Resolve function types
-									if let TypeDef::Function(ret, args) = &mut *func.write().unwrap() {
+									if let TypeDef::Function { ret, args, .. } = &mut *func.write().unwrap() {
 										resolve_type(ret, &namespace.borrow(), root).unwrap();
 
 										for arg in args {
@@ -801,7 +801,7 @@ impl Expr {
 
 				Atom::FnCall { name, .. } => match scope.find_symbol(name).unwrap() {
 					(_, Type::TypeRef(r, _)) => {
-						if let TypeDef::Function(ret, _) =
+						if let TypeDef::Function { ret, .. } =
 							&*r.upgrade().unwrap().as_ref().read().unwrap()
 						{
 							*ret == *target
@@ -850,7 +850,7 @@ impl Expr {
 						if let (lhs, [rhs, ..]) = elems.split_first_mut().unwrap() {
 							match &mut *r.upgrade().unwrap().write().unwrap() {
 								// Dot operator is on an algebraic type, so check if it's a member access or method call
-								TypeDef::Algebraic(t) => match &mut rhs.0 {
+								TypeDef::Algebraic(t, _) => match &mut rhs.0 {
 									// Member access on algebraic type
 									Expr::Atom(Atom::Identifier(ref mut id), _) => {
 										if let Some((_, m)) = t.get_member(id.name()) {
@@ -873,7 +873,7 @@ impl Expr {
 											.iter()
 											.find(|meth| meth.0 == name.name())
 										{
-											if let TypeDef::Function(ret, params) = &*method.read().unwrap()
+											if let TypeDef::Function { ret, args: params, .. } = &*method.read().unwrap()
 											{
 												// Insert `this` into the arg list
 												args.insert(
@@ -1024,7 +1024,7 @@ impl Atom {
 
 			Atom::FnCall { name, args, ret } => {
 				if let Some((full_id, Type::TypeRef(t, _))) = scope.find_symbol(name) {
-					if let TypeDef::Function(t_ret, params) =
+					if let TypeDef::Function { ret: t_ret, args: params, .. } =
 						&*t.upgrade().unwrap().as_ref().read().unwrap()
 					{
 						// Identifier is a function, check parameter types
@@ -1051,7 +1051,7 @@ impl Atom {
 
 			Atom::AlgebraicLit(ty, elems) => {
 				if let Type::TypeRef(alg, _) = ty {
-					if let TypeDef::Algebraic(alg) = &*alg.upgrade().unwrap().read().unwrap() {
+					if let TypeDef::Algebraic(alg, _) = &*alg.upgrade().unwrap().read().unwrap() {
 						for elem in elems {
 							let member_ty =
 								if let Some((_, ty)) = alg.get_member(elem.0.as_ref().unwrap()) {

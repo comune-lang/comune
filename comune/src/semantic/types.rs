@@ -41,10 +41,20 @@ pub enum Type {
 
 #[derive(Debug)]
 pub enum TypeDef {
-	Generic(TypeParam),                          // Generic type parameter
-	Function(Type, Vec<(Type, Option<Name>)>), // Return type + parameter types
-	Algebraic(Box<AlgebraicType>),               // Data type for structs & enums
-	                                             // TODO: Add Class TypeDef
+	// Generic type parameter, defined in other TypeDefs
+	Generic(TypeParam),
+
+	// Function type
+	Function { 
+		ret: Type, 
+		args: Vec<(Type, Option<Name>)>, 
+		generics: TypeParamList
+	},
+
+	// Data type for structs & enums
+	Algebraic(Box<AlgebraicType>, TypeParamList),
+
+	// TODO: Add Class TypeDef
 }
 
 // The internal representation of algebraic types, like structs, enums, and (shocker) struct enums
@@ -120,7 +130,7 @@ impl AlgebraicType {
 			if let Some(item) = self.items.iter().find(|item| item.0 == name.path[0]) {
 				match &item.1 .0 {
 					NamespaceItem::Type(ty) => match &*ty.read().unwrap() {
-						TypeDef::Algebraic(alg) => {
+						TypeDef::Algebraic(alg, _) => {
 							let mut name_clone = name.clone();
 							name_clone.path.remove(0);
 
@@ -378,14 +388,14 @@ impl Display for Type {
 impl Display for TypeDef {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match &self {
-			TypeDef::Algebraic(agg) => {
+			TypeDef::Algebraic(agg, _) => {
 				write!(f, "{}", agg)?;
 			}
 
-			TypeDef::Function(ret, params) => {
+			TypeDef::Function{ ret, args, .. } => {
 				write!(f, "{}(", ret)?;
-				for param in params {
-					write!(f, "{}, ", param.0)?;
+				for arg in args {
+					write!(f, "{}, ", arg.0)?;
 				}
 				write!(f, ")")?;
 			}

@@ -181,7 +181,7 @@ impl Namespace {
 					}
 
 					NamespaceItem::Type(ty) => match &*ty.read().unwrap() {
-						TypeDef::Algebraic(alg) => {
+						TypeDef::Algebraic(alg, _) => {
 							let mut name_clone = name.clone();
 							name_clone.path.remove(0);
 

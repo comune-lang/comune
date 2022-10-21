@@ -260,7 +260,7 @@ impl Parser {
 
 								self.get_next()?; // Consume closing brace
 
-								let aggregate = TypeDef::Algebraic(Box::new(aggregate));
+								let aggregate = TypeDef::Algebraic(Box::new(aggregate), HashMap::new());
 
 								self.current_namespace().borrow_mut().children.insert(
 									name.expect_scopeless()?.clone(),
@@ -380,7 +380,7 @@ impl Parser {
 
 									let current_impl = (
 										NamespaceItem::Function(
-											Arc::new(RwLock::new(TypeDef::Function(fn_ret, fn_params))),
+											Arc::new(RwLock::new(TypeDef::Function{ ret: fn_ret, args: fn_params, generics: HashMap::new() })),
 											RefCell::new(ast_elem)
 										),
 										current_attributes,
@@ -817,7 +817,11 @@ impl Parser {
 				match op {
 					// Function declaration
 					"(" => {
-						let t = TypeDef::Function(t, self.parse_parameter_list()?);
+						let t = TypeDef::Function { 
+							ret: t, 
+							args: self.parse_parameter_list()?, 
+							generics: HashMap::new()
+						};
 
 						// Past the parameter list, check if we're at a function body or not
 						let current = self.get_current()?;
@@ -1012,7 +1016,7 @@ impl Parser {
 				if let Some(Type::TypeRef(ty, id)) = self.find_type(&name) {
 					match &*ty.upgrade().unwrap().read().unwrap() {
 						// Parse with algebraic typename
-						TypeDef::Algebraic(_) => {
+						TypeDef::Algebraic(_, _) => {
 							match &next {
 								Token::Other('{') => {
 									// Parse initializers
