@@ -24,8 +24,6 @@ int main() {
 		a: 60, 
 		b: 0
 	};
-
-	int[10] array_test;
 	
 	while (test.b < 9) {
 		printf("This is a while loop!\n\0");

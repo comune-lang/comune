@@ -1031,6 +1031,26 @@ impl Parser {
 					);
 				}
 
+				Operator::Subscr => {
+					let rhs = self.parse_expression_bp(rbp)?;
+
+					let end_rhs = self.get_current_start_index();
+					let lhs_meta = (begin_lhs, end_lhs - begin_lhs);
+					let rhs_meta = (begin_rhs, end_rhs - begin_rhs);
+
+					lhs = Expr::Cons(
+						op,
+						vec![(lhs, None, lhs_meta), (rhs, None, rhs_meta)],
+						(begin_rhs, end_rhs - begin_rhs),
+					);
+
+					if self.get_current()? == Token::Operator("]") {
+						self.get_next()?;
+					} else {
+						return Err(self.err(CMNErrorCode::UnexpectedToken));
+					}
+				}
+
 				_ => {
 					let rhs = self.parse_expression_bp(rbp)?;
 
