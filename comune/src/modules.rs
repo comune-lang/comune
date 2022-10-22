@@ -25,6 +25,7 @@ use crate::{
 };
 
 pub struct ManagerState {
+	pub library_dir: OsString,
 	pub import_paths: Vec<OsString>,
 	pub working_dir: OsString,
 	pub max_threads: usize,

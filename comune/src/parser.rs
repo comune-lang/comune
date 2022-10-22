@@ -425,29 +425,44 @@ impl Parser {
 						}
 
 						"using" => {
-							if let Token::Identifier(name) = self.get_next()? {
-								if token_compare(&self.get_next()?, "=") {
-									// Found a '=' token, so fetch the name to alias
-									if let Token::Identifier(aliased) = self.get_next()? {
+							match self.get_next()? {
+								Token::Identifier(name) => {
+									if token_compare(&self.get_next()?, "=") {
+										// Found a '=' token, so fetch the name to alias
+										if let Token::Identifier(aliased) = self.get_next()? {
+											self.current_namespace().borrow_mut().children.insert(
+												name.expect_scopeless()?.clone(),
+												(NamespaceItem::Alias(aliased), vec![], None),
+											);
+
+											self.get_next()?;
+											self.check_semicolon()?;
+										} else {
+											return Err(self.err(CMNErrorCode::ExpectedIdentifier));
+										}
+									} else {
+										// No '=' token, just bring the name into scope
 										self.current_namespace().borrow_mut().children.insert(
-											name.expect_scopeless()?.clone(),
-											(NamespaceItem::Alias(aliased), vec![], None),
+											name.name().clone(),
+											(NamespaceItem::Alias(name), vec![], None),
 										);
 
-										self.get_next()?;
 										self.check_semicolon()?;
-									} else {
-										return Err(self.err(CMNErrorCode::ExpectedIdentifier));
 									}
-								} else {
-									// No '=' token, just bring the name into scope
-									self.current_namespace().borrow_mut().children.insert(
-										name.name().clone(),
-										(NamespaceItem::Alias(name), vec![], None),
-									);
+								}
 
+								Token::MultiIdentifier(names) => {
+									for name in names {
+										self.current_namespace().borrow_mut().children.insert(
+											name.name().clone(),
+											(NamespaceItem::Alias(name), vec![], None),
+										);
+									}
+									self.get_next()?;
 									self.check_semicolon()?;
 								}
+
+								_ => return Err(self.err(CMNErrorCode::UnexpectedToken)),
 							}
 						}
 

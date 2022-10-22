@@ -66,8 +66,10 @@ pub enum Token {
 impl Token {
 	pub fn len(&self) -> usize {
 		match self {
-			// TODO: Actually implement these
+			
 			Token::Identifier(x) => x.to_string().len(),
+			
+			// TODO: Actually implement these
 			Token::MultiIdentifier(x) => x[0].to_string().len(),
 
 			Token::NumLiteral(x, _) => x.len(),
@@ -326,10 +328,10 @@ impl Lexer {
 				} else {
 					// Result is not a keyword or an operator, so parse an Identifier
 					// This is a mess i sure hope it works
-					let mut id = Identifier {
+					let mut ids = vec![Identifier {
 						path: vec![result.into()],
 						absolute: false,
-					};
+					}];
 
 					// Gather scope members
 					while self.char_buffer.unwrap() == ':' && self.peek_next_char()? == ':' {
@@ -350,13 +352,57 @@ impl Lexer {
 								todo!(); // TODO: Return appropriate error
 							}
 
-							id.path.push(scope.into());
+							ids[0].path.push(scope.into());
 						} else if current == '{' {
-							todo!()
+							let prefix = ids.pop().unwrap().path;
+
+							self.get_next_char()?;
+							
+							loop {
+								let sub_id = self.parse_next()?;
+
+								if let (_, Token::Identifier(mut sub_id)) = sub_id {
+									let mut sub_path = sub_id.path;
+									sub_id.path = prefix.clone();
+									sub_id.path.append(&mut sub_path);
+
+									ids.push(sub_id);
+									
+									current = self.char_buffer.unwrap();
+
+								} else if let (_, Token::MultiIdentifier(sub_ids)) = sub_id {
+
+									for mut sub_id in sub_ids {
+										let mut sub_path = sub_id.path;
+										sub_id.path = prefix.clone();
+										sub_id.path.append(&mut sub_path);
+										ids.push(sub_id);
+									}
+
+									current = self.char_buffer.unwrap();
+
+								} else {
+									panic!();
+								}
+								
+								if current == ',' {
+									self.get_next_char()?;
+									continue;
+								} else if current == '}' {
+									self.get_next_char()?;
+									break;
+								} else {
+									panic!();
+								}
+							}
 						}
 					}
-
-					result_token = Ok(Token::Identifier(id));
+					if ids.len() == 1 {
+						result_token = Ok(Token::Identifier(ids.remove(0)));
+					} else {
+						result_token = Ok(Token::MultiIdentifier(ids));
+					}
+					
 				}
 			} else if token.is_numeric() {
 				// Numeric literal

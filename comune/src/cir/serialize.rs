@@ -178,7 +178,7 @@ impl Display for CIRTypeDef {
 				layout,
 				..
 			} => {
-				write!(f, "ty layout({layout}) {{\n")?;
+				write!(f, "type layout({layout}) {{\n")?;
 
 				for var in variants {
 					write!(f, "\tvariant {var}\n")?;

@@ -55,6 +55,7 @@ fn main() -> color_eyre::eyre::Result<()> {
 		.unwrap();
 
 	let manager_state = Arc::new(modules::ManagerState {
+		library_dir: "./lib".into(),
 		working_dir: "./test".into(),
 		import_paths: vec![],
 		max_threads: args.num_jobs,

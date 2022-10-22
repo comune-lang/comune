@@ -1,5 +1,5 @@
 import module_test;
-using module_test::fib;
+using module_test::{fib, foo};
 
 @no_mangle 
 void printf(char* fmt);
