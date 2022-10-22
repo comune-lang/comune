@@ -466,11 +466,19 @@ impl CIRModuleBuilder {
 		match expr {
 			Expr::Atom(atom, _) => match atom {
 				Atom::IntegerLit(i, b) => {
-					RValue::Atom(CIRType::Basic(b.unwrap()), None, Operand::IntegerLit(*i))
+					if let Some(b) = b {
+						RValue::Atom(CIRType::Basic(*b), None, Operand::IntegerLit(*i))
+					} else {
+						RValue::Atom(self.convert_type(expr_ty), None, Operand::IntegerLit(*i))
+					}
 				}
 
 				Atom::FloatLit(f, b) => {
-					RValue::Atom(CIRType::Basic(b.unwrap()), None, Operand::FloatLit(*f))
+					if let Some(b) = b {
+						RValue::Atom(CIRType::Basic(*b), None, Operand::FloatLit(*f))
+					} else {
+						RValue::Atom(self.convert_type(expr_ty), None, Operand::FloatLit(*f))
+					}
 				}
 
 				Atom::BoolLit(b) => {

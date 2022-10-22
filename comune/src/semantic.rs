@@ -738,25 +738,41 @@ impl Expr {
 
 					// General case for unary & binary expressions
 					_ => {
-						let first = elems.get_mut(0).unwrap();
-						let first_t = first.0.validate(scope, None, first.2)?;
+						let first_meta = elems[0].2;
+						let mut first_t = elems.get_mut(0).unwrap().0.validate(scope, None, first_meta)?;
 						let mut second_t = None;
-
-						elems[0].1 = Some(first_t.clone());
 
 						if let Some(item) = elems.get_mut(1) {
 							second_t = Some(item.0.validate(scope, None, item.2)?);
 
 							if first_t != *second_t.as_ref().unwrap() {
-								return Err((
-									CMNError::new(CMNErrorCode::ExprTypeMismatch(
-										first_t,
-										second_t.unwrap(),
-										op.clone(),
-									)),
-									*meta,
-								));
+								
+								// Try to coerce one to the other
+
+								if let Ok(try_coerce_rhs) = item.0.validate(scope, Some(&first_t), item.2) {
+									if first_t == try_coerce_rhs {
+										second_t = Some(try_coerce_rhs);
+									}
+								} else {
+									let first = elems.get_mut(0).unwrap();
+									if let Ok(try_coerce_lhs) = first.0.validate(scope, Some(&first_t), first.2) {
+										if *second_t.as_ref().unwrap() == try_coerce_lhs {
+											first_t = try_coerce_lhs;
+										}
+									} else {
+										return Err((
+											CMNError::new(CMNErrorCode::ExprTypeMismatch(
+												first_t,
+												second_t.unwrap(),
+												op.clone(),
+											)),
+											*meta,
+										));
+									}
+								}
 							}
+
+							elems[0].1 = Some(first_t.clone());
 							elems[1].1 = second_t.clone();
 						}
 
@@ -979,14 +995,12 @@ impl Atom {
 					Ok(Type::Basic(t.clone()))
 				} else {
 					if let Some(Type::Basic(b)) = goal_t {
-						*t = Some(b.clone());
 						Ok(goal_t.unwrap().clone())
 					} else {
-						*t = Some(Basic::INTEGRAL {
+						Ok(Type::Basic(Basic::INTEGRAL {
 							signed: true,
 							size_bytes: 4,
-						});
-						Ok(Type::Basic(t.unwrap().clone()))
+						}))
 					}
 				}
 			}
