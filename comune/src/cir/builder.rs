@@ -287,10 +287,9 @@ impl CIRModuleBuilder {
 					self.write(CIRStmt::Expression(expr_ir));
 				}
 
-				ASTNode::Declaration(ty, name, elem) => elem
-					.as_ref()
-					.and_then(|elem| Some(self.generate_decl(ty, name.clone(), elem)))
-					.unwrap(),
+				ASTNode::Declaration(ty, name, elem) => {
+					elem.as_ref().and_then(|elem| Some(self.generate_decl(ty, name.clone(), elem)));
+				}
 
 				ASTNode::ControlFlow(ctrl) => match &**ctrl {
 					ControlFlow::Return { expr } => {
