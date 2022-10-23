@@ -161,7 +161,6 @@ dependencies = [
  "colored",
  "inkwell",
  "lazy_static",
- "mangling",
  "rayon",
 ]
 
@@ -310,12 +309,6 @@ dependencies = [
  "autocfg",
  "scopeguard",
 ]
-
-[[package]]
-name = "mangling"
-version = "0.2.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5c7a06cc0998566a3df79f0120bdeaf4152706fb3a85b1505823362c59931a96"
 
 [[package]]
 name = "memchr"
