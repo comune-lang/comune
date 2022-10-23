@@ -10,7 +10,7 @@ use crate::errors::CMNMessage;
 
 use crate::semantic::namespace::Identifier;
 
-const KEYWORDS: &[&'static str] = &[
+static KEYWORDS: [&'static str; 31] = [
 	"if",
 	"use",
 	"else",
@@ -44,7 +44,7 @@ const KEYWORDS: &[&'static str] = &[
 	"enum",
 ];
 
-const OPERATORS: &[&str] = &[
+static OPERATORS: [&str; 37] = [
 	"+", "-", "/", "*", "%", "^", "|", "||", "&", "&&", "=", "==", "/=", "*=", "+=", "-=", "%=",
 	"&=", "|=", "^=", "++", "--", "->", "(", ")", "[", "]", ".", "::", "<", ">", "<=", ">=", "!=",
 	"<<", ">>", "as",
