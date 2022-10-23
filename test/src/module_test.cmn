@@ -3,12 +3,11 @@ void printf(char* fmt);
 
 u64 fib(u64 n) {
 	u64[3] store;
-	0 = 4;
 	store[0] = 0;
 	store[1] = 1;
 	store[2] = 0;
 
-	for (u64 i = 1; i < n; i += 1) {
+	for (u64 i = 1; i < n; i++) {
 		store[2] = store[0] + store[1];
 		store[0] = store[1];
 		store[1] = store[2];

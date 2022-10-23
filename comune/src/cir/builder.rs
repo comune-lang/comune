@@ -287,9 +287,7 @@ impl CIRModuleBuilder {
 					self.write(CIRStmt::Expression(expr_ir));
 				}
 
-				ASTNode::Declaration(ty, name, elem) => 
-					self.generate_decl(ty, name.clone(), elem),
-				
+				ASTNode::Declaration(ty, name, elem) => self.generate_decl(ty, name.clone(), elem),
 
 				ASTNode::ControlFlow(ctrl) => match &**ctrl {
 					ControlFlow::Return { expr } => {
@@ -642,7 +640,7 @@ impl CIRModuleBuilder {
 								}
 
 								_ => panic!(),
-							}
+							},
 
 							Operator::Subscr => {
 								let lval = self.generate_lvalue_expr(expr);
@@ -732,7 +730,7 @@ impl CIRModuleBuilder {
 					indexed
 				}
 
-				_ => panic!()
+				_ => panic!(),
 			},
 		}
 	}

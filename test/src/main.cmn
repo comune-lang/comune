@@ -35,5 +35,5 @@ int main() {
 		printf("For loop test!\n\0");
 	}
 	
-	return test.sum();
+	return fib(10) as i32;
 }

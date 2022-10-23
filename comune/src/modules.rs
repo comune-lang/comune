@@ -274,7 +274,7 @@ pub fn generate_code<'ctx>(
 	let mut cir_man = CIRPassManager::new();
 
 	cir_man.add_pass(verify::Verify);
-	//cir_man.add_mut_pass(cleanup::RemoveNoOps);
+	cir_man.add_mut_pass(cleanup::RemoveNoOps);
 	cir_man.add_pass(verify::Verify);
 
 	cir_man.run_on_module(&mut cir_module);

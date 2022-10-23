@@ -17,7 +17,8 @@ use self::{
 	ast::{ASTElem, ASTNode, TokenData},
 	controlflow::ControlFlow,
 	expression::{Atom, Expr, Operator},
-	namespace::{Identifier, Name, Namespace, NamespaceASTElem, NamespaceItem}, types::FnDef,
+	namespace::{Identifier, Name, Namespace, NamespaceASTElem, NamespaceItem},
+	types::FnDef,
 };
 
 pub mod ast;
@@ -740,10 +741,18 @@ impl Expr {
 						let idx_type = Type::Basic(Basic::SIZEINT { signed: false });
 
 						let first_meta = elems[0].2;
-						let first_t = elems.get_mut(0).unwrap().0.validate(scope, None, first_meta)?;
+						let first_t = elems
+							.get_mut(0)
+							.unwrap()
+							.0
+							.validate(scope, None, first_meta)?;
 						let second_meta = elems[1].2;
-						let second_t = elems.get_mut(1).unwrap().0.validate(scope, Some(&idx_type), second_meta)?;
-						
+						let second_t = elems.get_mut(1).unwrap().0.validate(
+							scope,
+							Some(&idx_type),
+							second_meta,
+						)?;
+
 						if let Type::Array(ty, _) = &first_t {
 							if second_t == idx_type {
 								elems[0].1 = Some(first_t.clone());
@@ -752,7 +761,9 @@ impl Expr {
 								return Ok(*ty.clone());
 							} else {
 								return Err((
-									CMNError::new(CMNErrorCode::InvalidSubscriptRHS { t: second_t }),
+									CMNError::new(CMNErrorCode::InvalidSubscriptRHS {
+										t: second_t,
+									}),
 									*meta,
 								));
 							}
@@ -767,23 +778,30 @@ impl Expr {
 					// General case for unary & binary expressions
 					_ => {
 						let first_meta = elems[0].2;
-						let mut first_t = elems.get_mut(0).unwrap().0.validate(scope, None, first_meta)?;
+						let mut first_t = elems
+							.get_mut(0)
+							.unwrap()
+							.0
+							.validate(scope, None, first_meta)?;
 						let mut second_t = None;
 
 						if let Some(item) = elems.get_mut(1) {
 							second_t = Some(item.0.validate(scope, None, item.2)?);
 
 							if first_t != *second_t.as_ref().unwrap() {
-								
 								// Try to coerce one to the other
 
-								if let Ok(try_coerce_rhs) = item.0.validate(scope, Some(&first_t), item.2) {
+								if let Ok(try_coerce_rhs) =
+									item.0.validate(scope, Some(&first_t), item.2)
+								{
 									if first_t == try_coerce_rhs {
 										second_t = Some(try_coerce_rhs);
 									}
 								} else {
 									let first = elems.get_mut(0).unwrap();
-									if let Ok(try_coerce_lhs) = first.0.validate(scope, Some(&first_t), first.2) {
+									if let Ok(try_coerce_lhs) =
+										first.0.validate(scope, Some(&first_t), first.2)
+									{
 										if *second_t.as_ref().unwrap() == try_coerce_lhs {
 											first_t = try_coerce_lhs;
 										}
@@ -937,7 +955,9 @@ impl Expr {
 											.find(|meth| meth.0 == name.name())
 										{
 											if let TypeDef::Function(FnDef {
-												ret, args: params, ..
+												ret,
+												args: params,
+												..
 											}) = &*method.read().unwrap()
 											{
 												// Insert `this` into the arg list

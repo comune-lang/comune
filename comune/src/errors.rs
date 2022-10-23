@@ -133,11 +133,12 @@ impl Display for CMNErrorCode {
 			}
 			CMNErrorCode::InvalidLValue => write!(f, "invalid lvalue"),
 			CMNErrorCode::InvalidSubscriptLHS { t } => write!(f, "can't index into type {t}"),
-			CMNErrorCode::InvalidSubscriptRHS { t } => write!(f, "can't index into array with index type {t}"),
-			CMNErrorCode::ReturnTypeMismatch { expected, got } => write!(
-				f,
-				"return type mismatch; expected {expected}, got {got}"
-			),
+			CMNErrorCode::InvalidSubscriptRHS { t } => {
+				write!(f, "can't index into array with index type {t}")
+			}
+			CMNErrorCode::ReturnTypeMismatch { expected, got } => {
+				write!(f, "return type mismatch; expected {expected}, got {got}")
+			}
 			CMNErrorCode::ParamCountMismatch { expected, got } => write!(
 				f,
 				"parameter count mismatch; expected {expected}, got {got}",

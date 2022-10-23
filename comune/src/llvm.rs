@@ -580,15 +580,11 @@ impl<'ctx> LLVMBackend<'ctx> {
 					self.builder.build_gep(
 						local,
 						&[
-						self
-							.generate_rvalue(expr)
-							.unwrap()
-							.as_basic_value_enum()
-							.into_int_value(),
-						self
-							.context
-							.i32_type()
-							.const_zero()
+							self.context.i32_type().const_zero(),
+							self.generate_rvalue(expr)
+								.unwrap()
+								.as_basic_value_enum()
+								.into_int_value(),
 						],
 						"index",
 					)
