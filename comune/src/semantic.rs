@@ -730,10 +730,38 @@ impl Expr {
 
 			Expr::Cons(op, elems, meta) => {
 				match op {
-					// Special cases for member access and scope resolution
+					// Special cases for type-asymmetric operators
 					Operator::MemberAccess => {
 						let meta = meta.clone();
 						self.validate_lvalue(scope, meta)
+					}
+
+					Operator::Subscr => {
+						let idx_type = Type::Basic(Basic::SIZEINT { signed: false });
+
+						let first_meta = elems[0].2;
+						let first_t = elems.get_mut(0).unwrap().0.validate(scope, None, first_meta)?;
+						let second_meta = elems[1].2;
+						let second_t = elems.get_mut(1).unwrap().0.validate(scope, Some(&idx_type), second_meta)?;
+						
+						if let Type::Array(ty, _) = &first_t {
+							if second_t == idx_type {
+								elems[0].1 = Some(first_t.clone());
+								elems[1].1 = Some(second_t.clone());
+
+								return Ok(*ty.clone());
+							} else {
+								return Err((
+									CMNError::new(CMNErrorCode::InvalidSubscriptRHS { t: second_t }),
+									*meta,
+								));
+							}
+						} else {
+							return Err((
+								CMNError::new(CMNErrorCode::InvalidSubscriptLHS { t: first_t }),
+								*meta,
+							));
+						}
 					}
 
 					// General case for unary & binary expressions

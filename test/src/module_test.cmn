@@ -2,23 +2,19 @@
 void printf(char* fmt);
 
 u64 fib(u64 n) {
-	u64 a = 0;
-	u64 b = 1;
-	u64 c = 0;
-	
 	u64[3] store;
-	
-	//store[0] = 0;
-	//store[1] = 1;
-	//store[2] = 0;
+	0 = 4;
+	store[0] = 0;
+	store[1] = 1;
+	store[2] = 0;
 
 	for (u64 i = 1; i < n; i += 1) {
-		c = a + b;
-		a = b;
-		b = c;
+		store[2] = store[0] + store[1];
+		store[0] = store[1];
+		store[1] = store[2];
 		printf("Loop!\n\0");
 	}
-	return c;
+	return store[2];
 }
 
 

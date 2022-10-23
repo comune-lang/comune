@@ -8,7 +8,7 @@ use crate::{
 		controlflow::ControlFlow,
 		expression::{Atom, Expr, Operator},
 		namespace::{Identifier, Name, Namespace, NamespaceASTElem, NamespaceItem},
-		types::{Basic, Type, TypeDef, FnDef},
+		types::{Basic, FnDef, Type, TypeDef},
 		Attribute,
 	},
 };
@@ -210,14 +210,14 @@ impl CIRModuleBuilder {
 				}
 			}
 			TypeDef::Generic(_) => todo!(),
-    		TypeDef::Trait(_) => todo!(),
+			TypeDef::Trait(_) => todo!(),
 		}
 	}
 }
 
 impl CIRModuleBuilder {
 	pub fn generate_prototype(&mut self, ty: &TypeDef, attributes: Vec<Attribute>) -> CIRFunction {
-		if let TypeDef::Function( FnDef { ret, args, .. } ) = ty {
+		if let TypeDef::Function(FnDef { ret, args, .. }) = ty {
 			self.current_fn = Some(CIRFunction {
 				variables: vec![],
 				blocks: vec![],
@@ -287,9 +287,9 @@ impl CIRModuleBuilder {
 					self.write(CIRStmt::Expression(expr_ir));
 				}
 
-				ASTNode::Declaration(ty, name, elem) => {
-					elem.as_ref().and_then(|elem| Some(self.generate_decl(ty, name.clone(), elem)));
-				}
+				ASTNode::Declaration(ty, name, elem) => 
+					self.generate_decl(ty, name.clone(), elem),
+				
 
 				ASTNode::ControlFlow(ctrl) => match &**ctrl {
 					ControlFlow::Return { expr } => {
@@ -386,7 +386,7 @@ impl CIRModuleBuilder {
 						// Write init and jump to start block
 
 						if let Some(init) = init {
-							if let ASTNode::Declaration(ty, name, Some(elem)) = &init.node {
+							if let ASTNode::Declaration(ty, name, elem) = &init.node {
 								self.generate_decl(ty, name.clone(), elem);
 							}
 						}
@@ -441,9 +441,8 @@ impl CIRModuleBuilder {
 		self.current_block
 	}
 
-	fn generate_decl(&mut self, ty: &Type, name: Name, elem: &Box<ASTElem>) {
+	fn generate_decl(&mut self, ty: &Type, name: Name, elem: &Option<Box<ASTElem>>) {
 		let cir_ty = self.convert_type(ty);
-		let rval = self.generate_expr(&elem.get_expr().borrow(), ty);
 		let idx = self.get_fn().variables.len();
 
 		self.get_fn_mut()
@@ -459,7 +458,10 @@ impl CIRModuleBuilder {
 			projection: vec![],
 		};
 
-		self.write(CIRStmt::Assignment(lval, rval))
+		if let Some(elem) = elem {
+			let rval = self.generate_expr(&elem.get_expr().borrow(), ty);
+			self.write(CIRStmt::Assignment(lval, rval));
+		}
 	}
 
 	fn generate_expr(&mut self, expr: &Expr, expr_ty: &Type) -> RValue {
@@ -640,7 +642,13 @@ impl CIRModuleBuilder {
 								}
 
 								_ => panic!(),
-							},
+							}
+
+							Operator::Subscr => {
+								let lval = self.generate_lvalue_expr(expr);
+								let cir_ty = self.convert_type(expr_ty);
+								RValue::Atom(cir_ty, None, Operand::LValue(lval))
+							}
 
 							Operator::Assign => {
 								let lval_ir = self.generate_lvalue_expr(&elems[0].0);
@@ -717,12 +725,19 @@ impl CIRModuleBuilder {
 					derefee
 				}
 
-				_ => panic!(),
+				Operator::Subscr => {
+					let mut indexed = self.generate_lvalue_expr(&elems[0].0);
+					let index = self.generate_expr(&elems[1].0, elems[1].1.as_ref().unwrap());
+					indexed.projection.push(PlaceElem::Index(index));
+					indexed
+				}
+
+				_ => panic!()
 			},
 		}
 	}
 
-	fn get_var_index(&self, name: &str) -> Option<VarIndex> {
+	fn get_var_index(&self, name: &Name) -> Option<VarIndex> {
 		for stack_frame in self.name_map_stack.iter().rev() {
 			if let Some(idx) = stack_frame.get(name) {
 				return Some(*idx);

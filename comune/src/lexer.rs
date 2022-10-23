@@ -66,9 +66,8 @@ pub enum Token {
 impl Token {
 	pub fn len(&self) -> usize {
 		match self {
-			
 			Token::Identifier(x) => x.to_string().len(),
-			
+
 			// TODO: Actually implement these
 			Token::MultiIdentifier(x) => x[0].to_string().len(),
 
@@ -357,7 +356,7 @@ impl Lexer {
 							let prefix = ids.pop().unwrap().path;
 
 							self.get_next_char()?;
-							
+
 							loop {
 								let sub_id = self.parse_next()?;
 
@@ -367,11 +366,9 @@ impl Lexer {
 									sub_id.path.append(&mut sub_path);
 
 									ids.push(sub_id);
-									
+
 									current = self.char_buffer.unwrap();
-
 								} else if let (_, Token::MultiIdentifier(sub_ids)) = sub_id {
-
 									for mut sub_id in sub_ids {
 										let mut sub_path = sub_id.path;
 										sub_id.path = prefix.clone();
@@ -380,11 +377,10 @@ impl Lexer {
 									}
 
 									current = self.char_buffer.unwrap();
-
 								} else {
 									panic!();
 								}
-								
+
 								if current == ',' {
 									self.get_next_char()?;
 									continue;
@@ -402,7 +398,6 @@ impl Lexer {
 					} else {
 						result_token = Ok(Token::MultiIdentifier(ids));
 					}
-					
 				}
 			} else if token.is_numeric() {
 				// Numeric literal

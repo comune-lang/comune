@@ -68,6 +68,8 @@ pub enum CMNErrorCode {
 	InvalidCast { from: Type, to: Type },
 	InvalidCoercion { from: Type, to: Type },
 	InvalidMemberAccess { t: Type, idx: String },
+	InvalidSubscriptLHS { t: Type },
+	InvalidSubscriptRHS { t: Type },
 	InvalidLValue,
 	ReturnTypeMismatch { expected: Type, got: Type },
 	ParamCountMismatch { expected: usize, got: usize },
@@ -113,17 +115,15 @@ impl Display for CMNErrorCode {
 			CMNErrorCode::ExpectedIdentifier => write!(f, "expected identifier"),
 			CMNErrorCode::InvalidSuffix => write!(f, "invalid suffix"),
 
-			CMNErrorCode::UndeclaredIdentifier(id) => write!(f, "undeclared identifier `{}`", id),
-			CMNErrorCode::UnresolvedTypename(id) => write!(f, "unresolved typename `{}`", id),
+			CMNErrorCode::UndeclaredIdentifier(id) => write!(f, "undeclared identifier `{id}`"),
+			CMNErrorCode::UnresolvedTypename(id) => write!(f, "unresolved typename `{id}`"),
 			CMNErrorCode::ExprTypeMismatch(a, b, op) => write!(
 				f,
-				"type mismatch; cannot apply operator {:?} to {} and {}",
-				op, a, b
+				"type mismatch; cannot apply operator {op:?} to {a} and {b}"
 			),
 			CMNErrorCode::AssignTypeMismatch { expr, to } => write!(
 				f,
-				"cannot assign value of type {} to variable of type {}",
-				expr, to
+				"cannot assign value of type {expr} to variable of type {to}"
 			),
 			CMNErrorCode::InvalidCast { from, to } => {
 				write!(f, "cannot cast from {} to {}", from, to)
@@ -132,20 +132,20 @@ impl Display for CMNErrorCode {
 				write!(f, "cannot coerce from {} to {}", from, to)
 			}
 			CMNErrorCode::InvalidLValue => write!(f, "invalid lvalue"),
+			CMNErrorCode::InvalidSubscriptLHS { t } => write!(f, "can't index into type {t}"),
+			CMNErrorCode::InvalidSubscriptRHS { t } => write!(f, "can't index into array with index type {t}"),
 			CMNErrorCode::ReturnTypeMismatch { expected, got } => write!(
 				f,
-				"return type mismatch; expected {}, got {}",
-				expected, got
+				"return type mismatch; expected {expected}, got {got}"
 			),
 			CMNErrorCode::ParamCountMismatch { expected, got } => write!(
 				f,
-				"parameter count mismatch; expected {}, got {}",
-				expected, got
+				"parameter count mismatch; expected {expected}, got {got}",
 			),
 			CMNErrorCode::InvalidMemberAccess { t, idx } => {
-				write!(f, "variable of type {} has no member '{}'", t, idx)
+				write!(f, "variable of type {t} has no member '{idx}'")
 			}
-			CMNErrorCode::NotCallable(id) => write!(f, "{} is not callable", id),
+			CMNErrorCode::NotCallable(id) => write!(f, "{id} is not callable"),
 			CMNErrorCode::NonPtrDeref => write!(f, "attempt to dereference a non-pointer value"),
 			CMNErrorCode::InfiniteSizeType => write!(f, "cyclical type dependency found"),
 

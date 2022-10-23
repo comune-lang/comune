@@ -10,7 +10,7 @@ use crate::semantic::ast::{ASTElem, ASTNode, TokenData};
 use crate::semantic::controlflow::ControlFlow;
 use crate::semantic::expression::{Atom, Expr, Operator};
 use crate::semantic::namespace::{Identifier, Namespace, NamespaceASTElem, NamespaceItem};
-use crate::semantic::types::{AlgebraicDef, Basic, FnParamList, Type, TypeDef, Visibility, FnDef};
+use crate::semantic::types::{AlgebraicDef, Basic, FnDef, FnParamList, Type, TypeDef, Visibility};
 use crate::semantic::Attribute;
 
 // Convenience function that matches a &str against various token kinds
@@ -260,8 +260,7 @@ impl Parser {
 
 								self.get_next()?; // Consume closing brace
 
-								let aggregate =
-									TypeDef::Algebraic(aggregate, HashMap::new());
+								let aggregate = TypeDef::Algebraic(aggregate, HashMap::new());
 
 								self.current_namespace().borrow_mut().children.insert(
 									name.expect_scopeless()?.clone(),

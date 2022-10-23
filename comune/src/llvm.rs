@@ -579,11 +579,17 @@ impl<'ctx> LLVMBackend<'ctx> {
 				PlaceElem::Index(expr) => unsafe {
 					self.builder.build_gep(
 						local,
-						&[self
+						&[
+						self
 							.generate_rvalue(expr)
 							.unwrap()
 							.as_basic_value_enum()
-							.into_int_value()],
+							.into_int_value(),
+						self
+							.context
+							.i32_type()
+							.const_zero()
+						],
 						"index",
 					)
 				},

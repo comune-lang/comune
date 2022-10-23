@@ -42,7 +42,6 @@ pub struct AlgebraicDef {
 	pub layout: DataLayout,
 }
 
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Basic {
 	INTEGRAL { signed: bool, size_bytes: u32 },
@@ -406,7 +405,7 @@ impl Display for TypeDef {
 				write!(f, ")")?;
 			}
 			TypeDef::Generic(_) => todo!(),
-    		TypeDef::Trait(_) => todo!(),
+			TypeDef::Trait(_) => todo!(),
 		}
 		Ok(())
 	}
