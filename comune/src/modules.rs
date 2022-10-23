@@ -278,7 +278,11 @@ pub fn generate_code<'ctx>(
 	cir_man.run_on_module(&mut cir_module);
 
 	// Write cIR to file
-	fs::write(get_module_out_path(&state, input_module, None).with_extension("cir"), cir_module.to_string()).unwrap();
+	fs::write(
+		get_module_out_path(&state, input_module, None).with_extension("cir"),
+		cir_module.to_string(),
+	)
+	.unwrap();
 
 	// Generate LLVM IR
 	let mut backend = LLVMBackend::new(context, &module_name);

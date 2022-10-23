@@ -70,8 +70,11 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 	pub fn compile_module(&mut self, module: &CIRModule) -> LLVMResult<()> {
 		for i in 0..module.types.len() {
-			self.type_map
-				.push(self.context.opaque_struct_type(&i.to_string()).as_any_type_enum());
+			self.type_map.push(
+				self.context
+					.opaque_struct_type(&i.to_string())
+					.as_any_type_enum(),
+			);
 		}
 
 		for i in 0..module.types.len() {
@@ -84,9 +87,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 					let mut members_ir = vec![];
 
 					for mem in members {
-						members_ir.push(
-							Self::to_basic_type(self.get_llvm_type(&mem))
-						);
+						members_ir.push(Self::to_basic_type(self.get_llvm_type(&mem)));
 					}
 
 					let type_ir = self.type_map[i].into_struct_type();
@@ -378,35 +379,33 @@ impl<'ctx> LLVMBackend<'ctx> {
 									},
 								},
 
-								BasicValueEnum::FloatValue(f) => {
-									match self.get_llvm_type(to) {
-										AnyTypeEnum::FloatType(t) => {
+								BasicValueEnum::FloatValue(f) => match self.get_llvm_type(to) {
+									AnyTypeEnum::FloatType(t) => {
+										return Some(
+											self.builder
+												.build_float_cast(f, t, "fcast")
+												.as_basic_value_enum(),
+										)
+									}
+
+									AnyTypeEnum::IntType(t) => {
+										if to.is_signed() {
 											return Some(
 												self.builder
-													.build_float_cast(f, t, "fcast")
+													.build_float_to_signed_int(f, t, "icast")
 													.as_basic_value_enum(),
-											)
+											);
+										} else {
+											return Some(
+												self.builder
+													.build_float_to_unsigned_int(f, t, "icast")
+													.as_basic_value_enum(),
+											);
 										}
-
-										AnyTypeEnum::IntType(t) => {
-											if to.is_signed() {
-												return Some(
-													self.builder
-														.build_float_to_signed_int(f, t, "icast")
-														.as_basic_value_enum(),
-												);
-											} else {
-												return Some(
-													self.builder
-														.build_float_to_unsigned_int(f, t, "icast")
-														.as_basic_value_enum(),
-												);
-											}
-										}
-
-										_ => panic!(),
 									}
-								}
+
+									_ => panic!(),
+								},
 
 								_ => panic!(),
 							}
@@ -683,16 +682,20 @@ impl<'ctx> LLVMBackend<'ctx> {
 					2 => self.context.i16_type(),
 					1 => self.context.i8_type(),
 					_ => panic!(),
-				}.as_any_type_enum(),
+				}
+				.as_any_type_enum(),
 
-				Basic::SIZEINT { .. } => self.context.ptr_sized_int_type(&get_target_machine().get_target_data(), None).as_any_type_enum(),
-				
+				Basic::SIZEINT { .. } => self
+					.context
+					.ptr_sized_int_type(&get_target_machine().get_target_data(), None)
+					.as_any_type_enum(),
 
 				Basic::FLOAT { size_bytes } => if *size_bytes == 8 {
 					self.context.f64_type()
 				} else {
 					self.context.f32_type()
-				}.as_any_type_enum(),
+				}
+				.as_any_type_enum(),
 
 				Basic::CHAR => self.context.i8_type().as_any_type_enum(),
 				Basic::BOOL => self.context.bool_type().as_any_type_enum(),
@@ -700,13 +703,23 @@ impl<'ctx> LLVMBackend<'ctx> {
 				Basic::STR => self.slice_type(&self.context.i8_type()).as_any_type_enum(),
 			},
 
-			CIRType::Array(arr_ty, size) => 
-				Self::to_basic_type(self.get_llvm_type(arr_ty))
-					.array_type(size.iter().sum::<i128>() as u32).as_any_type_enum(),
+			CIRType::Array(arr_ty, size) => Self::to_basic_type(self.get_llvm_type(arr_ty))
+				.array_type(size.iter().sum::<i128>() as u32)
+				.as_any_type_enum(),
 
-			CIRType::Pointer(pointee) | CIRType::Reference(pointee) => 
-				Self::to_basic_type(self.get_llvm_type(pointee))
-					.ptr_type(AddressSpace::Generic).as_any_type_enum(),
+			CIRType::Pointer(pointee) | CIRType::Reference(pointee) => {
+				if let CIRType::Basic(Basic::VOID) = &**pointee {
+					// void* isn't valid in LLVM, so we generate an i8* type instead
+					self.context
+						.i8_type()
+						.ptr_type(AddressSpace::Generic)
+						.as_any_type_enum()
+				} else {
+					Self::to_basic_type(self.get_llvm_type(pointee))
+						.ptr_type(AddressSpace::Generic)
+						.as_any_type_enum()
+				}
+			}
 
 			CIRType::TypeRef(idx) => self.type_map[*idx].clone(),
 		}
