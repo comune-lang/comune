@@ -31,6 +31,12 @@ pub struct TraitDef {
 	pub supers: Vec<Identifier>,
 }
 
+#[derive(Default, Debug, Clone)]
+pub struct TraitImpl {
+	pub implementing: Identifier, // Trait this is implementing
+	pub items: HashMap<Name, NamespaceEntry>,
+}
+
 // The internal representation of algebraic types, like structs, enums, and (shocker) struct enums
 //
 // Algebraics (strums?) can contain member variables, inner type aliases, variants (aka subtype definitions), etc...

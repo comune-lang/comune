@@ -13,7 +13,7 @@ use crate::{
 
 use super::{
 	ast::ASTElem,
-	types::{Type, TypeDef},
+	types::{Type, TypeDef, TraitDef, TraitImpl},
 	Attribute,
 };
 
@@ -67,11 +67,7 @@ impl Hash for Identifier {
 
 impl Display for Identifier {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		let mut result = if self.absolute {
-			"::".to_string()
-		} else {
-			String::new()
-		};
+		let mut result = String::new();
 
 		for scope in &self.path {
 			result.push_str(scope);
@@ -79,7 +75,7 @@ impl Display for Identifier {
 				result.push_str("::");
 			}
 		}
-
+		
 		write!(f, "{result}")
 	}
 }
@@ -110,6 +106,7 @@ pub struct Namespace {
 	pub imported: HashMap<Identifier, Namespace>,
 	pub children: HashMap<Name, NamespaceEntry>,
 	pub impls: HashMap<Identifier, HashMap<Name, NamespaceEntry>>, // Impls defined in this namespace
+	pub trait_impls: HashMap<Identifier, HashMap<Identifier, TraitImpl>>,
 }
 
 impl Namespace {
@@ -121,6 +118,7 @@ impl Namespace {
 			referenced_modules: HashSet::new(),
 			imported: HashMap::new(),
 			impls: HashMap::new(),
+			trait_impls: HashMap::new(),
 		}
 	}
 
@@ -132,6 +130,7 @@ impl Namespace {
 			referenced_modules: HashSet::new(),
 			imported: HashMap::new(),
 			impls: HashMap::new(),
+			trait_impls: HashMap::new(),
 		}
 	}
 

@@ -162,7 +162,7 @@ impl Display for CIRType {
 		match self {
 			CIRType::Basic(b) => write!(f, "{}", b.as_str()),
 			CIRType::Pointer(p) => write!(f, "{p}*"),
-			CIRType::Array(t, s) => write!(f, "{t}[]"),
+			CIRType::Array(t, _) => write!(f, "{t}[]"),
 			CIRType::Reference(r) => write!(f, "{r}&"),
 			CIRType::TypeRef(idx) => write!(f, "${idx}"),
 		}

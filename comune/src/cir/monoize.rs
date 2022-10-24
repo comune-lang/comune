@@ -1,6 +1,6 @@
 // cIR monomorphization module
 
-use crate::semantic::{get_attribute, namespace::Identifier, types::Basic};
+use crate::{semantic::{get_attribute, namespace::Identifier, types::Basic}, lexer::Token};
 
 use super::{CIRFunction, CIRModule, CIRStmt, CIRType, Operand, RValue};
 
@@ -11,12 +11,22 @@ impl CIRModule {
 		// Mangle functions
 
 		for func in &mut self.functions {
-			// Check if the function has a `no_mangle` attribute, or if it's `main`. If not, mangle the name
+			// Check if the function has a `no_mangle` or `export_as` attribute, or if it's `main`. If not, mangle the name
 			if get_attribute(&func.1 .0.attributes, "no_mangle").is_some()
 				|| (&**func.0.name() == "main" && !func.0.is_qualified())
 			{
 				func.1 .1 = Some(func.0.name().to_string());
-			} else {
+			} else if let Some(export_name) = get_attribute(&func.1.0.attributes, "export_as") {
+				// Export with custom symbol name
+				if let Some(first_arg) = export_name.args.get(0) {
+					if let Some(Token::StringLiteral(name)) = first_arg.get(0) {
+						func.1.1 = Some(name.clone())
+					} else {
+						panic!() //TODO: Proper error handling
+					}
+				}
+				
+			} else { 
 				// Mangle name
 				func.1 .1 = Some(mangle_name(func.0, &func.1 .0));
 			}
