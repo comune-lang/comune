@@ -295,12 +295,12 @@ impl Type {
 	pub fn castable_to(&self, target: &Type) -> bool {
 		if *self == *target {
 			true
+		} else if self.is_numeric() {
+			target.is_numeric() || target.is_boolean()
+		} else if matches!(self, Type::Pointer(_)) && matches!(target, Type::Pointer(_)) {
+			true
 		} else {
-			if self.is_numeric() {
-				return target.is_numeric() || target.is_boolean();
-			}
-
-			return false;
+			false
 		}
 	}
 

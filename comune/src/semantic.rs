@@ -1216,6 +1216,8 @@ impl Atom {
 				_ => Ok(()),
 			},
 
+			Type::Pointer(_) => Ok(()),
+
 			_ => todo!(),
 		}
 	}

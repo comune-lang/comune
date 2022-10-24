@@ -462,6 +462,12 @@ impl<'ctx> LLVMBackend<'ctx> {
 						}
 					}
 
+					CIRType::Pointer(_) => {
+						let val = self.generate_operand(from, val).unwrap();
+						let to_ir = self.get_llvm_type(to);
+						Some(self.builder.build_pointer_cast(val.into_pointer_value(), to_ir.into_pointer_type(), "ptrcast").as_basic_value_enum())
+					}
+
 					_ => todo!(),
 				}
 			}

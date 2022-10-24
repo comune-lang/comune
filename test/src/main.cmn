@@ -4,6 +4,9 @@ using module_test::{fib, foo};
 @no_mangle 
 void printf(char* fmt);
 
+@no_mangle
+void* malloc(usize size);
+
 @layout(packed)
 struct Test {
 	int a;
@@ -24,7 +27,7 @@ int main() {
 		a: 60, 
 		b: 0
 	};
-	
+
 	while (test.b < 9) {
 		printf("This is a while loop!\n\0");
 		test.b++;
@@ -34,6 +37,10 @@ int main() {
 		int test = 2;
 		printf("For loop test!\n\0");
 	}
+
+	Test* heap = malloc(8) as Test*;
+
+	*heap = test;
 	
-	return fib(10) as i32;
+	return (*heap).sum();
 }
