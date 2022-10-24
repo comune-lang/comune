@@ -1,0 +1,8 @@
+// comune core library - marker module
+// Marker traits that represent fundamental properties of types.
+
+public trait Sized {};
+
+public trait Send {};
+
+public trait Sync {};

@@ -1,8 +1,8 @@
 import module_test;
 using module_test::{fib, foo};
 
-@export_as("printf")
-void my_printf_alias(char* fmt);
+@no_mangle
+void printf(char* fmt);
 
 @no_mangle
 void* malloc(usize size);
@@ -18,13 +18,13 @@ struct Test {
 
 impl Test {
 	int sum(Test self) {
-		my_printf_alias("This is a method call!\n\0");
+		printf("This is a method call!\n\0");
 		return self.a + self.b;
 	}
 }
 
 int main() {
-	my_printf_alias("This is main()!\n\0");
+	printf("This is main()!\n\0");
 	
 	Test test = Test { 
 		a: 60, 
@@ -32,13 +32,13 @@ int main() {
 	};
 
 	while (test.b < 9) {
-		my_printf_alias("This is a while loop!\n\0");
+		printf("This is a while loop!\n\0");
 		test.b++;
 	}
 
 	for (int i = 0; i < 10; i++) {
 		int test = 2;
-		my_printf_alias("For loop test!\n\0");
+		printf("For loop test!\n\0");
 	}
 
 	Test* heap = malloc(8) as Test*;

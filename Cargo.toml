@@ -1,2 +1,18 @@
-[workspace]
-members = [ "comune" ]
+[package]
+name = "comune"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+inkwell = { git = "https://github.com/TheDan64/inkwell", branch = "master" }
+clap = { version = "4.0.9", features = ["derive"] }
+colored = "2.0.0"
+rayon = "1.5"
+backtrace = "0.3"
+color-eyre = "0.6"
+lazy_static = "1.4.0"
+
+[features]
+llvm12 = ["inkwell/llvm12-0"]
+llvm13 = ["inkwell/llvm13-0"]
+llvm14 = ["inkwell/llvm14-0"]
