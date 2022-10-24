@@ -117,6 +117,7 @@ fn main() -> color_eyre::eyre::Result<()> {
 		.arg("-lc")
 		.arg("-fno-rtti")
 		.arg("-fno-exceptions")
+		.arg("-no-pie")
 		.arg("-o")
 		.arg(output_file)
 		.output()
