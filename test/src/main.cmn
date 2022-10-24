@@ -16,10 +16,20 @@ struct Test {
 	int b;
 }
 
+trait Speak {
+	void speak();
+}
+
 impl Test {
 	int sum(Test self) {
 		printf("This is a method call!\n\0");
 		return self.a + self.b;
+	}
+}
+
+impl Speak for Test {
+	void speak() {
+		printf("hello everybody my name is Market Plier\n\0");
 	}
 }
 
