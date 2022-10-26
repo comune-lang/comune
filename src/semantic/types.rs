@@ -33,7 +33,6 @@ pub struct TraitDef {
 
 #[derive(Default, Debug, Clone)]
 pub struct TraitImpl {
-	pub implementing: Identifier, // Trait this is implementing
 	pub items: HashMap<Name, NamespaceEntry>,
 }
 

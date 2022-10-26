@@ -940,7 +940,7 @@ impl Expr {
 									// Method call on algebraic type
 									Expr::Atom(Atom::FnCall { name, args, .. }, _) => {
 										// jesse. we have to call METHods
-
+										// TODO: Factor this out into a proper call resolution module
 										if let Some((
 											_,
 											(NamespaceItem::Function(method, _), _, _),

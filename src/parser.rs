@@ -10,7 +10,7 @@ use crate::semantic::ast::{ASTElem, ASTNode, TokenData};
 use crate::semantic::controlflow::ControlFlow;
 use crate::semantic::expression::{Atom, Expr, Operator};
 use crate::semantic::namespace::{Identifier, Namespace, NamespaceASTElem, NamespaceItem};
-use crate::semantic::types::{AlgebraicDef, Basic, FnDef, FnParamList, Type, TypeDef, Visibility};
+use crate::semantic::types::{AlgebraicDef, Basic, FnDef, FnParamList, Type, TypeDef, Visibility, TraitDef, TraitImpl};
 use crate::semantic::Attribute;
 
 // Convenience function that matches a &str against various token kinds
@@ -274,6 +274,64 @@ impl Parser {
 							}
 						}
 
+						"trait" => {
+							let name_token = self.get_next()?;
+
+							if let Token::Identifier(name) = name_token {
+								
+								let mut this_trait = TraitDef { 
+									items: HashMap::new(), 
+									supers: vec![]
+								};
+
+								let mut next = self.get_next()?;
+
+								if !token_compare(&next, "{") {
+									return Err(self.err(CMNErrorCode::UnexpectedToken));
+								}
+
+								next = self.get_next()?; // Consume brace
+
+								while !token_compare(&next, "}") {
+									match next {
+										Token::Identifier(_) => {
+											let result = self.parse_namespace_declaration()?;
+
+											match &result.1 {
+												NamespaceItem::Function(_, elem) => {
+													if !matches!(&*elem.borrow(), NamespaceASTElem::NoElem) {
+														panic!("default trait method definitions are not (yet) supported")
+													}
+
+													this_trait.items.insert(result.0.into(), (result.1, vec![], None));
+												}
+
+												_ => todo!(),
+											}
+
+											next = self.get_current()?;
+										}
+
+										_ => return Err(self.err(CMNErrorCode::UnexpectedToken)),
+									}
+								}
+
+								self.get_next()?; // Consume closing brace
+
+								let aggregate = TypeDef::Trait(this_trait);
+
+								self.current_namespace().borrow_mut().children.insert(
+									name.expect_scopeless()?.clone(),
+									(
+										NamespaceItem::Type(Arc::new(RwLock::new(aggregate))),
+										current_attributes,
+										None,
+									),
+								);
+								current_attributes = vec![];
+							}
+						}
+
 						"namespace" => {
 							let name_token = self.get_next()?;
 
@@ -323,7 +381,7 @@ impl Parser {
 						"impl" => {
 							let impl_name_token = self.get_next()?;
 							let impl_name;
-							let mut _trait_name = None;
+							let mut trait_name = None;
 
 							if let Token::Identifier(id) = &impl_name_token {
 								match self.get_next()? {
@@ -335,7 +393,7 @@ impl Parser {
 
 									Token::Keyword("for") => {
 										// Trait impl
-										_trait_name = Some(id);
+										trait_name = Some(id);
 
 										if let Token::Identifier(id) = self.get_next()? {
 											impl_name = id;
@@ -356,6 +414,7 @@ impl Parser {
 								let mut current = self.get_current()?;
 
 								// Parse functions
+								let mut functions = vec![];
 
 								while current != Token::Other('}') {
 									let fn_ret = self.parse_type(false)?;
@@ -375,9 +434,7 @@ impl Parser {
 										NamespaceASTElem::Unparsed(self.get_current_token_index());
 									self.skip_block()?;
 
-									// Register impl
-									let impls = &mut self.current_namespace().borrow_mut().impls;
-
+									
 									let current_impl = (
 										NamespaceItem::Function(
 											Arc::new(RwLock::new(TypeDef::Function(FnDef {
@@ -390,17 +447,36 @@ impl Parser {
 										current_attributes,
 										None,
 									);
+									functions.push((fn_name, current_impl));
 									current_attributes = vec![];
 
-									if let Some(impls) = impls.get_mut(&impl_name) {
-										impls.insert(fn_name, current_impl);
+									current = self.get_current()?;
+								}
+
+								// Register impl
+								if let Some(trait_name) = trait_name {
+									let impls = &mut self.current_namespace().borrow_mut().trait_impls;									
+									
+									if let Some(trait_impls) = impls.get_mut(trait_name) {
+										trait_impls.insert(impl_name, TraitImpl { items: todo!() });
 									} else {
-										let mut new_impls = HashMap::new();
-										new_impls.insert(fn_name, current_impl);
-										impls.insert(impl_name.clone(), new_impls);
+
 									}
 
-									current = self.get_current()?;
+								} else {									
+									let impls = &mut self.current_namespace().borrow_mut().impls;
+
+									if let Some(impls) = impls.get_mut(&impl_name) {
+										for (fn_name, current_fn) in functions {
+											impls.insert(fn_name, current_fn);
+										}
+									} else {
+										let mut new_impls = HashMap::new();
+										for (fn_name, current_fn) in functions {
+											new_impls.insert(fn_name, current_fn);
+										}
+										impls.insert(impl_name.clone(), new_impls);
+									}
 								}
 
 								self.get_next()?;
