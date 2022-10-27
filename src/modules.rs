@@ -312,6 +312,6 @@ pub fn generate_code<'ctx>(
 	mpm.add_reassociate_pass();
 
 	mpm.run_on(&backend.module);
-	
+
 	Ok(backend)
 }

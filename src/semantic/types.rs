@@ -62,8 +62,9 @@ pub enum Basic {
 pub enum Type {
 	Basic(Basic),                                  // Fundamental type
 	Pointer(BoxedType),                            // Pointer-to-<BoxedType>
+	Reference(BoxedType),                          // Reference-to-<BoxedType>
 	Array(BoxedType, Arc<RwLock<Vec<ConstExpr>>>), // N-dimensional array with constant expression for size
-	TypeRef(Weak<RwLock<TypeDef>>, Identifier), // Reference to type definition, plus Identifier for serialization
+	TypeRef(Weak<RwLock<TypeDef>>, Identifier), // User-defined type ptr, plus Identifier for serialization
 
 	Unresolved(Identifier), // Unresolved type (during parsing phase)
 }
@@ -338,6 +339,7 @@ impl PartialEq for Type {
 		match (self, other) {
 			(Self::Basic(l0), Self::Basic(r0)) => l0 == r0,
 			(Self::Pointer(l0), Self::Pointer(r0)) => l0 == r0,
+			(Self::Reference(l0), Self::Reference(r0)) => l0 == r0,
 			(Self::Unresolved(l0), Self::Unresolved(r0)) => l0 == r0,
 			(Self::TypeRef(l0, l1), Self::TypeRef(r0, r1)) => {
 				Arc::ptr_eq(&l0.upgrade().unwrap(), &r0.upgrade().unwrap()) && l1 == r1
@@ -357,6 +359,10 @@ impl Hash for Type {
 				t.hash(state);
 				"*".hash(state)
 			}
+			Type::Reference(t) => {
+				t.hash(state);
+				"&".hash(state)
+			}
 			Type::Array(t, _s) => {
 				t.hash(state);
 				"+".hash(state)
@@ -370,28 +376,18 @@ impl Hash for Type {
 impl Display for Type {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match &self {
-			Type::Basic(t) => {
-				write!(f, "{}", t)?;
-			}
+			Type::Basic(t) => write!(f, "{t}"),
 
-			Type::Pointer(t) => {
-				write!(f, "{}*", t)?;
-			}
+			Type::Pointer(t) => write!(f, "{t}*"),
 
-			Type::Array(t, _s) => {
-				write!(f, "{}[]", t)?;
-			}
+			Type::Reference(t) => write!(f, "{t}&"),
 
-			Type::Unresolved(t) => {
-				write!(f, "unresolved type \"{}\"", t)?;
-			}
+			Type::Array(t, _s) => write!(f, "{}[]", t),
 
-			Type::TypeRef(_, id) => {
-				write!(f, "{}", id)?;
-			}
+			Type::Unresolved(t) => write!(f, "unresolved type \"{}\"", t),
+
+			Type::TypeRef(_, id) => write!(f, "{}", id),
 		}
-
-		Ok(())
 	}
 }
 
@@ -450,6 +446,7 @@ impl std::fmt::Debug for Type {
 		match self {
 			Self::Basic(arg0) => f.debug_tuple("Basic").field(arg0).finish(),
 			Self::Pointer(_) => f.debug_tuple("Pointer").finish(),
+			Self::Reference(_) => f.debug_tuple("Reference").finish(),
 			Self::Array(t, _) => f.debug_tuple("Array").field(t).finish(),
 			Self::Unresolved(arg0) => f.debug_tuple("Unresolved").field(arg0).finish(),
 			Self::TypeRef(arg0, _) => f.debug_tuple("TypeRef").field(arg0).finish(),

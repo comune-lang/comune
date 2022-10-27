@@ -10,7 +10,9 @@ use crate::semantic::ast::{ASTElem, ASTNode, TokenData};
 use crate::semantic::controlflow::ControlFlow;
 use crate::semantic::expression::{Atom, Expr, Operator};
 use crate::semantic::namespace::{Identifier, Namespace, NamespaceASTElem, NamespaceItem};
-use crate::semantic::types::{AlgebraicDef, Basic, FnDef, FnParamList, Type, TypeDef, Visibility, TraitDef, TraitImpl};
+use crate::semantic::types::{
+	AlgebraicDef, Basic, FnDef, FnParamList, TraitDef, TraitImpl, Type, TypeDef, Visibility,
+};
 use crate::semantic::Attribute;
 
 // Convenience function that matches a &str against various token kinds
@@ -278,10 +280,9 @@ impl Parser {
 							let name_token = self.get_next()?;
 
 							if let Token::Identifier(name) = name_token {
-								
-								let mut this_trait = TraitDef { 
-									items: HashMap::new(), 
-									supers: vec![]
+								let mut this_trait = TraitDef {
+									items: HashMap::new(),
+									supers: vec![],
 								};
 
 								let mut next = self.get_next()?;
@@ -299,11 +300,17 @@ impl Parser {
 
 											match &result.1 {
 												NamespaceItem::Function(_, elem) => {
-													if !matches!(&*elem.borrow(), NamespaceASTElem::NoElem) {
+													if !matches!(
+														&*elem.borrow(),
+														NamespaceASTElem::NoElem
+													) {
 														panic!("default trait method definitions are not (yet) supported")
 													}
 
-													this_trait.items.insert(result.0.into(), (result.1, vec![], None));
+													this_trait.items.insert(
+														result.0.into(),
+														(result.1, vec![], None),
+													);
 												}
 
 												_ => todo!(),
@@ -434,7 +441,6 @@ impl Parser {
 										NamespaceASTElem::Unparsed(self.get_current_token_index());
 									self.skip_block()?;
 
-									
 									let current_impl = (
 										NamespaceItem::Function(
 											Arc::new(RwLock::new(TypeDef::Function(FnDef {
@@ -455,15 +461,14 @@ impl Parser {
 
 								// Register impl
 								if let Some(trait_name) = trait_name {
-									let impls = &mut self.current_namespace().borrow_mut().trait_impls;									
-									
+									let impls =
+										&mut self.current_namespace().borrow_mut().trait_impls;
+
 									if let Some(trait_impls) = impls.get_mut(trait_name) {
 										trait_impls.insert(impl_name, TraitImpl { items: todo!() });
 									} else {
-
 									}
-
-								} else {									
+								} else {
 									let impls = &mut self.current_namespace().borrow_mut().impls;
 
 									if let Some(impls) = impls.get_mut(&impl_name) {
@@ -1470,6 +1475,11 @@ impl Parser {
 								result = Type::Pointer(Box::new(result));
 								next = self.get_next()?;
 							}
+						}
+
+						"&" => {
+							result = Type::Reference(Box::new(result));
+							self.get_next()?;
 						}
 
 						"[" => {

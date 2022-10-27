@@ -270,6 +270,8 @@ pub fn resolve_type(
 ) -> ParseResult<()> {
 	match ty {
 		Type::Pointer(ref mut pointee) => resolve_type(pointee, namespace, root),
+		
+		Type::Reference(ref mut refee) => resolve_type(refee, namespace, root),
 
 		Type::Array(ref mut pointee, _size) => resolve_type(pointee, namespace, root),
 

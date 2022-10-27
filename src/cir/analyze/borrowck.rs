@@ -9,8 +9,6 @@ pub struct BorrowCheck;
 
 impl CIRPass for BorrowCheck {
 	fn on_function(&self, func: &CIRFunction) {
-		&func.blocks.par_iter().for_each(|block| {
-			todo!()
-		});
+		&func.blocks.par_iter().for_each(|block| todo!());
 	}
 }

@@ -13,7 +13,7 @@ use crate::{
 
 use super::{
 	ast::ASTElem,
-	types::{Type, TypeDef, TraitDef, TraitImpl},
+	types::{TraitDef, TraitImpl, Type, TypeDef},
 	Attribute,
 };
 
@@ -75,7 +75,7 @@ impl Display for Identifier {
 				result.push_str("::");
 			}
 		}
-		
+
 		write!(f, "{result}")
 	}
 }
