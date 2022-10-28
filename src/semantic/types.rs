@@ -298,6 +298,10 @@ impl Type {
 		Type::Pointer(Box::new(self.clone()))
 	}
 
+	pub fn ref_type(&self) -> Self {
+		Type::Reference(Box::new(self.clone()))
+	}
+
 	pub fn castable_to(&self, target: &Type) -> bool {
 		if *self == *target {
 			true

@@ -1,7 +1,7 @@
-import module_test;
-import lifetimes;
+//import module_test;
+//import lifetimes;
 
-using module_test::{fib, foo};
+//using module_test::{fib, foo};
 
 @no_mangle
 void printf(char* fmt);
@@ -25,17 +25,6 @@ impl Test {
 	}
 }
 
-
-//trait Speak {
-//	void speak();
-//}
-
-//impl Speak for Test {
-//	void speak() {
-//		printf("hello everybody my name is Market Plier\n\0");
-//	}
-//}
-
 int main() {
 	printf("This is main()!\n\0");
 	
@@ -44,21 +33,7 @@ int main() {
 		b: 0
 	};
 
-	while (test.b < 9) {
-		printf("This is a while loop!\n\0");
-		test.b++;
-	}
+	int cool = test.a;
 
-	for (int i = 0; i < 10; i++) {
-		int test = 2;
-		printf("For loop test!\n\0");
-	}
-
-	Test* heap = malloc(8) as Test*;
-	*heap = test;
-
-	int result = (*heap).sum();
-	
-	free(heap as void*);
-	return result;
+	return test.sum();
 }

@@ -786,6 +786,8 @@ impl Expr {
 							.validate(scope, None, first_meta)?;
 						let mut second_t = None;
 
+						elems[0].1 = Some(first_t.clone());
+
 						if let Some(item) = elems.get_mut(1) {
 							second_t = Some(item.0.validate(scope, None, item.2)?);
 
@@ -819,17 +821,23 @@ impl Expr {
 								}
 							}
 
-							elems[0].1 = Some(first_t.clone());
 							elems[1].1 = second_t.clone();
 						}
 
 						// Handle operators that change the expression's type here
 						match op {
-							Operator::Ref => Ok(first_t.ptr_type()),
-
+							Operator::Ref => {
+								match goal_t {
+									// Default to creating a reference, unless explicitly asking for a pointer
+									Some(Type::Pointer(_)) => Ok(first_t.ptr_type()),
+									
+									_ => Ok(first_t.ref_type()), 
+								}
+							}
+							
 							Operator::Deref => match first_t {
-								Type::Pointer(t) => Ok(*t.clone()),
-								_ => return Err((CMNError::new(CMNErrorCode::NonPtrDeref), *meta)),
+								Type::Pointer(t) | Type::Reference(t) => Ok(*t.clone()),
+								_ => return Err((CMNError::new(CMNErrorCode::InvalidDeref(first_t)), *meta)),
 							},
 
 							Operator::Eq
@@ -919,7 +927,13 @@ impl Expr {
 							elems[0].1 = Some(Type::Pointer(t.clone()));
 							Ok(*t)
 						}
-						_ => Err((CMNError::new(CMNErrorCode::NonPtrDeref), meta)),
+
+						Type::Reference(t) => {
+							elems[0].1 = Some(Type::Reference(t.clone()));
+							Ok(*t)
+						}
+						
+						other => Err((CMNError::new(CMNErrorCode::InvalidDeref(other)), meta)),
 					}
 				}
 
@@ -1018,7 +1032,7 @@ impl Expr {
 									}
 
 									_ => {}
-								},
+								}
 								_ => {}
 							}
 						}
@@ -1043,7 +1057,7 @@ impl Atom {
 				if let Some(t) = t {
 					Ok(Type::Basic(t.clone()))
 				} else {
-					if let Some(Type::Basic(b)) = goal_t {
+					if let Some(Type::Basic(_)) = goal_t {
 						Ok(goal_t.unwrap().clone())
 					} else {
 						Ok(Type::Basic(Basic::INTEGRAL {

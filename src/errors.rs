@@ -74,7 +74,7 @@ pub enum CMNErrorCode {
 	ReturnTypeMismatch { expected: Type, got: Type },
 	ParamCountMismatch { expected: usize, got: usize },
 	NotCallable(String),
-	NonPtrDeref,
+	InvalidDeref(Type),
 	InfiniteSizeType,
 
 	// Resolution errors
@@ -147,7 +147,7 @@ impl Display for CMNErrorCode {
 				write!(f, "variable of type {t} has no member '{idx}'")
 			}
 			CMNErrorCode::NotCallable(id) => write!(f, "{id} is not callable"),
-			CMNErrorCode::NonPtrDeref => write!(f, "attempt to dereference a non-pointer value"),
+			CMNErrorCode::InvalidDeref(ty) => write!(f, "can't dereference value of type {ty}"),
 			CMNErrorCode::InfiniteSizeType => write!(f, "cyclical type dependency found"),
 
 			CMNErrorCode::ModuleNotFound(m) => {

@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use std::{collections::HashMap, sync::RwLock};
+use std::{collections::HashMap, sync::RwLock, hash::Hash};
 
 use crate::semantic::{
 	expression::Operator,
@@ -24,7 +24,7 @@ type FieldIndex = usize;
 type TypeIndex = usize;
 
 // An LValue is an expression that results in a memory location.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct LValue {
 	pub local: VarIndex,
 	pub projection: Vec<PlaceElem>,
@@ -36,6 +36,28 @@ pub enum PlaceElem {
 	Deref,
 	Field(FieldIndex),
 	Index(RValue),
+}
+
+impl PartialEq for PlaceElem {
+	fn eq(&self, other: &Self) -> bool {
+		match self {
+			PlaceElem::Deref => matches!(other, PlaceElem::Deref),
+			PlaceElem::Field(idx) => if let PlaceElem::Field(other_idx) = other { idx == other_idx } else { false }
+			PlaceElem::Index(_) => matches!(other, PlaceElem::Index(_)),
+		}
+	}
+}
+
+impl Eq for PlaceElem {}
+
+impl Hash for PlaceElem {
+	fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+		match self {
+			PlaceElem::Deref => "deref".hash(state),
+			PlaceElem::Field(idx) => idx.hash(state),
+			PlaceElem::Index(_) => "index".hash(state),
+		}
+	}
 }
 
 // An RValue is an expression that results in a value.
