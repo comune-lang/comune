@@ -38,11 +38,11 @@ impl CIRModule {
 			for block in &func.1 .0.blocks {
 				for stmt in block {
 					match stmt {
-						CIRStmt::Expression(expr) => {
+						CIRStmt::Expression(expr, _) => {
 							self.monoize_rvalue(&expr);
 						}
 
-						CIRStmt::Assignment(_, expr) => {
+						CIRStmt::Assignment(_, (expr, _)) => {
 							self.monoize_rvalue(&expr);
 						}
 
@@ -50,7 +50,7 @@ impl CIRModule {
 							self.monoize_rvalue(&cond);
 						}
 
-						CIRStmt::Return(Some(expr)) => {
+						CIRStmt::Return(Some((expr, _))) => {
 							self.monoize_rvalue(expr);
 						}
 

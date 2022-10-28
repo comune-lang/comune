@@ -75,13 +75,13 @@ impl Display for CIRFunction {
 impl Display for CIRStmt {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match self {
-			CIRStmt::Expression(expr) => write!(f, "{expr};\n"),
-			CIRStmt::Assignment(lval, expr) => write!(f, "{lval} = {expr};\n"),
+			CIRStmt::Expression(expr, _) => write!(f, "{expr};\n"),
+			CIRStmt::Assignment((lval, _), (expr, _)) => write!(f, "{lval} = {expr};\n"),
 			CIRStmt::Jump(block) => write!(f, "jmp bb{block};\n"),
 			CIRStmt::Branch(cond, a, b) => write!(f, "branch {cond}, bb{a}, bb{b};\n"),
 
 			CIRStmt::Return(expr_opt) => {
-				if let Some(expr) = expr_opt {
+				if let Some((expr, _)) = expr_opt {
 					write!(f, "ret {expr};\n")
 				} else {
 					write!(f, "ret;\n")

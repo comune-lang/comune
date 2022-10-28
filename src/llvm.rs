@@ -165,11 +165,11 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 			for stmt in block {
 				match stmt {
-					CIRStmt::Expression(expr) => {
+					CIRStmt::Expression(expr, _) => {
 						self.generate_rvalue(expr);
 					}
 
-					CIRStmt::Assignment(lval, expr) => {
+					CIRStmt::Assignment((lval, _), (expr, _)) => {
 						self.builder.build_store(
 							self.generate_lvalue(lval),
 							self.generate_rvalue(expr).unwrap().as_basic_value_enum(),
@@ -195,7 +195,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 					}
 
 					CIRStmt::Return(expr) => {
-						if let Some(expr) = expr {
+						if let Some((expr, _)) = expr {
 							self.builder
 								.build_return(Some(&self.generate_rvalue(&expr).unwrap()));
 						} else {

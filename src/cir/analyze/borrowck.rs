@@ -133,17 +133,17 @@ impl CIRPassMut for BorrowCheck {
 		
 		let result = func.walk_cfg(liveness, |state, stmt| {
 			match stmt {
-				CIRStmt::Assignment(lval, rval) => {
+				CIRStmt::Assignment((lval, _), (rval, _)) => {
 					state.eval_rvalue(rval);
 					state.liveness.insert(lval.clone(), LivenessState::Live);
 				}
 				
-				CIRStmt::Expression(rval) => {
+				CIRStmt::Expression(rval, _) => {
 					state.eval_rvalue(rval);
 				}
 				
 				CIRStmt::Return(rval_opt) => {
-					if let Some(rval) = rval_opt {
+					if let Some((rval, _)) = rval_opt {
 						state.eval_rvalue(rval);
 					}
 				}

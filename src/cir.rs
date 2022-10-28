@@ -6,7 +6,7 @@ use crate::semantic::{
 	expression::Operator,
 	namespace::{Identifier, Name},
 	types::{Basic, DataLayout},
-	Attribute,
+	Attribute, ast::TokenData,
 };
 
 pub mod analyze;
@@ -131,11 +131,11 @@ pub enum CIRTypeDef {
 
 #[derive(Debug)]
 pub enum CIRStmt {
-	Expression(RValue),
-	Assignment(LValue, RValue),
+	Expression(RValue, TokenData),
+	Assignment((LValue, TokenData), (RValue, TokenData)),
 	Jump(BlockIndex),
 	Branch(RValue, BlockIndex, BlockIndex),
-	Return(Option<RValue>),
+	Return(Option<(RValue, TokenData)>),
 }
 
 pub struct CIRFunction {

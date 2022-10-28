@@ -286,7 +286,7 @@ impl CIRModuleBuilder {
 				ASTNode::Expression(expr) => {
 					let expr_ir = self
 						.generate_expr(&expr.borrow(), elem.type_info.borrow().as_ref().unwrap());
-					self.write(CIRStmt::Expression(expr_ir));
+					self.write(CIRStmt::Expression(expr_ir, elem.token_data));
 				}
 
 				ASTNode::Declaration(ty, name, elem) => self.generate_decl(ty, name.clone(), elem),
@@ -298,7 +298,7 @@ impl CIRModuleBuilder {
 								&expr.get_expr().borrow(),
 								expr.type_info.borrow().as_ref().unwrap(),
 							);
-							self.write(CIRStmt::Return(Some(expr_ir)));
+							self.write(CIRStmt::Return(Some((expr_ir, expr.token_data))));
 						} else {
 							self.write(CIRStmt::Return(None));
 						}
@@ -408,7 +408,7 @@ impl CIRModuleBuilder {
 								&iter.get_expr().borrow(),
 								iter.type_info.borrow().as_ref().unwrap(),
 							);
-							self.write(CIRStmt::Expression(iter_ir));
+							self.write(CIRStmt::Expression(iter_ir, iter.token_data));
 						}
 
 						// Write jump-to-loop to body block
@@ -460,7 +460,7 @@ impl CIRModuleBuilder {
 
 		if let Some(elem) = elem {
 			let rval = self.generate_expr(&elem.get_expr().borrow(), ty);
-			self.write(CIRStmt::Assignment(lval, rval));
+			self.write(CIRStmt::Assignment((lval, (0, 0)), (rval, elem.token_data)));
 		}
 	}
 
@@ -527,7 +527,7 @@ impl CIRModuleBuilder {
 
 						mem_lval.projection.push(PlaceElem::Field(indices[i]));
 
-						self.write(CIRStmt::Assignment(mem_lval, mem_expr))
+						self.write(CIRStmt::Assignment((mem_lval, (0, 0)), (mem_expr, elems[i].2)))
 					}
 
 					RValue::Atom(cir_ty, None, Operand::LValue(tmp))
@@ -599,8 +599,8 @@ impl CIRModuleBuilder {
 
 					let expr_tmp = self.get_as_operand(l_ty.clone(), expr);
 					self.write(CIRStmt::Assignment(
-						lval_ir.clone(),
-						RValue::Atom(r_ty, None, expr_tmp),
+						(lval_ir.clone(), elems[0].2),
+						(RValue::Atom(r_ty, None, expr_tmp), elems[1].2),
 					));
 
 					RValue::Atom(l_ty, None, Operand::LValue(lval_ir))
@@ -660,8 +660,8 @@ impl CIRModuleBuilder {
 								let r_tmp = self.get_as_operand(r_ty.clone(), rval_ir);
 
 								self.write(CIRStmt::Assignment(
-									lval_ir.clone(),
-									RValue::Atom(r_ty, None, r_tmp),
+									(lval_ir.clone(), elems[0].2),
+									(RValue::Atom(r_ty, None, r_tmp), elems[1].2),
 								));
 
 								RValue::Atom(l_ty, None, Operand::LValue(lval_ir))
@@ -774,7 +774,7 @@ impl CIRModuleBuilder {
 			projection: vec![],
 		};
 
-		self.write(CIRStmt::Assignment(lval.clone(), rval));
+		self.write(CIRStmt::Assignment((lval.clone(), (0, 0)), (rval, (0, 0))));
 
 		lval
 	}

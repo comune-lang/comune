@@ -11,7 +11,7 @@ impl CIRPassMut for RemoveNoOps {
 		for i in 0..func.blocks.len() {
 			let mut offset = 0;
 			for j in 0..func.blocks[i].len() {
-				if let CIRStmt::Expression(expr) = &func.blocks[i][j] {
+				if let CIRStmt::Expression(expr, _) = &func.blocks[i][j] {
 					if !rval_has_side_effects(expr) {
 						indices.push((i, j - offset));
 						offset += 1;
