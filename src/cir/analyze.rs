@@ -47,16 +47,18 @@ impl CIRPassManager {
 	}
 
 	pub fn run_on_module(&self, module: &mut CIRModule) {
+		// Run on each function
+		for func in module.functions.iter_mut().filter(|func| !func.1.0.is_extern) {
+			self.run_on_function(&mut func.1 .0)
+		}
+
+		// Run on module as a whole
 		for pass in &self.passes {
 			match pass {
 				Pass::Shared(shared) => shared.par_iter().for_each(|p| p.on_module(module)),
 
 				Pass::Unique(unique) => unique.on_module(module),
 			}
-		}
-
-		for func in module.functions.iter_mut().filter(|func| !func.1.0.is_extern) {
-			self.run_on_function(&mut func.1 .0)
 		}
 	}
 
@@ -70,6 +72,8 @@ impl CIRPassManager {
 		}
 	}
 }
+
+// CFG Walking
 
 type JumpID = ((BlockIndex, StmtIndex), BlockIndex);
 

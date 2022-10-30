@@ -3,9 +3,10 @@ use std::{
 	fmt::Display,
 	sync::{
 		atomic::{AtomicU32, Ordering},
-		Arc,
-	},
+		Arc, mpsc::{Sender, self},
+	}, thread,
 };
+use colored::Colorize;
 
 use backtrace::Backtrace;
 use lazy_static::lazy_static;
@@ -204,4 +205,77 @@ impl CMNWarning {
 			//_ => vec![],
 		}
 	}
+}
+
+pub struct CMNErrorLog {
+	pub error: CMNMessage,
+	pub line_text: String,
+	pub filename: String,
+	pub line: usize,
+	pub column: usize,
+	pub length: usize,
+}
+
+
+pub fn spawn_logger(backtrace_on_error: bool) -> Sender<CMNErrorLog> {
+	let (sender, receiver) = mpsc::channel::<CMNErrorLog>();
+
+	thread::spawn(move || {
+		loop {
+			match receiver.recv() {
+				Ok(message) => {
+					// Print message
+					match message.error {
+						CMNMessage::Error(_) => {
+							print!("\n{}: {}", "error".bold().red(), message.error.to_string().bold());
+						}
+						CMNMessage::Warning(_) => {
+							print!("\n{}: {}", "warning".bold().yellow(), message.error.to_string().bold())
+						}
+					}
+
+					// Print file:row:column
+					println!(
+						"{}",
+						format!(
+							" in {}:{}:{}\n",
+							message.filename,
+							message.line + 1,
+							message.column
+						)
+						.bright_black()
+					);
+
+					// Print code snippet
+					println!(
+						"{} {}",
+						format!("{}\t{}", message.line + 1, "|").bright_black(),
+						message.line_text
+					);
+
+					// Print squiggle
+					print!("\t{: <1$}", "", message.column + 1);
+					println!("{:~<1$}", "", message.length);
+
+					let notes = message.error.get_notes();
+					
+					for note in notes {
+						println!("{} {}\n", "note:".bold().italic(), note.italic());
+					}
+
+					// Print compiler backtrace
+					if let CMNMessage::Error(err) = &message.error {
+						if backtrace_on_error {
+							println!("\ncompiler backtrace:\n\n{:?}", err.origin);
+						}
+					}
+				},
+
+				// All channels closed
+				Err(_) => break,
+			}
+		}
+	});
+	
+	sender
 }

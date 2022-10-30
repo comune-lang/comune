@@ -67,10 +67,13 @@ fn main() -> color_eyre::eyre::Result<()> {
 
 	// Launch multithreaded compilation
 
+	let error_sender = errors::spawn_logger(args.backtrace);
+
 	rayon::in_place_scope(|s| {
 		modules::launch_module_compilation(
 			manager_state.clone(),
 			Identifier::from_name(args.input_file.clone().to_string_lossy().into(), true),
+			error_sender,
 			s,
 		)
 		.unwrap();

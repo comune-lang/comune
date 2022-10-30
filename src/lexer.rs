@@ -3,10 +3,9 @@ use std::fmt::Display;
 use std::fs::File;
 use std::io::{self, Error, Read};
 use std::path::Path;
+use std::sync::mpsc::Sender;
 
-use colored::Colorize;
-
-use crate::errors::CMNMessage;
+use crate::errors::{CMNMessage, CMNErrorLog};
 
 use crate::semantic::namespace::Identifier;
 
@@ -47,7 +46,7 @@ static KEYWORDS: [&'static str; 31] = [
 static OPERATORS: [&str; 37] = [
 	"+", "-", "/", "*", "%", "^", "|", "||", "&", "&&", "=", "==", "/=", "*=", "+=", "-=", "%=",
 	"&=", "|=", "^=", "++", "--", "->", "(", ")", "[", "]", ".", "::", "<", ">", "<=", ">=", "!=",
-	"<<", ">>", "as",
+	"<<", ">>", "as" // yeah `as` is technically an operator lol
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -119,19 +118,19 @@ pub struct Lexer {
 	char_buffer: Option<char>,
 	token_buffer: Vec<(usize, Token)>,
 	token_index: usize,
-	backtrace_on_error: bool,
+	error_logger: Sender<CMNErrorLog>,
 	pub file_name: OsString,
 }
 
 impl Lexer {
-	pub fn new<P: AsRef<Path>>(path: P, backtrace_on_error: bool) -> std::io::Result<Lexer> {
+	pub fn new<P: AsRef<Path>>(path: P, error_logger: Sender<CMNErrorLog>) -> std::io::Result<Lexer> {
 		let mut result = Lexer {
 			file_buffer: String::new(),
 			file_index: 0usize,
 			char_buffer: None,
 			token_buffer: vec![],
 			token_index: 0usize,
-			backtrace_on_error,
+			error_logger,
 			file_name: path.as_ref().file_name().unwrap().to_os_string(),
 		};
 
@@ -546,50 +545,15 @@ impl Lexer {
 			let line = self.get_line_number(char_idx);
 			let column = self.get_column(char_idx);
 
-			// Print message
-			match e {
-				CMNMessage::Error(_) => {
-					print!("\n{}: {}", "error".bold().red(), e.to_string().bold());
-				}
-				CMNMessage::Warning(_) => {
-					print!("\n{}: {}", "warning".bold().yellow(), e.to_string().bold())
-				}
-			}
+			self.error_logger.send(CMNErrorLog {
+				error: e,
+				line_text: self.get_line(line).to_string(),
+				filename: self.file_name.to_string_lossy().into_owned(),
+				line,
+				column,
+				length: token_len,
+			}).unwrap();
 
-			// Print file:row:column
-			println!(
-				"{}",
-				format!(
-					" in {}:{}:{}\n",
-					self.file_name.to_string_lossy(),
-					line + 1,
-					column
-				)
-				.bright_black()
-			);
-
-			// Print code snippet
-			println!(
-				"{} {}",
-				format!("{}\t{}", line + 1, "|").bright_black(),
-				self.get_line(line)
-			);
-
-			// Print squiggle
-			print!("\t{: <1$}", "", column + 1);
-			println!("{:~<1$}", "", token_len);
-
-			let notes = e.get_notes();
-			for note in notes {
-				println!("{} {}\n", "note:".bold().italic(), note.italic());
-			}
-
-			// Print compiler backtrace
-			if let CMNMessage::Error(ref err) = e {
-				if self.backtrace_on_error {
-					println!("\ncompiler backtrace:\n\n{:?}", err.origin);
-				}
-			}
 		} else {
 			println!(
 				"\n[error]\t{} \n[note]\tno error metadata found, can't display error location",

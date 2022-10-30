@@ -2,7 +2,7 @@ use std::{
 	ffi::{OsStr, OsString},
 	fs,
 	path::{Path, PathBuf},
-	sync::{Arc, Mutex},
+	sync::{Arc, Mutex, mpsc::Sender},
 };
 
 use colored::Colorize;
@@ -14,7 +14,7 @@ use crate::{
 		analyze::{cleanup, verify, CIRPassManager, borrowck},
 		builder::CIRModuleBuilder,
 	},
-	errors::{CMNError, CMNErrorCode, CMNMessage},
+	errors::{CMNError, CMNErrorCode, CMNMessage, CMNErrorLog},
 	lexer::Lexer,
 	llvm::{self, LLVMBackend},
 	parser::{ASTResult, Parser},
@@ -45,13 +45,14 @@ unsafe impl Send for Namespace {}
 pub fn launch_module_compilation<'scope>(
 	state: Arc<ManagerState>,
 	input_module: Identifier,
+	error_sender: Sender<CMNErrorLog>,
 	s: &rayon::Scope<'scope>,
 ) -> Result<Namespace, CMNError> {
 	let src_path = get_module_source_path(&state, &input_module);
 	let out_path = get_module_out_path(&state, &input_module, None);
 	state.output_modules.lock().unwrap().push(out_path.clone());
 
-	let mut mod_state = parse_interface(&state, &src_path)?;
+	let mut mod_state = parse_interface(&state, &src_path, error_sender.clone())?;
 
 	// Resolve module imports
 	let module_names = mod_state
@@ -60,11 +61,14 @@ pub fn launch_module_compilation<'scope>(
 		.borrow()
 		.referenced_modules
 		.clone();
+	
+	let sender_lock = Mutex::new(error_sender);
 
 	let imports = module_names
 		.into_par_iter()
 		.map(|name| {
-			let module_interface = launch_module_compilation(state.clone(), name.clone(), s);
+			let error_sender = sender_lock.lock().unwrap().clone();
+			let module_interface = launch_module_compilation(state.clone(), name.clone(), error_sender, s);
 			(name, module_interface.unwrap())
 		})
 		.collect();
@@ -151,12 +155,12 @@ pub fn get_out_folder(state: &Arc<ManagerState>) -> PathBuf {
 	result
 }
 
-pub fn parse_interface(state: &Arc<ManagerState>, path: &Path) -> Result<ModuleState, CMNError> {
+pub fn parse_interface(state: &Arc<ManagerState>, path: &Path, error_sender: Sender<CMNErrorLog>) -> Result<ModuleState, CMNError> {
 	// First phase of module compilation: create Lexer and Parser, and parse the module at the namespace level
 
 	let mut mod_state = ModuleState {
 		parser: Parser::new(
-			match Lexer::new(path, state.backtrace_on_error) {
+			match Lexer::new(path, error_sender) {
 				// TODO: Take module name instead of filename
 				Ok(f) => f,
 				Err(e) => {

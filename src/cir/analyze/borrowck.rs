@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use super::CIRPassMut;
-use crate::cir::{CIRFunction, CIRStmt, LValue, RValue, Operand, CIRType, PlaceElem};
+use crate::cir::{CIRFunction, CIRStmt, LValue, RValue, Operand, CIRType};
 
 pub struct BorrowCheck;
 
@@ -28,13 +28,13 @@ struct LiveVarCheckState {
 }
 
 impl LiveVarCheckState {
-	fn set_all_sublocations(&mut self, lval: &LValue, state: LivenessState) {
+	fn set_liveness(&mut self, lval: &LValue, state: LivenessState) {
 		let mut keys = vec![];
 
+		// Clear liveness state for all sublocations
+		
 		for key in self.liveness.keys().filter(|key| key.local == lval.local && key.projection.len() >= lval.projection.len()) {
-			
-			// Check if current key is a sublocation of our lvalue
-	
+
 			for proj in 0..lval.projection.len() {
 				if key.projection[proj] != lval.projection[proj] {
 					continue;
@@ -44,28 +44,30 @@ impl LiveVarCheckState {
 			keys.push(key.clone());
 		}
 	
-		// Update all sublocations
-
 		for key in keys {
 			self.liveness.insert(key, state);
 		}
 
-		// If we moved a sublocation, set all its parent locations as PartialMoved
-		if state == LivenessState::Moved && !lval.projection.is_empty() {
-			let mut len = lval.projection.len();
-			
-			while len > 0 {
-				let mut parent_lval = lval.clone();
-
-				len -= 1;
-				parent_lval.projection.resize(len, PlaceElem::Deref); // Dummy PlaceElem, never used
-				
-				self.liveness.insert(parent_lval, LivenessState::PartialMoved);
-			}
-		}
+		self.liveness.insert(lval.clone(), state);
 	}
 
-	fn get_sublocation_liveness(&self, mut lval: LValue) -> LivenessState {
+	fn get_liveness(&self, lval: &LValue) -> LivenessState {
+		if self.liveness.get(&lval).is_some() {
+			// This state has a defined liveness value, so look through its children to check for partial moves
+			
+			// Get all keys that are sublocations of this lvalue
+			for (_, val) in self.liveness.iter().filter(|(key, _)| key.local == lval.local && key.projection[0..lval.projection.len()] == *lval.projection.as_slice()) {
+				if *val == LivenessState::Moved {
+					return LivenessState::PartialMoved;
+				}
+			}
+		}
+
+		let mut lval = lval.clone();
+
+		// Look through superlocations for a defined LivenessState
+		// (If the provided lval has a defined state, it'll just return that)
+		
 		loop {
 			if let Some(state) = self.liveness.get(&lval) {
 				return *state;
@@ -100,12 +102,12 @@ impl LiveVarCheckState {
 	fn eval_operand(&mut self, _ty: &CIRType, op: &Operand) {
 		match op {
 			Operand::LValue(lval) => {
-				let sub_liveness = self.get_sublocation_liveness(lval.clone());
+				let sub_liveness = self.get_liveness(lval);
 				
 				// TODO: Check for `Copy` types? Might be handled earlier
 
 				if sub_liveness == LivenessState::Live {
-					self.set_all_sublocations(lval, LivenessState::Moved);
+					self.set_liveness(lval, LivenessState::Moved);
 				} else {
 					panic!("borrowck error! cannot move from local {} with state {sub_liveness:?}", lval.local); // TODO: Real error handling
 				}

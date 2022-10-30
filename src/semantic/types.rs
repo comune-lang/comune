@@ -58,6 +58,9 @@ pub enum Basic {
 	STR,
 }
 
+// Don't mutate TypeDefs through TypeRef or so help me god
+unsafe impl Send for Type {}
+
 #[derive(Clone)]
 pub enum Type {
 	Basic(Basic),                                  // Fundamental type
