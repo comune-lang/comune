@@ -14,7 +14,7 @@ use crate::{
 		analyze::{borrowck, cleanup, verify, CIRPassManager},
 		builder::CIRModuleBuilder,
 	},
-	errors::{CMNError, CMNErrorCode, CMNErrorLog, CMNMessage},
+	errors::{CMNError, CMNErrorCode, CMNMessageLog, CMNMessage},
 	lexer::Lexer,
 	llvm::{self, LLVMBackend},
 	parser::{AnalyzeResult, Parser},
@@ -45,7 +45,7 @@ unsafe impl Send for Namespace {}
 pub fn launch_module_compilation<'scope>(
 	state: Arc<ManagerState>,
 	input_module: Identifier,
-	error_sender: Sender<CMNErrorLog>,
+	error_sender: Sender<CMNMessageLog>,
 	s: &rayon::Scope<'scope>,
 ) -> Result<Namespace, CMNError> {
 	let src_path = get_module_source_path(&state, &input_module);
@@ -84,10 +84,12 @@ pub fn launch_module_compilation<'scope>(
 
 	s.spawn(move |_s| {
 		let context = Context::create();
+		let src_name = src_path.file_name().unwrap().to_str().unwrap();
+		let out_name = out_path.file_name().unwrap().to_str().unwrap();
 
 		let result = match generate_code(&state, &mut mod_state, &context, &input_module) {
 			Ok(res) => res,
-			Err(_) => return,
+			Err(_) => { println!("\n{:>10} compiling {}", "failed".bold().red(), src_name.bold()); return },
 		};
 
 		let target_machine = llvm::get_target_machine();
@@ -105,7 +107,7 @@ pub fn launch_module_compilation<'scope>(
 		println!(
 			"{:>10} {}",
 			"finished".bold().green(),
-			out_path.file_name().unwrap().to_str().unwrap()
+			out_name
 		);
 	});
 
@@ -159,7 +161,7 @@ pub fn get_out_folder(state: &Arc<ManagerState>) -> PathBuf {
 pub fn parse_interface(
 	state: &Arc<ManagerState>,
 	path: &Path,
-	error_sender: Sender<CMNErrorLog>,
+	error_sender: Sender<CMNMessageLog>,
 ) -> Result<ModuleState, CMNError> {
 	// First phase of module compilation: create Lexer and Parser, and parse the module at the namespace level
 

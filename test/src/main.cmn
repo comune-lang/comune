@@ -28,7 +28,12 @@ impl Test {
 int main() {
 	printf("This is main()!\n\0");
 	
-	Test test = Test { 
+	Test test;
+
+	// nope - use of uninitialized variable test
+	test.sum();
+
+	test = Test { 
 		a: 60, 
 		b: 0
 	};

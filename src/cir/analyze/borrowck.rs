@@ -124,7 +124,7 @@ impl LiveVarCheckState {
 				if sub_liveness == LivenessState::Live {
 					self.set_liveness(lval, LivenessState::Moved);
 				} else {
-					return Err((lval.clone(), sub_liveness, token_data)); // TODO: Real error handling
+					return Err((lval.clone(), sub_liveness, token_data));
 				}
 			}
 

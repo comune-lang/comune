@@ -5,7 +5,9 @@ use std::io::{self, Error, Read};
 use std::path::Path;
 use std::sync::mpsc::Sender;
 
-use crate::errors::{CMNErrorLog, CMNMessage};
+use colored::Colorize;
+
+use crate::errors::{CMNMessageLog, CMNMessage};
 
 use crate::semantic::namespace::Identifier;
 
@@ -118,14 +120,14 @@ pub struct Lexer {
 	char_buffer: Option<char>,
 	token_buffer: Vec<(usize, Token)>,
 	token_index: usize,
-	error_logger: Sender<CMNErrorLog>,
+	error_logger: Sender<CMNMessageLog>,
 	pub file_name: OsString,
 }
 
 impl Lexer {
 	pub fn new<P: AsRef<Path>>(
 		path: P,
-		error_logger: Sender<CMNErrorLog>,
+		error_logger: Sender<CMNMessageLog>,
 	) -> std::io::Result<Lexer> {
 		let mut result = Lexer {
 			file_buffer: String::new(),
@@ -549,8 +551,8 @@ impl Lexer {
 			let column = self.get_column(char_idx);
 
 			self.error_logger
-				.send(CMNErrorLog {
-					error: e,
+				.send(CMNMessageLog::Annotated {
+					msg: e,
 					line_text: self.get_line(line).to_string(),
 					filename: self.file_name.to_string_lossy().into_owned(),
 					line,
@@ -559,10 +561,12 @@ impl Lexer {
 				})
 				.unwrap();
 		} else {
-			println!(
-				"\n[error]\t{} \n[note]\tno error metadata found, can't display error location",
-				e
-			);
+			self.error_logger
+				.send(CMNMessageLog::Plain {
+					msg: e,
+					filename: self.file_name.to_string_lossy().into_owned(),
+				})
+				.unwrap();
 		}
 	}
 

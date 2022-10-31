@@ -262,71 +262,98 @@ impl CMNWarning {
 	}
 }
 
-pub struct CMNErrorLog {
-	pub error: CMNMessage,
-	pub line_text: String,
-	pub filename: String,
-	pub line: usize,
-	pub column: usize,
-	pub length: usize,
+pub enum CMNMessageLog {
+	Annotated {
+		msg: CMNMessage,
+		filename: String,
+
+		line_text: String,
+		line: usize,
+		column: usize,
+		length: usize,
+	},
+
+	Plain {
+		msg: CMNMessage,
+		filename: String
+	}
 }
 
-pub fn spawn_logger(backtrace_on_error: bool) -> Sender<CMNErrorLog> {
-	let (sender, receiver) = mpsc::channel::<CMNErrorLog>();
+pub fn spawn_logger(backtrace_on_error: bool) -> Sender<CMNMessageLog> {
+	let (sender, receiver) = mpsc::channel::<CMNMessageLog>();
 
 	thread::spawn(move || {
 		loop {
 			match receiver.recv() {
 				Ok(message) => {
+					let (msg, filename) = match &message { 
+						CMNMessageLog::Annotated { msg, filename, .. } | CMNMessageLog::Plain { msg, filename, .. } => (msg, filename) 
+					};
+
 					// Print message
-					match message.error {
+					match msg {
 						CMNMessage::Error(_) => {
 							print!(
 								"\n{}: {}",
 								"error".bold().red(),
-								message.error.to_string().bold()
+								msg.to_string().bold()
 							);
 						}
 						CMNMessage::Warning(_) => {
 							print!(
 								"\n{}: {}",
 								"warning".bold().yellow(),
-								message.error.to_string().bold()
+								msg.to_string().bold()
 							)
 						}
 					}
 
 					// Print file:row:column
-					println!(
-						"{}",
-						format!(
-							" in {}:{}:{}\n",
-							message.filename,
-							message.line + 1,
-							message.column
-						)
-						.bright_black()
-					);
+					match &message {
+						CMNMessageLog::Annotated { line, column, line_text, length, .. } => {
+							println!(
+								"{}",
+								format!(
+									" in {}:{}:{}\n",
+									filename,
+									line + 1,
+									column
+								)
+								.bright_black()
+							);
 
-					// Print code snippet
-					println!(
-						"{} {}",
-						format!("{}\t{}", message.line + 1, "|").bright_black(),
-						message.line_text
-					);
+							// Print code snippet
+							println!(
+								"{} {}",
+								format!("{}\t{}", line + 1, "|").bright_black(),
+								line_text
+							);
 
-					// Print squiggle
-					print!("\t{: <1$}", "", message.column + 1);
-					println!("{:~<1$}", "", message.length);
+							// Print squiggle
+							print!("\t{: <1$}", "", column + 1);
+							println!("{:~<1$}", "", length);
+						}
 
-					let notes = message.error.get_notes();
+						CMNMessageLog::Plain { .. } => {
+							println!(
+								"{}",
+								format!(
+									" in {}\n",
+									filename,
+								)
+								.bright_black()
+							)
+						}
+					}
+
+					let notes = msg.get_notes();
 
 					for note in notes {
 						println!("{} {}\n", "note:".bold().italic(), note.italic());
 					}
 
 					// Print compiler backtrace
-					if let CMNMessage::Error(err) = &message.error {
+					if let CMNMessage::Error(err) = &msg {
 						if backtrace_on_error {
 							println!("\ncompiler backtrace:\n\n{:?}", err.origin);
 						}
