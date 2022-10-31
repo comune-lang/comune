@@ -17,7 +17,7 @@ use super::types::Type;
 use crate::{
 	cir::analyze::borrowck::LivenessState,
 	parser::Parser,
-	semantic::{expression::Operator, namespace::Identifier},
+	semantic::{expression::Operator, namespace::Identifier, ast::TokenData},
 };
 
 lazy_static! {
@@ -28,6 +28,7 @@ lazy_static! {
 pub struct CMNError {
 	pub code: CMNErrorCode,
 	pub origin: Backtrace,
+	pub notes: Vec<(Option<TokenData>, String)>,
 }
 
 impl CMNError {
@@ -36,7 +37,13 @@ impl CMNError {
 		CMNError {
 			code,
 			origin: Backtrace::new(),
+			notes: vec![],
 		}
+	}
+
+	pub fn with_note(mut self, note: String, location: Option<TokenData>) -> Self {
+		self.notes.push((location, note));
+		self
 	}
 
 	pub fn new_with_parser(code: CMNErrorCode, _parser: &Parser) -> Self {
@@ -44,6 +51,7 @@ impl CMNError {
 		CMNError {
 			code,
 			origin: Backtrace::new(),
+			notes: vec![],
 		}
 	}
 }
@@ -231,33 +239,10 @@ impl Display for CMNWarning {
 }
 
 impl CMNMessage {
-	pub fn get_notes(&self) -> Vec<String> {
+	pub fn get_notes(&self) -> &Vec<(Option<TokenData>, String)> {
 		match self {
-			CMNMessage::Error(e) => e.code.get_notes(),
-			CMNMessage::Warning(w) => w.get_notes(),
-		}
-	}
-}
-
-impl CMNErrorCode {
-	pub fn get_notes(&self) -> Vec<String> {
-		match self {
-			_ => vec![],
-		}
-	}
-}
-
-impl CMNWarning {
-	pub fn get_notes(&self) -> Vec<String> {
-		match self {
-			CMNWarning::OK => vec!["(how did you trigger this warning???)".into()],
-
-			CMNWarning::CharPtrNoNull => vec![
-				"strings passed to C/C++ functions should end with '\\0'".into(),
-				"if you're the author of this function, consider taking a `str` parameter instead"
-					.into(),
-			],
-			//_ => vec![],
+			CMNMessage::Error(e) => &e.notes,
+			CMNMessage::Warning(_) => todo!(), // CMNError and CMNWarning are probably gonna get merged into one enum
 		}
 	}
 }
@@ -349,7 +334,7 @@ pub fn spawn_logger(backtrace_on_error: bool) -> Sender<CMNMessageLog> {
 					let notes = msg.get_notes();
 
 					for note in notes {
-						println!("{} {}\n", "note:".bold().italic(), note.italic());
+						println!("{} {}\n", "note:".bold().italic(), note.1.italic());
 					}
 
 					// Print compiler backtrace

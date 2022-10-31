@@ -75,8 +75,7 @@ fn main() -> color_eyre::eyre::Result<()> {
 			Identifier::from_name(args.input_file.clone().to_string_lossy().into(), true),
 			error_sender,
 			s,
-		)
-		.unwrap();
+		);
 	});
 
 	if errors::ERROR_COUNT.load(Ordering::Acquire) > 0 {

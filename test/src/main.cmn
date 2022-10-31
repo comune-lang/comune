@@ -25,13 +25,19 @@ impl Test {
 	}
 }
 
+struct Vec<T> {
+	T* data;
+	usize len;
+	usize capacity;
+}
+
 int main() {
 	printf("This is main()!\n\0");
 	
 	Test test;
 
 	// nope - use of uninitialized variable test
-	test.sum();
+	//test.sum();
 
 	test = Test { 
 		a: 60, 
@@ -39,7 +45,7 @@ int main() {
 	};
 
 	int cool = test.a;
-	//test.a = cool;
+	test.a = cool;
 
 	return test.sum();
 }
