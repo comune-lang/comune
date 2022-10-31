@@ -157,7 +157,7 @@ impl CIRModuleBuilder {
 			}
 
 			Type::Pointer(pointee) => CIRType::Pointer(Box::new(self.convert_type(pointee))),
-			
+
 			Type::Reference(refee) => CIRType::Reference(Box::new(self.convert_type(refee))),
 
 			Type::Array(arr_ty, size) => {
@@ -527,7 +527,10 @@ impl CIRModuleBuilder {
 
 						mem_lval.projection.push(PlaceElem::Field(indices[i]));
 
-						self.write(CIRStmt::Assignment((mem_lval, (0, 0)), (mem_expr, elems[i].2)))
+						self.write(CIRStmt::Assignment(
+							(mem_lval, (0, 0)),
+							(mem_expr, elems[i].2),
+						))
 					}
 
 					RValue::Atom(cir_ty, None, Operand::LValue(tmp))

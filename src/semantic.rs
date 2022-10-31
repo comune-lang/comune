@@ -10,7 +10,7 @@ use crate::{
 	constexpr::{ConstEval, ConstExpr},
 	errors::{CMNError, CMNErrorCode},
 	lexer::Token,
-	parser::{ASTResult, ParseResult},
+	parser::{AnalyzeResult, ParseResult},
 };
 
 use self::{
@@ -122,7 +122,7 @@ pub fn validate_function(
 	sym_elem: &RefCell<NamespaceASTElem>,
 	namespace: &RefCell<Namespace>,
 	root: &RefCell<Namespace>,
-) -> ASTResult<()> {
+) -> AnalyzeResult<()> {
 	let mut scope;
 	let ret;
 
@@ -184,7 +184,7 @@ pub fn validate_fn_call(
 	params: &Vec<(Type, Option<Name>)>,
 	scope: &FnScope,
 	meta: TokenData,
-) -> ASTResult<Type> {
+) -> AnalyzeResult<Type> {
 	if args.len() == params.len() {
 		for i in 0..args.len() {
 			args[i].type_info.replace(Some(params[i].0.clone()));
@@ -227,7 +227,7 @@ pub fn validate_fn_call(
 pub fn validate_namespace(
 	namespace: &RefCell<Namespace>,
 	root_namespace: &RefCell<Namespace>,
-) -> ASTResult<()> {
+) -> AnalyzeResult<()> {
 	for c in &namespace.borrow().children {
 		match &c.1 .0 {
 			// Validate child namespace
@@ -270,7 +270,7 @@ pub fn resolve_type(
 ) -> ParseResult<()> {
 	match ty {
 		Type::Pointer(ref mut pointee) => resolve_type(pointee, namespace, root),
-		
+
 		Type::Reference(ref mut refee) => resolve_type(refee, namespace, root),
 
 		Type::Array(ref mut pointee, _size) => resolve_type(pointee, namespace, root),
@@ -359,7 +359,7 @@ pub fn resolve_type_def(
 pub fn resolve_namespace_types(
 	namespace: &RefCell<Namespace>,
 	root: &RefCell<Namespace>,
-) -> ASTResult<()> {
+) -> AnalyzeResult<()> {
 	for child in &namespace.borrow().children {
 		if let NamespaceItem::Namespace(ref ns) = child.1 .0 {
 			resolve_namespace_types(ns, root)?;
@@ -401,7 +401,7 @@ pub fn resolve_namespace_types(
 pub fn check_cyclical_deps(
 	ty: &Arc<RwLock<TypeDef>>,
 	parent_types: &mut Vec<Arc<RwLock<TypeDef>>>,
-) -> ASTResult<()> {
+) -> AnalyzeResult<()> {
 	if let TypeDef::Algebraic(agg, _) = &*ty.as_ref().read().unwrap() {
 		for member in agg.items.iter() {
 			match &member.1 .0 {
@@ -435,7 +435,7 @@ pub fn check_cyclical_deps(
 	Ok(())
 }
 
-pub fn check_namespace_cyclical_deps(namespace: &Namespace) -> ASTResult<()> {
+pub fn check_namespace_cyclical_deps(namespace: &Namespace) -> AnalyzeResult<()> {
 	for item in &namespace.children {
 		match &item.1 .0 {
 			NamespaceItem::Type(ty) => check_cyclical_deps(&ty, &mut vec![])?,
@@ -446,7 +446,10 @@ pub fn check_namespace_cyclical_deps(namespace: &Namespace) -> ASTResult<()> {
 	Ok(())
 }
 
-pub fn register_impls(namespace: &RefCell<Namespace>, root: &RefCell<Namespace>) -> ASTResult<()> {
+pub fn register_impls(
+	namespace: &RefCell<Namespace>,
+	root: &RefCell<Namespace>,
+) -> AnalyzeResult<()> {
 	let mut impls_remapped = HashMap::new();
 
 	for im in &namespace.borrow().impls {
@@ -502,7 +505,7 @@ pub fn register_impls(namespace: &RefCell<Namespace>, root: &RefCell<Namespace>)
 
 impl ASTElem {
 	// Recursively validate ASTNode types and check if blocks have matching return types
-	pub fn validate(&self, scope: &mut FnScope, ret: &Type) -> ASTResult<Option<Type>> {
+	pub fn validate(&self, scope: &mut FnScope, ret: &Type) -> AnalyzeResult<Option<Type>> {
 		let result = match &self.node {
 			ASTNode::Block(elems) => {
 				let mut subscope = FnScope::from_parent(scope);
@@ -725,7 +728,7 @@ impl Expr {
 		scope: &'ctx FnScope<'ctx>,
 		goal_t: Option<&Type>,
 		meta: TokenData,
-	) -> ASTResult<Type> {
+	) -> AnalyzeResult<Type> {
 		// Validate Atom or sub-expressions
 		match self {
 			Expr::Atom(a, _) => a.validate(scope, goal_t, meta),
@@ -830,14 +833,19 @@ impl Expr {
 								match goal_t {
 									// Default to creating a reference, unless explicitly asking for a pointer
 									Some(Type::Pointer(_)) => Ok(first_t.ptr_type()),
-									
-									_ => Ok(first_t.ref_type()), 
+
+									_ => Ok(first_t.ref_type()),
 								}
 							}
-							
+
 							Operator::Deref => match first_t {
 								Type::Pointer(t) | Type::Reference(t) => Ok(*t.clone()),
-								_ => return Err((CMNError::new(CMNErrorCode::InvalidDeref(first_t)), *meta)),
+								_ => {
+									return Err((
+										CMNError::new(CMNErrorCode::InvalidDeref(first_t)),
+										*meta,
+									))
+								}
 							},
 
 							Operator::Eq
@@ -912,7 +920,7 @@ impl Expr {
 		&mut self,
 		scope: &'ctx FnScope<'ctx>,
 		meta: TokenData,
-	) -> ASTResult<Type> {
+	) -> AnalyzeResult<Type> {
 		match self {
 			Expr::Atom(a, _) => {
 				a.validate(scope, None, meta)?;
@@ -932,7 +940,7 @@ impl Expr {
 							elems[0].1 = Some(Type::Reference(t.clone()));
 							Ok(*t)
 						}
-						
+
 						other => Err((CMNError::new(CMNErrorCode::InvalidDeref(other)), meta)),
 					}
 				}
@@ -1032,7 +1040,7 @@ impl Expr {
 									}
 
 									_ => {}
-								}
+								},
 								_ => {}
 							}
 						}
@@ -1051,7 +1059,7 @@ impl Atom {
 		scope: &'ctx FnScope<'ctx>,
 		goal_t: Option<&Type>,
 		meta: TokenData,
-	) -> ASTResult<Type> {
+	) -> AnalyzeResult<Type> {
 		match self {
 			Atom::IntegerLit(_, t) => {
 				if let Some(t) = t {
@@ -1205,7 +1213,7 @@ impl Atom {
 		to: &Type,
 		_scope: &FnScope,
 		_meta: &TokenData,
-	) -> ASTResult<()> {
+	) -> AnalyzeResult<()> {
 		match from {
 			Type::Basic(b) => match b {
 				Basic::STR => {
@@ -1237,7 +1245,7 @@ impl Atom {
 		}
 	}
 
-	pub fn get_lvalue_type<'ctx>(&self, scope: &'ctx FnScope<'ctx>) -> ASTResult<Type> {
+	pub fn get_lvalue_type<'ctx>(&self, scope: &'ctx FnScope<'ctx>) -> AnalyzeResult<Type> {
 		match self {
 			Atom::Identifier(id) => match scope.find_symbol(id) {
 				Some(t) => return Ok(t.1),
@@ -1252,7 +1260,11 @@ impl Atom {
 }
 
 impl Type {
-	pub fn validate<'ctx>(&self, scope: &'ctx FnScope<'ctx>, _meta: TokenData) -> ASTResult<()> {
+	pub fn validate<'ctx>(
+		&self,
+		scope: &'ctx FnScope<'ctx>,
+		_meta: TokenData,
+	) -> AnalyzeResult<()> {
 		match self {
 			Type::Array(_, n) => {
 				// Old fashioned way to make life easier with the RefCell

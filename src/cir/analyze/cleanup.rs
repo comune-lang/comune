@@ -1,11 +1,17 @@
 // cleanup passes - remove no-ops etc
 use super::CIRPassMut;
-use crate::cir::{CIRFunction, CIRStmt, Operand, RValue};
+use crate::{
+	cir::{CIRFunction, CIRStmt, Operand, RValue},
+	errors::CMNError,
+	lexer::Lexer,
+	parser::AnalyzeResult,
+	semantic::ast::TokenData,
+};
 
 pub struct RemoveNoOps;
 
 impl CIRPassMut for RemoveNoOps {
-	fn on_function(&self, func: &mut CIRFunction) {
+	fn on_function(&self, func: &mut CIRFunction) -> Vec<(CMNError, TokenData)> {
 		let mut indices = vec![];
 
 		for i in 0..func.blocks.len() {
@@ -23,6 +29,8 @@ impl CIRPassMut for RemoveNoOps {
 		for (i, j) in indices {
 			func.blocks[i].remove(j);
 		}
+
+		vec![]
 	}
 }
 

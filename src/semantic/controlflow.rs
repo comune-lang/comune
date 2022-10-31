@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use crate::parser::ASTResult;
+use crate::parser::AnalyzeResult;
 
 use super::{
 	ast::ASTElem,
@@ -37,7 +37,7 @@ pub enum ControlFlow {
 }
 
 impl Typed for ControlFlow {
-	fn get_type<'ctx>(&self, scope: &'ctx FnScope<'ctx>) -> ASTResult<Type> {
+	fn get_type<'ctx>(&self, scope: &'ctx FnScope<'ctx>) -> AnalyzeResult<Type> {
 		match self {
 			ControlFlow::If {
 				cond: _,

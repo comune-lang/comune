@@ -6,7 +6,7 @@ use std::sync::{Arc, RwLock, Weak};
 
 use super::namespace::{Identifier, Name, Namespace, NamespaceEntry, NamespaceItem};
 use crate::constexpr::ConstExpr;
-use crate::parser::ASTResult;
+use crate::parser::AnalyzeResult;
 use crate::semantic::FnScope;
 
 pub type BoxedType = Box<Type>;
@@ -15,7 +15,7 @@ pub type TypeParam = Vec<Identifier>; // Generic type parameter, with trait boun
 pub type TypeParamList = HashMap<Name, Arc<RwLock<TypeDef>>>;
 
 pub trait Typed {
-	fn get_type<'ctx>(&self, scope: &'ctx FnScope<'ctx>) -> ASTResult<Type>;
+	fn get_type<'ctx>(&self, scope: &'ctx FnScope<'ctx>) -> AnalyzeResult<Type>;
 }
 
 #[derive(Debug)]

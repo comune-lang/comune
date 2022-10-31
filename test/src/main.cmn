@@ -34,7 +34,7 @@ int main() {
 	};
 
 	int cool = test.a;
-	test.a = cool;
+	//test.a = cool;
 
 	return test.sum();
 }

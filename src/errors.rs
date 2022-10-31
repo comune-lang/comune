@@ -1,18 +1,24 @@
+use colored::Colorize;
 use std::{
 	ffi::OsString,
 	fmt::Display,
 	sync::{
 		atomic::{AtomicU32, Ordering},
-		Arc, mpsc::{Sender, self},
-	}, thread,
+		mpsc::{self, Sender},
+		Arc,
+	},
+	thread,
 };
-use colored::Colorize;
 
 use backtrace::Backtrace;
 use lazy_static::lazy_static;
 
 use super::types::Type;
-use crate::{parser::Parser, semantic::expression::Operator};
+use crate::{
+	cir::analyze::borrowck::LivenessState,
+	parser::Parser,
+	semantic::{expression::Operator, namespace::Identifier},
+};
 
 lazy_static! {
 	pub(crate) static ref ERROR_COUNT: Arc<AtomicU32> = Arc::new(AtomicU32::new(0));
@@ -65,15 +71,37 @@ pub enum CMNErrorCode {
 	UndeclaredIdentifier(String),
 	UnresolvedTypename(String),
 	ExprTypeMismatch(Type, Type, Operator),
-	AssignTypeMismatch { expr: Type, to: Type },
-	InvalidCast { from: Type, to: Type },
-	InvalidCoercion { from: Type, to: Type },
-	InvalidMemberAccess { t: Type, idx: String },
-	InvalidSubscriptLHS { t: Type },
-	InvalidSubscriptRHS { t: Type },
+	AssignTypeMismatch {
+		expr: Type,
+		to: Type,
+	},
+	InvalidCast {
+		from: Type,
+		to: Type,
+	},
+	InvalidCoercion {
+		from: Type,
+		to: Type,
+	},
+	InvalidMemberAccess {
+		t: Type,
+		idx: String,
+	},
+	InvalidSubscriptLHS {
+		t: Type,
+	},
+	InvalidSubscriptRHS {
+		t: Type,
+	},
 	InvalidLValue,
-	ReturnTypeMismatch { expected: Type, got: Type },
-	ParamCountMismatch { expected: usize, got: usize },
+	ReturnTypeMismatch {
+		expected: Type,
+		got: Type,
+	},
+	ParamCountMismatch {
+		expected: usize,
+		got: usize,
+	},
 	NotCallable(String),
 	InvalidDeref(Type),
 	InfiniteSizeType,
@@ -84,7 +112,17 @@ pub enum CMNErrorCode {
 	// Code generation errors
 	LLVMError,
 
+	// Borrowck errors
+	InvalidUse {
+		variable: Identifier,
+		state: LivenessState,
+	},
+
+	// Packaged-up collection of errors as a single Err
+	Pack(Vec<CMNError>),
+
 	// Misc
+	Custom(String),
 	Unimplemented,
 	Other,
 }
@@ -157,6 +195,23 @@ impl Display for CMNErrorCode {
 
 			CMNErrorCode::LLVMError => write!(f, "an internal compiler error occurred"),
 
+			CMNErrorCode::InvalidUse { variable, state } => {
+				write!(
+					f,
+					"use of {} variable {variable}",
+					match state {
+						LivenessState::Uninit => "uninitialized",
+						LivenessState::Live => "live (how did you trigger this error??)",
+						LivenessState::Moved => "moved",
+						LivenessState::PartialMoved => "partially-moved",
+						LivenessState::Dropped => "dropped",
+					}
+				)
+			}
+
+			CMNErrorCode::Pack(vec) => write!(f, "encountered {} errors", vec.len()),
+
+			CMNErrorCode::Custom(text) => write!(f, "{text}"),
 			CMNErrorCode::Unimplemented => write!(f, "not yet implemented"),
 			CMNErrorCode::Other => write!(f, "an unknown error occurred"),
 		}
@@ -216,7 +271,6 @@ pub struct CMNErrorLog {
 	pub length: usize,
 }
 
-
 pub fn spawn_logger(backtrace_on_error: bool) -> Sender<CMNErrorLog> {
 	let (sender, receiver) = mpsc::channel::<CMNErrorLog>();
 
@@ -227,10 +281,18 @@ pub fn spawn_logger(backtrace_on_error: bool) -> Sender<CMNErrorLog> {
 					// Print message
 					match message.error {
 						CMNMessage::Error(_) => {
-							print!("\n{}: {}", "error".bold().red(), message.error.to_string().bold());
+							print!(
+								"\n{}: {}",
+								"error".bold().red(),
+								message.error.to_string().bold()
+							);
 						}
 						CMNMessage::Warning(_) => {
-							print!("\n{}: {}", "warning".bold().yellow(), message.error.to_string().bold())
+							print!(
+								"\n{}: {}",
+								"warning".bold().yellow(),
+								message.error.to_string().bold()
+							)
 						}
 					}
 
@@ -258,7 +320,7 @@ pub fn spawn_logger(backtrace_on_error: bool) -> Sender<CMNErrorLog> {
 					println!("{:~<1$}", "", message.length);
 
 					let notes = message.error.get_notes();
-					
+
 					for note in notes {
 						println!("{} {}\n", "note:".bold().italic(), note.italic());
 					}
@@ -269,13 +331,13 @@ pub fn spawn_logger(backtrace_on_error: bool) -> Sender<CMNErrorLog> {
 							println!("\ncompiler backtrace:\n\n{:?}", err.origin);
 						}
 					}
-				},
+				}
 
 				// All channels closed
 				Err(_) => break,
 			}
 		}
 	});
-	
+
 	sender
 }

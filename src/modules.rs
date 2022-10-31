@@ -2,7 +2,7 @@ use std::{
 	ffi::{OsStr, OsString},
 	fs,
 	path::{Path, PathBuf},
-	sync::{Arc, Mutex, mpsc::Sender},
+	sync::{mpsc::Sender, Arc, Mutex},
 };
 
 use colored::Colorize;
@@ -11,13 +11,13 @@ use rayon::prelude::*;
 
 use crate::{
 	cir::{
-		analyze::{cleanup, verify, CIRPassManager, borrowck},
+		analyze::{borrowck, cleanup, verify, CIRPassManager},
 		builder::CIRModuleBuilder,
 	},
-	errors::{CMNError, CMNErrorCode, CMNMessage, CMNErrorLog},
+	errors::{CMNError, CMNErrorCode, CMNErrorLog, CMNMessage},
 	lexer::Lexer,
 	llvm::{self, LLVMBackend},
-	parser::{ASTResult, Parser},
+	parser::{AnalyzeResult, Parser},
 	semantic::{
 		self,
 		namespace::{Identifier, Namespace},
@@ -61,14 +61,15 @@ pub fn launch_module_compilation<'scope>(
 		.borrow()
 		.referenced_modules
 		.clone();
-	
+
 	let sender_lock = Mutex::new(error_sender);
 
 	let imports = module_names
 		.into_par_iter()
 		.map(|name| {
 			let error_sender = sender_lock.lock().unwrap().clone();
-			let module_interface = launch_module_compilation(state.clone(), name.clone(), error_sender, s);
+			let module_interface =
+				launch_module_compilation(state.clone(), name.clone(), error_sender, s);
 			(name, module_interface.unwrap())
 		})
 		.collect();
@@ -155,7 +156,11 @@ pub fn get_out_folder(state: &Arc<ManagerState>) -> PathBuf {
 	result
 }
 
-pub fn parse_interface(state: &Arc<ManagerState>, path: &Path, error_sender: Sender<CMNErrorLog>) -> Result<ModuleState, CMNError> {
+pub fn parse_interface(
+	state: &Arc<ManagerState>,
+	path: &Path,
+	error_sender: Sender<CMNErrorLog>,
+) -> Result<ModuleState, CMNError> {
 	// First phase of module compilation: create Lexer and Parser, and parse the module at the namespace level
 
 	let mut mod_state = ModuleState {
@@ -204,7 +209,7 @@ pub fn parse_interface(state: &Arc<ManagerState>, path: &Path, error_sender: Sen
 	};
 }
 
-pub fn resolve_types(state: &Arc<ManagerState>, mod_state: &mut ModuleState) -> ASTResult<()> {
+pub fn resolve_types(state: &Arc<ManagerState>, mod_state: &mut ModuleState) -> AnalyzeResult<()> {
 	let root = mod_state.parser.current_namespace();
 
 	// At this point, all imports have been resolved, so validate namespace-level types
@@ -280,7 +285,23 @@ pub fn generate_code<'ctx>(
 	cir_man.add_mut_pass(cleanup::RemoveNoOps);
 	cir_man.add_mut_pass(borrowck::BorrowCheck);
 	cir_man.add_pass(verify::Verify);
-	cir_man.run_on_module(&mut cir_module);
+
+	let cir_errors = cir_man.run_on_module(&mut cir_module);
+
+	if !cir_errors.is_empty() {
+		let mut return_errors = vec![];
+
+		for error in cir_errors {
+			return_errors.push(error.0.clone());
+			mod_state.parser.lexer.borrow().log_msg_at(
+				error.1 .0,
+				error.1 .1,
+				CMNMessage::Error(error.0),
+			);
+		}
+
+		return Err(CMNError::new(CMNErrorCode::Pack(return_errors)));
+	}
 
 	// Write cIR to file
 	fs::write(

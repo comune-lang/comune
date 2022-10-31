@@ -1,5 +1,5 @@
 use crate::{
-	parser::ASTResult,
+	parser::AnalyzeResult,
 	semantic::{
 		expression::{Atom, Expr, Operator},
 		types::Basic,
@@ -25,11 +25,11 @@ pub enum ConstValue {
 }
 
 pub trait ConstEval {
-	fn eval_const(&self, scope: &FnScope) -> ASTResult<ConstValue>;
+	fn eval_const(&self, scope: &FnScope) -> AnalyzeResult<ConstValue>;
 }
 
 impl ConstEval for Expr {
-	fn eval_const(&self, scope: &FnScope) -> ASTResult<ConstValue> {
+	fn eval_const(&self, scope: &FnScope) -> AnalyzeResult<ConstValue> {
 		match self {
 			Expr::Atom(a, _) => a.eval_const(scope),
 
@@ -155,7 +155,7 @@ impl ConstEval for Expr {
 }
 
 impl ConstEval for Atom {
-	fn eval_const(&self, _scope: &FnScope) -> ASTResult<ConstValue> {
+	fn eval_const(&self, _scope: &FnScope) -> AnalyzeResult<ConstValue> {
 		match self {
 			Atom::IntegerLit(i, b) => Ok(ConstValue::Integral(*i, b.clone())),
 			Atom::FloatLit(f, b) => Ok(ConstValue::Float(*f, b.clone())),

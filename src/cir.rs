@@ -1,12 +1,13 @@
 #![allow(dead_code)]
 
-use std::{collections::HashMap, sync::RwLock, hash::Hash};
+use std::{collections::HashMap, hash::Hash, sync::RwLock};
 
 use crate::semantic::{
+	ast::TokenData,
 	expression::Operator,
 	namespace::{Identifier, Name},
 	types::{Basic, DataLayout},
-	Attribute, ast::TokenData,
+	Attribute,
 };
 
 pub mod analyze;
@@ -42,7 +43,13 @@ impl PartialEq for PlaceElem {
 	fn eq(&self, other: &Self) -> bool {
 		match self {
 			PlaceElem::Deref => matches!(other, PlaceElem::Deref),
-			PlaceElem::Field(idx) => if let PlaceElem::Field(other_idx) = other { idx == other_idx } else { false }
+			PlaceElem::Field(idx) => {
+				if let PlaceElem::Field(other_idx) = other {
+					idx == other_idx
+				} else {
+					false
+				}
+			}
 			PlaceElem::Index(_) => matches!(other, PlaceElem::Index(_)),
 		}
 	}

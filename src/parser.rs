@@ -26,7 +26,7 @@ fn token_compare(token: &Token, text: &str) -> bool {
 }
 
 pub type ParseResult<T> = Result<T, CMNError>;
-pub type ASTResult<T> = Result<T, (CMNError, TokenData)>;
+pub type AnalyzeResult<T> = Result<T, (CMNError, TokenData)>;
 
 pub struct Parser {
 	active_namespace: Option<RefCell<Namespace>>,

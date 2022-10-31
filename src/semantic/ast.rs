@@ -6,7 +6,7 @@ use super::expression::{Atom, Expr};
 use super::namespace::Name;
 use super::types::{Basic, Type, Typed};
 use super::FnScope;
-use crate::parser::ASTResult;
+use crate::parser::AnalyzeResult;
 
 pub type TokenData = (usize, usize); // idx, len
 
@@ -125,7 +125,7 @@ impl Display for ASTElem {
 }
 
 impl ASTNode {
-	fn get_type(&self, scope: &FnScope, t: Option<&Type>, meta: TokenData) -> ASTResult<Type> {
+	fn get_type(&self, scope: &FnScope, t: Option<&Type>, meta: TokenData) -> AnalyzeResult<Type> {
 		match self {
 			ASTNode::Block(elems) => {
 				let subscope = FnScope::from_parent(scope);
@@ -147,7 +147,7 @@ impl ASTNode {
 }
 
 impl Typed for ASTElem {
-	fn get_type(&self, scope: &FnScope) -> ASTResult<Type> {
+	fn get_type(&self, scope: &FnScope) -> AnalyzeResult<Type> {
 		self.node
 			.get_type(scope, self.type_info.borrow().as_ref(), self.token_data)
 	}

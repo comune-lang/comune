@@ -5,7 +5,7 @@ use std::io::{self, Error, Read};
 use std::path::Path;
 use std::sync::mpsc::Sender;
 
-use crate::errors::{CMNMessage, CMNErrorLog};
+use crate::errors::{CMNErrorLog, CMNMessage};
 
 use crate::semantic::namespace::Identifier;
 
@@ -46,7 +46,7 @@ static KEYWORDS: [&'static str; 31] = [
 static OPERATORS: [&str; 37] = [
 	"+", "-", "/", "*", "%", "^", "|", "||", "&", "&&", "=", "==", "/=", "*=", "+=", "-=", "%=",
 	"&=", "|=", "^=", "++", "--", "->", "(", ")", "[", "]", ".", "::", "<", ">", "<=", ">=", "!=",
-	"<<", ">>", "as" // yeah `as` is technically an operator lol
+	"<<", ">>", "as", // yeah `as` is technically an operator lol
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -123,7 +123,10 @@ pub struct Lexer {
 }
 
 impl Lexer {
-	pub fn new<P: AsRef<Path>>(path: P, error_logger: Sender<CMNErrorLog>) -> std::io::Result<Lexer> {
+	pub fn new<P: AsRef<Path>>(
+		path: P,
+		error_logger: Sender<CMNErrorLog>,
+	) -> std::io::Result<Lexer> {
 		let mut result = Lexer {
 			file_buffer: String::new(),
 			file_index: 0usize,
@@ -545,15 +548,16 @@ impl Lexer {
 			let line = self.get_line_number(char_idx);
 			let column = self.get_column(char_idx);
 
-			self.error_logger.send(CMNErrorLog {
-				error: e,
-				line_text: self.get_line(line).to_string(),
-				filename: self.file_name.to_string_lossy().into_owned(),
-				line,
-				column,
-				length: token_len,
-			}).unwrap();
-
+			self.error_logger
+				.send(CMNErrorLog {
+					error: e,
+					line_text: self.get_line(line).to_string(),
+					filename: self.file_name.to_string_lossy().into_owned(),
+					line,
+					column,
+					length: token_len,
+				})
+				.unwrap();
 		} else {
 			println!(
 				"\n[error]\t{} \n[note]\tno error metadata found, can't display error location",
