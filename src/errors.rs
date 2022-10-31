@@ -260,8 +260,10 @@ pub enum CMNMessageLog {
 
 	Plain {
 		msg: CMNMessage,
-		filename: String
-	}
+		filename: String,
+	},
+
+	Raw(String),
 }
 
 pub fn spawn_logger(backtrace_on_error: bool) -> Sender<CMNMessageLog> {
@@ -270,9 +272,12 @@ pub fn spawn_logger(backtrace_on_error: bool) -> Sender<CMNMessageLog> {
 	thread::spawn(move || {
 		loop {
 			match receiver.recv() {
+				Ok(CMNMessageLog::Raw(text)) => print!("{}", text),
+
 				Ok(message) => {
 					let (msg, filename) = match &message { 
-						CMNMessageLog::Annotated { msg, filename, .. } | CMNMessageLog::Plain { msg, filename, .. } => (msg, filename) 
+						CMNMessageLog::Annotated { msg, filename, .. } | CMNMessageLog::Plain { msg, filename, .. } => (msg, filename),
+						_ => panic!(),
 					};
 
 					// Print message
@@ -323,12 +328,14 @@ pub fn spawn_logger(backtrace_on_error: bool) -> Sender<CMNMessageLog> {
 							println!(
 								"{}",
 								format!(
-									" in {}\n",
+									" in {}",
 									filename,
 								)
 								.bright_black()
 							)
-						}
+						},
+						
+						_ => panic!()
 					}
 
 					let notes = msg.get_notes();

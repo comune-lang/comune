@@ -11,7 +11,7 @@ use crate::semantic::controlflow::ControlFlow;
 use crate::semantic::expression::{Atom, Expr, Operator};
 use crate::semantic::namespace::{Identifier, Namespace, NamespaceASTElem, NamespaceItem};
 use crate::semantic::types::{
-	AlgebraicDef, Basic, FnDef, FnParamList, TraitDef, TraitImpl, Type, TypeDef, Visibility,
+	AlgebraicDef, Basic, FnDef, FnParamList, TraitDef, TraitImpl, Type, TypeDef, Visibility, TypeParam, TypeParamList,
 };
 use crate::semantic::Attribute;
 
@@ -204,6 +204,12 @@ impl Parser {
 
 							if let Token::Identifier(name) = name_token {
 								let mut next = self.get_next()?;
+
+								if token_compare(&next, "<") {
+									let generics = self.parse_type_parameter_list()?;
+									
+									next = self.get_current()?;
+								}
 
 								if !token_compare(&next, "{") {
 									return Err(self.err(CMNErrorCode::UnexpectedToken));
@@ -1597,6 +1603,66 @@ impl Parser {
 			}
 			self.get_next()?;
 		}
+
+		Ok(result)
+	}
+
+	fn parse_type_parameter_list(&self) -> ParseResult<TypeParamList> {
+		if !token_compare(&self.get_current()?, "<") {
+			return Err(self.err(CMNErrorCode::UnexpectedToken));
+		}
+
+		let mut result = HashMap::new();
+		let mut current = self.get_next()?;
+
+		loop {
+			match &current {
+
+				Token::Identifier(name) => {
+					let name = name.expect_scopeless()?.clone();
+					let mut traits = vec![];
+					
+					current = self.get_next()?;
+
+					if let Token::Other(':') = current {
+						current = self.get_next()?;
+
+						// Collect trait bounds
+						while let Token::Identifier(tr) = current {
+							traits.push(tr);
+
+							current = self.get_next()?;
+							
+							match current {
+								Token::Operator("+") => current = self.get_next()?,
+
+								Token::Other(',') => { break }
+
+								_ => return Err(self.err(CMNErrorCode::UnexpectedToken)),
+							}
+						}
+					}
+
+					result.insert(name, Arc::new(RwLock::new(TypeDef::Generic(traits))));
+
+					match &current {
+						Token::Operator(">") => continue,
+						Token::Other(',') => { current = self.get_next()?; continue }
+
+						_ => return Err(self.err(CMNErrorCode::UnexpectedToken)),
+					}
+				}
+
+				Token::Operator(">") => break,
+
+				_ => {
+					return Err(self.err(CMNErrorCode::UnexpectedToken));
+				}
+			}
+		}
+
+		self.get_next()?;
+
 
 		Ok(result)
 	}

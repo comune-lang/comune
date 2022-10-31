@@ -316,11 +316,8 @@ pub fn resolve_type_def(
 		TypeDef::Algebraic(ref mut agg, _) => {
 			for item in &mut agg.items {
 				match &mut item.1 .0 {
-					NamespaceItem::Variable(t, _) => resolve_type(t, &namespace, root).unwrap(),
-					NamespaceItem::Type(t) => {
-						resolve_type_def(&mut t.write().unwrap(), &vec![], &namespace, root)
-							.unwrap()
-					}
+					NamespaceItem::Variable(t, _) => resolve_type(t, &namespace, root)?,
+					NamespaceItem::Type(t) => resolve_type_def(&mut t.write().unwrap(), &vec![], &namespace, root)?,
 					_ => (),
 				}
 			}
@@ -340,7 +337,7 @@ pub fn resolve_type_def(
 				}
 
 				if let Token::Identifier(layout_name) = &layout.args[0][0] {
-					agg.layout = match &**layout_name.expect_scopeless().unwrap() {
+					agg.layout = match &**layout_name.expect_scopeless()? {
 						"declared" => types::DataLayout::Declared,
 						"optimized" => types::DataLayout::Optimized,
 						"packed" => types::DataLayout::Packed,
@@ -359,7 +356,7 @@ pub fn resolve_type_def(
 pub fn resolve_namespace_types(
 	namespace: &RefCell<Namespace>,
 	root: &RefCell<Namespace>,
-) -> AnalyzeResult<()> {
+) -> ParseResult<()> {
 	for child in &namespace.borrow().children {
 		if let NamespaceItem::Namespace(ref ns) = child.1 .0 {
 			resolve_namespace_types(ns, root)?;
@@ -374,10 +371,10 @@ pub fn resolve_namespace_types(
 			match &child.1 .0 {
 				NamespaceItem::Function(ty, _) => {
 					if let TypeDef::Function(FnDef { ret, args, .. }) = &mut *ty.write().unwrap() {
-						resolve_type(ret, &namespace, root).unwrap();
+						resolve_type(ret, &namespace, root)?;
 
 						for arg in args {
-							resolve_type(&mut arg.0, &namespace, root).unwrap();
+							resolve_type(&mut arg.0, &namespace, root)?;
 						}
 					}
 				}
@@ -385,8 +382,7 @@ pub fn resolve_namespace_types(
 				NamespaceItem::Namespace(_) => {}
 
 				NamespaceItem::Type(t) => {
-					resolve_type_def(&mut *t.write().unwrap(), &child.1 .1, &namespace, root)
-						.unwrap()
+					resolve_type_def(&mut *t.write().unwrap(), &child.1 .1, &namespace, root)?
 				}
 
 				NamespaceItem::Alias(_) => {}
@@ -401,7 +397,7 @@ pub fn resolve_namespace_types(
 pub fn check_cyclical_deps(
 	ty: &Arc<RwLock<TypeDef>>,
 	parent_types: &mut Vec<Arc<RwLock<TypeDef>>>,
-) -> AnalyzeResult<()> {
+) -> ParseResult<()> {
 	if let TypeDef::Algebraic(agg, _) = &*ty.as_ref().read().unwrap() {
 		for member in agg.items.iter() {
 			match &member.1 .0 {
@@ -413,7 +409,7 @@ pub fn check_cyclical_deps(
 							.find(|elem| Arc::ptr_eq(elem, &ref_t.upgrade().unwrap()))
 							.is_some()
 						{
-							return Err((CMNError::new(CMNErrorCode::InfiniteSizeType), (0, 0)));
+							return Err(CMNError::new(CMNErrorCode::InfiniteSizeType));
 						}
 
 						parent_types.push(ty.clone());
@@ -435,7 +431,7 @@ pub fn check_cyclical_deps(
 	Ok(())
 }
 
-pub fn check_namespace_cyclical_deps(namespace: &Namespace) -> AnalyzeResult<()> {
+pub fn check_namespace_cyclical_deps(namespace: &Namespace) -> ParseResult<()> {
 	for item in &namespace.children {
 		match &item.1 .0 {
 			NamespaceItem::Type(ty) => check_cyclical_deps(&ty, &mut vec![])?,
@@ -449,7 +445,7 @@ pub fn check_namespace_cyclical_deps(namespace: &Namespace) -> AnalyzeResult<()>
 pub fn register_impls(
 	namespace: &RefCell<Namespace>,
 	root: &RefCell<Namespace>,
-) -> AnalyzeResult<()> {
+) -> ParseResult<()> {
 	let mut impls_remapped = HashMap::new();
 
 	for im in &namespace.borrow().impls {
@@ -470,11 +466,10 @@ pub fn register_impls(
 									if let TypeDef::Function(FnDef { ret, args, .. }) =
 										&mut *func.write().unwrap()
 									{
-										resolve_type(ret, &namespace.borrow(), root).unwrap();
+										resolve_type(ret, &namespace.borrow(), root)?;
 
 										for arg in args {
-											resolve_type(&mut arg.0, &namespace.borrow(), root)
-												.unwrap();
+											resolve_type(&mut arg.0, &namespace.borrow(), root)?;
 										}
 									}
 
@@ -494,8 +489,9 @@ pub fn register_impls(
 						impls_remapped.insert(id.clone(), this_impl);
 					}
 				}
+				Ok(())
 			})
-			.unwrap();
+			.unwrap()?;
 	}
 
 	root.borrow_mut().impls = impls_remapped;

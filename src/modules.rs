@@ -17,7 +17,7 @@ use crate::{
 	errors::{CMNError, CMNErrorCode, CMNMessageLog, CMNMessage},
 	lexer::Lexer,
 	llvm::{self, LLVMBackend},
-	parser::{AnalyzeResult, Parser},
+	parser::{AnalyzeResult, Parser, ParseResult},
 	semantic::{
 		self,
 		namespace::{Identifier, Namespace},
@@ -76,7 +76,13 @@ pub fn launch_module_compilation<'scope>(
 
 	mod_state.parser.current_namespace().borrow_mut().imported = imports;
 
-	resolve_types(&state, &mut mod_state).unwrap();
+	match resolve_types(&state, &mut mod_state) {
+		Ok(_) => {},
+		Err(e) => {
+			mod_state.parser.lexer.borrow().log_msg_at(0, 0, CMNMessage::Error(e.clone()));
+			return Err(e);
+		}
+	};
 
 	let interface = mod_state.parser.current_namespace().borrow().clone();
 
@@ -211,7 +217,7 @@ pub fn parse_interface(
 	};
 }
 
-pub fn resolve_types(state: &Arc<ManagerState>, mod_state: &mut ModuleState) -> AnalyzeResult<()> {
+pub fn resolve_types(state: &Arc<ManagerState>, mod_state: &mut ModuleState) -> ParseResult<()> {
 	let root = mod_state.parser.current_namespace();
 
 	// At this point, all imports have been resolved, so validate namespace-level types

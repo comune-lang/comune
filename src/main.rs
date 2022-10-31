@@ -70,20 +70,25 @@ fn main() -> color_eyre::eyre::Result<()> {
 	let error_sender = errors::spawn_logger(args.backtrace);
 
 	rayon::in_place_scope(|s| {
-		modules::launch_module_compilation(
+		let _ = modules::launch_module_compilation(
 			manager_state.clone(),
 			Identifier::from_name(args.input_file.clone().to_string_lossy().into(), true),
-			error_sender,
+			error_sender.clone(),
 			s,
 		);
 	});
 
+	
+
 	if errors::ERROR_COUNT.load(Ordering::Acquire) > 0 {
-		println!(
-			"\n{:>10} build due to {} previous error(s)\n",
-			"aborted".bold().red(),
-			errors::ERROR_COUNT.load(Ordering::Acquire)
-		);
+		error_sender.send(errors::CMNMessageLog::Raw(
+			format!(
+				"\n{:>10} build due to {} previous error(s)\n\n",
+				"aborted".bold().red(),
+				errors::ERROR_COUNT.load(Ordering::Acquire)
+			)
+		)).unwrap();
+
 		return Ok(());
 	}
 
