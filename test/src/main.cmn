@@ -25,7 +25,7 @@ impl Test {
 	}
 }
 
-struct Vec<T> {
+struct Vector<T> {
 	T* data;
 	usize len;
 	usize capacity;
@@ -34,10 +34,11 @@ struct Vec<T> {
 int main() {
 	printf("This is main()!\n\0");
 	
-	Test test;
+	Vector<int> my_cool_generic;
 
-	// nope - use of uninitialized variable test
-	//test.sum();
+
+	// Borrowck stuff
+	Test test;
 
 	test = Test { 
 		a: 60, 

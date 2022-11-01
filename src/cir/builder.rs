@@ -144,7 +144,7 @@ impl CIRModuleBuilder {
 		match ty {
 			Type::Basic(basic) => CIRType::Basic(basic.clone()),
 
-			Type::TypeRef(def, _) => {
+			Type::TypeRef { def, params, .. } => {
 				if let Some(ty_ref) = self.type_map.get(ty) {
 					CIRType::TypeRef(*ty_ref)
 				} else {

@@ -18,7 +18,7 @@ use self::{
 	controlflow::ControlFlow,
 	expression::{Atom, Expr, Operator},
 	namespace::{Identifier, Name, Namespace, NamespaceASTElem, NamespaceItem},
-	types::FnDef,
+	types::{FnDef, TypeParamList},
 };
 
 pub mod ast;
@@ -103,7 +103,11 @@ impl<'ctx> FnScope<'ctx> {
 				if let NamespaceItem::Function(fn_type, _) = &item.0 {
 					result = Some((
 						id.clone(),
-						Type::TypeRef(Arc::downgrade(fn_type), id.clone()),
+						Type::TypeRef {
+							def: Arc::downgrade(fn_type), 
+							name: id.clone(),
+							params: vec![]
+						}
 					));
 				}
 			});
@@ -267,13 +271,14 @@ pub fn resolve_type(
 	ty: &mut Type,
 	namespace: &Namespace,
 	root: &RefCell<Namespace>,
+	generics: &TypeParamList,
 ) -> ParseResult<()> {
 	match ty {
-		Type::Pointer(ref mut pointee) => resolve_type(pointee, namespace, root),
+		Type::Pointer(ref mut pointee) => resolve_type(pointee, namespace, root, generics),
 
-		Type::Reference(ref mut refee) => resolve_type(refee, namespace, root),
+		Type::Reference(ref mut refee) => resolve_type(refee, namespace, root, generics),
 
-		Type::Array(ref mut pointee, _size) => resolve_type(pointee, namespace, root),
+		Type::Array(ref mut pointee, _size) => resolve_type(pointee, namespace, root, generics),
 
 		Type::Unresolved(ref id) => {
 			let mut found = false;
@@ -284,10 +289,19 @@ pub fn resolve_type(
 					*ty = Type::Basic(b);
 					found = true;
 				}
+			} else if !id.is_qualified() && generics.contains_key(id.name()) {
+				// Generic type parameter
+				*ty = Type::TypeRef { 
+					def: Arc::downgrade(generics.get(id.name()).unwrap()), 
+					name: id.clone(),
+					params: vec![],
+				};
+
+				found = true;
 			} else {
 				namespace.with_item(&id.clone(), &root.borrow(), |item, id| {
 					if let NamespaceItem::Type(t) = &item.0 {
-						*ty = Type::TypeRef(Arc::downgrade(t), id.clone());
+						*ty = Type::TypeRef { def: Arc::downgrade(t), name: id.clone(), params: vec![] };
 						found = true;
 					}
 				});
@@ -302,7 +316,7 @@ pub fn resolve_type(
 			}
 		}
 
-		Type::TypeRef(..) | Type::Basic(_) => Ok(()),
+		Type::TypeRef { .. } | Type::Basic(_) => Ok(()),
 	}
 }
 
@@ -311,13 +325,23 @@ pub fn resolve_type_def(
 	attributes: &Vec<Attribute>,
 	namespace: &Namespace,
 	root: &RefCell<Namespace>,
+	base_generics: &TypeParamList,
 ) -> ParseResult<()> {
 	match ty {
-		TypeDef::Algebraic(ref mut agg, _) => {
+		TypeDef::Algebraic(agg, agg_generics) => {
+			let mut generics = base_generics.clone();
+			generics.extend(agg_generics.clone());
+
 			for item in &mut agg.items {
 				match &mut item.1 .0 {
-					NamespaceItem::Variable(t, _) => resolve_type(t, &namespace, root)?,
-					NamespaceItem::Type(t) => resolve_type_def(&mut t.write().unwrap(), &vec![], &namespace, root)?,
+					NamespaceItem::Variable(t, _) => resolve_type(t, &namespace, root, &generics)?,
+					NamespaceItem::Type(t) => resolve_type_def(
+						&mut t.write().unwrap(),
+						&vec![],
+						&namespace,
+						root,
+						&generics,
+					)?,
 					_ => (),
 				}
 			}
@@ -370,20 +394,29 @@ pub fn resolve_namespace_types(
 		for child in &namespace.children {
 			match &child.1 .0 {
 				NamespaceItem::Function(ty, _) => {
-					if let TypeDef::Function(FnDef { ret, args, .. }) = &mut *ty.write().unwrap() {
-						resolve_type(ret, &namespace, root)?;
+					if let TypeDef::Function(FnDef {
+						ret,
+						args,
+						generics,
+					}) = &mut *ty.write().unwrap()
+					{
+						resolve_type(ret, &namespace, root, &generics)?;
 
 						for arg in args {
-							resolve_type(&mut arg.0, &namespace, root)?;
+							resolve_type(&mut arg.0, &namespace, root, &generics)?;
 						}
 					}
 				}
 
 				NamespaceItem::Namespace(_) => {}
 
-				NamespaceItem::Type(t) => {
-					resolve_type_def(&mut *t.write().unwrap(), &child.1 .1, &namespace, root)?
-				}
+				NamespaceItem::Type(t) => resolve_type_def(
+					&mut *t.write().unwrap(),
+					&child.1 .1,
+					&namespace,
+					root,
+					&HashMap::new(),
+				)?,
 
 				NamespaceItem::Alias(_) => {}
 
@@ -402,7 +435,7 @@ pub fn check_cyclical_deps(
 		for member in agg.items.iter() {
 			match &member.1 .0 {
 				NamespaceItem::Variable(t, _) => {
-					if let Type::TypeRef(ref_t, _) = &t {
+					if let Type::TypeRef { def: ref_t, .. } = &t {
 						// Check if
 						if parent_types
 							.iter()
@@ -463,13 +496,21 @@ pub fn register_impls(
 							match &elem.1 .0 {
 								NamespaceItem::Function(func, ast) => {
 									// Resolve function types
-									if let TypeDef::Function(FnDef { ret, args, .. }) =
-										&mut *func.write().unwrap()
+									if let TypeDef::Function(FnDef {
+										ret,
+										args,
+										generics,
+									}) = &mut *func.write().unwrap()
 									{
-										resolve_type(ret, &namespace.borrow(), root)?;
+										resolve_type(ret, &namespace.borrow(), root, generics)?;
 
 										for arg in args {
-											resolve_type(&mut arg.0, &namespace.borrow(), root)?;
+											resolve_type(
+												&mut arg.0,
+												&namespace.borrow(),
+												root,
+												generics,
+											)?;
 										}
 									}
 
@@ -890,7 +931,7 @@ impl Expr {
 				Atom::Identifier(i) => scope.find_symbol(i).unwrap().1 == *target,
 
 				Atom::FnCall { name, .. } => match scope.find_symbol(name).unwrap() {
-					(_, Type::TypeRef(r, _)) => {
+					(_, Type::TypeRef { def: r, .. }) => {
 						if let TypeDef::Function(FnDef { ret, .. }) =
 							&*r.upgrade().unwrap().as_ref().read().unwrap()
 						{
@@ -942,7 +983,7 @@ impl Expr {
 				}
 
 				Operator::MemberAccess => {
-					if let Type::TypeRef(r, t_id) = elems[0].0.validate_lvalue(scope, meta).unwrap()
+					if let Type::TypeRef { def: r, name: t_id, .. } = elems[0].0.validate_lvalue(scope, meta).unwrap()
 					{
 						if let (lhs, [rhs, ..]) = elems.split_first_mut().unwrap() {
 							match &mut *r.upgrade().unwrap().write().unwrap() {
@@ -951,7 +992,7 @@ impl Expr {
 									// Member access on algebraic type
 									Expr::Atom(Atom::Identifier(ref mut id), _) => {
 										if let Some((_, m)) = t.get_member(id.name()) {
-											lhs.1 = Some(Type::TypeRef(r.clone(), t_id.clone()));
+											lhs.1 = Some(Type::TypeRef { def: r.clone(), name: t_id.clone(), params: vec![] });
 											rhs.1 = Some(m.clone());
 											return Ok(m.clone());
 										}
@@ -988,7 +1029,11 @@ impl Expr {
 														)),
 														token_data: (0, 0),
 														type_info: RefCell::new(Some(
-															Type::TypeRef(r.clone(), t_id.clone()),
+															Type::TypeRef { 
+																def: r.clone(), 
+																name: t_id.clone(), 
+																params: vec![],
+															},
 														)),
 													},
 												);
@@ -1002,10 +1047,11 @@ impl Expr {
 												) {
 													Ok(res) => {
 														// Method call OK
-														lhs.1 = Some(Type::TypeRef(
-															r.clone(),
-															t_id.clone(),
-														));
+														lhs.1 = Some(Type::TypeRef {
+															def: r.clone(),
+															name: t_id.clone(),
+															params: vec![],
+														});
 														rhs.1 = Some(ret.clone());
 
 														let method_name = name.path.pop().unwrap();
@@ -1128,7 +1174,7 @@ impl Atom {
 			}
 
 			Atom::FnCall { name, args, ret } => {
-				if let Some((full_id, Type::TypeRef(t, _))) = scope.find_symbol(name) {
+				if let Some((full_id, Type::TypeRef { def: t, .. })) = scope.find_symbol(name) {
 					if let TypeDef::Function(FnDef {
 						ret: t_ret,
 						args: params,
@@ -1158,8 +1204,8 @@ impl Atom {
 			Atom::ArrayLit(_) => todo!(),
 
 			Atom::AlgebraicLit(ty, elems) => {
-				if let Type::TypeRef(alg, _) = ty {
-					if let TypeDef::Algebraic(alg, _) = &*alg.upgrade().unwrap().read().unwrap() {
+				if let Type::TypeRef{ def, .. } = ty {
+					if let TypeDef::Algebraic(alg, _) = &*def.upgrade().unwrap().read().unwrap() {
 						for elem in elems {
 							let member_ty =
 								if let Some((_, ty)) = alg.get_member(elem.0.as_ref().unwrap()) {

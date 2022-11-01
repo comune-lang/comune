@@ -17,7 +17,7 @@ use super::types::Type;
 use crate::{
 	cir::analyze::borrowck::LivenessState,
 	parser::Parser,
-	semantic::{expression::Operator, namespace::Identifier, ast::TokenData},
+	semantic::{ast::TokenData, expression::Operator, namespace::Identifier},
 };
 
 lazy_static! {
@@ -275,19 +275,16 @@ pub fn spawn_logger(backtrace_on_error: bool) -> Sender<CMNMessageLog> {
 				Ok(CMNMessageLog::Raw(text)) => print!("{}", text),
 
 				Ok(message) => {
-					let (msg, filename) = match &message { 
-						CMNMessageLog::Annotated { msg, filename, .. } | CMNMessageLog::Plain { msg, filename, .. } => (msg, filename),
+					let (msg, filename) = match &message {
+						CMNMessageLog::Annotated { msg, filename, .. }
+						| CMNMessageLog::Plain { msg, filename, .. } => (msg, filename),
 						_ => panic!(),
 					};
 
 					// Print message
 					match msg {
 						CMNMessage::Error(_) => {
-							print!(
-								"\n{}: {}",
-								"error".bold().red(),
-								msg.to_string().bold()
-							);
+							print!("\n{}: {}", "error".bold().red(), msg.to_string().bold());
 						}
 						CMNMessage::Warning(_) => {
 							print!(
@@ -300,16 +297,17 @@ pub fn spawn_logger(backtrace_on_error: bool) -> Sender<CMNMessageLog> {
 
 					// Print file:row:column
 					match &message {
-						CMNMessageLog::Annotated { line, column, line_text, length, .. } => {
+						CMNMessageLog::Annotated {
+							line,
+							column,
+							line_text,
+							length,
+							..
+						} => {
 							println!(
 								"{}",
-								format!(
-									" in {}:{}:{}\n",
-									filename,
-									line + 1,
-									column
-								)
-								.bright_black()
+								format!(" in {}:{}:{}\n", filename, line + 1, column)
+									.bright_black()
 							);
 
 							// Print code snippet
@@ -325,17 +323,10 @@ pub fn spawn_logger(backtrace_on_error: bool) -> Sender<CMNMessageLog> {
 						}
 
 						CMNMessageLog::Plain { .. } => {
-							println!(
-								"{}",
-								format!(
-									" in {}",
-									filename,
-								)
-								.bright_black()
-							)
-						},
-						
-						_ => panic!()
+							println!("{}", format!(" in {}", filename,).bright_black())
+						}
+
+						_ => panic!(),
 					}
 
 					let notes = msg.get_notes();

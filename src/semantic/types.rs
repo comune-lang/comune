@@ -63,13 +63,19 @@ unsafe impl Send for Type {}
 
 #[derive(Clone)]
 pub enum Type {
-	Basic(Basic),                                  // Fundamental type
-	Pointer(BoxedType),                            // Pointer-to-<BoxedType>
-	Reference(BoxedType),                          // Reference-to-<BoxedType>
-	Array(BoxedType, Arc<RwLock<Vec<ConstExpr>>>), // N-dimensional array with constant expression for size
-	TypeRef(Weak<RwLock<TypeDef>>, Identifier), // User-defined type ptr, plus Identifier for serialization
-
-	Unresolved(Identifier), // Unresolved type (during parsing phase)
+	Basic(Basic),                                   // Fundamental type
+	Pointer(BoxedType),                             // Pointer-to-<BoxedType>
+	Reference(BoxedType),                           // Reference-to-<BoxedType>
+	Array(BoxedType, Arc<RwLock<Vec<ConstExpr>>>),  // N-dimensional array with constant expression for size
+	
+	// User-defined type ptr, plus Identifier for serialization
+	TypeRef {
+		def: Weak<RwLock<TypeDef>>, 
+		name: Identifier,
+		params: Vec<Type>,
+	},
+	
+	Unresolved(Identifier),                         // Unresolved type (during parsing phase)
 }
 
 #[derive(Debug)]
@@ -348,8 +354,8 @@ impl PartialEq for Type {
 			(Self::Pointer(l0), Self::Pointer(r0)) => l0 == r0,
 			(Self::Reference(l0), Self::Reference(r0)) => l0 == r0,
 			(Self::Unresolved(l0), Self::Unresolved(r0)) => l0 == r0,
-			(Self::TypeRef(l0, l1), Self::TypeRef(r0, r1)) => {
-				Arc::ptr_eq(&l0.upgrade().unwrap(), &r0.upgrade().unwrap()) && l1 == r1
+			(Self::TypeRef { def: l0, name: l1, params: l2 }, Self::TypeRef { def: r0, name: r1, params: r2 }) => {
+				Arc::ptr_eq(&l0.upgrade().unwrap(), &r0.upgrade().unwrap()) && l1 == r1 && l2 == r2
 			}
 			_ => false,
 		}
@@ -375,7 +381,10 @@ impl Hash for Type {
 				"+".hash(state)
 			}
 			Type::Unresolved(id) => id.hash(state),
-			Type::TypeRef(r, _) => ptr::hash(r.upgrade().unwrap().as_ref(), state),
+			Type::TypeRef { def, params, .. } => {
+				ptr::hash(def.upgrade().unwrap().as_ref(), state);
+				params.hash(state);
+			}
 		}
 	}
 }
@@ -393,7 +402,21 @@ impl Display for Type {
 
 			Type::Unresolved(t) => write!(f, "unresolved type \"{}\"", t),
 
-			Type::TypeRef(_, id) => write!(f, "{}", id),
+			Type::TypeRef { name, params, .. } => {
+				if params.is_empty() {
+					write!(f, "{name}")
+				} else {					
+					let mut iter = params.iter();
+
+					write!(f, "{name}<{}", iter.next().unwrap())?;
+
+					for param in iter {
+						write!(f, ", {param}")?;
+					}
+
+					write!(f, ">")
+				}
+			}
 		}
 	}
 }
@@ -456,7 +479,7 @@ impl std::fmt::Debug for Type {
 			Self::Reference(_) => f.debug_tuple("Reference").finish(),
 			Self::Array(t, _) => f.debug_tuple("Array").field(t).finish(),
 			Self::Unresolved(arg0) => f.debug_tuple("Unresolved").field(arg0).finish(),
-			Self::TypeRef(arg0, _) => f.debug_tuple("TypeRef").field(arg0).finish(),
+			Self::TypeRef { def: arg0, .. } => f.debug_tuple("TypeRef").field(arg0).finish(),
 		}
 	}
 }

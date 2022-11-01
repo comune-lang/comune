@@ -14,10 +14,10 @@ use crate::{
 		analyze::{borrowck, cleanup, verify, CIRPassManager},
 		builder::CIRModuleBuilder,
 	},
-	errors::{CMNError, CMNErrorCode, CMNMessageLog, CMNMessage},
+	errors::{CMNError, CMNErrorCode, CMNMessage, CMNMessageLog},
 	lexer::Lexer,
 	llvm::{self, LLVMBackend},
-	parser::{AnalyzeResult, Parser, ParseResult},
+	parser::{AnalyzeResult, ParseResult, Parser},
 	semantic::{
 		self,
 		namespace::{Identifier, Namespace},
@@ -62,7 +62,7 @@ pub fn launch_module_compilation<'scope>(
 		.referenced_modules
 		.clone();
 
-	let sender_lock = Mutex::new(error_sender);
+	let sender_lock = Mutex::new(error_sender.clone());
 
 	let imports = module_names
 		.into_par_iter()
@@ -77,9 +77,13 @@ pub fn launch_module_compilation<'scope>(
 	mod_state.parser.current_namespace().borrow_mut().imported = imports;
 
 	match resolve_types(&state, &mut mod_state) {
-		Ok(_) => {},
+		Ok(_) => {}
 		Err(e) => {
-			mod_state.parser.lexer.borrow().log_msg_at(0, 0, CMNMessage::Error(e.clone()));
+			mod_state
+				.parser
+				.lexer
+				.borrow()
+				.log_msg_at(0, 0, CMNMessage::Error(e.clone()));
 			return Err(e);
 		}
 	};
@@ -95,7 +99,16 @@ pub fn launch_module_compilation<'scope>(
 
 		let result = match generate_code(&state, &mut mod_state, &context, &input_module) {
 			Ok(res) => res,
-			Err(_) => { println!("\n{:>10} compiling {}", "failed".bold().red(), src_name.bold()); return },
+			Err(_) => {
+				error_sender
+					.send(CMNMessageLog::Raw(format!(
+						"\n{:>10} compiling {}\n",
+						"failed".bold().red(),
+						src_name.bold()
+					)))
+					.unwrap();
+				return;
+			}
 		};
 
 		let target_machine = llvm::get_target_machine();
@@ -110,11 +123,7 @@ pub fn launch_module_compilation<'scope>(
 			.write_to_file(&result.module, FileType::Object, &out_path)
 			.unwrap();
 
-		println!(
-			"{:>10} {}",
-			"finished".bold().green(),
-			out_name
-		);
+		println!("{:>10} {}", "finished".bold().green(), out_name);
 	});
 
 	Ok(interface)

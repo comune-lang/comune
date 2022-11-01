@@ -7,7 +7,7 @@ use std::sync::mpsc::Sender;
 
 use colored::Colorize;
 
-use crate::errors::{CMNMessageLog, CMNMessage};
+use crate::errors::{CMNMessage, CMNMessageLog};
 
 use crate::semantic::namespace::Identifier;
 

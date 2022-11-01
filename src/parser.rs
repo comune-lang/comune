@@ -11,7 +11,8 @@ use crate::semantic::controlflow::ControlFlow;
 use crate::semantic::expression::{Atom, Expr, Operator};
 use crate::semantic::namespace::{Identifier, Namespace, NamespaceASTElem, NamespaceItem};
 use crate::semantic::types::{
-	AlgebraicDef, Basic, FnDef, FnParamList, TraitDef, TraitImpl, Type, TypeDef, Visibility, TypeParam, TypeParamList,
+	AlgebraicDef, Basic, FnDef, FnParamList, TraitDef, TraitImpl, Type, TypeDef, TypeParam,
+	TypeParamList, Visibility,
 };
 use crate::semantic::Attribute;
 
@@ -200,14 +201,15 @@ impl Parser {
 							// Register algebraic type
 							let mut current_visibility = Visibility::Public;
 							let mut aggregate = AlgebraicDef::new();
+							let mut generics = HashMap::new();
 							let name_token = self.get_next()?;
 
 							if let Token::Identifier(name) = name_token {
 								let mut next = self.get_next()?;
 
 								if token_compare(&next, "<") {
-									let generics = self.parse_type_parameter_list()?;
-									
+									generics = self.parse_type_parameter_list()?;
+
 									next = self.get_current()?;
 								}
 
@@ -268,7 +270,7 @@ impl Parser {
 
 								self.get_next()?; // Consume closing brace
 
-								let aggregate = TypeDef::Algebraic(aggregate, HashMap::new());
+								let aggregate = TypeDef::Algebraic(aggregate, generics);
 
 								self.current_namespace().borrow_mut().children.insert(
 									name.expect_scopeless()?.clone(),
@@ -1165,7 +1167,7 @@ impl Parser {
 			Token::Identifier(name) => {
 				result = None;
 
-				if let Some(Type::TypeRef(ty, id)) = self.find_type(&name) {
+				if let Some(Type::TypeRef { def: ty, name: id, .. }) = self.find_type(&name) {
 					match &*ty.upgrade().unwrap().read().unwrap() {
 						// Parse with algebraic typename
 						TypeDef::Algebraic(_, _) => {
@@ -1199,7 +1201,7 @@ impl Parser {
 									self.get_next()?;
 
 									result = Some(Atom::AlgebraicLit(
-										Type::TypeRef(ty.clone(), id.clone()),
+										Type::TypeRef { def: ty.clone(), name: id.clone(), params: vec![] },
 										inits,
 									));
 								}
@@ -1308,7 +1310,7 @@ impl Parser {
 		let mut result = None;
 		ctx.with_item(&typename, root, |item, id| match &item.0 {
 			NamespaceItem::Type(t) | NamespaceItem::Function(t, _) => {
-				result = Some(Type::TypeRef(Arc::downgrade(t), id.clone()))
+				result = Some(Type::TypeRef { def: Arc::downgrade(t), name: id.clone(), params: vec![] })
 			}
 
 			_ => {}
@@ -1458,7 +1460,11 @@ impl Parser {
 				} else {
 					ctx.with_item(&typename, root, |item, id| {
 						if let NamespaceItem::Type(t) = &item.0 {
-							result = Type::TypeRef(Arc::downgrade(t), id.clone());
+							result = Type::TypeRef{
+								def: Arc::downgrade(t), 
+								name: id.clone(),
+								params: vec![],
+							};
 							found = true;
 						}
 					});
@@ -1510,23 +1516,31 @@ impl Parser {
 						"<" => {
 							self.get_next()?;
 
-							//let generic = self.parse_type()?;
-							//result.generics.push(generic);
+							loop {
+								let generic = self.parse_type(true)?;
+							
+								if let Type::TypeRef { params, .. } = &mut result {
+									params.push(generic);
+								} else {
+									panic!("can't apply type parameters to this type of Type!") // TODO: Real error handling
+								}
 
-							while self.get_current()? == Token::Other(',') {
-								self.get_next()?;
-
-								//let generic = self.parse_type()?;
-								//result.generics.push(generic);
+								if self.get_current()? == Token::Other(',') { 
+									self.get_next()?; 
+								} else { 
+									break;
+								}
+								
 							}
 
-							// assert token == '>'
 							if self.get_current()? != Token::Operator(">") {
 								return Err(self.err(CMNErrorCode::UnexpectedToken));
 							}
-							// consume >
+
+							// consume closing angle bracket
 							self.get_next()?;
 						}
+
 						_ => {
 							//
 							return Ok(result);
@@ -1617,11 +1631,10 @@ impl Parser {
 
 		loop {
 			match &current {
-
 				Token::Identifier(name) => {
 					let name = name.expect_scopeless()?.clone();
 					let mut traits = vec![];
-					
+
 					current = self.get_next()?;
 
 					if let Token::Other(':') = current {
@@ -1632,11 +1645,11 @@ impl Parser {
 							traits.push(tr);
 
 							current = self.get_next()?;
-							
+
 							match current {
 								Token::Operator("+") => current = self.get_next()?,
 
-								Token::Other(',') => { break }
+								Token::Other(',') => break,
 
 								_ => return Err(self.err(CMNErrorCode::UnexpectedToken)),
 							}
@@ -1647,7 +1660,10 @@ impl Parser {
 
 					match &current {
 						Token::Operator(">") => continue,
-						Token::Other(',') => { current = self.get_next()?; continue }
+						Token::Other(',') => {
+							current = self.get_next()?;
+							continue;
+						}
 
 						_ => return Err(self.err(CMNErrorCode::UnexpectedToken)),
 					}
@@ -1662,7 +1678,6 @@ impl Parser {
 		}
 
 		self.get_next()?;
-
 
 		Ok(result)
 	}

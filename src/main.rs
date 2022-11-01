@@ -78,16 +78,14 @@ fn main() -> color_eyre::eyre::Result<()> {
 		);
 	});
 
-	
-
 	if errors::ERROR_COUNT.load(Ordering::Acquire) > 0 {
-		error_sender.send(errors::CMNMessageLog::Raw(
-			format!(
+		error_sender
+			.send(errors::CMNMessageLog::Raw(format!(
 				"\n{:>10} build due to {} previous error(s)\n\n",
 				"aborted".bold().red(),
 				errors::ERROR_COUNT.load(Ordering::Acquire)
-			)
-		)).unwrap();
+			)))
+			.unwrap();
 
 		return Ok(());
 	}
