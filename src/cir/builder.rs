@@ -60,8 +60,8 @@ impl CIRModuleBuilder {
 		for im in &namespace.impls {
 			for elem in im.1 {
 				match &elem.1 .0 {
-					NamespaceItem::Function(fn_type, _) => {
-						let cir_fn = self.generate_prototype(&*fn_type.read().unwrap(), vec![]);
+					NamespaceItem::Function(func, _) => {
+						let cir_fn = self.generate_prototype(&func.read().unwrap(), vec![]);
 
 						self.module.functions.insert(
 							Identifier::from_parent(im.0, elem.0.clone()),
@@ -84,8 +84,8 @@ impl CIRModuleBuilder {
 					self.register_namespace(&ns.as_ref().borrow(), root)
 				}
 
-				NamespaceItem::Function(ty, _) => {
-					let cir_fn = self.generate_prototype(&*ty.read().unwrap(), elem.1 .1.clone());
+				NamespaceItem::Function(func, _) => {
+					let cir_fn = self.generate_prototype(&func.read().unwrap(), elem.1 .1.clone());
 
 					self.module.functions.insert(
 						Identifier::from_parent(&namespace.path, elem.0.clone()),
@@ -181,7 +181,6 @@ impl CIRModuleBuilder {
 
 	fn convert_type_def(&mut self, def: &TypeDef) -> CIRTypeDef {
 		match def {
-			TypeDef::Function(..) => todo!(),
 			TypeDef::Algebraic(alg, _) => {
 				let mut members = vec![];
 				let variants = vec![];
@@ -218,27 +217,23 @@ impl CIRModuleBuilder {
 }
 
 impl CIRModuleBuilder {
-	pub fn generate_prototype(&mut self, ty: &TypeDef, attributes: Vec<Attribute>) -> CIRFunction {
-		if let TypeDef::Function(FnDef { ret, args, .. }) = ty {
-			self.current_fn = Some(CIRFunction {
-				variables: vec![],
-				blocks: vec![],
-				ret: self.convert_type(ret),
-				arg_count: args.len(),
-				attributes,
-				is_extern: true,
-			});
+	pub fn generate_prototype(&mut self, func: &FnDef, attributes: Vec<Attribute>) -> CIRFunction {
+		self.current_fn = Some(CIRFunction {
+			variables: vec![],
+			blocks: vec![],
+			ret: self.convert_type(&func.ret),
+			arg_count: func.args.len(),
+			attributes,
+			is_extern: true,
+		});
 
-			for param in args {
-				if let Some(name) = &param.1 {
-					self.insert_variable(name.clone(), param.0.clone());
-				}
+		for param in &func.args {
+			if let Some(name) = &param.1 {
+				self.insert_variable(name.clone(), param.0.clone());
 			}
-
-			self.current_fn.take().unwrap()
-		} else {
-			panic!()
 		}
+
+		self.current_fn.take().unwrap()
 	}
 
 	pub fn generate_function(&mut self, func: CIRFunction, fn_block: &ASTNode) -> CIRFunction {

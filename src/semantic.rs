@@ -103,11 +103,7 @@ impl<'ctx> FnScope<'ctx> {
 				if let NamespaceItem::Function(fn_type, _) = &item.0 {
 					result = Some((
 						id.clone(),
-						Type::TypeRef {
-							def: Arc::downgrade(fn_type), 
-							name: id.clone(),
-							params: vec![]
-						}
+						todo!(), // Implement function types
 					));
 				}
 			});
@@ -122,29 +118,22 @@ impl<'ctx> FnScope<'ctx> {
 }
 
 pub fn validate_function(
-	sym_type: &TypeDef,
-	sym_elem: &RefCell<NamespaceASTElem>,
+	func: &FnDef,
+	elem: &RefCell<NamespaceASTElem>,
 	namespace: &RefCell<Namespace>,
 	root: &RefCell<Namespace>,
 ) -> AnalyzeResult<()> {
 	let mut scope;
 	let ret;
 
-	if let TypeDef::Function(FnDef {
-		ret: fn_ret, args, ..
-	}) = sym_type
-	{
-		ret = fn_ret.clone();
-		scope = FnScope::new(namespace, root, ret.clone());
+	ret = func.ret.clone();
+	scope = FnScope::new(namespace, root, ret.clone());
 
-		for arg in args.iter() {
-			scope.add_variable(arg.0.clone(), arg.1.clone().unwrap())
-		}
-	} else {
-		panic!()
+	for arg in &func.args {
+		scope.add_variable(arg.0.clone(), arg.1.clone().unwrap())
 	}
 
-	if let NamespaceASTElem::Parsed(elem) = &mut *sym_elem.borrow_mut() {
+	if let NamespaceASTElem::Parsed(elem) = &mut *elem.borrow_mut() {
 		// Validate function block & get return type, make sure it matches the signature
 		let void = Type::Basic(Basic::VOID);
 		let ret_type = elem.validate(&mut scope, &ret)?;
@@ -238,12 +227,9 @@ pub fn validate_namespace(
 			NamespaceItem::Namespace(ns) => validate_namespace(ns, root_namespace)?,
 
 			// Validate function
-			NamespaceItem::Function(sym_type, sym_elem) => validate_function(
-				&sym_type.read().unwrap(),
-				sym_elem,
-				namespace,
-				root_namespace,
-			)?,
+			NamespaceItem::Function(func, elem) => {
+				validate_function(&func.read().unwrap(), elem, namespace, root_namespace)?
+			}
 
 			_ => {}
 		}
@@ -252,12 +238,9 @@ pub fn validate_namespace(
 	for im in &namespace.borrow().impls {
 		for item in im.1 {
 			match &item.1 .0 {
-				NamespaceItem::Function(sym_type, sym_elem) => validate_function(
-					&sym_type.read().unwrap(),
-					sym_elem,
-					namespace,
-					root_namespace,
-				)?,
+				NamespaceItem::Function(func, elem) => {
+					validate_function(&func.read().unwrap(), elem, namespace, root_namespace)?
+				}
 
 				_ => panic!(),
 			}
@@ -274,40 +257,41 @@ pub fn resolve_type(
 	generics: &TypeParamList,
 ) -> ParseResult<()> {
 	match ty {
-		Type::Pointer(ref mut pointee) => resolve_type(pointee, namespace, root, generics),
+		Type::Pointer(pointee) => resolve_type(pointee, namespace, root, generics),
 
-		Type::Reference(ref mut refee) => resolve_type(refee, namespace, root, generics),
+		Type::Reference(refee) => resolve_type(refee, namespace, root, generics),
 
-		Type::Array(ref mut pointee, _size) => resolve_type(pointee, namespace, root, generics),
+		Type::Array(pointee, _size) => resolve_type(pointee, namespace, root, generics),
 
 		Type::Unresolved(ref id) => {
-			let mut found = false;
 			let id = id.clone();
+
+			let mut result = None;
 
 			if let Some(b) = Basic::get_basic_type(id.name()) {
 				if !id.is_qualified() {
-					*ty = Type::Basic(b);
-					found = true;
+					result = Some(Type::Basic(b));
 				}
 			} else if !id.is_qualified() && generics.contains_key(id.name()) {
 				// Generic type parameter
-				*ty = Type::TypeRef { 
-					def: Arc::downgrade(generics.get(id.name()).unwrap()), 
+				result = Some(Type::TypeRef {
+					def: Arc::downgrade(generics.get(id.name()).unwrap()),
 					name: id.clone(),
 					params: vec![],
-				};
-
-				found = true;
+				});
 			} else {
 				namespace.with_item(&id.clone(), &root.borrow(), |item, id| {
 					if let NamespaceItem::Type(t) = &item.0 {
-						*ty = Type::TypeRef { def: Arc::downgrade(t), name: id.clone(), params: vec![] };
-						found = true;
+						result = Some(Type::TypeRef {
+							def: Arc::downgrade(t),
+							name: id.clone(),
+							params: vec![],
+						});
 					}
 				});
 			}
-
-			if found {
+			if let Some(result) = result {
+				*ty = result;
 				Ok(())
 			} else {
 				Err(CMNError::new(CMNErrorCode::UnresolvedTypename(
@@ -393,18 +377,17 @@ pub fn resolve_namespace_types(
 
 		for child in &namespace.children {
 			match &child.1 .0 {
-				NamespaceItem::Function(ty, _) => {
-					if let TypeDef::Function(FnDef {
+				NamespaceItem::Function(func, _) => {
+					let FnDef {
 						ret,
 						args,
 						generics,
-					}) = &mut *ty.write().unwrap()
-					{
-						resolve_type(ret, &namespace, root, &generics)?;
+					} = &mut *func.write().unwrap();
 
-						for arg in args {
-							resolve_type(&mut arg.0, &namespace, root, &generics)?;
-						}
+					resolve_type(ret, &namespace, root, &generics)?;
+
+					for arg in args {
+						resolve_type(&mut arg.0, &namespace, root, &generics)?;
 					}
 				}
 
@@ -494,30 +477,29 @@ pub fn register_impls(
 						for elem in im.1 {
 							// Match impl item
 							match &elem.1 .0 {
-								NamespaceItem::Function(func, ast) => {
+								NamespaceItem::Function(func_lock, ast) => {
 									// Resolve function types
-									if let TypeDef::Function(FnDef {
+									let FnDef {
 										ret,
 										args,
 										generics,
-									}) = &mut *func.write().unwrap()
-									{
-										resolve_type(ret, &namespace.borrow(), root, generics)?;
+									} = &mut *func_lock.write().unwrap();
 
-										for arg in args {
-											resolve_type(
-												&mut arg.0,
-												&namespace.borrow(),
-												root,
-												generics,
-											)?;
-										}
+									resolve_type(ret, &namespace.borrow(), root, &generics)?;
+
+									for arg in args {
+										resolve_type(
+											&mut arg.0,
+											&namespace.borrow(),
+											root,
+											&generics,
+										)?;
 									}
 
 									this_impl.insert(
 										elem.0.clone(),
 										(
-											NamespaceItem::Function(func.clone(), ast.clone()),
+											NamespaceItem::Function(func_lock.clone(), ast.clone()),
 											elem.1 .1.clone(),
 											None,
 										),
@@ -930,19 +912,13 @@ impl Expr {
 
 				Atom::Identifier(i) => scope.find_symbol(i).unwrap().1 == *target,
 
-				Atom::FnCall { name, .. } => match scope.find_symbol(name).unwrap() {
-					(_, Type::TypeRef { def: r, .. }) => {
-						if let TypeDef::Function(FnDef { ret, .. }) =
-							&*r.upgrade().unwrap().as_ref().read().unwrap()
-						{
-							*ret == *target
-						} else {
-							false
-						}
+				Atom::FnCall { ret, .. } => {
+					if let Some(ret) = ret {
+						*ret == *target
+					} else {
+						false
 					}
-
-					_ => panic!(),
-				},
+				}
 
 				Atom::Cast(_, cast_t) => *target == *cast_t,
 				Atom::AlgebraicLit(_, _) => todo!(),
@@ -964,61 +940,62 @@ impl Expr {
 				return a.get_lvalue_type(scope);
 			}
 
-			Expr::Cons(op, elems, _) => match op {
-				// Only these operators can result in lvalues
-				Operator::Deref => {
-					return match elems[0].0.validate(scope, None, meta).unwrap() {
-						Type::Pointer(t) => {
-							elems[0].1 = Some(Type::Pointer(t.clone()));
-							Ok(*t)
-						}
+			Expr::Cons(op, elems, _) => {
+				match op {
+					// Only these operators can result in lvalues
+					Operator::Deref => {
+						return match elems[0].0.validate(scope, None, meta).unwrap() {
+							Type::Pointer(t) => {
+								elems[0].1 = Some(Type::Pointer(t.clone()));
+								Ok(*t)
+							}
 
-						Type::Reference(t) => {
-							elems[0].1 = Some(Type::Reference(t.clone()));
-							Ok(*t)
-						}
+							Type::Reference(t) => {
+								elems[0].1 = Some(Type::Reference(t.clone()));
+								Ok(*t)
+							}
 
-						other => Err((CMNError::new(CMNErrorCode::InvalidDeref(other)), meta)),
+							other => Err((CMNError::new(CMNErrorCode::InvalidDeref(other)), meta)),
+						}
 					}
-				}
 
-				Operator::MemberAccess => {
-					if let Type::TypeRef { def: r, name: t_id, .. } = elems[0].0.validate_lvalue(scope, meta).unwrap()
-					{
-						if let (lhs, [rhs, ..]) = elems.split_first_mut().unwrap() {
-							match &mut *r.upgrade().unwrap().write().unwrap() {
-								// Dot operator is on an algebraic type, so check if it's a member access or method call
-								TypeDef::Algebraic(t, _) => match &mut rhs.0 {
-									// Member access on algebraic type
-									Expr::Atom(Atom::Identifier(ref mut id), _) => {
-										if let Some((_, m)) = t.get_member(id.name()) {
-											lhs.1 = Some(Type::TypeRef { def: r.clone(), name: t_id.clone(), params: vec![] });
-											rhs.1 = Some(m.clone());
-											return Ok(m.clone());
+					Operator::MemberAccess => {
+						if let Type::TypeRef {
+							def: r, name: t_id, ..
+						} = elems[0].0.validate_lvalue(scope, meta).unwrap()
+						{
+							if let (lhs, [rhs, ..]) = elems.split_first_mut().unwrap() {
+								match &mut *r.upgrade().unwrap().write().unwrap() {
+									// Dot operator is on an algebraic type, so check if it's a member access or method call
+									TypeDef::Algebraic(t, _) => match &mut rhs.0 {
+										// Member access on algebraic type
+										Expr::Atom(Atom::Identifier(ref mut id), _) => {
+											if let Some((_, m)) = t.get_member(id.name()) {
+												lhs.1 = Some(Type::TypeRef {
+													def: r.clone(),
+													name: t_id.clone(),
+													params: vec![],
+												});
+												rhs.1 = Some(m.clone());
+												return Ok(m.clone());
+											}
 										}
-									}
 
-									// Method call on algebraic type
-									Expr::Atom(Atom::FnCall { name, args, .. }, _) => {
-										// jesse. we have to call METHods
-										// TODO: Factor this out into a proper call resolution module
-										if let Some((
-											_,
-											(NamespaceItem::Function(method, _), _, _),
-										)) = scope
-											.root_namespace
-											.borrow()
-											.impls
-											.get(&t_id)
-											.unwrap_or(&HashMap::new())
-											.iter()
-											.find(|meth| meth.0 == name.name())
-										{
-											if let TypeDef::Function(FnDef {
-												ret,
-												args: params,
-												..
-											}) = &*method.read().unwrap()
+										// Method call on algebraic type
+										Expr::Atom(Atom::FnCall { name, args, .. }, _) => {
+											// jesse. we have to call METHods
+											// TODO: Factor this out into a proper call resolution module
+											if let Some((
+												_,
+												(NamespaceItem::Function(method, _), _, _),
+											)) = scope
+												.root_namespace
+												.borrow()
+												.impls
+												.get(&t_id)
+												.unwrap_or(&HashMap::new())
+												.iter()
+												.find(|meth| meth.0 == name.name())
 											{
 												// Insert `this` into the arg list
 												args.insert(
@@ -1029,19 +1006,21 @@ impl Expr {
 														)),
 														token_data: (0, 0),
 														type_info: RefCell::new(Some(
-															Type::TypeRef { 
-																def: r.clone(), 
-																name: t_id.clone(), 
+															Type::TypeRef {
+																def: r.clone(),
+																name: t_id.clone(),
 																params: vec![],
 															},
 														)),
 													},
 												);
 
+												let method = method.read().unwrap();
+
 												match validate_fn_call(
-													ret,
+													&method.ret,
 													&args,
-													params,
+													&method.args,
 													scope,
 													meta.clone(),
 												) {
@@ -1052,7 +1031,7 @@ impl Expr {
 															name: t_id.clone(),
 															params: vec![],
 														});
-														rhs.1 = Some(ret.clone());
+														rhs.1 = Some(method.ret.clone());
 
 														let method_name = name.path.pop().unwrap();
 														*name = t_id.clone();
@@ -1079,17 +1058,17 @@ impl Expr {
 												}
 											}
 										}
-									}
 
+										_ => {}
+									},
 									_ => {}
-								},
-								_ => {}
+								}
 							}
 						}
 					}
+					_ => {}
 				}
-				_ => {}
-			},
+			}
 		};
 		return Err((CMNError::new(CMNErrorCode::InvalidLValue), meta));
 	}
@@ -1174,37 +1153,40 @@ impl Atom {
 			}
 
 			Atom::FnCall { name, args, ret } => {
-				if let Some((full_id, Type::TypeRef { def: t, .. })) = scope.find_symbol(name) {
-					if let TypeDef::Function(FnDef {
-						ret: t_ret,
-						args: params,
-						..
-					}) = &*t.upgrade().unwrap().as_ref().read().unwrap()
-					{
-						// Identifier is a function, check parameter types
-						*ret = Some(validate_fn_call(t_ret, args, params, scope, meta.clone())?);
-						*name = full_id;
+				scope
+					.context
+					.borrow()
+					.with_item(name, &scope.root_namespace.borrow(), |item, _| {
+						if let NamespaceItem::Function(func, _) = &item.0 {
+							let func = func.read().unwrap();
 
-						Ok(ret.as_ref().unwrap().clone())
-					} else {
-						Err((
-							CMNError::new(CMNErrorCode::NotCallable(name.to_string())),
-							meta,
-						)) // Trying to call a non-function
-					}
-				} else {
-					Err((
+							*ret = Some(validate_fn_call(
+								&func.ret,
+								args,
+								&func.args,
+								scope,
+								meta.clone(),
+							)?);
+
+							Ok(ret.as_ref().unwrap().clone())
+						} else {
+							// Trying to call a non-function
+							Err((
+								CMNError::new(CMNErrorCode::NotCallable(name.to_string())),
+								meta,
+							))
+						}
+					})
+					.ok_or((
 						CMNError::new(CMNErrorCode::UndeclaredIdentifier(name.to_string())),
 						meta,
-					))
-					// Couldn't find symbol!
-				}
+					))?
 			}
 
 			Atom::ArrayLit(_) => todo!(),
 
 			Atom::AlgebraicLit(ty, elems) => {
-				if let Type::TypeRef{ def, .. } = ty {
+				if let Type::TypeRef { def, .. } = ty {
 					if let TypeDef::Algebraic(alg, _) = &*def.upgrade().unwrap().read().unwrap() {
 						for elem in elems {
 							let member_ty =

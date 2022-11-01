@@ -13,7 +13,7 @@ use crate::{
 
 use super::{
 	ast::ASTElem,
-	types::{TraitDef, TraitImpl, Type, TypeDef},
+	types::{FnDef, TraitImpl, Type, TypeDef},
 	Attribute,
 };
 
@@ -91,7 +91,7 @@ pub enum NamespaceASTElem {
 #[derive(Clone, Debug)]
 pub enum NamespaceItem {
 	Type(Arc<RwLock<TypeDef>>),
-	Function(Arc<RwLock<TypeDef>>, RefCell<NamespaceASTElem>),
+	Function(Arc<RwLock<FnDef>>, RefCell<NamespaceASTElem>),
 	Variable(Type, RefCell<NamespaceASTElem>),
 	Namespace(Box<RefCell<Namespace>>),
 	Alias(Identifier),

@@ -18,7 +18,7 @@ pub trait Typed {
 	fn get_type<'ctx>(&self, scope: &'ctx FnScope<'ctx>) -> AnalyzeResult<Type>;
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FnDef {
 	pub ret: Type,
 	pub args: Vec<(Type, Option<Name>)>,
@@ -63,19 +63,19 @@ unsafe impl Send for Type {}
 
 #[derive(Clone)]
 pub enum Type {
-	Basic(Basic),                                   // Fundamental type
-	Pointer(BoxedType),                             // Pointer-to-<BoxedType>
-	Reference(BoxedType),                           // Reference-to-<BoxedType>
-	Array(BoxedType, Arc<RwLock<Vec<ConstExpr>>>),  // N-dimensional array with constant expression for size
-	
+	Basic(Basic),                                  // Fundamental type
+	Pointer(BoxedType),                            // Pointer-to-<BoxedType>
+	Reference(BoxedType),                          // Reference-to-<BoxedType>
+	Array(BoxedType, Arc<RwLock<Vec<ConstExpr>>>), // N-dimensional array with constant expression for size
+
 	// User-defined type ptr, plus Identifier for serialization
 	TypeRef {
-		def: Weak<RwLock<TypeDef>>, 
+		def: Weak<RwLock<TypeDef>>,
 		name: Identifier,
 		params: Vec<Type>,
 	},
-	
-	Unresolved(Identifier),                         // Unresolved type (during parsing phase)
+
+	Unresolved(Identifier), // Unresolved type (during parsing phase)
 }
 
 #[derive(Debug)]
@@ -83,7 +83,6 @@ pub enum TypeDef {
 	// Generic type parameter, defined in other TypeDefs
 	Generic(TypeParam),
 	Trait(TraitDef),
-	Function(FnDef),
 	Algebraic(AlgebraicDef, TypeParamList),
 	// TODO: Add Class TypeDef
 }
@@ -354,9 +353,18 @@ impl PartialEq for Type {
 			(Self::Pointer(l0), Self::Pointer(r0)) => l0 == r0,
 			(Self::Reference(l0), Self::Reference(r0)) => l0 == r0,
 			(Self::Unresolved(l0), Self::Unresolved(r0)) => l0 == r0,
-			(Self::TypeRef { def: l0, name: l1, params: l2 }, Self::TypeRef { def: r0, name: r1, params: r2 }) => {
-				Arc::ptr_eq(&l0.upgrade().unwrap(), &r0.upgrade().unwrap()) && l1 == r1 && l2 == r2
-			}
+			(
+				Self::TypeRef {
+					def: l0,
+					name: l1,
+					params: l2,
+				},
+				Self::TypeRef {
+					def: r0,
+					name: r1,
+					params: r2,
+				},
+			) => Arc::ptr_eq(&l0.upgrade().unwrap(), &r0.upgrade().unwrap()) && l1 == r1 && l2 == r2,
 			_ => false,
 		}
 	}
@@ -405,7 +413,7 @@ impl Display for Type {
 			Type::TypeRef { name, params, .. } => {
 				if params.is_empty() {
 					write!(f, "{name}")
-				} else {					
+				} else {
 					let mut iter = params.iter();
 
 					write!(f, "{name}<{}", iter.next().unwrap())?;
@@ -427,18 +435,22 @@ impl Display for TypeDef {
 			TypeDef::Algebraic(agg, _) => {
 				write!(f, "{}", agg)?;
 			}
-
-			TypeDef::Function(FnDef { ret, args, .. }) => {
-				write!(f, "{}(", ret)?;
-				for arg in args {
-					write!(f, "{}, ", arg.0)?;
-				}
-				write!(f, ")")?;
-			}
 			TypeDef::Generic(_) => todo!(),
 			TypeDef::Trait(_) => todo!(),
 		}
 		Ok(())
+	}
+}
+
+impl Display for FnDef {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		write!(f, "{}(", self.ret)?;
+
+		for arg in &self.args {
+			write!(f, "{}, ", arg.0)?;
+		}
+
+		write!(f, ")")
 	}
 }
 
