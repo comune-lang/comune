@@ -36,6 +36,7 @@ int main() {
 	
 	Vector<int> my_cool_generic;
 
+	my_cool_generic.data = malloc(8) as int*;
 
 	// Borrowck stuff
 	Test test;

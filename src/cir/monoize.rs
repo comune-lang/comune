@@ -1,16 +1,130 @@
 // cIR monomorphization module
 
+use std::collections::{HashSet, HashMap};
+
 use crate::{
 	lexer::Token,
 	semantic::{get_attribute, namespace::Identifier, types::Basic},
 };
 
-use super::{CIRFunction, CIRModule, CIRStmt, CIRType, Operand, RValue};
+use super::{CIRFunction, CIRModule, CIRStmt, CIRType, Operand, RValue, CIRTypeDef, TypeIndex};
+
+// A set of requested Generic monomorphizations, with a Vec of type arguments
+// TODO: Extend system to support constants as arguments
+type MonoizationList = HashSet<(Identifier, Vec<CIRType>)>;
+
+// Map from TypeIndex + parameters to existing instance TypeIndexes
+type TypeInstanceMap = HashMap<TypeIndex, HashMap<Vec<CIRType>, TypeIndex>>;
 
 impl CIRModule {
 	// monoize() consumes `self` and returns a CIRModule with all generics monomorphized, names mangled, etc.
 	// This is necessary to prepare the module for LLVM codegen, but should be done after semantic analysis is complete.
+	// The function takes `self` by value to convey that this is a destructive operation.
 	pub fn monoize(mut self) -> Self {
+		self.monoize_generics();
+		self.mangle();
+		self
+	}
+
+	fn monoize_generics(&mut self) {
+		let mut fn_instances = HashSet::new();
+
+		for func in &self.functions {
+			let func = &func.1 .0;
+
+			for block in &func.blocks {
+				for stmt in block {
+					match &stmt {
+						CIRStmt::Expression(expr, _)
+						| CIRStmt::Assignment(_, (expr, _))
+						| CIRStmt::Branch(expr, _, _)
+						| CIRStmt::Return(Some((expr, _))) => {
+							fn_instances.extend(self.get_rvalue_monoizations(expr));
+						}
+
+						_ => {}
+					}
+				}
+			}
+		}
+	}
+
+	fn get_rvalue_monoizations(&self, rval: &RValue) -> MonoizationList {
+		match rval {
+			RValue::Atom(_, _, op) => self.get_operand_monoizations(op),
+			
+			RValue::Cons(_, [(_, lhs), (_, rhs)], _) => {
+				let mut result = self.get_operand_monoizations(lhs);
+				result.extend(self.get_operand_monoizations(rhs));
+				result
+			}
+
+			RValue::Cast { val, .. } => self.get_operand_monoizations(val),
+		}
+	}
+
+	fn get_operand_monoizations(&self, op: &Operand) -> MonoizationList {
+		match op {
+			Operand::FnCall(name, args, _) => {
+				let mut result = HashSet::new();
+
+				// TODO: Add type parameters to Atom::FnCall and Operand::FnCall
+				
+				for arg in args {
+					result.extend(self.get_rvalue_monoizations(arg));
+				}
+
+				result
+			}
+
+			_ => HashSet::new()
+		}
+	}
+
+	fn monoize_type(&mut self, ty: &mut CIRType, params: &Vec<CIRType>, instances: &mut TypeInstanceMap) {
+		match ty {
+			CIRType::Basic(_) => {},
+			
+			CIRType::Pointer(pointee) => self.monoize_type(pointee, params, instances),
+			CIRType::Array(arr_ty, _) => self.monoize_type(arr_ty, params, instances),
+			CIRType::Reference(refee) => self.monoize_type(refee, params, instances),
+
+			CIRType::TypeRef(idx, params) => {
+				if !params.is_empty() {
+					if !instances.contains_key(idx) {
+						instances.insert(*idx, HashMap::new());
+					}
+
+					if !instances[idx].contains_key(params) { // TODO: Fix wasteful clone
+						*idx = self.instantiate_type_def(*idx, params, instances);
+						params.clear();
+					}
+				}
+			}
+		}
+	}
+
+	// Takes a Generic CIRTypeDef with parameters and instantiates it.
+	fn instantiate_type_def(&mut self, idx: TypeIndex, params: &Vec<CIRType>, instances: &mut TypeInstanceMap) -> TypeIndex {
+		let mut instance = self.types[&idx].clone();
+
+		match &mut instance {
+			CIRTypeDef::Algebraic { members, .. } => {
+				for member in members {
+					self.monoize_type(member, params, instances);
+				}
+			}
+
+			CIRTypeDef::Class {  } => todo!(),
+			
+			CIRTypeDef::TypeParam(_) => panic!(), // This shouldn't be in the module's type list!
+		}
+		let insert_idx = self.types.len();
+		self.types.insert(insert_idx, instance);
+		insert_idx
+	}
+
+	fn mangle(&mut self) {
 		// Mangle functions
 
 		for func in &mut self.functions {
@@ -39,19 +153,19 @@ impl CIRModule {
 				for stmt in block {
 					match stmt {
 						CIRStmt::Expression(expr, _) => {
-							self.monoize_rvalue(&expr);
+							self.mangle_rvalue(&expr);
 						}
 
 						CIRStmt::Assignment(_, (expr, _)) => {
-							self.monoize_rvalue(&expr);
+							self.mangle_rvalue(&expr);
 						}
 
 						CIRStmt::Branch(cond, _, _) => {
-							self.monoize_rvalue(&cond);
+							self.mangle_rvalue(&cond);
 						}
 
 						CIRStmt::Return(Some((expr, _))) => {
-							self.monoize_rvalue(expr);
+							self.mangle_rvalue(expr);
 						}
 
 						_ => {}
@@ -59,24 +173,22 @@ impl CIRModule {
 				}
 			}
 		}
-
-		self
 	}
 
-	fn monoize_rvalue(&self, expr: &RValue) {
+	fn mangle_rvalue(&self, expr: &RValue) {
 		match expr {
-			RValue::Atom(_, _, op) => self.monoize_operand(op),
+			RValue::Atom(_, _, op) => self.mangle_operand(op),
 
 			RValue::Cons(_, [(_, lhs), (_, rhs)], _) => {
-				self.monoize_operand(lhs);
-				self.monoize_operand(rhs);
+				self.mangle_operand(lhs);
+				self.mangle_operand(rhs);
 			}
 
-			RValue::Cast { val, .. } => self.monoize_operand(val),
+			RValue::Cast { val, .. } => self.mangle_operand(val),
 		}
 	}
 
-	fn monoize_operand(&self, op: &Operand) {
+	fn mangle_operand(&self, op: &Operand) {
 		match op {
 			Operand::FnCall(id, _, mangled) => {
 				mangled
@@ -126,7 +238,7 @@ impl CIRType {
 			CIRType::Basic(b) => String::from(b.mangle()),
 			CIRType::Pointer(p) => String::from("P") + &p.mangle(),
 			CIRType::Reference(r) => String::from("R") + &r.mangle(),
-			CIRType::TypeRef(_) => format!("S_"),
+			CIRType::TypeRef(_, _) => format!("S_"),
 			_ => todo!(),
 		}
 	}

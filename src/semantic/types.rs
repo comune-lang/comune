@@ -81,7 +81,7 @@ pub enum Type {
 #[derive(Debug)]
 pub enum TypeDef {
 	// Generic type parameter, defined in other TypeDefs
-	Generic(TypeParam),
+	TypeParam(TypeParam),
 	Trait(TraitDef),
 	Algebraic(AlgebraicDef, TypeParamList),
 	// TODO: Add Class TypeDef
@@ -94,7 +94,7 @@ pub enum Visibility {
 	Protected,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum DataLayout {
 	Declared,  // Layout is exactly as declared
 	Optimized, // Layout may be shuffled to minimize padding
@@ -435,7 +435,7 @@ impl Display for TypeDef {
 			TypeDef::Algebraic(agg, _) => {
 				write!(f, "{}", agg)?;
 			}
-			TypeDef::Generic(_) => todo!(),
+			TypeDef::TypeParam(_) => todo!(),
 			TypeDef::Trait(_) => todo!(),
 		}
 		Ok(())

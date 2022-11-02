@@ -6,7 +6,7 @@ use crate::semantic::{
 	ast::TokenData,
 	expression::Operator,
 	namespace::{Identifier, Name},
-	types::{Basic, DataLayout},
+	types::{Basic, DataLayout, TypeParam},
 	Attribute,
 };
 
@@ -23,6 +23,7 @@ type StmtIndex = usize;
 type VarIndex = usize;
 type FieldIndex = usize;
 type TypeIndex = usize;
+type TypeParamIndex = usize;
 
 // An LValue is an expression that results in a memory location.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -113,27 +114,28 @@ impl Clone for Operand {
 
 // A CIRType represents a non-unique instance of a comune type.
 // Not to be confused with CIRTypeDefs, which are unique descriptions of i.e. struct definitions.
-#[derive(Clone, Debug, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub enum CIRType {
 	Basic(Basic),
 	Pointer(Box<CIRType>),
 	Array(Box<CIRType>, Vec<i128>),
 	Reference(Box<CIRType>),
-	TypeRef(TypeIndex),
+	TypeRef(TypeIndex, Vec<CIRType>), // TypeRef with zero or more type parameters
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CIRTypeDef {
 	Algebraic {
 		members: Vec<CIRType>,
 		variants: Vec<CIRTypeDef>,
 		layout: DataLayout,
-
 		members_map: HashMap<Name, usize>,
 		variants_map: HashMap<Name, usize>,
 	},
 
 	Class {},
+
+	TypeParam(TypeParam),
 }
 
 #[derive(Debug)]
@@ -157,7 +159,7 @@ pub struct CIRFunction {
 }
 
 pub struct CIRModule {
-	pub types: Vec<CIRTypeDef>,
+	pub types: HashMap<TypeIndex, CIRTypeDef>,
 	pub globals: HashMap<Identifier, (CIRType, RValue)>,
 	pub functions: CIRFnMap,
 }

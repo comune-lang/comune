@@ -1667,7 +1667,7 @@ impl Parser {
 						}
 					}
 
-					result.insert(name, Arc::new(RwLock::new(TypeDef::Generic(traits))));
+					result.insert(name, Arc::new(RwLock::new(TypeDef::TypeParam(traits))));
 
 					match &current {
 						Token::Operator(">") => continue,

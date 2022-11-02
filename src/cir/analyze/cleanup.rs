@@ -3,8 +3,6 @@ use super::CIRPassMut;
 use crate::{
 	cir::{CIRFunction, CIRStmt, Operand, RValue},
 	errors::CMNError,
-	lexer::Lexer,
-	parser::AnalyzeResult,
 	semantic::ast::TokenData,
 };
 

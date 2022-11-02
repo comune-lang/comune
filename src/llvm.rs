@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::{rc::Rc, collections::HashMap};
 
 use inkwell::{
 	basic_block::BasicBlock,
@@ -50,7 +50,7 @@ pub struct LLVMBackend<'ctx> {
 	pub module: Module<'ctx>,
 	builder: Builder<'ctx>,
 	fn_value_opt: Option<FunctionValue<'ctx>>,
-	type_map: Vec<AnyTypeEnum<'ctx>>,
+	type_map: HashMap<usize, AnyTypeEnum<'ctx>>,
 	blocks: Vec<BasicBlock<'ctx>>,
 	variables: Vec<PointerValue<'ctx>>,
 }
@@ -62,25 +62,33 @@ impl<'ctx> LLVMBackend<'ctx> {
 			module: context.create_module(module_name),
 			builder: context.create_builder(),
 			fn_value_opt: None,
-			type_map: vec![],
+			type_map: HashMap::new(),
 			blocks: vec![],
 			variables: vec![],
 		}
 	}
 
 	pub fn compile_module(&mut self, module: &CIRModule) -> LLVMResult<()> {
-		for i in 0..module.types.len() {
-			self.type_map.push(
-				self.context
-					.opaque_struct_type(&i.to_string())
-					.as_any_type_enum(),
-			);
+		// Add opaque types
+
+		for (i, ty) in &module.types {
+			match ty {
+				CIRTypeDef::Algebraic { .. } | CIRTypeDef::Class { .. } => {
+					self.type_map.insert(*i, 
+						self.context
+							.opaque_struct_type(&i.to_string())
+							.as_any_type_enum(),
+					)
+				}
+
+				CIRTypeDef::TypeParam(_) => self.type_map.insert(*i, self.context.opaque_struct_type("__T").as_any_type_enum()),
+			};
 		}
 
-		for i in 0..module.types.len() {
-			let current = &module.types[i];
+		// Define type bodies
 
-			match current {
+		for (i, ty) in &module.types {
+			match ty {
 				CIRTypeDef::Algebraic {
 					members, layout, ..
 				} => {
@@ -90,12 +98,14 @@ impl<'ctx> LLVMBackend<'ctx> {
 						members_ir.push(Self::to_basic_type(self.get_llvm_type(&mem)));
 					}
 
-					let type_ir = self.type_map[i].into_struct_type();
+					let type_ir = self.type_map[&i].into_struct_type();
 
 					type_ir.set_body(&members_ir, *layout == DataLayout::Packed);
 				}
 
 				CIRTypeDef::Class {} => todo!(),
+
+				CIRTypeDef::TypeParam(_) => {}
 			}
 		}
 
@@ -735,7 +745,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 				}
 			}
 
-			CIRType::TypeRef(idx) => self.type_map[*idx].clone(),
+			CIRType::TypeRef(idx, _) => self.type_map[idx].clone(),
 		}
 	}
 

@@ -1177,7 +1177,7 @@ impl Atom {
 							))
 						}
 					})
-					.ok_or((
+					.ok_or_else(|| (
 						CMNError::new(CMNErrorCode::UndeclaredIdentifier(name.to_string())),
 						meta,
 					))?
