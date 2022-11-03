@@ -164,7 +164,8 @@ impl Display for CIRType {
 			CIRType::Pointer(p) => write!(f, "{p}*"),
 			CIRType::Array(t, _) => write!(f, "{t}[]"),
 			CIRType::Reference(r) => write!(f, "{r}&"),
-			CIRType::TypeRef(idx, _) => write!(f, "{idx}"),
+			CIRType::TypeRef(name, _) => write!(f, "{name}"),
+			CIRType::TypeParam(idx) => write!(f, "<{idx}>"),
 		}
 	}
 }
@@ -176,10 +177,15 @@ impl Display for CIRTypeDef {
 				members,
 				variants,
 				layout,
+				type_params,
 				..
 			} => {
 				write!(f, "layout({layout}) {{\n")?;
-
+				
+				for param in type_params {
+					write!(f, "\tparam {param:?}\n")?;	
+				}
+				
 				for var in variants {
 					write!(f, "\tvariant {var}\n")?;
 				}
@@ -192,8 +198,6 @@ impl Display for CIRTypeDef {
 			}
 
 			CIRTypeDef::Class {} => todo!(),
-
-			CIRTypeDef::TypeParam(param) => write!(f, "<{param:?}>;\n\n"),
 		}
 	}
 }

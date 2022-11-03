@@ -1,22 +1,22 @@
 // cIR monomorphization module
 
-use std::collections::{HashMap, HashSet, BTreeMap};
+use std::collections::{HashMap, HashSet};
 
 use crate::{
 	lexer::Token,
 	semantic::{get_attribute, namespace::Identifier, types::Basic},
 };
 
-use super::{CIRFunction, CIRModule, CIRStmt, CIRType, CIRTypeDef, Operand, RValue, TypeIndex};
+use super::{CIRFunction, CIRModule, CIRStmt, CIRType, CIRTypeDef, Operand, RValue, TypeName};
 
 // A set of requested Generic monomorphizations, with a Vec of type arguments
 // TODO: Extend system to support constants as arguments
 type MonoizationList = HashSet<(Identifier, Vec<CIRType>)>;
 
-type TypeSubstitutions = BTreeMap<TypeIndex, CIRType>;
+type TypeSubstitutions = Vec<CIRType>;
 
 // Map from TypeIndex + parameters to existing instance TypeIndexes
-type TypeInstances = HashMap<TypeIndex, HashMap<TypeSubstitutions, TypeIndex>>;
+type TypeInstances = HashMap<TypeName, HashMap<TypeSubstitutions, TypeName>>;
 
 impl CIRModule {
 	// monoize() consumes `self` and returns a CIRModule with all generics monomorphized, names mangled, etc.
@@ -49,10 +49,12 @@ impl CIRModule {
 				}
 			}
 		}
+		
+		let mut instantiations = HashMap::new();
 
 		for func in &mut self.functions {
 			for (var, _) in &mut func.1 .0.variables {
-				Self::monoize_type(&mut self.types, var, &mut BTreeMap::new(), &mut HashMap::new());
+				Self::monoize_type(&mut self.types, var, &vec![], &mut instantiations);
 			}
 
 			for block in &mut func.1 .0.blocks {
@@ -65,19 +67,24 @@ impl CIRModule {
 							Self::monoize_rvalue_types(
 								&mut self.types,
 								expr,
-								&mut BTreeMap::new(),
-								&mut HashMap::new(),
+								&vec![],
+								&mut instantiations,
 							);
 						}
 
 						_ => {}
 					}
 
-					if let CIRStmt::Assignment((lval, _), _) = &mut stmt {
+					if let CIRStmt::Assignment((_lval, _), _) = &mut stmt {
 						// TODO: Find RValues in LValue projection
 					}
 				}
 			}
+		}
+		
+		// Remove generics
+		for generic in instantiations.keys() {
+			self.types.remove(generic);
 		}
 	}
 
@@ -97,7 +104,7 @@ impl CIRModule {
 
 	fn get_operand_monoizations(&self, op: &Operand) -> MonoizationList {
 		match op {
-			Operand::FnCall(name, args, _) => {
+			Operand::FnCall(_name, args, _) => {
 				let mut result = HashSet::new();
 
 				// TODO: Add type parameters to Atom::FnCall and Operand::FnCall
@@ -117,7 +124,7 @@ impl CIRModule {
 		types: &mut HashMap<String, CIRTypeDef>,
 		rval: &mut RValue,
 		// Maps parameter indices to the actual types being instantiated
-		param_map: &mut TypeSubstitutions,
+		param_map: &TypeSubstitutions,
 		instances: &mut TypeInstances,
 	) {
 		match rval {
@@ -141,7 +148,7 @@ impl CIRModule {
 	fn monoize_type(
 		types: &mut HashMap<String, CIRTypeDef>,
 		ty: &mut CIRType,
-		param_map: &mut TypeSubstitutions,
+		param_map: &TypeSubstitutions,
 		instances: &mut TypeInstances,
 	) {
 		match ty {
@@ -156,37 +163,19 @@ impl CIRModule {
 				// If we're referring to a type with generics, check if the 
 				// instantation we want exists already. If not, create it.
 				if !args.is_empty() {
-					let mut full_params = param_map.clone();
-
-					match &types[idx] {
-						CIRTypeDef::Algebraic { type_params, .. } => {
-							if args.len() != type_params.len() {
-								panic!("type parameter length mismatch in cIR!");
-							}
-							for i in 0..type_params.len() {
-								full_params.insert(type_params[i].clone(), args[i].clone());
-							}
-						}
-						_ => todo!()
-
-					}
-
-
 					if !instances.contains_key(idx) {
 						instances.insert(idx.clone(), HashMap::new());
 					}
 
-					if !instances[idx].contains_key(&full_params) {
+					if !instances[idx].contains_key(param_map) {
 						*idx =
-							Self::instantiate_type_def(types, idx.clone(), &mut full_params, instances);
+							Self::instantiate_type_def(types, idx.clone(), &args, instances);
 					}
 				}
-
-				// If we're referring to a type parameter in the substitution map,
-				// replace it with the actual type
-				if param_map.contains_key(idx) {
-					*ty = param_map[idx].clone();
-				}
+			}
+			
+			CIRType::TypeParam(idx) => {
+				*ty = param_map[*idx].clone();
 			}
 		}
 	}
@@ -194,29 +183,29 @@ impl CIRModule {
 	// Takes a Generic CIRTypeDef with parameters and instantiates it.
 	fn instantiate_type_def(
 		types: &mut HashMap<String, CIRTypeDef>,
-		name: TypeIndex,
-		param_map: &mut TypeSubstitutions,
+		name: TypeName,
+		param_map: &TypeSubstitutions,
 		instances: &mut TypeInstances,
-	) -> TypeIndex {
+	) -> TypeName {
+
 		let mut instance = types[&name].clone();
 
 		match &mut instance {
-			CIRTypeDef::Algebraic { members, .. } => {
+			CIRTypeDef::Algebraic { members, type_params, .. } => {
 				for member in members {
 					Self::monoize_type(types, member, param_map, instances);
 				}
+				type_params.clear();
 			}
 
 			CIRTypeDef::Class {} => todo!(),
-
-			CIRTypeDef::TypeParam(_) => panic!(), // This shouldn't be in the module's type list!
 		}
 
 		let mut iter = param_map.iter();
-		let mut insert_idx = name + "<" + &iter.next().unwrap().1.to_string();
+		let mut insert_idx = name + "<" + &iter.next().unwrap().to_string();
 
 		for param in iter {
-			insert_idx.push_str(&param.1.to_string())
+			insert_idx.push_str(&param.to_string())
 		}
 
 		insert_idx += ">";

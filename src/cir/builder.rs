@@ -19,13 +19,13 @@ use crate::{
 
 use super::{
 	BlockIndex, CIRFunction, CIRModule, CIRStmt, CIRType, CIRTypeDef, LValue, Operand, PlaceElem,
-	RValue, TypeIndex, VarIndex,
+	RValue, TypeName, VarIndex,
 };
 
 pub struct CIRModuleBuilder {
 	pub module: CIRModule,
 
-	type_map: HashMap<Type, TypeIndex>,
+	type_map: HashMap<Type, TypeName>,
 	type_param_counter: usize, // Used to assign unique names to type parameters
 
 	current_fn: Option<CIRFunction>,
@@ -151,11 +151,14 @@ impl CIRModuleBuilder {
 			Type::Basic(basic) => CIRType::Basic(basic.clone()),
 
 			Type::TypeRef { def, params, name } => {
-				let idx = self.convert_type_def(&ty);
+				if let TypeDef::TypeParam(ty_param) = &*def.upgrade().unwrap().read().unwrap() {
+					CIRType::TypeParam(0)
+				} else {
+					let idx = self.convert_type_def(&ty);
+					let params_cir = params.iter().map(|ty| self.convert_type(ty)).collect();
 
-				let params_cir = params.iter().map(|ty| self.convert_type(ty)).collect();
-
-				CIRType::TypeRef(idx, params_cir)
+					CIRType::TypeRef(idx, params_cir)
+				}
 			}
 
 			Type::Pointer(pointee) => CIRType::Pointer(Box::new(self.convert_type(pointee))),
@@ -196,11 +199,8 @@ impl CIRModuleBuilder {
 					let mut params_cir = vec![];
 	
 					for param in params {
-						params_cir.push(self.convert_type_def(&Type::TypeRef { 
-							def: Arc::downgrade(param.1), 
-							name: Identifier::from_name(param.0.clone(), true), 
-							params: vec![] }
-						));
+						let TypeDef::TypeParam(type_param) = &*param.1.read().unwrap() else { panic!() };
+						params_cir.push(type_param.clone());
 					}
 	
 					for item in &alg.items {
@@ -233,13 +233,8 @@ impl CIRModuleBuilder {
 					)
 				}
 	
-				TypeDef::TypeParam(param) => {
-					self.type_param_counter += 1;
-					(
-						"T".to_string() + &(self.type_param_counter - 1).to_string(),
-						CIRTypeDef::TypeParam(param.clone()),
-					)
-				}
+				TypeDef::TypeParam(param) => panic!("compiler bug: can't convert TypeParam by itself!"),
+
 				TypeDef::Trait(_) => todo!(),
 			};
 		

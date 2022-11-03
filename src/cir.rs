@@ -22,7 +22,8 @@ type BlockIndex = usize;
 type StmtIndex = usize;
 type VarIndex = usize;
 type FieldIndex = usize;
-type TypeIndex = String;
+type TypeName = String;
+type TypeParamIndex = usize;
 
 // An LValue is an expression that results in a memory location.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -119,7 +120,8 @@ pub enum CIRType {
 	Pointer(Box<CIRType>),
 	Array(Box<CIRType>, Vec<i128>),
 	Reference(Box<CIRType>),
-	TypeRef(TypeIndex, Vec<CIRType>), // TypeRef with zero or more type parameters
+	TypeRef(TypeName, Vec<CIRType>), // TypeRef with zero or more type parameters
+	TypeParam(TypeParamIndex),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -130,12 +132,10 @@ pub enum CIRTypeDef {
 		layout: DataLayout,
 		members_map: HashMap<Name, usize>,
 		variants_map: HashMap<Name, usize>,
-		type_params: Vec<TypeIndex>,
+		type_params: Vec<TypeParam>,
 	},
 
 	Class {},
-
-	TypeParam(TypeParam),
 }
 
 #[derive(Debug)]

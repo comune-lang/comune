@@ -76,12 +76,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 				CIRTypeDef::Algebraic { .. } | CIRTypeDef::Class { .. } => self.type_map.insert(
 					i.clone(),
 					self.context.opaque_struct_type(i).as_any_type_enum(),
-				),
-
-				CIRTypeDef::TypeParam(_) => self.type_map.insert(
-					i.clone(),
-					self.context.opaque_struct_type(i).as_any_type_enum(),
-				),
+				)
 			};
 		}
 
@@ -104,8 +99,6 @@ impl<'ctx> LLVMBackend<'ctx> {
 				}
 
 				CIRTypeDef::Class {} => todo!(),
-
-				CIRTypeDef::TypeParam(_) => {}
 			}
 		}
 
@@ -746,6 +739,8 @@ impl<'ctx> LLVMBackend<'ctx> {
 			}
 
 			CIRType::TypeRef(idx, _) => self.type_map[idx].clone(),
+
+			CIRType::TypeParam(_) => panic!("unexpected TypeParam in codegen!"),
 		}
 	}
 
