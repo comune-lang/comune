@@ -76,8 +76,6 @@ impl Operator {
 			| Operator::ScopeRes
 			| Operator::MemberAccess => 200,
 
-			Operator::Cast => 195,
-
 			Operator::UnaryPlus
 			| Operator::UnaryMinus
 			| Operator::LogicNot
@@ -85,6 +83,8 @@ impl Operator {
 			| Operator::PreDec
 			| Operator::Ref
 			| Operator::Deref => 190,
+
+			Operator::Cast => 185,
 
 			Operator::Mul | Operator::Div | Operator::Mod => 180,
 
