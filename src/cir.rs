@@ -22,8 +22,7 @@ type BlockIndex = usize;
 type StmtIndex = usize;
 type VarIndex = usize;
 type FieldIndex = usize;
-type TypeIndex = usize;
-type TypeParamIndex = usize;
+type TypeIndex = String;
 
 // An LValue is an expression that results in a memory location.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -131,6 +130,7 @@ pub enum CIRTypeDef {
 		layout: DataLayout,
 		members_map: HashMap<Name, usize>,
 		variants_map: HashMap<Name, usize>,
+		type_params: Vec<TypeIndex>,
 	},
 
 	Class {},
@@ -159,7 +159,7 @@ pub struct CIRFunction {
 }
 
 pub struct CIRModule {
-	pub types: HashMap<TypeIndex, CIRTypeDef>,
+	pub types: HashMap<String, CIRTypeDef>,
 	pub globals: HashMap<Identifier, (CIRType, RValue)>,
 	pub functions: CIRFnMap,
 }

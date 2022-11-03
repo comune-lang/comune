@@ -1,4 +1,8 @@
-use std::{borrow::BorrowMut, collections::HashMap, sync::{RwLock, Arc}};
+use std::{
+	borrow::BorrowMut,
+	collections::HashMap,
+	sync::{Arc, RwLock},
+};
 
 use crate::{
 	constexpr::{ConstExpr, ConstValue},
@@ -22,6 +26,7 @@ pub struct CIRModuleBuilder {
 	pub module: CIRModule,
 
 	type_map: HashMap<Type, TypeIndex>,
+	type_param_counter: usize, // Used to assign unique names to type parameters
 
 	current_fn: Option<CIRFunction>,
 	name_map_stack: Vec<HashMap<Name, VarIndex>>,
@@ -39,6 +44,7 @@ impl CIRModuleBuilder {
 
 			current_fn: None,
 			type_map: HashMap::new(),
+			type_param_counter: 0,
 			name_map_stack: vec![HashMap::new()],
 			current_block: 0,
 		};
@@ -144,24 +150,12 @@ impl CIRModuleBuilder {
 		match ty {
 			Type::Basic(basic) => CIRType::Basic(basic.clone()),
 
-			Type::TypeRef { def, params, .. } => {
-				let idx = if let Some(ty_id) = self.type_map.get(ty) {
-					*ty_id
-				} else {
-					// Found an unregistered TypeDef, convert it 
-					let cir_def = self.convert_type_def(&def.upgrade().unwrap().read().unwrap());
-
-					self.module.types.insert(self.module.types.len(), cir_def);
-					self.type_map
-						.insert(ty.clone(), self.module.types.len() - 1);
-
-					self.module.types.len() - 1
-				};
+			Type::TypeRef { def, params, name } => {
+				let idx = self.convert_type_def(&ty);
 
 				let params_cir = params.iter().map(|ty| self.convert_type(ty)).collect();
 
 				CIRType::TypeRef(idx, params_cir)
-
 			}
 
 			Type::Pointer(pointee) => CIRType::Pointer(Box::new(self.convert_type(pointee))),
@@ -187,47 +181,73 @@ impl CIRModuleBuilder {
 		}
 	}
 
-	fn convert_type_def(&mut self, def: &TypeDef) -> CIRTypeDef {
-		
-		match def {
-			TypeDef::Algebraic(alg, params) => {
-				let mut members = vec![];
-				let mut members_map = HashMap::new();
+	fn convert_type_def(&mut self, ty: &Type) -> String {
+		let Type::TypeRef { def, name, .. } = ty else { panic!() };
 
-				for item in &alg.items {
-					match &item.1 .0 {
-						NamespaceItem::Variable(ty, _) => {
-							members_map.insert(item.0.clone(), members.len());
-							members.push(self.convert_type(ty));
-						}
-
-						NamespaceItem::Type(_ty) => {
-							todo!()
-						}
-
-						_ => panic!(),
+		if let Some(ty_id) = self.type_map.get(ty) {
+			ty_id.clone()
+		} else {
+			// Found an unregistered TypeDef, convert it
+			let (insert_idx, cir_def) = match &*def.upgrade().unwrap().read().unwrap() {
+				TypeDef::Algebraic(alg, params) => {
+					let mut members = vec![];
+					let mut members_map = HashMap::new();
+	
+					let mut params_cir = vec![];
+	
+					for param in params {
+						params_cir.push(self.convert_type_def(&Type::TypeRef { 
+							def: Arc::downgrade(param.1), 
+							name: Identifier::from_name(param.0.clone(), true), 
+							params: vec![] }
+						));
 					}
+	
+					for item in &alg.items {
+						match &item.1 .0 {
+							NamespaceItem::Variable(ty, _) => {
+								members_map.insert(item.0.clone(), members.len());
+								members.push(self.convert_type(ty));
+							}
+	
+							NamespaceItem::Type(_ty) => {
+								todo!()
+							}
+	
+							_ => panic!(),
+						}
+					}
+	
+					// TODO: Variant mapping
+	
+					(
+						name.to_string(),
+						CIRTypeDef::Algebraic {
+							members,
+							variants: vec![],
+							layout: alg.layout,
+							members_map,
+							variants_map: HashMap::new(),
+							type_params: params_cir
+						},
+					)
 				}
-
-				// Register type parameters as global CIRTypeDefs
-				// (listen. this is the easiest way to deal with this shit)
-				for param in params {
-					self.convert_type_def(&param.1.read().unwrap());
+	
+				TypeDef::TypeParam(param) => {
+					self.type_param_counter += 1;
+					(
+						"T".to_string() + &(self.type_param_counter - 1).to_string(),
+						CIRTypeDef::TypeParam(param.clone()),
+					)
 				}
+				TypeDef::Trait(_) => todo!(),
+			};
+		
 
-				// TODO: Variant mapping
+			self.module.types.insert(insert_idx.clone(), cir_def);
+			self.type_map.insert(ty.clone(), insert_idx.clone());
 
-				CIRTypeDef::Algebraic {
-					members,
-					variants: vec![],
-					layout: alg.layout,
-					members_map,
-					variants_map: HashMap::new(),
-				}
-			}
-
-			TypeDef::TypeParam(param) => CIRTypeDef::TypeParam(param.clone()),
-			TypeDef::Trait(_) => todo!(),
+			insert_idx
 		}
 	}
 }
@@ -510,14 +530,14 @@ impl CIRModuleBuilder {
 					let cir_ty = self.convert_type(ty);
 
 					let ty_idx = if let CIRType::TypeRef(idx, params) = &cir_ty {
-						*idx
+						idx
 					} else {
 						panic!()
 					};
 
 					let mut indices = vec![];
 
-					if let CIRTypeDef::Algebraic { members_map, .. } = &self.module.types[&ty_idx] {
+					if let CIRTypeDef::Algebraic { members_map, .. } = &self.module.types[ty_idx] {
 						for elem in elems {
 							indices.push(members_map[elem.0.as_ref().unwrap()]);
 						}
@@ -587,7 +607,7 @@ impl CIRModuleBuilder {
 						.collect();
 					let mut name = name.clone();
 					name.absolute = true;
-					
+
 					RValue::Atom(
 						self.convert_type(ret.as_ref().unwrap()),
 						None,
@@ -776,7 +796,7 @@ impl CIRModuleBuilder {
 
 		self.name_map_stack.last_mut().unwrap().insert(name, idx);
 	}
-	
+
 	fn get_as_operand(&mut self, ty: CIRType, rval: RValue) -> Operand {
 		if let RValue::Atom(_, None, operand) = rval {
 			return operand;

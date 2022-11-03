@@ -8,8 +8,8 @@ use super::{
 
 impl Display for CIRModule {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		for (_, ty) in &self.types {
-			write!(f, "{ty}")?;
+		for (name, ty) in &self.types {
+			write!(f, "type {name} {ty}")?;
 		}
 
 		for func in &self.functions {
@@ -164,7 +164,7 @@ impl Display for CIRType {
 			CIRType::Pointer(p) => write!(f, "{p}*"),
 			CIRType::Array(t, _) => write!(f, "{t}[]"),
 			CIRType::Reference(r) => write!(f, "{r}&"),
-			CIRType::TypeRef(idx, _) => write!(f, "${idx}"),
+			CIRType::TypeRef(idx, _) => write!(f, "{idx}"),
 		}
 	}
 }
@@ -178,7 +178,7 @@ impl Display for CIRTypeDef {
 				layout,
 				..
 			} => {
-				write!(f, "type layout({layout}) {{\n")?;
+				write!(f, "layout({layout}) {{\n")?;
 
 				for var in variants {
 					write!(f, "\tvariant {var}\n")?;
@@ -193,7 +193,7 @@ impl Display for CIRTypeDef {
 
 			CIRTypeDef::Class {} => todo!(),
 
-			CIRTypeDef::TypeParam(param) => write!(f, "<{param:#?}>"),
+			CIRTypeDef::TypeParam(param) => write!(f, "<{param:?}>;\n\n"),
 		}
 	}
 }

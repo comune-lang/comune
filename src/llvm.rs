@@ -1,4 +1,4 @@
-use std::{rc::Rc, collections::HashMap};
+use std::{collections::HashMap, rc::Rc};
 
 use inkwell::{
 	basic_block::BasicBlock,
@@ -50,7 +50,7 @@ pub struct LLVMBackend<'ctx> {
 	pub module: Module<'ctx>,
 	builder: Builder<'ctx>,
 	fn_value_opt: Option<FunctionValue<'ctx>>,
-	type_map: HashMap<usize, AnyTypeEnum<'ctx>>,
+	type_map: HashMap<String, AnyTypeEnum<'ctx>>,
 	blocks: Vec<BasicBlock<'ctx>>,
 	variables: Vec<PointerValue<'ctx>>,
 }
@@ -73,15 +73,15 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 		for (i, ty) in &module.types {
 			match ty {
-				CIRTypeDef::Algebraic { .. } | CIRTypeDef::Class { .. } => {
-					self.type_map.insert(*i, 
-						self.context
-							.opaque_struct_type(&i.to_string())
-							.as_any_type_enum(),
-					)
-				}
+				CIRTypeDef::Algebraic { .. } | CIRTypeDef::Class { .. } => self.type_map.insert(
+					i.clone(),
+					self.context.opaque_struct_type(i).as_any_type_enum(),
+				),
 
-				CIRTypeDef::TypeParam(_) => self.type_map.insert(*i, self.context.opaque_struct_type("__T").as_any_type_enum()),
+				CIRTypeDef::TypeParam(_) => self.type_map.insert(
+					i.clone(),
+					self.context.opaque_struct_type(i).as_any_type_enum(),
+				),
 			};
 		}
 
@@ -98,7 +98,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 						members_ir.push(Self::to_basic_type(self.get_llvm_type(&mem)));
 					}
 
-					let type_ir = self.type_map[&i].into_struct_type();
+					let type_ir = self.type_map[i].into_struct_type();
 
 					type_ir.set_body(&members_ir, *layout == DataLayout::Packed);
 				}

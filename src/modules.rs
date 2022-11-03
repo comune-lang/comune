@@ -327,9 +327,18 @@ pub fn generate_code<'ctx>(
 	)
 	.unwrap();
 
+
+	let module_mono = cir_module.monoize();
+
+	// Write cIR to file
+	fs::write(
+		get_module_out_path(&state, input_module, None).with_extension("cir_mono"),
+		module_mono.to_string(),
+	)
+	.unwrap();
+
 	// Generate LLVM IR
 	let mut backend = LLVMBackend::new(context, &module_name);
-	let module_mono = cir_module.monoize();
 
 	backend.compile_module(&module_mono).unwrap();
 	backend.generate_libc_bindings();
