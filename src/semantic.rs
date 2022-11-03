@@ -274,18 +274,14 @@ pub fn resolve_type(
 				}
 			} else if !id.is_qualified() && generics.contains_key(id.name()) {
 				// Generic type parameter
-				result = Some(Type::TypeRef {
-					def: Arc::downgrade(generics.get(id.name()).unwrap()),
-					name: id.clone(),
-					params: vec![],
-				});
+				result = Some(Type::TypeParam(id.name().clone()));
 			} else {
 				namespace.with_item(&id.clone(), &root.borrow(), |item, id| {
 					if let NamespaceItem::Type(t) = &item.0 {
 						result = Some(Type::TypeRef {
 							def: Arc::downgrade(t),
 							name: id.clone(),
-							params: vec![],
+							params: HashMap::new(),
 						});
 					}
 				});
@@ -300,7 +296,7 @@ pub fn resolve_type(
 			}
 		}
 
-		Type::TypeRef { .. } | Type::Basic(_) => Ok(()),
+		Type::TypeRef { .. } | Type::Basic(_) | Type::TypeParam(_) => Ok(()),
 	}
 }
 
@@ -312,9 +308,9 @@ pub fn resolve_type_def(
 	base_generics: &TypeParamList,
 ) -> ParseResult<()> {
 	match ty {
-		TypeDef::Algebraic(agg, agg_generics) => {
+		TypeDef::Algebraic(agg) => {
 			let mut generics = base_generics.clone();
-			generics.extend(agg_generics.clone());
+			generics.extend(agg.params.clone());
 
 			for item in &mut agg.items {
 				match &mut item.1 .0 {
@@ -414,7 +410,7 @@ pub fn check_cyclical_deps(
 	ty: &Arc<RwLock<TypeDef>>,
 	parent_types: &mut Vec<Arc<RwLock<TypeDef>>>,
 ) -> ParseResult<()> {
-	if let TypeDef::Algebraic(agg, _) = &*ty.as_ref().read().unwrap() {
+	if let TypeDef::Algebraic(agg) = &*ty.as_ref().read().unwrap() {
 		for member in agg.items.iter() {
 			match &member.1 .0 {
 				NamespaceItem::Variable(t, _) => {
@@ -471,7 +467,7 @@ pub fn register_impls(
 			.borrow()
 			.with_item(&im.0, &root.borrow(), |item, id| {
 				if let NamespaceItem::Type(t_def) = &item.0 {
-					if let TypeDef::Algebraic(_, _) = &mut *t_def.write().unwrap() {
+					if let TypeDef::Algebraic(_) = &mut *t_def.write().unwrap() {
 						let mut this_impl = HashMap::new();
 
 						for elem in im.1 {
@@ -961,20 +957,22 @@ impl Expr {
 
 					Operator::MemberAccess => {
 						if let Type::TypeRef {
-							def: r, name: t_id, ..
+							def: r, name: t_id, params,
 						} = elems[0].0.validate_lvalue(scope, meta).unwrap()
 						{
 							if let (lhs, [rhs, ..]) = elems.split_first_mut().unwrap() {
 								match &mut *r.upgrade().unwrap().write().unwrap() {
+
 									// Dot operator is on an algebraic type, so check if it's a member access or method call
-									TypeDef::Algebraic(t, _) => match &mut rhs.0 {
+									TypeDef::Algebraic(t) => match &mut rhs.0 {
+
 										// Member access on algebraic type
-										Expr::Atom(Atom::Identifier(ref mut id), _) => {
-											if let Some((_, m)) = t.get_member(id.name()) {
+										Expr::Atom(Atom::Identifier(id), _) => {
+											if let Some((_, m)) = t.get_member(id.name(), Some(&params)) {
 												lhs.1 = Some(Type::TypeRef {
 													def: r.clone(),
 													name: t_id.clone(),
-													params: vec![],
+													params: params.clone(),
 												});
 												rhs.1 = Some(m.clone());
 												return Ok(m.clone());
@@ -1009,7 +1007,7 @@ impl Expr {
 															Type::TypeRef {
 																def: r.clone(),
 																name: t_id.clone(),
-																params: vec![],
+																params: HashMap::new(),
 															},
 														)),
 													},
@@ -1029,7 +1027,7 @@ impl Expr {
 														lhs.1 = Some(Type::TypeRef {
 															def: r.clone(),
 															name: t_id.clone(),
-															params: vec![],
+															params: HashMap::new(),
 														});
 														rhs.1 = Some(method.ret.clone());
 
@@ -1188,11 +1186,11 @@ impl Atom {
 			Atom::ArrayLit(_) => todo!(),
 
 			Atom::AlgebraicLit(ty, elems) => {
-				if let Type::TypeRef { def, .. } = ty {
-					if let TypeDef::Algebraic(alg, _) = &*def.upgrade().unwrap().read().unwrap() {
+				if let Type::TypeRef { def, params, .. } = ty {
+					if let TypeDef::Algebraic(alg) = &*def.upgrade().unwrap().read().unwrap() {
 						for elem in elems {
 							let member_ty =
-								if let Some((_, ty)) = alg.get_member(elem.0.as_ref().unwrap()) {
+								if let Some((_, ty)) = alg.get_member(elem.0.as_ref().unwrap(), Some(&params)) {
 									ty
 								} else {
 									// Invalid member in strenum literal
@@ -1201,7 +1199,7 @@ impl Atom {
 
 							let expr_ty = elem.1.get_expr().borrow_mut().validate(
 								scope,
-								Some(member_ty),
+								Some(&member_ty),
 								elem.2,
 							)?;
 
@@ -1211,7 +1209,7 @@ impl Atom {
 								.1
 								.get_expr()
 								.borrow()
-								.coercable_to(&expr_ty, member_ty, scope)
+								.coercable_to(&expr_ty, &member_ty, scope)
 							{
 								return Err((
 									CMNError::new(CMNErrorCode::AssignTypeMismatch {

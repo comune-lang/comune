@@ -182,7 +182,7 @@ impl Display for CIRTypeDef {
 			} => {
 				write!(f, "layout({layout}) {{\n")?;
 				
-				for param in type_params {
+				for (param, _) in type_params {
 					write!(f, "\tparam {param:?}\n")?;	
 				}
 				

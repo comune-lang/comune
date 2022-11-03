@@ -12,7 +12,7 @@ use crate::semantic::FnScope;
 pub type BoxedType = Box<Type>;
 pub type FnParamList = Vec<(Type, Option<Name>)>;
 pub type TypeParam = Vec<Identifier>; // Generic type parameter, with trait bounds
-pub type TypeParamList = HashMap<Name, Arc<RwLock<TypeDef>>>;
+pub type TypeParamList = HashMap<Name, TypeParam>;
 
 pub trait Typed {
 	fn get_type<'ctx>(&self, scope: &'ctx FnScope<'ctx>) -> AnalyzeResult<Type>;
@@ -45,6 +45,8 @@ pub struct TraitImpl {
 pub struct AlgebraicDef {
 	pub items: Vec<(Name, NamespaceEntry, Visibility)>,
 	pub layout: DataLayout,
+	pub params: TypeParamList,
+	pub param_order: Vec<Name>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -72,18 +74,18 @@ pub enum Type {
 	TypeRef {
 		def: Weak<RwLock<TypeDef>>,
 		name: Identifier,
-		params: Vec<Type>,
+		params: HashMap<Name, Type>,
 	},
+
+	TypeParam(Name),
 
 	Unresolved(Identifier), // Unresolved type (during parsing phase)
 }
 
 #[derive(Debug)]
 pub enum TypeDef {
-	// Generic type parameter, defined in other TypeDefs
-	TypeParam(TypeParam),
 	Trait(TraitDef),
-	Algebraic(AlgebraicDef, TypeParamList),
+	Algebraic(AlgebraicDef),
 	// TODO: Add Class TypeDef
 }
 
@@ -106,16 +108,33 @@ impl AlgebraicDef {
 		AlgebraicDef {
 			items: vec![],
 			layout: DataLayout::Declared,
+			params: HashMap::new(),
+			param_order: vec![],
 		}
 	}
 
-	pub fn get_member(&self, name: &Name) -> Option<(usize, &Type)> {
+	fn get_concrete_type(&self, ty: Type, type_args: &HashMap<Name, Type>) -> Type {
+		match ty {
+			Type::Basic(_) => ty,
+			Type::Pointer(pointee) => Type::Pointer(Box::new(self.get_concrete_type(*pointee.clone(), type_args))),
+			Type::Reference(refee) => Type::Reference(Box::new(self.get_concrete_type(*refee.clone(), type_args))),
+			Type::Array(array_ty, size) => Type::Array(Box::new(self.get_concrete_type(*array_ty.clone(), type_args)), size),
+			Type::TypeRef { .. } => ty,
+			Type::TypeParam(param) => type_args[&param].clone(),
+			Type::Unresolved(_) => panic!(),
+		}
+	}
+
+	pub fn get_member<'a>(&self, name: &Name, type_args: Option<&HashMap<Name, Type>>) -> Option<(usize, Type)> {
 		let mut index = 0;
 
 		for item in &self.items {
 			if let NamespaceItem::Variable(t, _) = &item.1 .0 {
 				if &item.0 == name {
-					return Some((index, t));
+					if let Some(type_args) = type_args {
+						return Some((index, self.get_concrete_type(t.clone(), type_args)));
+					}
+					return Some((index, t.clone()));
 				} else {
 					index += 1;
 				}
@@ -149,7 +168,7 @@ impl AlgebraicDef {
 			if let Some(item) = self.items.iter().find(|item| item.0 == name.path[0]) {
 				match &item.1 .0 {
 					NamespaceItem::Type(ty) => match &*ty.read().unwrap() {
-						TypeDef::Algebraic(alg, _) => {
+						TypeDef::Algebraic(alg) => {
 							let mut name_clone = name.clone();
 							name_clone.path.remove(0);
 
@@ -389,9 +408,16 @@ impl Hash for Type {
 				"+".hash(state)
 			}
 			Type::Unresolved(id) => id.hash(state),
+
 			Type::TypeRef { def, params, .. } => {
 				ptr::hash(def.upgrade().unwrap().as_ref(), state);
-				params.hash(state);
+				for (name, param) in params {
+					name.hash(state);
+					param.hash(state);
+				}
+			}
+			Type::TypeParam(name) => {
+				name.hash(state)
 			}
 		}
 	}
@@ -416,15 +442,17 @@ impl Display for Type {
 				} else {
 					let mut iter = params.iter();
 
-					write!(f, "{name}<{}", iter.next().unwrap())?;
+					write!(f, "{name}<{}", iter.next().unwrap().0)?;
 
-					for param in iter {
+					for (param, _) in iter {
 						write!(f, ", {param}")?;
 					}
 
 					write!(f, ">")
 				}
 			}
+
+			Type::TypeParam(t) => write!(f, "<{t}>")
 		}
 	}
 }
@@ -432,10 +460,9 @@ impl Display for Type {
 impl Display for TypeDef {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match &self {
-			TypeDef::Algebraic(agg, _) => {
+			TypeDef::Algebraic(agg) => {
 				write!(f, "{}", agg)?;
 			}
-			TypeDef::TypeParam(_) => todo!(),
 			TypeDef::Trait(_) => todo!(),
 		}
 		Ok(())
@@ -492,6 +519,7 @@ impl std::fmt::Debug for Type {
 			Self::Array(t, _) => f.debug_tuple("Array").field(t).finish(),
 			Self::Unresolved(arg0) => f.debug_tuple("Unresolved").field(arg0).finish(),
 			Self::TypeRef { def: arg0, .. } => f.debug_tuple("TypeRef").field(arg0).finish(),
+			Self::TypeParam(arg0) => f.debug_tuple("TypeParam").field(arg0).finish(),
 		}
 	}
 }

@@ -6,7 +6,7 @@ use crate::semantic::{
 	ast::TokenData,
 	expression::Operator,
 	namespace::{Identifier, Name},
-	types::{Basic, DataLayout, TypeParam},
+	types::{Basic, DataLayout, TypeParam, TypeParamList},
 	Attribute,
 };
 
@@ -132,7 +132,7 @@ pub enum CIRTypeDef {
 		layout: DataLayout,
 		members_map: HashMap<Name, usize>,
 		variants_map: HashMap<Name, usize>,
-		type_params: Vec<TypeParam>,
+		type_params: TypeParamList,
 	},
 
 	Class {},

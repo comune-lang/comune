@@ -9,9 +9,9 @@ use crate::lexer::{Lexer, Token};
 use crate::semantic::ast::{ASTElem, ASTNode, TokenData};
 use crate::semantic::controlflow::ControlFlow;
 use crate::semantic::expression::{Atom, Expr, Operator};
-use crate::semantic::namespace::{Identifier, Namespace, NamespaceASTElem, NamespaceItem};
+use crate::semantic::namespace::{Identifier, Namespace, NamespaceASTElem, NamespaceItem, Name};
 use crate::semantic::types::{
-	AlgebraicDef, Basic, FnDef, FnParamList, TraitDef, TraitImpl, Type, TypeDef, TypeParam,
+	AlgebraicDef, Basic, FnDef, FnParamList, TraitDef, TraitImpl, Type, TypeDef,
 	TypeParamList, Visibility,
 };
 use crate::semantic::Attribute;
@@ -201,14 +201,13 @@ impl Parser {
 							// Register algebraic type
 							let mut current_visibility = Visibility::Public;
 							let mut aggregate = AlgebraicDef::new();
-							let mut generics = HashMap::new();
 							let name_token = self.get_next()?;
 
 							if let Token::Identifier(name) = name_token {
 								let mut next = self.get_next()?;
 
 								if token_compare(&next, "<") {
-									generics = self.parse_type_parameter_list()?;
+									(aggregate.params, aggregate.param_order) = self.parse_type_parameter_list()?;
 
 									next = self.get_current()?;
 								}
@@ -270,7 +269,7 @@ impl Parser {
 
 								self.get_next()?; // Consume closing brace
 
-								let aggregate = TypeDef::Algebraic(aggregate, generics);
+								let aggregate = TypeDef::Algebraic(aggregate);
 
 								self.current_namespace().borrow_mut().children.insert(
 									name.expect_scopeless()?.clone(),
@@ -1173,7 +1172,7 @@ impl Parser {
 				{
 					match &*ty.upgrade().unwrap().read().unwrap() {
 						// Parse with algebraic typename
-						TypeDef::Algebraic(_, _) => {
+						TypeDef::Algebraic(_) => {
 							match &next {
 								Token::Other('{') => {
 									// Parse initializers
@@ -1207,7 +1206,7 @@ impl Parser {
 										Type::TypeRef {
 											def: ty.clone(),
 											name: id.clone(),
-											params: vec![],
+											params: HashMap::new(),
 										},
 										inits,
 									));
@@ -1321,7 +1320,7 @@ impl Parser {
 				result = Some(Type::TypeRef {
 					def: Arc::downgrade(t),
 					name: id.clone(),
-					params: vec![],
+					params: HashMap::new(),
 				})
 			}
 
@@ -1475,7 +1474,7 @@ impl Parser {
 							result = Type::TypeRef {
 								def: Arc::downgrade(t),
 								name: id.clone(),
-								params: vec![],
+								params: HashMap::new(),
 							};
 							found = true;
 						}
@@ -1527,18 +1526,25 @@ impl Parser {
 
 						"<" => {
 							self.get_next()?;
+							
+							let mut i = 0;
 
 							loop {
 								let generic = self.parse_type(true)?;
 
-								if let Type::TypeRef { params, .. } = &mut result {
-									params.push(generic);
+								if let Type::TypeRef { def, params, .. } = &mut result {
+									let def =def.upgrade().unwrap();
+									let TypeDef::Algebraic(agg) = &*def.read().unwrap() else { panic!() };
+									let Some(name) = agg.param_order.get(i) else { panic!("too many type parameters!")}; // TODO: Real error handling
+									
+									params.insert(name.clone(), generic);
 								} else {
 									panic!("can't apply type parameters to this type of Type!") // TODO: Real error handling
 								}
 
 								if self.get_current()? == Token::Other(',') {
 									self.get_next()?;
+									i += 1;
 								} else {
 									break;
 								}
@@ -1632,12 +1638,13 @@ impl Parser {
 		Ok(result)
 	}
 
-	fn parse_type_parameter_list(&self) -> ParseResult<TypeParamList> {
+	fn parse_type_parameter_list(&self) -> ParseResult<(TypeParamList, Vec<Name>)> {
 		if !token_compare(&self.get_current()?, "<") {
 			return Err(self.err(CMNErrorCode::UnexpectedToken));
 		}
 
 		let mut result = HashMap::new();
+		let mut order = vec![];
 		let mut current = self.get_next()?;
 
 		loop {
@@ -1667,7 +1674,8 @@ impl Parser {
 						}
 					}
 
-					result.insert(name, Arc::new(RwLock::new(TypeDef::TypeParam(traits))));
+					result.insert(name.clone(), traits);
+					order.push(name);
 
 					match &current {
 						Token::Operator(">") => continue,
@@ -1690,6 +1698,6 @@ impl Parser {
 
 		self.get_next()?;
 
-		Ok(result)
+		Ok((result, order))
 	}
 }

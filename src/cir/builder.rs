@@ -151,15 +151,13 @@ impl CIRModuleBuilder {
 			Type::Basic(basic) => CIRType::Basic(basic.clone()),
 
 			Type::TypeRef { def, params, name } => {
-				if let TypeDef::TypeParam(ty_param) = &*def.upgrade().unwrap().read().unwrap() {
-					CIRType::TypeParam(0)
-				} else {
-					let idx = self.convert_type_def(&ty);
-					let params_cir = params.iter().map(|ty| self.convert_type(ty)).collect();
+				let idx = self.convert_type_def(&ty);
+				let params_cir = params.iter().map(|(_, ty)| self.convert_type(ty)).collect();
 
-					CIRType::TypeRef(idx, params_cir)
-				}
+				CIRType::TypeRef(idx, params_cir)
 			}
+
+			Type::TypeParam(param) => CIRType::TypeParam(0), // TODO: Actually implement
 
 			Type::Pointer(pointee) => CIRType::Pointer(Box::new(self.convert_type(pointee))),
 
@@ -192,22 +190,21 @@ impl CIRModuleBuilder {
 		} else {
 			// Found an unregistered TypeDef, convert it
 			let (insert_idx, cir_def) = match &*def.upgrade().unwrap().read().unwrap() {
-				TypeDef::Algebraic(alg, params) => {
+				TypeDef::Algebraic(alg) => {
 					let mut members = vec![];
 					let mut members_map = HashMap::new();
 	
-					let mut params_cir = vec![];
+					let mut params_cir = HashMap::new();
 	
-					for param in params {
-						let TypeDef::TypeParam(type_param) = &*param.1.read().unwrap() else { panic!() };
-						params_cir.push(type_param.clone());
+					for param in &alg.params {
+						params_cir.insert(param.0.clone(), param.1.clone());
 					}
 	
 					for item in &alg.items {
 						match &item.1 .0 {
 							NamespaceItem::Variable(ty, _) => {
 								members_map.insert(item.0.clone(), members.len());
-								members.push(self.convert_type(ty));
+								members.push(self.convert_type(&ty));
 							}
 	
 							NamespaceItem::Type(_ty) => {
@@ -233,8 +230,6 @@ impl CIRModuleBuilder {
 					)
 				}
 	
-				TypeDef::TypeParam(param) => panic!("compiler bug: can't convert TypeParam by itself!"),
-
 				TypeDef::Trait(_) => todo!(),
 			};
 		

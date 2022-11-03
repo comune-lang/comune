@@ -81,7 +81,7 @@ impl CIRModule {
 				}
 			}
 		}
-		
+
 		// Remove generics
 		for generic in instantiations.keys() {
 			self.types.remove(generic);
