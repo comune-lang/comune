@@ -36,11 +36,11 @@ int main() {
 	
 	Vector<int> my_cool_generic;
 
-	my_cool_generic.data = malloc(8) as float*;
+	my_cool_generic.data = malloc(8) as int*;
 
 	*my_cool_generic.data = 69;
 
-	i32 generic_get = *my_cool_generic.data as i32;
+	i32 generic_get = *my_cool_generic.data;
 
 	// Borrowck stuff
 	Test test;

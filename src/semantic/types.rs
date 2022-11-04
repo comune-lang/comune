@@ -12,7 +12,7 @@ use crate::semantic::FnScope;
 pub type BoxedType = Box<Type>;
 pub type FnParamList = Vec<(Type, Option<Name>)>;
 pub type TypeParam = Vec<Identifier>; // Generic type parameter, with trait bounds
-pub type TypeParamList = HashMap<Name, TypeParam>;
+pub type TypeParamList = Vec<(Name, TypeParam)>;
 
 pub trait Typed {
 	fn get_type<'ctx>(&self, scope: &'ctx FnScope<'ctx>) -> AnalyzeResult<Type>;
@@ -46,7 +46,6 @@ pub struct AlgebraicDef {
 	pub items: Vec<(Name, NamespaceEntry, Visibility)>,
 	pub layout: DataLayout,
 	pub params: TypeParamList,
-	pub param_order: Vec<Name>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -74,10 +73,10 @@ pub enum Type {
 	TypeRef {
 		def: Weak<RwLock<TypeDef>>,
 		name: Identifier,
-		params: HashMap<Name, Type>,
+		args: Vec<(Name, Type)>,
 	},
 
-	TypeParam(Name),
+	TypeParam(usize),
 
 	Unresolved(Identifier), // Unresolved type (during parsing phase)
 }
@@ -108,12 +107,11 @@ impl AlgebraicDef {
 		AlgebraicDef {
 			items: vec![],
 			layout: DataLayout::Declared,
-			params: HashMap::new(),
-			param_order: vec![],
+			params: vec![],
 		}
 	}
 
-	fn get_concrete_type(&self, ty: Type, type_args: &HashMap<Name, Type>) -> Type {
+	fn get_concrete_type(&self, ty: Type, type_args: &Vec<(Name, Type)>) -> Type {
 		match ty {
 			Type::Basic(_) => ty,
 			Type::Pointer(pointee) => Type::Pointer(Box::new(
@@ -127,7 +125,7 @@ impl AlgebraicDef {
 				size,
 			),
 			Type::TypeRef { .. } => ty,
-			Type::TypeParam(param) => type_args[&param].clone(),
+			Type::TypeParam(param) => type_args[param].1.clone(),
 			Type::Unresolved(_) => panic!(),
 		}
 	}
@@ -135,7 +133,7 @@ impl AlgebraicDef {
 	pub fn get_member<'a>(
 		&self,
 		name: &Name,
-		type_args: Option<&HashMap<Name, Type>>,
+		type_args: Option<&Vec<(Name, Type)>>,
 	) -> Option<(usize, Type)> {
 		let mut index = 0;
 
@@ -387,12 +385,12 @@ impl PartialEq for Type {
 				Self::TypeRef {
 					def: l0,
 					name: l1,
-					params: l2,
+					args: l2,
 				},
 				Self::TypeRef {
 					def: r0,
 					name: r1,
-					params: r2,
+					args: r2,
 				},
 			) => Arc::ptr_eq(&l0.upgrade().unwrap(), &r0.upgrade().unwrap()) && l1 == r1 && l2 == r2,
 			_ => false,
@@ -420,7 +418,7 @@ impl Hash for Type {
 			}
 			Type::Unresolved(id) => id.hash(state),
 
-			Type::TypeRef { def, params, .. } => {
+			Type::TypeRef { def, args: params, .. } => {
 				ptr::hash(def.upgrade().unwrap().as_ref(), state);
 				for (name, param) in params {
 					name.hash(state);
@@ -445,7 +443,7 @@ impl Display for Type {
 
 			Type::Unresolved(t) => write!(f, "unresolved type \"{}\"", t),
 
-			Type::TypeRef { name, params, .. } => {
+			Type::TypeRef { name, args: params, .. } => {
 				if params.is_empty() {
 					write!(f, "{name}")
 				} else {

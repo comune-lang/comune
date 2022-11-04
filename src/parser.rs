@@ -207,8 +207,7 @@ impl Parser {
 								let mut next = self.get_next()?;
 
 								if token_compare(&next, "<") {
-									(aggregate.params, aggregate.param_order) =
-										self.parse_type_parameter_list()?;
+									aggregate.params = self.parse_type_parameter_list()?;
 
 									next = self.get_current()?;
 								}
@@ -454,7 +453,7 @@ impl Parser {
 											Arc::new(RwLock::new(FnDef {
 												ret: fn_ret,
 												args: fn_params,
-												generics: HashMap::new(),
+												generics: vec![],
 											})),
 											RefCell::new(ast_elem),
 										),
@@ -932,7 +931,7 @@ impl Parser {
 						let t = FnDef {
 							ret: t,
 							args: self.parse_parameter_list()?,
-							generics: HashMap::new(),
+							generics: vec![],
 						};
 
 						// Past the parameter list, check if we're at a function body or not
@@ -1207,7 +1206,7 @@ impl Parser {
 										Type::TypeRef {
 											def: ty.clone(),
 											name: id.clone(),
-											params: HashMap::new(),
+											args: vec![],
 										},
 										inits,
 									));
@@ -1321,7 +1320,7 @@ impl Parser {
 				result = Some(Type::TypeRef {
 					def: Arc::downgrade(t),
 					name: id.clone(),
-					params: HashMap::new(),
+					args: vec![],
 				})
 			}
 
@@ -1475,7 +1474,7 @@ impl Parser {
 							result = Type::TypeRef {
 								def: Arc::downgrade(t),
 								name: id.clone(),
-								params: HashMap::new(),
+								args: vec![],
 							};
 							found = true;
 						}
@@ -1533,12 +1532,12 @@ impl Parser {
 							loop {
 								let generic = self.parse_type(true)?;
 
-								if let Type::TypeRef { def, params, .. } = &mut result {
+								if let Type::TypeRef { def, args, .. } = &mut result {
 									let def = def.upgrade().unwrap();
 									let TypeDef::Algebraic(agg) = &*def.read().unwrap() else { panic!() };
-									let Some(name) = agg.param_order.get(i) else { panic!("too many type parameters!")}; // TODO: Real error handling
+									let name = &agg.params[i].0; // TODO: Real error handling
 
-									params.insert(name.clone(), generic);
+									args.push((name.clone(), generic));
 								} else {
 									panic!("can't apply type parameters to this type of Type!") // TODO: Real error handling
 								}
@@ -1639,13 +1638,12 @@ impl Parser {
 		Ok(result)
 	}
 
-	fn parse_type_parameter_list(&self) -> ParseResult<(TypeParamList, Vec<Name>)> {
+	fn parse_type_parameter_list(&self) -> ParseResult<TypeParamList> {
 		if !token_compare(&self.get_current()?, "<") {
 			return Err(self.err(CMNErrorCode::UnexpectedToken));
 		}
 
-		let mut result = HashMap::new();
-		let mut order = vec![];
+		let mut result = vec![];
 		let mut current = self.get_next()?;
 
 		loop {
@@ -1675,8 +1673,7 @@ impl Parser {
 						}
 					}
 
-					result.insert(name.clone(), traits);
-					order.push(name);
+					result.push((name, traits));
 
 					match &current {
 						Token::Operator(">") => continue,
@@ -1699,6 +1696,6 @@ impl Parser {
 
 		self.get_next()?;
 
-		Ok((result, order))
+		Ok(result)
 	}
 }

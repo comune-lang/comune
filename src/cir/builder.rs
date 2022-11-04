@@ -150,14 +150,14 @@ impl CIRModuleBuilder {
 		match ty {
 			Type::Basic(basic) => CIRType::Basic(basic.clone()),
 
-			Type::TypeRef { params, .. } => {
+			Type::TypeRef { args, .. } => {
 				let idx = self.convert_type_def(&ty);
-				let params_cir = params.iter().map(|(_, ty)| self.convert_type(ty)).collect();
+				let args_cir = args.iter().map(|(_, ty)| self.convert_type(ty)).collect();
 
-				CIRType::TypeRef(idx, params_cir)
+				CIRType::TypeRef(idx, args_cir)
 			}
 
-			Type::TypeParam(param) => CIRType::TypeParam(0), // TODO: Actually implement
+			Type::TypeParam(idx) => CIRType::TypeParam(*idx),
 
 			Type::Pointer(pointee) => CIRType::Pointer(Box::new(self.convert_type(pointee))),
 
@@ -194,12 +194,6 @@ impl CIRModuleBuilder {
 					let mut members = vec![];
 					let mut members_map = HashMap::new();
 
-					let mut params_cir = HashMap::new();
-
-					for param in &alg.params {
-						params_cir.insert(param.0.clone(), param.1.clone());
-					}
-
 					for item in &alg.items {
 						match &item.1 .0 {
 							NamespaceItem::Variable(ty, _) => {
@@ -225,7 +219,7 @@ impl CIRModuleBuilder {
 							layout: alg.layout,
 							members_map,
 							variants_map: HashMap::new(),
-							type_params: params_cir,
+							type_params: alg.params.clone(),
 						},
 					)
 				}

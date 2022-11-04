@@ -268,20 +268,22 @@ pub fn resolve_type(
 
 			let mut result = None;
 
+			let generic_pos = generics.iter().position(|(name, _)| name == id.name());
+
 			if let Some(b) = Basic::get_basic_type(id.name()) {
 				if !id.is_qualified() {
 					result = Some(Type::Basic(b));
 				}
-			} else if !id.is_qualified() && generics.contains_key(id.name()) {
+			} else if !id.is_qualified() && generic_pos.is_some() {
 				// Generic type parameter
-				result = Some(Type::TypeParam(id.name().clone()));
+				result = Some(Type::TypeParam(generic_pos.unwrap()));
 			} else {
 				namespace.with_item(&id.clone(), &root.borrow(), |item, id| {
 					if let NamespaceItem::Type(t) = &item.0 {
 						result = Some(Type::TypeRef {
 							def: Arc::downgrade(t),
 							name: id.clone(),
-							params: HashMap::new(),
+							args: vec![],
 						});
 					}
 				});
@@ -394,7 +396,7 @@ pub fn resolve_namespace_types(
 					&child.1 .1,
 					&namespace,
 					root,
-					&HashMap::new(),
+					&vec![],
 				)?,
 
 				NamespaceItem::Alias(_) => {}
@@ -968,7 +970,7 @@ impl Expr {
 						if let Type::TypeRef {
 							def: r,
 							name: t_id,
-							params,
+							args: t_args,
 						} = elems[0].0.validate_lvalue(scope, meta).unwrap()
 						{
 							if let (lhs, [rhs, ..]) = elems.split_first_mut().unwrap() {
@@ -978,12 +980,12 @@ impl Expr {
 										// Member access on algebraic type
 										Expr::Atom(Atom::Identifier(id), _) => {
 											if let Some((_, m)) =
-												t.get_member(id.name(), Some(&params))
+												t.get_member(id.name(), Some(&t_args))
 											{
 												lhs.1 = Some(Type::TypeRef {
 													def: r.clone(),
 													name: t_id.clone(),
-													params: params.clone(),
+													args: t_args.clone(),
 												});
 												rhs.1 = Some(m.clone());
 												return Ok(m.clone());
@@ -1018,7 +1020,7 @@ impl Expr {
 															Type::TypeRef {
 																def: r.clone(),
 																name: t_id.clone(),
-																params: HashMap::new(),
+																args: vec![],
 															},
 														)),
 													},
@@ -1038,7 +1040,7 @@ impl Expr {
 														lhs.1 = Some(Type::TypeRef {
 															def: r.clone(),
 															name: t_id.clone(),
-															params: HashMap::new(),
+															args: vec![],
 														});
 														rhs.1 = Some(method.ret.clone());
 
@@ -1197,7 +1199,7 @@ impl Atom {
 			Atom::ArrayLit(_) => todo!(),
 
 			Atom::AlgebraicLit(ty, elems) => {
-				if let Type::TypeRef { def, params, .. } = ty {
+				if let Type::TypeRef { def, args: params, .. } = ty {
 					if let TypeDef::Algebraic(alg) = &*def.upgrade().unwrap().read().unwrap() {
 						for elem in elems {
 							let member_ty = if let Some((_, ty)) =
