@@ -38,16 +38,15 @@ int main() {
 
 	my_cool_generic.data = malloc(8) as int*;
 
-	*(my_cool_generic.data) = 69;
+	*my_cool_generic.data = 69;
 
-	i32 generic_get_1 = *my_cool_generic.data as i32;
-	i32 generic_get_2 = (*my_cool_generic.data) as i32;
+	i32 generic_get = *my_cool_generic.data as i32;
 
 	// Borrowck stuff
 	Test test;
 
 	test = Test { 
-		a: 60, 
+		a: *my_cool_generic.data, 
 		b: 0
 	};
 

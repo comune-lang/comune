@@ -76,7 +76,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 				CIRTypeDef::Algebraic { .. } | CIRTypeDef::Class { .. } => self.type_map.insert(
 					i.clone(),
 					self.context.opaque_struct_type(i).as_any_type_enum(),
-				)
+				),
 			};
 		}
 

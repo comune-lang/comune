@@ -149,7 +149,11 @@ fn convert_invalid_use_error(
 		Err(e) => Err((
 			CMNError::new(CMNErrorCode::InvalidUse {
 				variable: Identifier::from_name(
-					func.variables[e.0.local].1.as_ref().unwrap_or(&"(???)".into()).clone(),
+					func.variables[e.0.local]
+						.1
+						.as_ref()
+						.unwrap_or(&"(???)".into())
+						.clone(),
 					false,
 				),
 				state: e.1,

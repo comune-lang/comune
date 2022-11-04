@@ -11,13 +11,13 @@ use rayon::prelude::*;
 
 use crate::{
 	cir::{
-		analyze::{borrowck, cleanup, verify, CIRPassManager},
+		analyze::{cleanup, verify, CIRPassManager},
 		builder::CIRModuleBuilder,
 	},
 	errors::{CMNError, CMNErrorCode, CMNMessage, CMNMessageLog},
 	lexer::Lexer,
 	llvm::{self, LLVMBackend},
-	parser::{AnalyzeResult, ParseResult, Parser},
+	parser::{ParseResult, Parser},
 	semantic::{
 		self,
 		namespace::{Identifier, Namespace},
@@ -326,7 +326,6 @@ pub fn generate_code<'ctx>(
 		cir_module.to_string(),
 	)
 	.unwrap();
-
 
 	let module_mono = cir_module.monoize();
 

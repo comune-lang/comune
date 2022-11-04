@@ -9,10 +9,10 @@ use crate::lexer::{Lexer, Token};
 use crate::semantic::ast::{ASTElem, ASTNode, TokenData};
 use crate::semantic::controlflow::ControlFlow;
 use crate::semantic::expression::{Atom, Expr, Operator};
-use crate::semantic::namespace::{Identifier, Namespace, NamespaceASTElem, NamespaceItem, Name};
+use crate::semantic::namespace::{Identifier, Name, Namespace, NamespaceASTElem, NamespaceItem};
 use crate::semantic::types::{
-	AlgebraicDef, Basic, FnDef, FnParamList, TraitDef, TraitImpl, Type, TypeDef,
-	TypeParamList, Visibility,
+	AlgebraicDef, Basic, FnDef, FnParamList, TraitDef, TraitImpl, Type, TypeDef, TypeParamList,
+	Visibility,
 };
 use crate::semantic::Attribute;
 
@@ -207,7 +207,8 @@ impl Parser {
 								let mut next = self.get_next()?;
 
 								if token_compare(&next, "<") {
-									(aggregate.params, aggregate.param_order) = self.parse_type_parameter_list()?;
+									(aggregate.params, aggregate.param_order) =
+										self.parse_type_parameter_list()?;
 
 									next = self.get_current()?;
 								}
@@ -1526,17 +1527,17 @@ impl Parser {
 
 						"<" => {
 							self.get_next()?;
-							
+
 							let mut i = 0;
 
 							loop {
 								let generic = self.parse_type(true)?;
 
 								if let Type::TypeRef { def, params, .. } = &mut result {
-									let def =def.upgrade().unwrap();
+									let def = def.upgrade().unwrap();
 									let TypeDef::Algebraic(agg) = &*def.read().unwrap() else { panic!() };
 									let Some(name) = agg.param_order.get(i) else { panic!("too many type parameters!")}; // TODO: Real error handling
-									
+
 									params.insert(name.clone(), generic);
 								} else {
 									panic!("can't apply type parameters to this type of Type!") // TODO: Real error handling

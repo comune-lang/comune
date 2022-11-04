@@ -49,7 +49,7 @@ impl CIRModule {
 				}
 			}
 		}
-		
+
 		let mut instantiations = HashMap::new();
 
 		for func in &mut self.functions {
@@ -159,8 +159,7 @@ impl CIRModule {
 			CIRType::Reference(refee) => Self::monoize_type(types, refee, param_map, instances),
 
 			CIRType::TypeRef(idx, args) => {
-
-				// If we're referring to a type with generics, check if the 
+				// If we're referring to a type with generics, check if the
 				// instantation we want exists already. If not, create it.
 				if !args.is_empty() {
 					if !instances.contains_key(idx) {
@@ -168,12 +167,11 @@ impl CIRModule {
 					}
 
 					if !instances[idx].contains_key(param_map) {
-						*idx =
-							Self::instantiate_type_def(types, idx.clone(), &args, instances);
+						*idx = Self::instantiate_type_def(types, idx.clone(), &args, instances);
 					}
 				}
 			}
-			
+
 			CIRType::TypeParam(idx) => {
 				*ty = param_map[*idx].clone();
 			}
@@ -187,11 +185,14 @@ impl CIRModule {
 		param_map: &TypeSubstitutions,
 		instances: &mut TypeInstances,
 	) -> TypeName {
-
 		let mut instance = types[&name].clone();
 
 		match &mut instance {
-			CIRTypeDef::Algebraic { members, type_params, .. } => {
+			CIRTypeDef::Algebraic {
+				members,
+				type_params,
+				..
+			} => {
 				for member in members {
 					Self::monoize_type(types, member, param_map, instances);
 				}

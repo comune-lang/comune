@@ -6,7 +6,7 @@ use crate::semantic::{
 	ast::TokenData,
 	expression::Operator,
 	namespace::{Identifier, Name},
-	types::{Basic, DataLayout, TypeParam, TypeParamList},
+	types::{Basic, DataLayout, TypeParamList},
 	Attribute,
 };
 

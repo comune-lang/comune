@@ -5,8 +5,6 @@ use std::io::{self, Error, Read};
 use std::path::Path;
 use std::sync::mpsc::Sender;
 
-use colored::Colorize;
-
 use crate::errors::{CMNMessage, CMNMessageLog};
 
 use crate::semantic::namespace::Identifier;

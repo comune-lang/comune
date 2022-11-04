@@ -957,18 +957,20 @@ impl Expr {
 
 					Operator::MemberAccess => {
 						if let Type::TypeRef {
-							def: r, name: t_id, params,
+							def: r,
+							name: t_id,
+							params,
 						} = elems[0].0.validate_lvalue(scope, meta).unwrap()
 						{
 							if let (lhs, [rhs, ..]) = elems.split_first_mut().unwrap() {
 								match &mut *r.upgrade().unwrap().write().unwrap() {
-
 									// Dot operator is on an algebraic type, so check if it's a member access or method call
 									TypeDef::Algebraic(t) => match &mut rhs.0 {
-
 										// Member access on algebraic type
 										Expr::Atom(Atom::Identifier(id), _) => {
-											if let Some((_, m)) = t.get_member(id.name(), Some(&params)) {
+											if let Some((_, m)) =
+												t.get_member(id.name(), Some(&params))
+											{
 												lhs.1 = Some(Type::TypeRef {
 													def: r.clone(),
 													name: t_id.clone(),
@@ -1189,13 +1191,14 @@ impl Atom {
 				if let Type::TypeRef { def, params, .. } = ty {
 					if let TypeDef::Algebraic(alg) = &*def.upgrade().unwrap().read().unwrap() {
 						for elem in elems {
-							let member_ty =
-								if let Some((_, ty)) = alg.get_member(elem.0.as_ref().unwrap(), Some(&params)) {
-									ty
-								} else {
-									// Invalid member in strenum literal
-									todo!()
-								};
+							let member_ty = if let Some((_, ty)) =
+								alg.get_member(elem.0.as_ref().unwrap(), Some(&params))
+							{
+								ty
+							} else {
+								// Invalid member in strenum literal
+								todo!()
+							};
 
 							let expr_ty = elem.1.get_expr().borrow_mut().validate(
 								scope,

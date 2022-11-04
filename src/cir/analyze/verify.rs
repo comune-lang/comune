@@ -4,7 +4,6 @@ use super::CIRPass;
 use crate::{
 	cir::{CIRFunction, CIRStmt},
 	errors::{CMNError, CMNErrorCode},
-	parser::AnalyzeResult,
 	semantic::ast::TokenData,
 };
 

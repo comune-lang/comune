@@ -116,16 +116,27 @@ impl AlgebraicDef {
 	fn get_concrete_type(&self, ty: Type, type_args: &HashMap<Name, Type>) -> Type {
 		match ty {
 			Type::Basic(_) => ty,
-			Type::Pointer(pointee) => Type::Pointer(Box::new(self.get_concrete_type(*pointee.clone(), type_args))),
-			Type::Reference(refee) => Type::Reference(Box::new(self.get_concrete_type(*refee.clone(), type_args))),
-			Type::Array(array_ty, size) => Type::Array(Box::new(self.get_concrete_type(*array_ty.clone(), type_args)), size),
+			Type::Pointer(pointee) => Type::Pointer(Box::new(
+				self.get_concrete_type(*pointee.clone(), type_args),
+			)),
+			Type::Reference(refee) => {
+				Type::Reference(Box::new(self.get_concrete_type(*refee.clone(), type_args)))
+			}
+			Type::Array(array_ty, size) => Type::Array(
+				Box::new(self.get_concrete_type(*array_ty.clone(), type_args)),
+				size,
+			),
 			Type::TypeRef { .. } => ty,
 			Type::TypeParam(param) => type_args[&param].clone(),
 			Type::Unresolved(_) => panic!(),
 		}
 	}
 
-	pub fn get_member<'a>(&self, name: &Name, type_args: Option<&HashMap<Name, Type>>) -> Option<(usize, Type)> {
+	pub fn get_member<'a>(
+		&self,
+		name: &Name,
+		type_args: Option<&HashMap<Name, Type>>,
+	) -> Option<(usize, Type)> {
 		let mut index = 0;
 
 		for item in &self.items {
@@ -416,9 +427,7 @@ impl Hash for Type {
 					param.hash(state);
 				}
 			}
-			Type::TypeParam(name) => {
-				name.hash(state)
-			}
+			Type::TypeParam(name) => name.hash(state),
 		}
 	}
 }
@@ -452,7 +461,7 @@ impl Display for Type {
 				}
 			}
 
-			Type::TypeParam(t) => write!(f, "<{t}>")
+			Type::TypeParam(t) => write!(f, "<{t}>"),
 		}
 	}
 }

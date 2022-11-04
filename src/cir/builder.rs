@@ -193,30 +193,30 @@ impl CIRModuleBuilder {
 				TypeDef::Algebraic(alg) => {
 					let mut members = vec![];
 					let mut members_map = HashMap::new();
-	
+
 					let mut params_cir = HashMap::new();
-	
+
 					for param in &alg.params {
 						params_cir.insert(param.0.clone(), param.1.clone());
 					}
-	
+
 					for item in &alg.items {
 						match &item.1 .0 {
 							NamespaceItem::Variable(ty, _) => {
 								members_map.insert(item.0.clone(), members.len());
 								members.push(self.convert_type(&ty));
 							}
-	
+
 							NamespaceItem::Type(_ty) => {
 								todo!()
 							}
-	
+
 							_ => panic!(),
 						}
 					}
-	
+
 					// TODO: Variant mapping
-	
+
 					(
 						name.to_string(),
 						CIRTypeDef::Algebraic {
@@ -225,14 +225,13 @@ impl CIRModuleBuilder {
 							layout: alg.layout,
 							members_map,
 							variants_map: HashMap::new(),
-							type_params: params_cir
+							type_params: params_cir,
 						},
 					)
 				}
-	
+
 				TypeDef::Trait(_) => todo!(),
 			};
-		
 
 			self.module.types.insert(insert_idx.clone(), cir_def);
 			self.type_map.insert(ty.clone(), insert_idx.clone());
