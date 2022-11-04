@@ -150,7 +150,7 @@ impl CIRModuleBuilder {
 		match ty {
 			Type::Basic(basic) => CIRType::Basic(basic.clone()),
 
-			Type::TypeRef { def, params, name } => {
+			Type::TypeRef { params, .. } => {
 				let idx = self.convert_type_def(&ty);
 				let params_cir = params.iter().map(|(_, ty)| self.convert_type(ty)).collect();
 

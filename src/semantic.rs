@@ -817,6 +817,15 @@ impl Expr {
 								{
 									if first_t == try_coerce_rhs {
 										second_t = Some(try_coerce_rhs);
+									} else {
+										return Err((
+											CMNError::new(CMNErrorCode::ExprTypeMismatch(
+												first_t,
+												second_t.unwrap(),
+												op.clone(),
+											)),
+											*meta,
+										));
 									}
 								} else {
 									let first = elems.get_mut(0).unwrap();
