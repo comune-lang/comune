@@ -9,10 +9,10 @@ use crate::lexer::{Lexer, Token};
 use crate::semantic::ast::{ASTElem, ASTNode, TokenData};
 use crate::semantic::controlflow::ControlFlow;
 use crate::semantic::expression::{Atom, Expr, Operator};
-use crate::semantic::namespace::{Identifier, Name, Namespace, NamespaceASTElem, NamespaceItem};
+use crate::semantic::namespace::{Identifier, Namespace, NamespaceASTElem, NamespaceItem};
+use crate::semantic::traits::{TraitImpl, TraitDef};
 use crate::semantic::types::{
-	AlgebraicDef, Basic, FnDef, FnParamList, TraitDef, TraitImpl, Type, TypeDef, TypeParamList,
-	Visibility,
+	AlgebraicDef, Basic, FnDef, FnParamList, Type, TypeDef, TypeParamList, Visibility,
 };
 use crate::semantic::Attribute;
 
@@ -332,12 +332,10 @@ impl Parser {
 
 								self.get_next()?; // Consume closing brace
 
-								let aggregate = TypeDef::Trait(this_trait);
-
 								self.current_namespace().borrow_mut().children.insert(
 									name.expect_scopeless()?.clone(),
 									(
-										NamespaceItem::Type(Arc::new(RwLock::new(aggregate))),
+										NamespaceItem::Trait(Arc::new(RwLock::new(this_trait))),
 										current_attributes,
 										None,
 									),
@@ -452,8 +450,8 @@ impl Parser {
 										NamespaceItem::Function(
 											Arc::new(RwLock::new(FnDef {
 												ret: fn_ret,
-												args: fn_params,
-												generics: vec![],
+												params: fn_params,
+												type_params: vec![],
 											})),
 											RefCell::new(ast_elem),
 										),
@@ -930,8 +928,8 @@ impl Parser {
 					"(" => {
 						let t = FnDef {
 							ret: t,
-							args: self.parse_parameter_list()?,
-							generics: vec![],
+							params: self.parse_parameter_list()?,
+							type_params: vec![],
 						};
 
 						// Past the parameter list, check if we're at a function body or not

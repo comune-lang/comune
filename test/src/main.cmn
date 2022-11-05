@@ -42,6 +42,8 @@ int main() {
 
 	i32 generic_get = *my_cool_generic.data;
 
+	*my_cool_generic.data = 69;
+
 	// Borrowck stuff
 	Test test;
 

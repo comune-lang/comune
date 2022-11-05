@@ -1,8 +1,4 @@
-use std::{
-	borrow::BorrowMut,
-	collections::HashMap,
-	sync::{Arc, RwLock},
-};
+use std::{borrow::BorrowMut, collections::HashMap, sync::RwLock};
 
 use crate::{
 	constexpr::{ConstExpr, ConstValue},
@@ -223,8 +219,7 @@ impl CIRModuleBuilder {
 						},
 					)
 				}
-
-				TypeDef::Trait(_) => todo!(),
+				TypeDef::Class => todo!(),
 			};
 
 			self.module.types.insert(insert_idx.clone(), cir_def);
@@ -241,12 +236,12 @@ impl CIRModuleBuilder {
 			variables: vec![],
 			blocks: vec![],
 			ret: self.convert_type(&func.ret),
-			arg_count: func.args.len(),
+			arg_count: func.params.len(),
 			attributes,
 			is_extern: true,
 		});
 
-		for param in &func.args {
+		for param in &func.params {
 			if let Some(name) = &param.1 {
 				self.insert_variable(name.clone(), param.0.clone());
 			}
@@ -512,7 +507,7 @@ impl CIRModuleBuilder {
 				Atom::AlgebraicLit(ty, elems) => {
 					let cir_ty = self.convert_type(ty);
 
-					let ty_idx = if let CIRType::TypeRef(idx, params) = &cir_ty {
+					let ty_idx = if let CIRType::TypeRef(idx, _params) = &cir_ty {
 						idx
 					} else {
 						panic!()
@@ -727,7 +722,7 @@ impl CIRModuleBuilder {
 					let mut lhs = self.generate_lvalue_expr(&elems[0].0);
 					let lhs_ty = self.convert_type(&elems[0].1.as_ref().unwrap());
 
-					if let CIRType::TypeRef(id, params) = lhs_ty {
+					if let CIRType::TypeRef(id, _params) = lhs_ty {
 						if let CIRTypeDef::Algebraic { members_map, .. } = &self.module.types[&id] {
 							if let Expr::Atom(Atom::Identifier(id), _) = &elems[1].0 {
 								let idx = members_map[id.expect_scopeless().unwrap()];

@@ -21,19 +21,8 @@ pub trait Typed {
 #[derive(Debug, Clone)]
 pub struct FnDef {
 	pub ret: Type,
-	pub args: Vec<(Type, Option<Name>)>,
-	pub generics: TypeParamList,
-}
-
-#[derive(Debug)]
-pub struct TraitDef {
-	pub items: HashMap<Name, NamespaceEntry>,
-	pub supers: Vec<Identifier>,
-}
-
-#[derive(Default, Debug, Clone)]
-pub struct TraitImpl {
-	pub items: HashMap<Name, NamespaceEntry>,
+	pub params: Vec<(Type, Option<Name>)>,
+	pub type_params: TypeParamList,
 }
 
 // The internal representation of algebraic types, like structs, enums, and (shocker) struct enums
@@ -83,9 +72,8 @@ pub enum Type {
 
 #[derive(Debug)]
 pub enum TypeDef {
-	Trait(TraitDef),
 	Algebraic(AlgebraicDef),
-	// TODO: Add Class TypeDef
+	Class, // TODO: Implement classes
 }
 
 #[derive(Clone, Debug)]
@@ -418,7 +406,9 @@ impl Hash for Type {
 			}
 			Type::Unresolved(id) => id.hash(state),
 
-			Type::TypeRef { def, args: params, .. } => {
+			Type::TypeRef {
+				def, args: params, ..
+			} => {
 				ptr::hash(def.upgrade().unwrap().as_ref(), state);
 				for (name, param) in params {
 					name.hash(state);
@@ -443,7 +433,9 @@ impl Display for Type {
 
 			Type::Unresolved(t) => write!(f, "unresolved type \"{}\"", t),
 
-			Type::TypeRef { name, args: params, .. } => {
+			Type::TypeRef {
+				name, args: params, ..
+			} => {
 				if params.is_empty() {
 					write!(f, "{name}")
 				} else {
@@ -470,7 +462,7 @@ impl Display for TypeDef {
 			TypeDef::Algebraic(agg) => {
 				write!(f, "{}", agg)?;
 			}
-			TypeDef::Trait(_) => todo!(),
+			TypeDef::Class => todo!(),
 		}
 		Ok(())
 	}
@@ -480,8 +472,8 @@ impl Display for FnDef {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		write!(f, "{}(", self.ret)?;
 
-		for arg in &self.args {
-			write!(f, "{}, ", arg.0)?;
+		for param in &self.params {
+			write!(f, "{}, ", param.0)?;
 		}
 
 		write!(f, ")")

@@ -25,6 +25,7 @@ pub mod ast;
 pub mod controlflow;
 pub mod expression;
 pub mod namespace;
+pub mod traits;
 pub mod types;
 
 // SEMANTIC ANALYSIS
@@ -129,8 +130,8 @@ pub fn validate_function(
 	ret = func.ret.clone();
 	scope = FnScope::new(namespace, root, ret.clone());
 
-	for arg in &func.args {
-		scope.add_variable(arg.0.clone(), arg.1.clone().unwrap())
+	for param in &func.params {
+		scope.add_variable(param.0.clone(), param.1.clone().unwrap())
 	}
 
 	if let NamespaceASTElem::Parsed(elem) = &mut *elem.borrow_mut() {
@@ -378,14 +379,14 @@ pub fn resolve_namespace_types(
 				NamespaceItem::Function(func, _) => {
 					let FnDef {
 						ret,
-						args,
-						generics,
+						params,
+						type_params: generics,
 					} = &mut *func.write().unwrap();
 
 					resolve_type(ret, &namespace, root, &generics)?;
 
-					for arg in args {
-						resolve_type(&mut arg.0, &namespace, root, &generics)?;
+					for param in params {
+						resolve_type(&mut param.0, &namespace, root, &generics)?;
 					}
 				}
 
@@ -479,18 +480,18 @@ pub fn register_impls(
 									// Resolve function types
 									let FnDef {
 										ret,
-										args,
-										generics,
+										params,
+										type_params,
 									} = &mut *func_lock.write().unwrap();
 
-									resolve_type(ret, &namespace.borrow(), root, &generics)?;
+									resolve_type(ret, &namespace.borrow(), root, &type_params)?;
 
-									for arg in args {
+									for param in params {
 										resolve_type(
-											&mut arg.0,
+											&mut param.0,
 											&namespace.borrow(),
 											root,
-											&generics,
+											&type_params,
 										)?;
 									}
 
@@ -1031,7 +1032,7 @@ impl Expr {
 												match validate_fn_call(
 													&method.ret,
 													&args,
-													&method.args,
+													&method.params,
 													scope,
 													meta.clone(),
 												) {
@@ -1174,7 +1175,7 @@ impl Atom {
 							*ret = Some(validate_fn_call(
 								&func.ret,
 								args,
-								&func.args,
+								&func.params,
 								scope,
 								meta.clone(),
 							)?);
@@ -1199,7 +1200,10 @@ impl Atom {
 			Atom::ArrayLit(_) => todo!(),
 
 			Atom::AlgebraicLit(ty, elems) => {
-				if let Type::TypeRef { def, args: params, .. } = ty {
+				if let Type::TypeRef {
+					def, args: params, ..
+				} = ty
+				{
 					if let TypeDef::Algebraic(alg) = &*def.upgrade().unwrap().read().unwrap() {
 						for elem in elems {
 							let member_ty = if let Some((_, ty)) =

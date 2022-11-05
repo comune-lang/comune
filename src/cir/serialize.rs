@@ -119,7 +119,7 @@ impl Display for LValue {
 
 		for proj in &self.projection {
 			match proj {
-				PlaceElem::Deref => write!(f, "*"),
+				PlaceElem::Deref => write!(f, ">"),
 				PlaceElem::Field(i) => write!(f, ".{i}"),
 				PlaceElem::Index(i) => write!(f, "[{i}]"),
 			}?;

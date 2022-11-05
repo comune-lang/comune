@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use super::CIRPassMut;
 use crate::{
-	cir::{CIRFunction, CIRStmt, CIRType, LValue, Operand, RValue},
+	cir::{CIRFunction, CIRStmt, CIRType, LValue, Operand, RValue, PlaceElem},
 	errors::{CMNError, CMNErrorCode},
 	parser::AnalyzeResult,
 	semantic::{ast::TokenData, namespace::Identifier},
@@ -33,28 +33,27 @@ struct LiveVarCheckState {
 
 impl LiveVarCheckState {
 	fn set_liveness(&mut self, lval: &LValue, state: LivenessState) {
-		let mut keys = vec![];
-
 		// Clear liveness state for all sublocations
 
-		for key in self
+		let keys: Vec<_> = self
 			.liveness
 			.keys()
-			.filter(|key| key.local == lval.local && key.projection.len() >= lval.projection.len())
-		{
-			for proj in 0..lval.projection.len() {
-				if key.projection[proj] != lval.projection[proj] {
-					continue;
-				}
-			}
-
-			keys.push(key.clone());
-		}
+			.filter(|key| {
+				key.local == lval.local
+					&& key.projection.len() >= lval.projection.len()
+					&& key.projection[0..lval.projection.len()] == *lval.projection.as_slice()
+			})
+			.cloned()
+			.collect();
 
 		for key in keys {
-			self.liveness.insert(key, state);
+			if !key.projection[lval.projection.len()..].contains(&PlaceElem::Deref) {
+				println!("removing state for {key}");
+				self.liveness.remove(&key);	
+			}
 		}
 
+		println!("setting {state:?} for {lval}");
 		self.liveness.insert(lval.clone(), state);
 	}
 
@@ -63,11 +62,13 @@ impl LiveVarCheckState {
 			// This state has a defined liveness value, so look through its children to check for partial moves
 
 			// Get all keys that are sublocations of this lvalue
-			for (_, val) in self.liveness.iter().filter(|(key, _)| {
+			for (key, val) in self.liveness.iter().filter(|(key, _)| {
 				key.local == lval.local
+					&& key.projection.len() > lval.projection.len()
 					&& key.projection[0..lval.projection.len()] == *lval.projection.as_slice()
 			}) {
 				if *val == LivenessState::Moved {
+					println!("returning PartialMoved for {lval} as {key} is Moved");
 					return LivenessState::PartialMoved;
 				}
 			}
@@ -80,6 +81,7 @@ impl LiveVarCheckState {
 
 		loop {
 			if let Some(state) = self.liveness.get(&lval) {
+				println!("returning {state:?} for {lval}");
 				return *state;
 			}
 

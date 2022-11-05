@@ -13,8 +13,8 @@ use crate::{
 
 use super::{
 	ast::ASTElem,
-	types::{FnDef, TraitImpl, Type, TypeDef},
-	Attribute,
+	types::{FnDef, Type, TypeDef},
+	Attribute, traits::{TraitDef, TraitImpl},
 };
 
 pub type Name = Arc<str>;
@@ -91,6 +91,7 @@ pub enum NamespaceASTElem {
 #[derive(Clone, Debug)]
 pub enum NamespaceItem {
 	Type(Arc<RwLock<TypeDef>>),
+	Trait(Arc<RwLock<TraitDef>>),
 	Function(Arc<RwLock<FnDef>>, RefCell<NamespaceASTElem>),
 	Variable(Type, RefCell<NamespaceASTElem>),
 	Namespace(Box<RefCell<Namespace>>),
@@ -233,6 +234,7 @@ impl Display for Namespace {
 			match &c.1 .0 {
 				NamespaceItem::Alias(id) => write!(f, "\t[alias] {}", id)?,
 				NamespaceItem::Type(t) => write!(f, "\t[type] {}: {}\n", c.0, t.read().unwrap())?,
+				NamespaceItem::Trait(t) => write!(f, "\t[trait] {}: {:?}\n", c.0, t.read().unwrap())?,
 				NamespaceItem::Function(t, _) => {
 					write!(f, "\t[func] {}: {}\n", c.0, t.read().unwrap())?
 				}
