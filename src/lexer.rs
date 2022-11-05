@@ -43,10 +43,10 @@ static KEYWORDS: [&'static str; 31] = [
 	"enum",
 ];
 
-static OPERATORS: [&str; 37] = [
+static OPERATORS: [&str; 39] = [
 	"+", "-", "/", "*", "%", "^", "|", "||", "&", "&&", "=", "==", "/=", "*=", "+=", "-=", "%=",
 	"&=", "|=", "^=", "++", "--", "->", "(", ")", "[", "]", ".", "::", "<", ">", "<=", ">=", "!=",
-	"<<", ">>", "as", // yeah `as` is technically an operator lol
+	"<<", ">>", ">>=", "<<=", "as", // yeah `as` is technically an operator lol
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -443,13 +443,28 @@ impl Lexer {
 
 				// Check for two-char operator
 				if OPERATORS.contains(&result_double.as_str()) {
-					self.get_next_char()?;
-					result_token = Ok(Token::Operator(
-						*OPERATORS
-							.iter()
-							.find(|x_static| **x_static == result_double.as_str())
-							.unwrap(),
-					));
+					
+					// Little hack for three-char operators
+					let mut result_triple = result_double.clone();
+					result_triple.push(self.get_next_char()?);
+
+					if OPERATORS.contains(&result_triple.as_str()) {
+						self.get_next_char()?;
+						
+						result_token = Ok(Token::Operator(
+							*OPERATORS
+								.iter()
+								.find(|x_static| **x_static == result_triple.as_str())
+								.unwrap(),
+						));
+					} else {
+						result_token = Ok(Token::Operator(
+							*OPERATORS
+								.iter()
+								.find(|x_static| **x_static == result_double.as_str())
+								.unwrap(),
+						));
+					}
 				} else if OPERATORS.contains(&result.as_str()) {
 					result_token = Ok(Token::Operator(*op));
 				} else {

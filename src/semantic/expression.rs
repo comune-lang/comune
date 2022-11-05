@@ -199,6 +199,9 @@ impl Operator {
 				">>" => Some(Operator::BitShiftR),
 				"as" => Some(Operator::Cast),
 
+				"<<=" => Some(Operator::AssBitShL),
+				">>=" => Some(Operator::AssBitShR),
+
 				_ => None,
 			}
 		} else {
