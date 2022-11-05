@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use super::CIRPassMut;
 use crate::{
-	cir::{CIRFunction, CIRStmt, CIRType, LValue, Operand, RValue, PlaceElem},
+	cir::{CIRFunction, CIRStmt, CIRType, LValue, Operand, PlaceElem, RValue},
 	errors::{CMNError, CMNErrorCode},
 	parser::AnalyzeResult,
 	semantic::{ast::TokenData, namespace::Identifier},
@@ -49,7 +49,7 @@ impl LiveVarCheckState {
 		for key in keys {
 			if !key.projection[lval.projection.len()..].contains(&PlaceElem::Deref) {
 				println!("removing state for {key}");
-				self.liveness.remove(&key);	
+				self.liveness.remove(&key);
 			}
 		}
 

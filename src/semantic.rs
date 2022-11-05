@@ -17,7 +17,7 @@ use self::{
 	ast::{ASTElem, ASTNode, TokenData},
 	controlflow::ControlFlow,
 	expression::{Atom, Expr, Operator},
-	namespace::{Identifier, Name, Namespace, NamespaceASTElem, NamespaceItem, ItemRef},
+	namespace::{Identifier, ItemRef, Name, Namespace, NamespaceASTElem, NamespaceItem},
 	types::{FnDef, TypeParamList, TypeRef},
 };
 
@@ -969,7 +969,8 @@ impl Expr {
 					}
 
 					Operator::MemberAccess => {
-						if let Type::TypeRef(ItemRef::Resolved(lhs_ref)) = elems[0].0.validate_lvalue(scope, meta).unwrap()
+						if let Type::TypeRef(ItemRef::Resolved(lhs_ref)) =
+							elems[0].0.validate_lvalue(scope, meta).unwrap()
 						{
 							if let (lhs, [rhs, ..]) = elems.split_first_mut().unwrap() {
 								match &mut *lhs_ref.def.upgrade().unwrap().write().unwrap() {
@@ -980,7 +981,9 @@ impl Expr {
 											if let Some((_, m)) =
 												t.get_member(id.name(), Some(&lhs_ref.args))
 											{
-												lhs.1 = Some(Type::TypeRef(ItemRef::Resolved(lhs_ref.clone())));
+												lhs.1 = Some(Type::TypeRef(ItemRef::Resolved(
+													lhs_ref.clone(),
+												)));
 												rhs.1 = Some(m.clone());
 												return Ok(m.clone());
 											}
@@ -1011,7 +1014,9 @@ impl Expr {
 														)),
 														token_data: (0, 0),
 														type_info: RefCell::new(Some(
-															Type::TypeRef(ItemRef::Resolved(lhs_ref.clone())),
+															Type::TypeRef(ItemRef::Resolved(
+																lhs_ref.clone(),
+															)),
 														)),
 													},
 												);
@@ -1027,7 +1032,9 @@ impl Expr {
 												) {
 													Ok(res) => {
 														// Method call OK
-														lhs.1 = Some(Type::TypeRef(ItemRef::Resolved(lhs_ref.clone())));
+														lhs.1 = Some(Type::TypeRef(
+															ItemRef::Resolved(lhs_ref.clone()),
+														));
 														rhs.1 = Some(method.ret.clone());
 
 														let method_name = name.path.pop().unwrap();
@@ -1185,10 +1192,7 @@ impl Atom {
 			Atom::ArrayLit(_) => todo!(),
 
 			Atom::AlgebraicLit(ty, elems) => {
-				if let Type::TypeRef(ItemRef::Resolved(TypeRef {
-					def, args, ..
-				})) = ty
-				{
+				if let Type::TypeRef(ItemRef::Resolved(TypeRef { def, args, .. })) = ty {
 					if let TypeDef::Algebraic(alg) = &*def.upgrade().unwrap().read().unwrap() {
 						for elem in elems {
 							let member_ty = if let Some((_, ty)) =

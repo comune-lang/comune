@@ -1,7 +1,7 @@
 use std::{
 	cell::RefCell,
 	collections::{HashMap, HashSet},
-	fmt::{Display, Debug},
+	fmt::{Debug, Display},
 	hash::Hash,
 	sync::{Arc, RwLock},
 };
@@ -13,8 +13,9 @@ use crate::{
 
 use super::{
 	ast::ASTElem,
+	traits::{TraitDef, TraitImpl},
 	types::{FnDef, Type, TypeDef},
-	Attribute, traits::{TraitDef, TraitImpl},
+	Attribute,
 };
 
 pub type Name = Arc<str>;
@@ -117,28 +118,37 @@ pub enum ItemRef<T: Clone> {
 }
 
 impl<T: Clone> Eq for ItemRef<T> where T: PartialEq + Eq {}
-impl<T: Clone> PartialEq for ItemRef<T> where T: PartialEq + Eq {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::Unresolved(l0), Self::Unresolved(r0)) => l0 == r0,
-            (Self::Resolved(l0), Self::Resolved(r0)) => l0 == r0,
+impl<T: Clone> PartialEq for ItemRef<T>
+where
+	T: PartialEq + Eq,
+{
+	fn eq(&self, other: &Self) -> bool {
+		match (self, other) {
+			(Self::Unresolved(l0), Self::Unresolved(r0)) => l0 == r0,
+			(Self::Resolved(l0), Self::Resolved(r0)) => l0 == r0,
 			_ => false,
-        }
-    }
+		}
+	}
 }
 
-impl<T: Clone> Debug for ItemRef<T> where T: Debug {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Unresolved(arg0) => f.debug_tuple("Unresolved").field(arg0).finish(),
-            Self::Resolved(arg0) => f.debug_tuple("Resolved").field(arg0).finish(),
-        }
-    }
+impl<T: Clone> Debug for ItemRef<T>
+where
+	T: Debug,
+{
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		match self {
+			Self::Unresolved(arg0) => f.debug_tuple("Unresolved").field(arg0).finish(),
+			Self::Resolved(arg0) => f.debug_tuple("Resolved").field(arg0).finish(),
+		}
+	}
 }
 
-impl<T> ItemRef<T> where T: Clone {
+impl<T> ItemRef<T>
+where
+	T: Clone,
+{
 	fn resolved(&self) -> Option<&T> {
-		if let ItemRef::Resolved(item) = self { 
+		if let ItemRef::Resolved(item) = self {
 			Some(item)
 		} else {
 			None
@@ -146,7 +156,7 @@ impl<T> ItemRef<T> where T: Clone {
 	}
 
 	fn resolved_mut(&mut self) -> Option<&mut T> {
-		if let ItemRef::Resolved(item) = self { 
+		if let ItemRef::Resolved(item) = self {
 			Some(item)
 		} else {
 			None
@@ -278,7 +288,9 @@ impl Display for Namespace {
 			match &c.1 .0 {
 				NamespaceItem::Alias(id) => write!(f, "\t[alias] {}", id)?,
 				NamespaceItem::Type(t) => write!(f, "\t[type] {}: {}\n", c.0, t.read().unwrap())?,
-				NamespaceItem::Trait(t) => write!(f, "\t[trait] {}: {:?}\n", c.0, t.read().unwrap())?,
+				NamespaceItem::Trait(t) => {
+					write!(f, "\t[trait] {}: {:?}\n", c.0, t.read().unwrap())?
+				}
 				NamespaceItem::Function(t, _) => {
 					write!(f, "\t[func] {}: {}\n", c.0, t.read().unwrap())?
 				}

@@ -7,7 +7,7 @@ use crate::{
 		ast::{ASTElem, ASTNode},
 		controlflow::ControlFlow,
 		expression::{Atom, Expr, Operator},
-		namespace::{Identifier, Name, Namespace, NamespaceASTElem, NamespaceItem, ItemRef},
+		namespace::{Identifier, ItemRef, Name, Namespace, NamespaceASTElem, NamespaceItem},
 		types::{Basic, FnDef, Type, TypeDef, TypeRef},
 		Attribute,
 	},
@@ -148,7 +148,11 @@ impl CIRModuleBuilder {
 
 			Type::TypeRef(ItemRef::Resolved(ty)) => {
 				let idx = self.convert_type_def(&ty);
-				let args_cir = ty.args.iter().map(|(_, ty)| self.convert_type(ty)).collect();
+				let args_cir = ty
+					.args
+					.iter()
+					.map(|(_, ty)| self.convert_type(ty))
+					.collect();
 
 				CIRType::TypeRef(idx, args_cir)
 			}

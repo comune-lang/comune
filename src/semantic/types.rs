@@ -4,7 +4,7 @@ use std::hash::{Hash, Hasher};
 use std::ptr;
 use std::sync::{Arc, RwLock, Weak};
 
-use super::namespace::{Identifier, Name, Namespace, NamespaceEntry, NamespaceItem, ItemRef};
+use super::namespace::{Identifier, ItemRef, Name, Namespace, NamespaceEntry, NamespaceItem};
 use super::traits::TraitRef;
 use crate::constexpr::ConstExpr;
 use crate::parser::AnalyzeResult;
@@ -58,8 +58,8 @@ pub enum Type {
 	Pointer(BoxedType),                            // Pointer-to-<BoxedType>
 	Reference(BoxedType),                          // Reference-to-<BoxedType>
 	Array(BoxedType, Arc<RwLock<Vec<ConstExpr>>>), // N-dimensional array with constant expression for size
-	TypeRef(ItemRef<TypeRef>),					   // Reference to user-defined type
-	TypeParam(usize),							   // Reference to an in-scope type parameter
+	TypeRef(ItemRef<TypeRef>),                     // Reference to user-defined type
+	TypeParam(usize),                              // Reference to an in-scope type parameter
 }
 
 #[derive(Clone)]
@@ -378,20 +378,22 @@ impl Eq for Type {}
 
 impl PartialEq for TypeRef {
 	fn eq(&self, other: &Self) -> bool {
-		Arc::ptr_eq(&self.def.upgrade().unwrap(), &other.def.upgrade().unwrap()) && self.name == other.name && self.args == other.args
+		Arc::ptr_eq(&self.def.upgrade().unwrap(), &other.def.upgrade().unwrap())
+			&& self.name == other.name
+			&& self.args == other.args
 	}
 }
 
 impl Eq for TypeRef {}
 
 impl Hash for TypeRef {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        ptr::hash(self.def.upgrade().unwrap().as_ref(), state);
+	fn hash<H: Hasher>(&self, state: &mut H) {
+		ptr::hash(self.def.upgrade().unwrap().as_ref(), state);
 		for (name, arg) in &self.args {
 			name.hash(state);
 			arg.hash(state);
 		}
-    }
+	}
 }
 
 impl Hash for Type {
@@ -410,7 +412,7 @@ impl Hash for Type {
 				t.hash(state);
 				"+".hash(state)
 			}
-			
+
 			Type::TypeRef(ItemRef::Unresolved(id)) => id.hash(state),
 
 			Type::TypeRef(ItemRef::Resolved(ty)) => ty.hash(state),
@@ -433,9 +435,7 @@ impl Display for Type {
 
 			Type::TypeRef(ItemRef::Unresolved(t)) => write!(f, "unresolved type \"{}\"", t),
 
-			Type::TypeRef(ItemRef::Resolved(TypeRef {
-				name, args, ..
-			})) => {
+			Type::TypeRef(ItemRef::Resolved(TypeRef { name, args, .. })) => {
 				if args.is_empty() {
 					write!(f, "{name}")
 				} else {
@@ -516,8 +516,12 @@ impl std::fmt::Debug for Type {
 			Self::Pointer(_) => f.debug_tuple("Pointer").finish(),
 			Self::Reference(_) => f.debug_tuple("Reference").finish(),
 			Self::Array(t, _) => f.debug_tuple("Array").field(t).finish(),
-			Self::TypeRef(ItemRef::Unresolved(arg0)) => f.debug_tuple("Unresolved").field(arg0).finish(),
-			Self::TypeRef(ItemRef::Resolved(TypeRef { def: arg0, .. })) => f.debug_tuple("TypeRef").field(arg0).finish(),
+			Self::TypeRef(ItemRef::Unresolved(arg0)) => {
+				f.debug_tuple("Unresolved").field(arg0).finish()
+			}
+			Self::TypeRef(ItemRef::Resolved(TypeRef { def: arg0, .. })) => {
+				f.debug_tuple("TypeRef").field(arg0).finish()
+			}
 			Self::TypeParam(arg0) => f.debug_tuple("TypeParam").field(arg0).finish(),
 		}
 	}

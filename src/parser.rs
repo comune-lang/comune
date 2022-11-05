@@ -9,10 +9,10 @@ use crate::lexer::{Lexer, Token};
 use crate::semantic::ast::{ASTElem, ASTNode, TokenData};
 use crate::semantic::controlflow::ControlFlow;
 use crate::semantic::expression::{Atom, Expr, Operator};
-use crate::semantic::namespace::{Identifier, Namespace, NamespaceASTElem, NamespaceItem, ItemRef};
-use crate::semantic::traits::{TraitImpl, TraitDef};
+use crate::semantic::namespace::{Identifier, ItemRef, Namespace, NamespaceASTElem, NamespaceItem};
+use crate::semantic::traits::{TraitDef, TraitImpl};
 use crate::semantic::types::{
-	AlgebraicDef, Basic, FnDef, FnParamList, Type, TypeDef, TypeParamList, Visibility, TypeRef,
+	AlgebraicDef, Basic, FnDef, FnParamList, Type, TypeDef, TypeParamList, TypeRef, Visibility,
 };
 use crate::semantic::Attribute;
 
@@ -1164,8 +1164,7 @@ impl Parser {
 			Token::Identifier(name) => {
 				result = None;
 
-				if let Some(Type::TypeRef(ItemRef::Resolved(found))) = self.find_type(&name)
-				{
+				if let Some(Type::TypeRef(ItemRef::Resolved(found))) = self.find_type(&name) {
 					match &*found.def.upgrade().unwrap().read().unwrap() {
 						// Parse with algebraic typename
 						TypeDef::Algebraic(_) => {
@@ -1524,7 +1523,10 @@ impl Parser {
 							loop {
 								let generic = self.parse_type(true)?;
 
-								if let Type::TypeRef(ItemRef::Resolved(TypeRef { def, args, .. })) = &mut result {
+								if let Type::TypeRef(ItemRef::Resolved(TypeRef {
+									def, args, ..
+								})) = &mut result
+								{
 									let def = def.upgrade().unwrap();
 									let TypeDef::Algebraic(agg) = &*def.read().unwrap() else { panic!() };
 									let name = &agg.params[i].0; // TODO: Real error handling
