@@ -4,14 +4,15 @@ use std::hash::{Hash, Hasher};
 use std::ptr;
 use std::sync::{Arc, RwLock, Weak};
 
-use super::namespace::{Identifier, Name, Namespace, NamespaceEntry, NamespaceItem};
+use super::namespace::{Identifier, Name, Namespace, NamespaceEntry, NamespaceItem, ItemRef};
+use super::traits::TraitRef;
 use crate::constexpr::ConstExpr;
 use crate::parser::AnalyzeResult;
 use crate::semantic::FnScope;
 
 pub type BoxedType = Box<Type>;
 pub type FnParamList = Vec<(Type, Option<Name>)>;
-pub type TypeParam = Vec<Identifier>; // Generic type parameter, with trait bounds
+pub type TypeParam = Vec<ItemRef<TraitRef>>; // Generic type parameter, with trait bounds
 pub type TypeParamList = Vec<(Name, TypeParam)>;
 
 pub trait Typed {
@@ -57,17 +58,15 @@ pub enum Type {
 	Pointer(BoxedType),                            // Pointer-to-<BoxedType>
 	Reference(BoxedType),                          // Reference-to-<BoxedType>
 	Array(BoxedType, Arc<RwLock<Vec<ConstExpr>>>), // N-dimensional array with constant expression for size
+	TypeRef(ItemRef<TypeRef>),					   // Reference to user-defined type
+	TypeParam(usize),							   // Reference to an in-scope type parameter
+}
 
-	// User-defined type ptr, plus Identifier for serialization
-	TypeRef {
-		def: Weak<RwLock<TypeDef>>,
-		name: Identifier,
-		args: Vec<(Name, Type)>,
-	},
-
-	TypeParam(usize),
-
-	Unresolved(Identifier), // Unresolved type (during parsing phase)
+#[derive(Clone)]
+pub struct TypeRef {
+	pub def: Weak<RwLock<TypeDef>>,
+	pub name: Identifier,
+	pub args: Vec<(Name, Type)>,
 }
 
 #[derive(Debug)]
@@ -114,7 +113,6 @@ impl AlgebraicDef {
 			),
 			Type::TypeRef { .. } => ty,
 			Type::TypeParam(param) => type_args[param].1.clone(),
-			Type::Unresolved(_) => panic!(),
 		}
 	}
 
@@ -368,25 +366,33 @@ impl PartialEq for Type {
 			(Self::Basic(l0), Self::Basic(r0)) => l0 == r0,
 			(Self::Pointer(l0), Self::Pointer(r0)) => l0 == r0,
 			(Self::Reference(l0), Self::Reference(r0)) => l0 == r0,
-			(Self::Unresolved(l0), Self::Unresolved(r0)) => l0 == r0,
-			(
-				Self::TypeRef {
-					def: l0,
-					name: l1,
-					args: l2,
-				},
-				Self::TypeRef {
-					def: r0,
-					name: r1,
-					args: r2,
-				},
-			) => Arc::ptr_eq(&l0.upgrade().unwrap(), &r0.upgrade().unwrap()) && l1 == r1 && l2 == r2,
+			(Self::TypeRef(l0), Self::TypeRef(r0)) => l0 == r0,
+			(Self::TypeParam(l0), Self::TypeParam(r0)) => l0 == r0,
+			(Self::Array(l0, _l1), Self::Array(r0, _r1)) => l0 == r0 && todo!(),
 			_ => false,
 		}
 	}
 }
 
 impl Eq for Type {}
+
+impl PartialEq for TypeRef {
+	fn eq(&self, other: &Self) -> bool {
+		Arc::ptr_eq(&self.def.upgrade().unwrap(), &other.def.upgrade().unwrap()) && self.name == other.name && self.args == other.args
+	}
+}
+
+impl Eq for TypeRef {}
+
+impl Hash for TypeRef {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        ptr::hash(self.def.upgrade().unwrap().as_ref(), state);
+		for (name, arg) in &self.args {
+			name.hash(state);
+			arg.hash(state);
+		}
+    }
+}
 
 impl Hash for Type {
 	fn hash<H: Hasher>(&self, state: &mut H) {
@@ -404,17 +410,11 @@ impl Hash for Type {
 				t.hash(state);
 				"+".hash(state)
 			}
-			Type::Unresolved(id) => id.hash(state),
+			
+			Type::TypeRef(ItemRef::Unresolved(id)) => id.hash(state),
 
-			Type::TypeRef {
-				def, args: params, ..
-			} => {
-				ptr::hash(def.upgrade().unwrap().as_ref(), state);
-				for (name, param) in params {
-					name.hash(state);
-					param.hash(state);
-				}
-			}
+			Type::TypeRef(ItemRef::Resolved(ty)) => ty.hash(state),
+
 			Type::TypeParam(name) => name.hash(state),
 		}
 	}
@@ -431,20 +431,20 @@ impl Display for Type {
 
 			Type::Array(t, _s) => write!(f, "{}[]", t),
 
-			Type::Unresolved(t) => write!(f, "unresolved type \"{}\"", t),
+			Type::TypeRef(ItemRef::Unresolved(t)) => write!(f, "unresolved type \"{}\"", t),
 
-			Type::TypeRef {
-				name, args: params, ..
-			} => {
-				if params.is_empty() {
+			Type::TypeRef(ItemRef::Resolved(TypeRef {
+				name, args, ..
+			})) => {
+				if args.is_empty() {
 					write!(f, "{name}")
 				} else {
-					let mut iter = params.iter();
+					let mut iter = args.iter();
 
 					write!(f, "{name}<{}", iter.next().unwrap().0)?;
 
-					for (param, _) in iter {
-						write!(f, ", {param}")?;
+					for (arg, _) in iter {
+						write!(f, ", {arg}")?;
 					}
 
 					write!(f, ">")
@@ -516,8 +516,8 @@ impl std::fmt::Debug for Type {
 			Self::Pointer(_) => f.debug_tuple("Pointer").finish(),
 			Self::Reference(_) => f.debug_tuple("Reference").finish(),
 			Self::Array(t, _) => f.debug_tuple("Array").field(t).finish(),
-			Self::Unresolved(arg0) => f.debug_tuple("Unresolved").field(arg0).finish(),
-			Self::TypeRef { def: arg0, .. } => f.debug_tuple("TypeRef").field(arg0).finish(),
+			Self::TypeRef(ItemRef::Unresolved(arg0)) => f.debug_tuple("Unresolved").field(arg0).finish(),
+			Self::TypeRef(ItemRef::Resolved(TypeRef { def: arg0, .. })) => f.debug_tuple("TypeRef").field(arg0).finish(),
 			Self::TypeParam(arg0) => f.debug_tuple("TypeParam").field(arg0).finish(),
 		}
 	}

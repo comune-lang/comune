@@ -1,7 +1,7 @@
 use std::{
 	cell::RefCell,
 	collections::{HashMap, HashSet},
-	fmt::Display,
+	fmt::{Display, Debug},
 	hash::Hash,
 	sync::{Arc, RwLock},
 };
@@ -108,6 +108,50 @@ pub struct Namespace {
 	pub children: HashMap<Name, NamespaceEntry>,
 	pub impls: HashMap<Identifier, HashMap<Name, NamespaceEntry>>, // Impls defined in this namespace
 	pub trait_impls: HashMap<Identifier, HashMap<Identifier, TraitImpl>>,
+}
+
+#[derive(Clone)]
+pub enum ItemRef<T: Clone> {
+	Unresolved(Identifier),
+	Resolved(T),
+}
+
+impl<T: Clone> Eq for ItemRef<T> where T: PartialEq + Eq {}
+impl<T: Clone> PartialEq for ItemRef<T> where T: PartialEq + Eq {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Unresolved(l0), Self::Unresolved(r0)) => l0 == r0,
+            (Self::Resolved(l0), Self::Resolved(r0)) => l0 == r0,
+			_ => false,
+        }
+    }
+}
+
+impl<T: Clone> Debug for ItemRef<T> where T: Debug {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Unresolved(arg0) => f.debug_tuple("Unresolved").field(arg0).finish(),
+            Self::Resolved(arg0) => f.debug_tuple("Resolved").field(arg0).finish(),
+        }
+    }
+}
+
+impl<T> ItemRef<T> where T: Clone {
+	fn resolved(&self) -> Option<&T> {
+		if let ItemRef::Resolved(item) = self { 
+			Some(item)
+		} else {
+			None
+		}
+	}
+
+	fn resolved_mut(&mut self) -> Option<&mut T> {
+		if let ItemRef::Resolved(item) = self { 
+			Some(item)
+		} else {
+			None
+		}
+	}
 }
 
 impl Namespace {

@@ -9,10 +9,10 @@ use crate::lexer::{Lexer, Token};
 use crate::semantic::ast::{ASTElem, ASTNode, TokenData};
 use crate::semantic::controlflow::ControlFlow;
 use crate::semantic::expression::{Atom, Expr, Operator};
-use crate::semantic::namespace::{Identifier, Namespace, NamespaceASTElem, NamespaceItem};
+use crate::semantic::namespace::{Identifier, Namespace, NamespaceASTElem, NamespaceItem, ItemRef};
 use crate::semantic::traits::{TraitImpl, TraitDef};
 use crate::semantic::types::{
-	AlgebraicDef, Basic, FnDef, FnParamList, Type, TypeDef, TypeParamList, Visibility,
+	AlgebraicDef, Basic, FnDef, FnParamList, Type, TypeDef, TypeParamList, Visibility, TypeRef,
 };
 use crate::semantic::Attribute;
 
@@ -1164,11 +1164,9 @@ impl Parser {
 			Token::Identifier(name) => {
 				result = None;
 
-				if let Some(Type::TypeRef {
-					def: ty, name: id, ..
-				}) = self.find_type(&name)
+				if let Some(Type::TypeRef(ItemRef::Resolved(found))) = self.find_type(&name)
 				{
-					match &*ty.upgrade().unwrap().read().unwrap() {
+					match &*found.def.upgrade().unwrap().read().unwrap() {
 						// Parse with algebraic typename
 						TypeDef::Algebraic(_) => {
 							match &next {
@@ -1201,11 +1199,7 @@ impl Parser {
 									self.get_next()?;
 
 									result = Some(Atom::AlgebraicLit(
-										Type::TypeRef {
-											def: ty.clone(),
-											name: id.clone(),
-											args: vec![],
-										},
+										Type::TypeRef(ItemRef::Resolved(found.clone())),
 										inits,
 									));
 								}
@@ -1315,11 +1309,11 @@ impl Parser {
 
 		ctx.with_item(&typename, root, |item, id| match &item.0 {
 			NamespaceItem::Type(t) => {
-				result = Some(Type::TypeRef {
+				result = Some(Type::TypeRef(ItemRef::Resolved(TypeRef {
 					def: Arc::downgrade(t),
 					name: id.clone(),
 					args: vec![],
-				})
+				})))
 			}
 
 			_ => {}
@@ -1423,10 +1417,10 @@ impl Parser {
 	}
 
 	fn parse_type(&self, immediate_resolve: bool) -> ParseResult<Type> {
-		let mut result = Type::Unresolved(Identifier {
+		let mut result = Type::TypeRef(ItemRef::Unresolved(Identifier {
 			path: vec![],
 			absolute: false,
-		});
+		}));
 
 		if self.is_at_type_token(immediate_resolve)? {
 			let mut current = self.get_current()?;
@@ -1469,11 +1463,11 @@ impl Parser {
 				} else {
 					ctx.with_item(&typename, root, |item, id| {
 						if let NamespaceItem::Type(t) = &item.0 {
-							result = Type::TypeRef {
+							result = Type::TypeRef(ItemRef::Resolved(TypeRef {
 								def: Arc::downgrade(t),
 								name: id.clone(),
 								args: vec![],
-							};
+							}));
 							found = true;
 						}
 					});
@@ -1483,7 +1477,7 @@ impl Parser {
 					return Err(self.err(CMNErrorCode::UnresolvedTypename(typename.to_string())));
 				}
 			} else {
-				result = Type::Unresolved(typename);
+				result = Type::TypeRef(ItemRef::Unresolved(typename));
 			}
 
 			let mut next = self.get_next()?;
@@ -1530,7 +1524,7 @@ impl Parser {
 							loop {
 								let generic = self.parse_type(true)?;
 
-								if let Type::TypeRef { def, args, .. } = &mut result {
+								if let Type::TypeRef(ItemRef::Resolved(TypeRef { def, args, .. })) = &mut result {
 									let def = def.upgrade().unwrap();
 									let TypeDef::Algebraic(agg) = &*def.read().unwrap() else { panic!() };
 									let name = &agg.params[i].0; // TODO: Real error handling
@@ -1657,7 +1651,7 @@ impl Parser {
 
 						// Collect trait bounds
 						while let Token::Identifier(tr) = current {
-							traits.push(tr);
+							traits.push(ItemRef::Unresolved(tr));
 
 							current = self.get_next()?;
 

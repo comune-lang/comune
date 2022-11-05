@@ -7,8 +7,8 @@ use crate::{
 		ast::{ASTElem, ASTNode},
 		controlflow::ControlFlow,
 		expression::{Atom, Expr, Operator},
-		namespace::{Identifier, Name, Namespace, NamespaceASTElem, NamespaceItem},
-		types::{Basic, FnDef, Type, TypeDef},
+		namespace::{Identifier, Name, Namespace, NamespaceASTElem, NamespaceItem, ItemRef},
+		types::{Basic, FnDef, Type, TypeDef, TypeRef},
 		Attribute,
 	},
 };
@@ -21,7 +21,7 @@ use super::{
 pub struct CIRModuleBuilder {
 	pub module: CIRModule,
 
-	type_map: HashMap<Type, TypeName>,
+	type_map: HashMap<TypeRef, TypeName>,
 	type_param_counter: usize, // Used to assign unique names to type parameters
 
 	current_fn: Option<CIRFunction>,
@@ -146,9 +146,9 @@ impl CIRModuleBuilder {
 		match ty {
 			Type::Basic(basic) => CIRType::Basic(basic.clone()),
 
-			Type::TypeRef { args, .. } => {
+			Type::TypeRef(ItemRef::Resolved(ty)) => {
 				let idx = self.convert_type_def(&ty);
-				let args_cir = args.iter().map(|(_, ty)| self.convert_type(ty)).collect();
+				let args_cir = ty.args.iter().map(|(_, ty)| self.convert_type(ty)).collect();
 
 				CIRType::TypeRef(idx, args_cir)
 			}
@@ -178,8 +178,8 @@ impl CIRModuleBuilder {
 		}
 	}
 
-	fn convert_type_def(&mut self, ty: &Type) -> String {
-		let Type::TypeRef { def, name, .. } = ty else { panic!() };
+	fn convert_type_def(&mut self, ty: &TypeRef) -> String {
+		let TypeRef { def, name, .. } = ty;
 
 		if let Some(ty_id) = self.type_map.get(ty) {
 			ty_id.clone()
