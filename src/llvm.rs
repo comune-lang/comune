@@ -614,13 +614,13 @@ impl<'ctx> LLVMBackend<'ctx> {
 			.collect();
 
 		Ok(match self.get_llvm_type(&t.ret) {
-			AnyTypeEnum::ArrayType(a) => a.fn_type(&types_mapped, false),
-			AnyTypeEnum::FloatType(f) => f.fn_type(&types_mapped, false),
-			AnyTypeEnum::IntType(i) => i.fn_type(&types_mapped, false),
-			AnyTypeEnum::PointerType(p) => p.fn_type(&types_mapped, false),
-			AnyTypeEnum::StructType(s) => s.fn_type(&types_mapped, false),
-			AnyTypeEnum::VectorType(v) => v.fn_type(&types_mapped, false),
-			AnyTypeEnum::VoidType(v) => v.fn_type(&types_mapped, false),
+			AnyTypeEnum::ArrayType(a) => a.fn_type(&types_mapped, t.is_variadic),
+			AnyTypeEnum::FloatType(f) => f.fn_type(&types_mapped, t.is_variadic),
+			AnyTypeEnum::IntType(i) => i.fn_type(&types_mapped, t.is_variadic),
+			AnyTypeEnum::PointerType(p) => p.fn_type(&types_mapped, t.is_variadic),
+			AnyTypeEnum::StructType(s) => s.fn_type(&types_mapped, t.is_variadic),
+			AnyTypeEnum::VectorType(v) => v.fn_type(&types_mapped, t.is_variadic),
+			AnyTypeEnum::VoidType(v) => v.fn_type(&types_mapped, t.is_variadic),
 
 			_ => panic!(),
 		})

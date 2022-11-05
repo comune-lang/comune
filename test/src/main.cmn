@@ -4,7 +4,7 @@
 //using module_test::{fib, foo};
 
 @no_mangle
-void printf(char* fmt);
+void printf(char* fmt, ...);
 
 @no_mangle
 void* malloc(usize size);
@@ -33,6 +33,8 @@ struct Vector<T> {
 
 int main() {
 	printf("This is main()!\n\0");
+
+	printf("This is a vararg test! the magic number is %i\n\0", 42);
 	
 	Vector<int> my_cool_generic;
 

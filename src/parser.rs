@@ -1364,7 +1364,7 @@ impl Parser {
 	}
 
 	fn parse_parameter_list(&self) -> ParseResult<FnParamList> {
-		let mut result = vec![];
+		let mut result = FnParamList { params: vec![], variadic: false };
 
 		if token_compare(&self.get_current()?, "(") {
 			self.get_next()?;
@@ -1382,7 +1382,7 @@ impl Parser {
 				self.get_next()?;
 			}
 
-			result.push(param);
+			result.params.push(param);
 
 			// Check if we've arrived at a comma, skip it, and loop back around
 			current = self.get_current()?;
@@ -1401,17 +1401,23 @@ impl Parser {
 			}
 		}
 
-		let current = self.get_current()?;
-
-		if let Token::Operator(s) = current {
-			if s == ")" {
+		match self.get_current()? {
+			Token::Operator(")") => {
 				self.get_next()?;
 				Ok(result)
-			} else {
-				Err(self.err(CMNErrorCode::UnexpectedToken))
 			}
-		} else {
-			Err(self.err(CMNErrorCode::UnexpectedToken))
+
+			Token::Operator("...") => {
+				if self.get_next()? == Token::Operator(")") {
+					self.get_next()?;
+					result.variadic = true;
+					Ok(result)
+				} else {
+					Err(self.err(CMNErrorCode::UnexpectedToken))
+				}
+			}
+
+			_ => Err(self.err(CMNErrorCode::UnexpectedToken))
 		}
 	}
 

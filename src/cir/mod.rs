@@ -156,6 +156,7 @@ pub struct CIRFunction {
 	pub arg_count: usize,
 	pub attributes: Vec<Attribute>,
 	pub is_extern: bool,
+	pub is_variadic: bool,
 }
 
 pub struct CIRModule {

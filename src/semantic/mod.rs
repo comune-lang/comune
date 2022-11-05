@@ -18,7 +18,7 @@ use self::{
 	controlflow::ControlFlow,
 	expression::{Atom, Expr, Operator},
 	namespace::{Identifier, ItemRef, Name, Namespace, NamespaceASTElem, NamespaceItem},
-	types::{FnDef, TypeParamList, TypeRef},
+	types::{FnDef, TypeParamList, TypeRef, FnParamList},
 };
 
 pub mod ast;
@@ -130,7 +130,7 @@ pub fn validate_function(
 	ret = func.ret.clone();
 	scope = FnScope::new(namespace, root, ret.clone());
 
-	for param in &func.params {
+	for param in &func.params.params {
 		scope.add_variable(param.0.clone(), param.1.clone().unwrap())
 	}
 
@@ -175,34 +175,42 @@ pub fn validate_function(
 pub fn validate_fn_call(
 	ret: &Type,
 	args: &Vec<ASTElem>,
-	params: &Vec<(Type, Option<Name>)>,
+	param_list: &FnParamList,
 	scope: &FnScope,
 	meta: TokenData,
 ) -> AnalyzeResult<Type> {
-	if args.len() == params.len() {
+	if args.len() == param_list.params.len() || (args.len() >= param_list.params.len() && param_list.variadic) {
 		for i in 0..args.len() {
-			args[i].type_info.replace(Some(params[i].0.clone()));
+
+			if let Some((param_ty, _)) = param_list.params.get(i) {
+				args[i].type_info.replace(Some(param_ty.clone()));
+			}
+			
 			let arg_type = args[i]
 				.get_expr()
 				.borrow_mut()
 				.validate(scope, None, meta)?;
+			
+			if let Some((param_ty, _)) = param_list.params.get(i) {
+				if !args[i]
+					.get_expr()
+					.borrow()
+					.coercable_to(&arg_type, param_ty, scope)
+				{
+					return Err((
+						CMNError::new(CMNErrorCode::InvalidCoercion {
+							from: arg_type,
+							to: param_ty.clone(),
+						}),
+						args[i].token_data,
+					));
+				}
 
-			if !args[i]
-				.get_expr()
-				.borrow()
-				.coercable_to(&arg_type, &params[i].0, scope)
-			{
-				return Err((
-					CMNError::new(CMNErrorCode::InvalidCoercion {
-						from: arg_type,
-						to: params[i].0.clone(),
-					}),
-					args[i].token_data,
-				));
-			}
-
-			if arg_type != params[i].0 {
-				args[i].wrap_expr_in_cast(Some(arg_type), params[i].0.clone());
+				if arg_type != *param_ty {
+					args[i].wrap_expr_in_cast(Some(arg_type), param_ty.clone());
+				}
+			} else {
+				args[i].type_info.replace(Some(arg_type));
 			}
 		}
 		// All good, return function's return type
@@ -210,7 +218,7 @@ pub fn validate_fn_call(
 	} else {
 		Err((
 			CMNError::new(CMNErrorCode::ParamCountMismatch {
-				expected: params.len(),
+				expected: param_list.params.len(),
 				got: args.len(),
 			}),
 			meta,
@@ -386,7 +394,7 @@ pub fn resolve_namespace_types(
 
 					resolve_type(ret, &namespace, root, &generics)?;
 
-					for param in params {
+					for param in &mut params.params {
 						resolve_type(&mut param.0, &namespace, root, &generics)?;
 					}
 				}
@@ -487,7 +495,7 @@ pub fn register_impls(
 
 									resolve_type(ret, &namespace.borrow(), root, &type_params)?;
 
-									for param in params {
+									for param in &mut params.params {
 										resolve_type(
 											&mut param.0,
 											&namespace.borrow(),

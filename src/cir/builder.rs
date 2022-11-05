@@ -240,12 +240,13 @@ impl CIRModuleBuilder {
 			variables: vec![],
 			blocks: vec![],
 			ret: self.convert_type(&func.ret),
-			arg_count: func.params.len(),
+			arg_count: func.params.params.len(),
 			attributes,
 			is_extern: true,
+			is_variadic: func.params.variadic,
 		});
 
-		for param in &func.params {
+		for param in &func.params.params {
 			if let Some(name) = &param.1 {
 				self.insert_variable(name.clone(), param.0.clone());
 			}

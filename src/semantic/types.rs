@@ -10,9 +10,16 @@ use crate::parser::AnalyzeResult;
 use crate::semantic::FnScope;
 
 pub type BoxedType = Box<Type>;
-pub type FnParamList = Vec<(Type, Option<Name>)>;
 pub type TypeParam = Vec<ItemRef<TraitRef>>; // Generic type parameter, with trait bounds
 pub type TypeParamList = Vec<(Name, TypeParam)>;
+
+#[derive(Debug, Clone)]
+pub struct FnParamList {
+	pub params: Vec<(Type, Option<Name>)>,
+	pub variadic: bool,
+}
+
+
 
 pub trait Typed {
 	fn get_type<'ctx>(&self, scope: &'ctx FnScope<'ctx>) -> AnalyzeResult<Type>;
@@ -21,7 +28,7 @@ pub trait Typed {
 #[derive(Debug, Clone)]
 pub struct FnDef {
 	pub ret: Type,
-	pub params: Vec<(Type, Option<Name>)>,
+	pub params: FnParamList,
 	pub type_params: TypeParamList,
 }
 
@@ -471,7 +478,7 @@ impl Display for FnDef {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		write!(f, "{}(", self.ret)?;
 
-		for param in &self.params {
+		for param in &self.params.params {
 			write!(f, "{}, ", param.0)?;
 		}
 

@@ -43,10 +43,10 @@ static KEYWORDS: [&'static str; 31] = [
 	"enum",
 ];
 
-static OPERATORS: [&str; 39] = [
+static OPERATORS: [&str; 41] = [
 	"+", "-", "/", "*", "%", "^", "|", "||", "&", "&&", "=", "==", "/=", "*=", "+=", "-=", "%=",
 	"&=", "|=", "^=", "++", "--", "->", "(", ")", "[", "]", ".", "::", "<", ">", "<=", ">=", "!=",
-	"<<", ">>", ">>=", "<<=", "as", // yeah `as` is technically an operator lol
+	"<<", ">>", ">>=", "<<=", "..", "...", "as", // yeah `as` is technically an operator lol
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq)]

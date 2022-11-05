@@ -5,6 +5,8 @@ use std::{
 	sync::{Arc, RwLock, Weak},
 };
 
+use super::namespace::Namespace;
+use super::types::TypeRef;
 use super::{
 	namespace::{Identifier, Name, NamespaceEntry},
 	types::Type,
@@ -49,4 +51,13 @@ impl Hash for TraitRef {
 			arg.hash(state);
 		}
 	}
+}
+
+
+pub fn resolve_obligation<'ctx>(
+	ty: &TypeRef,
+	tr: &TraitRef,
+	namespace: &'ctx Namespace, 
+	root_namespace: &'ctx Namespace) -> Option<&'ctx TraitImpl> {
+	None
 }
