@@ -19,8 +19,6 @@ pub struct FnParamList {
 	pub variadic: bool,
 }
 
-
-
 pub trait Typed {
 	fn get_type<'ctx>(&self, scope: &'ctx FnScope<'ctx>) -> AnalyzeResult<Type>;
 }
@@ -327,7 +325,9 @@ impl Type {
 			Type::Basic(b) => Type::Basic(b.clone()),
 			Type::Pointer(ptr) => Type::Pointer(Box::new(ptr.get_concrete_type(type_args))),
 			Type::Reference(refee) => Type::Reference(Box::new(refee.get_concrete_type(type_args))),
-			Type::Array(arr_ty, size) => Type::Array(Box::new(arr_ty.get_concrete_type(type_args)), size.clone()),
+			Type::Array(arr_ty, size) => {
+				Type::Array(Box::new(arr_ty.get_concrete_type(type_args)), size.clone())
+			}
 			Type::TypeRef(ty) => Type::TypeRef(ty.clone()),
 			Type::TypeParam(param) => type_args[*param].1.clone(),
 		}

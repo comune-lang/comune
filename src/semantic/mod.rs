@@ -18,13 +18,14 @@ use self::{
 	controlflow::ControlFlow,
 	expression::{Atom, Expr, Operator},
 	namespace::{Identifier, ItemRef, Name, Namespace, NamespaceASTElem, NamespaceItem},
-	types::{FnDef, TypeParamList, TypeRef, FnParamList},
+	types::{FnDef, TypeParamList, TypeRef},
 };
 
 pub mod ast;
 pub mod controlflow;
 pub mod expression;
 pub mod namespace;
+pub mod resolve;
 pub mod traits;
 pub mod types;
 
@@ -191,18 +192,20 @@ pub fn validate_fn_call(
 			meta,
 		));
 	}
-		
+
 	for i in 0..args.len() {
 		// add parameter's type info to argument
 		if let Some((param_ty, _)) = params.get(i) {
-			args[i].type_info.replace(Some(param_ty.get_concrete_type(type_args).clone()));
+			args[i]
+				.type_info
+				.replace(Some(param_ty.get_concrete_type(type_args).clone()));
 		}
-		
+
 		let arg_type = args[i]
 			.get_expr()
 			.borrow_mut()
 			.validate(scope, None, meta)?;
-		
+
 		if let Some((param_ty, _)) = params.get(i) {
 			let concrete = param_ty.get_concrete_type(type_args);
 
@@ -1006,7 +1009,15 @@ impl Expr {
 										}
 
 										// Method call on algebraic type
-										Expr::Atom(Atom::FnCall { name, args, type_args, .. }, _) => {
+										Expr::Atom(
+											Atom::FnCall {
+												name,
+												args,
+												type_args,
+												..
+											},
+											_,
+										) => {
 											// jesse. we have to call METHods
 											// TODO: Factor this out into a proper call resolution module
 											if let Some((
@@ -1172,7 +1183,12 @@ impl Atom {
 				}
 			}
 
-			Atom::FnCall { name, args, type_args, ret } => {
+			Atom::FnCall {
+				name,
+				args,
+				type_args,
+				ret,
+			} => {
 				scope
 					.context
 					.borrow()

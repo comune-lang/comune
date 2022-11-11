@@ -65,10 +65,9 @@ impl CIRModuleBuilder {
 					NamespaceItem::Function(func, _) => {
 						let cir_fn = self.generate_prototype(&func.read().unwrap(), vec![]);
 
-						self.module.functions.insert(
-							Identifier::from_parent(im.0, elem.0.clone()),
-							cir_fn,
-						);
+						self.module
+							.functions
+							.insert(Identifier::from_parent(im.0, elem.0.clone()), cir_fn);
 					}
 
 					_ => panic!(),
@@ -580,24 +579,30 @@ impl CIRModuleBuilder {
 					}
 				}
 
-				Atom::FnCall { name, args, type_args, ret } => {
+				Atom::FnCall {
+					name,
+					args,
+					type_args,
+					ret,
+				} => {
 					let cir_args = args
 						.iter()
 						.map(|arg| {
-							let cir_ty = self.convert_type(arg.type_info.borrow().as_ref().unwrap());
+							let cir_ty =
+								self.convert_type(arg.type_info.borrow().as_ref().unwrap());
 							let cir_expr = self.generate_expr(
 								&arg.get_expr().borrow(),
 								arg.type_info.borrow().as_ref().unwrap(),
 							);
-							
-							self.insert_temporary(
-								cir_ty, 
-								cir_expr
-							)
+
+							self.insert_temporary(cir_ty, cir_expr)
 						})
 						.collect();
 
-					let cir_type_args = type_args.iter().map(|arg| self.convert_type(&arg.1)).collect();
+					let cir_type_args = type_args
+						.iter()
+						.map(|arg| self.convert_type(&arg.1))
+						.collect();
 
 					let mut name = name.clone();
 					name.absolute = true;
@@ -648,26 +653,36 @@ impl CIRModuleBuilder {
 					} else {
 						match op {
 							Operator::MemberAccess => match &elems[1].0 {
-								Expr::Atom(Atom::FnCall { name, args, type_args, .. }, _) => {
+								Expr::Atom(
+									Atom::FnCall {
+										name,
+										args,
+										type_args,
+										..
+									},
+									_,
+								) => {
 									let rhs_ty = self.convert_type(elems[1].1.as_ref().unwrap());
 
 									let cir_args = args
 										.iter()
 										.map(|arg| {
-											let cir_ty = self.convert_type(arg.type_info.borrow().as_ref().unwrap());
+											let cir_ty = self.convert_type(
+												arg.type_info.borrow().as_ref().unwrap(),
+											);
 											let cir_expr = self.generate_expr(
 												&arg.get_expr().borrow(),
 												arg.type_info.borrow().as_ref().unwrap(),
 											);
-											
-											self.insert_temporary(
-												cir_ty, 
-												cir_expr
-											)
+
+											self.insert_temporary(cir_ty, cir_expr)
 										})
 										.collect();
 
-									let cir_type_args = type_args.iter().map(|arg| self.convert_type(&arg.1)).collect();
+									let cir_type_args = type_args
+										.iter()
+										.map(|arg| self.convert_type(&arg.1))
+										.collect();
 
 									RValue::Atom(
 										rhs_ty,

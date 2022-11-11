@@ -11,7 +11,7 @@ use rayon::prelude::*;
 
 use crate::{
 	cir::{
-		analyze::{lifeline, cleanup, verify, CIRPassManager},
+		analyze::{cleanup, lifeline, verify, CIRPassManager},
 		builder::CIRModuleBuilder,
 	},
 	errors::{CMNError, CMNErrorCode, CMNMessage, CMNMessageLog},

@@ -53,11 +53,11 @@ impl Hash for TraitRef {
 	}
 }
 
-
 pub fn resolve_obligation<'ctx>(
 	ty: &TypeRef,
 	tr: &TraitRef,
-	namespace: &'ctx Namespace, 
-	root_namespace: &'ctx Namespace) -> Option<&'ctx TraitImpl> {
+	namespace: &'ctx Namespace,
+	root_namespace: &'ctx Namespace,
+) -> Option<&'ctx TraitImpl> {
 	None
 }

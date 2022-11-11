@@ -136,8 +136,7 @@ impl LiveVarCheckState {
 		_ty: &CIRType,
 		lval: &LValue,
 		token_data: TokenData,
-	)	 -> Result<(), (LValue, LivenessState, TokenData)> {
-
+	) -> Result<(), (LValue, LivenessState, TokenData)> {
 		let sub_liveness = self.get_liveness(lval);
 
 		// TODO: Check for `Copy` types? Might be handled earlier

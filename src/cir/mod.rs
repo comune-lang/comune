@@ -98,11 +98,9 @@ pub enum Operand {
 impl Clone for Operand {
 	fn clone(&self) -> Self {
 		match self {
-			Operand::FnCall(id, rval, params) => Operand::FnCall(
-				id.clone(),
-				rval.clone(),
-				params.clone(), 
-			),
+			Operand::FnCall(id, rval, params) => {
+				Operand::FnCall(id.clone(), rval.clone(), params.clone())
+			}
 			Operand::IntegerLit(lit) => Operand::IntegerLit(*lit),
 			Operand::FloatLit(lit) => Operand::FloatLit(*lit),
 			Operand::StringLit(lit) => Operand::StringLit(lit.clone()),

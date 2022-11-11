@@ -931,7 +931,7 @@ impl Parser {
 						if op == "<" {
 							type_params = self.parse_type_parameter_list()?;
 						}
-						
+
 						let t = FnDef {
 							ret: t,
 							params: self.parse_parameter_list()?,
@@ -1239,9 +1239,13 @@ impl Parser {
 							ctx.with_item(&name, root, |item, _| {
 								is_function = matches!(&item.0, NamespaceItem::Function(..));
 							});
-							
+
 							if is_function {
-								type_args = self.parse_type_argument_list()?.into_iter().map(|item| ("".into(), item)).collect();
+								type_args = self
+									.parse_type_argument_list()?
+									.into_iter()
+									.map(|item| ("".into(), item))
+									.collect();
 							} else {
 								// Not a function, return as plain Identifier early
 								return Ok(result.unwrap());
@@ -1385,7 +1389,10 @@ impl Parser {
 	}
 
 	fn parse_parameter_list(&self) -> ParseResult<FnParamList> {
-		let mut result = FnParamList { params: vec![], variadic: false };
+		let mut result = FnParamList {
+			params: vec![],
+			variadic: false,
+		};
 
 		if token_compare(&self.get_current()?, "(") {
 			self.get_next()?;
@@ -1438,7 +1445,7 @@ impl Parser {
 				}
 			}
 
-			_ => Err(self.err(CMNErrorCode::UnexpectedToken))
+			_ => Err(self.err(CMNErrorCode::UnexpectedToken)),
 		}
 	}
 
@@ -1543,9 +1550,8 @@ impl Parser {
 						}
 
 						"<" => {
-							if let Type::TypeRef(ItemRef::Resolved(TypeRef {
-									def, args, ..
-								})) = &mut result
+							if let Type::TypeRef(ItemRef::Resolved(TypeRef { def, args, .. })) =
+								&mut result
 							{
 								let def = def.upgrade().unwrap();
 								let TypeDef::Algebraic(agg) = &*def.read().unwrap() else { panic!() };
@@ -1556,7 +1562,6 @@ impl Parser {
 									let name = agg.params[i].0.clone(); // TODO: Real error handling
 									args.push((name, type_args[i].clone()));
 								}
-
 							} else {
 								panic!("can't apply type parameters to this type of Type!") // TODO: Real error handling
 							}
@@ -1711,7 +1716,6 @@ impl Parser {
 		loop {
 			let generic = self.parse_type(true)?;
 			result.push(generic);
-		
 
 			if self.get_current()? == Token::Other(',') {
 				self.get_next()?;

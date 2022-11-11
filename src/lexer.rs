@@ -443,14 +443,13 @@ impl Lexer {
 
 				// Check for two-char operator
 				if OPERATORS.contains(&result_double.as_str()) {
-					
 					// Little hack for three-char operators
 					let mut result_triple = result_double.clone();
 					result_triple.push(self.get_next_char()?);
 
 					if OPERATORS.contains(&result_triple.as_str()) {
 						self.get_next_char()?;
-						
+
 						result_token = Ok(Token::Operator(
 							*OPERATORS
 								.iter()
