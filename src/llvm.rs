@@ -23,7 +23,7 @@ use crate::{
 	},
 	semantic::{
 		expression::Operator,
-		types::{Basic, DataLayout},
+		types::{Basic, DataLayout}, namespace::Identifier,
 	},
 };
 
@@ -51,6 +51,7 @@ pub struct LLVMBackend<'ctx> {
 	builder: Builder<'ctx>,
 	fn_value_opt: Option<FunctionValue<'ctx>>,
 	type_map: HashMap<String, AnyTypeEnum<'ctx>>,
+	fn_map: HashMap<Identifier, String>,
 	blocks: Vec<BasicBlock<'ctx>>,
 	variables: Vec<PointerValue<'ctx>>,
 }
@@ -63,6 +64,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 			builder: context.create_builder(),
 			fn_value_opt: None,
 			type_map: HashMap::new(),
+			fn_map: HashMap::new(),
 			blocks: vec![],
 			variables: vec![],
 		}
@@ -103,12 +105,13 @@ impl<'ctx> LLVMBackend<'ctx> {
 		}
 
 		for func in &module.functions {
-			self.register_fn(func.1 .1.as_ref().unwrap(), &func.1 .0)?;
+			self.register_fn(func.1.mangled_name.as_ref().unwrap(), &func.1)?;
+			self.fn_map.insert(func.0.clone(), func.1.mangled_name.as_ref().unwrap().clone());
 		}
 
 		for func in &module.functions {
-			if !func.1 .0.is_extern {
-				self.generate_fn(func.1 .1.as_ref().unwrap(), &func.1 .0)?;
+			if !func.1.is_extern {
+				self.generate_fn(func.1.mangled_name.as_ref().unwrap(), &func.1)?;
 			}
 		}
 
@@ -487,17 +490,19 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 	fn generate_operand(&self, ty: &CIRType, expr: &Operand) -> Option<BasicValueEnum<'ctx>> {
 		match expr {
-			Operand::FnCall(_, args, mangled) => {
+			Operand::FnCall(name, args, _) => {
+				let mangled = &self.fn_map[name];
+
 				let fn_v = self
 					.module
-					.get_function(mangled.read().unwrap().as_ref().unwrap())
+					.get_function(mangled)
 					.unwrap();
 
 				let args_mapped: Vec<_> = args
 					.iter()
 					.map(|x| {
 						Self::to_basic_metadata_value(
-							self.generate_rvalue(x).unwrap().as_any_value_enum(),
+							self.builder.build_load(self.generate_lvalue(x), "argld").as_any_value_enum()
 						)
 					})
 					.collect();

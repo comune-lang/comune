@@ -67,7 +67,7 @@ impl CIRModuleBuilder {
 
 						self.module.functions.insert(
 							Identifier::from_parent(im.0, elem.0.clone()),
-							(cir_fn, None),
+							cir_fn,
 						);
 					}
 
@@ -91,7 +91,7 @@ impl CIRModuleBuilder {
 
 					self.module.functions.insert(
 						Identifier::from_parent(&namespace.path, elem.0.clone()),
-						(cir_fn, None),
+						cir_fn,
 					);
 				}
 
@@ -109,7 +109,7 @@ impl CIRModuleBuilder {
 						let mut cir_fn = self.module.functions.remove(&name).unwrap();
 
 						if let NamespaceASTElem::Parsed(ast) = &*ast.borrow() {
-							cir_fn.0 = self.generate_function(cir_fn.0, &ast.node);
+							cir_fn = self.generate_function(cir_fn, &ast.node);
 						}
 
 						self.module.functions.insert(name, cir_fn);
@@ -131,7 +131,7 @@ impl CIRModuleBuilder {
 					let mut cir_fn = self.module.functions.remove(&name).unwrap();
 
 					if let NamespaceASTElem::Parsed(ast) = &*node.borrow() {
-						cir_fn.0 = self.generate_function(cir_fn.0, &ast.node);
+						cir_fn = self.generate_function(cir_fn, &ast.node);
 					}
 
 					self.module.functions.insert(name, cir_fn);
@@ -241,9 +241,11 @@ impl CIRModuleBuilder {
 			blocks: vec![],
 			ret: self.convert_type(&func.ret),
 			arg_count: func.params.params.len(),
+			type_params: func.type_params.clone(),
 			attributes,
 			is_extern: true,
 			is_variadic: func.params.variadic,
+			mangled_name: None,
 		});
 
 		for param in &func.params.params {
@@ -578,23 +580,32 @@ impl CIRModuleBuilder {
 					}
 				}
 
-				Atom::FnCall { name, args, ret } => {
+				Atom::FnCall { name, args, type_args, ret } => {
 					let cir_args = args
 						.iter()
 						.map(|arg| {
-							self.generate_expr(
+							let cir_ty = self.convert_type(arg.type_info.borrow().as_ref().unwrap());
+							let cir_expr = self.generate_expr(
 								&arg.get_expr().borrow(),
 								arg.type_info.borrow().as_ref().unwrap(),
+							);
+							
+							self.insert_temporary(
+								cir_ty, 
+								cir_expr
 							)
 						})
 						.collect();
+
+					let cir_type_args = type_args.iter().map(|arg| self.convert_type(&arg.1)).collect();
+
 					let mut name = name.clone();
 					name.absolute = true;
 
 					RValue::Atom(
 						self.convert_type(ret.as_ref().unwrap()),
 						None,
-						Operand::FnCall(name, cir_args, RwLock::new(None)),
+						Operand::FnCall(name, cir_args, cir_type_args),
 					)
 				}
 			},
@@ -637,23 +648,31 @@ impl CIRModuleBuilder {
 					} else {
 						match op {
 							Operator::MemberAccess => match &elems[1].0 {
-								Expr::Atom(Atom::FnCall { name, args, .. }, _) => {
+								Expr::Atom(Atom::FnCall { name, args, type_args, .. }, _) => {
 									let rhs_ty = self.convert_type(elems[1].1.as_ref().unwrap());
 
 									let cir_args = args
 										.iter()
 										.map(|arg| {
-											self.generate_expr(
+											let cir_ty = self.convert_type(arg.type_info.borrow().as_ref().unwrap());
+											let cir_expr = self.generate_expr(
 												&arg.get_expr().borrow(),
 												arg.type_info.borrow().as_ref().unwrap(),
+											);
+											
+											self.insert_temporary(
+												cir_ty, 
+												cir_expr
 											)
 										})
 										.collect();
 
+									let cir_type_args = type_args.iter().map(|arg| self.convert_type(&arg.1)).collect();
+
 									RValue::Atom(
 										rhs_ty,
 										None,
-										Operand::FnCall(name.clone(), cir_args, RwLock::new(None)),
+										Operand::FnCall(name.clone(), cir_args, cir_type_args),
 									)
 								}
 

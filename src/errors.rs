@@ -15,7 +15,7 @@ use lazy_static::lazy_static;
 
 use super::types::Type;
 use crate::{
-	cir::analyze::borrowck::LivenessState,
+	cir::analyze::lifeline::LivenessState,
 	parser::Parser,
 	semantic::{ast::TokenData, expression::Operator, namespace::Identifier},
 };

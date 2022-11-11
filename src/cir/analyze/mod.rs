@@ -6,7 +6,7 @@ use crate::{errors::CMNError, parser::AnalyzeResult, semantic::ast::TokenData};
 
 use super::{BlockIndex, CIRBlock, CIRFunction, CIRModule, CIRStmt, StmtIndex};
 
-pub mod borrowck;
+pub mod lifeline;
 pub mod cleanup;
 pub mod verify;
 
@@ -63,9 +63,9 @@ impl CIRPassManager {
 		for func in module
 			.functions
 			.iter_mut()
-			.filter(|func| !func.1 .0.is_extern)
+			.filter(|func| !func.1.is_extern)
 		{
-			errors.append(&mut self.run_on_function(&mut func.1 .0));
+			errors.append(&mut self.run_on_function(func.1));
 		}
 
 		// Run on module as a whole

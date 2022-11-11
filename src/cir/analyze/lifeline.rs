@@ -1,4 +1,4 @@
-// the comune borrow checker
+// lifeline - the comune liveness & borrow checker
 
 use std::collections::HashMap;
 
@@ -118,27 +118,36 @@ impl LiveVarCheckState {
 		token_data: TokenData,
 	) -> Result<(), (LValue, LivenessState, TokenData)> {
 		match op {
-			Operand::LValue(lval) => {
-				let sub_liveness = self.get_liveness(lval);
+			Operand::LValue(lval) => self.eval_lvalue(_ty, lval, token_data)?,
 
-				// TODO: Check for `Copy` types? Might be handled earlier
-
-				if sub_liveness == LivenessState::Live {
-					self.set_liveness(lval, LivenessState::Moved);
-				} else {
-					return Err((lval.clone(), sub_liveness, token_data));
-				}
-			}
-
-			Operand::FnCall(_, args, _) => {
+			Operand::FnCall(_, args, ..) => {
 				for arg in args {
-					self.eval_rvalue(arg, token_data)?;
+					self.eval_lvalue(_ty, arg, token_data)?;
 				}
 			}
 
 			_ => {}
 		}
 		Ok(())
+	}
+
+	fn eval_lvalue(
+		&mut self,
+		_ty: &CIRType,
+		lval: &LValue,
+		token_data: TokenData,
+	)	 -> Result<(), (LValue, LivenessState, TokenData)> {
+
+		let sub_liveness = self.get_liveness(lval);
+
+		// TODO: Check for `Copy` types? Might be handled earlier
+
+		if sub_liveness == LivenessState::Live {
+			self.set_liveness(lval, LivenessState::Moved);
+			Ok(())
+		} else {
+			return Err((lval.clone(), sub_liveness, token_data));
+		}
 	}
 }
 

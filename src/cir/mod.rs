@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use std::{collections::HashMap, hash::Hash, sync::RwLock};
+use std::{collections::HashMap, hash::Hash};
 
 use crate::semantic::{
 	ast::TokenData,
@@ -16,7 +16,7 @@ pub mod monoize;
 pub mod serialize;
 
 // Bunch of type aliases to make code more readable
-type CIRFnMap = HashMap<Identifier, (CIRFunction, Option<String>)>;
+type CIRFnMap = HashMap<FuncName, CIRFunction>;
 type CIRBlock = Vec<CIRStmt>;
 type BlockIndex = usize;
 type StmtIndex = usize;
@@ -24,6 +24,7 @@ type VarIndex = usize;
 type FieldIndex = usize;
 type TypeName = String;
 type TypeParamIndex = usize;
+type FuncName = Identifier;
 
 // An LValue is an expression that results in a memory location.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -85,7 +86,7 @@ pub enum RValue {
 // This may either be a constant, an undef value, or an lvalue access.
 #[derive(Debug)]
 pub enum Operand {
-	FnCall(Identifier, Vec<RValue>, RwLock<Option<String>>), // Fully-qualified name + args + mangled name
+	FnCall(FuncName, Vec<LValue>, Vec<CIRType>), // Fully-qualified name + args
 	IntegerLit(i128),
 	FloatLit(f64),
 	StringLit(String),
@@ -97,10 +98,10 @@ pub enum Operand {
 impl Clone for Operand {
 	fn clone(&self) -> Self {
 		match self {
-			Operand::FnCall(id, rval, name) => Operand::FnCall(
+			Operand::FnCall(id, rval, params) => Operand::FnCall(
 				id.clone(),
 				rval.clone(),
-				RwLock::new(name.read().unwrap().clone()),
+				params.clone(), 
 			),
 			Operand::IntegerLit(lit) => Operand::IntegerLit(*lit),
 			Operand::FloatLit(lit) => Operand::FloatLit(*lit),
@@ -138,7 +139,7 @@ pub enum CIRTypeDef {
 	Class {},
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum CIRStmt {
 	Expression(RValue, TokenData),
 	Assignment((LValue, TokenData), (RValue, TokenData)),
@@ -147,6 +148,7 @@ pub enum CIRStmt {
 	Return(Option<(RValue, TokenData)>),
 }
 
+#[derive(Clone)]
 pub struct CIRFunction {
 	// In cIR, variables are referenced by an index, not a name.
 	// (They may still have a name for pretty-printing, though.)
@@ -154,9 +156,11 @@ pub struct CIRFunction {
 	pub blocks: Vec<CIRBlock>,
 	pub ret: CIRType,
 	pub arg_count: usize,
+	pub type_params: TypeParamList,
 	pub attributes: Vec<Attribute>,
 	pub is_extern: bool,
 	pub is_variadic: bool,
+	pub mangled_name: Option<String>,
 }
 
 pub struct CIRModule {

@@ -173,57 +173,65 @@ pub fn validate_function(
 }
 
 pub fn validate_fn_call(
-	ret: &Type,
+	func: &FnDef,
 	args: &Vec<ASTElem>,
-	param_list: &FnParamList,
+	type_args: &Vec<(Arc<str>, Type)>,
 	scope: &FnScope,
 	meta: TokenData,
 ) -> AnalyzeResult<Type> {
-	if args.len() == param_list.params.len() || (args.len() >= param_list.params.len() && param_list.variadic) {
-		for i in 0..args.len() {
+	let params = &func.params.params;
 
-			if let Some((param_ty, _)) = param_list.params.get(i) {
-				args[i].type_info.replace(Some(param_ty.clone()));
-			}
-			
-			let arg_type = args[i]
-				.get_expr()
-				.borrow_mut()
-				.validate(scope, None, meta)?;
-			
-			if let Some((param_ty, _)) = param_list.params.get(i) {
-				if !args[i]
-					.get_expr()
-					.borrow()
-					.coercable_to(&arg_type, param_ty, scope)
-				{
-					return Err((
-						CMNError::new(CMNErrorCode::InvalidCoercion {
-							from: arg_type,
-							to: param_ty.clone(),
-						}),
-						args[i].token_data,
-					));
-				}
-
-				if arg_type != *param_ty {
-					args[i].wrap_expr_in_cast(Some(arg_type), param_ty.clone());
-				}
-			} else {
-				args[i].type_info.replace(Some(arg_type));
-			}
-		}
-		// All good, return function's return type
-		Ok(ret.clone())
-	} else {
-		Err((
+	// check for param count mismatch
+	if args.len() < params.len() || (args.len() > params.len() && !func.params.variadic) {
+		return Err((
 			CMNError::new(CMNErrorCode::ParamCountMismatch {
-				expected: param_list.params.len(),
+				expected: params.len(),
 				got: args.len(),
 			}),
 			meta,
-		))
+		));
 	}
+		
+	for i in 0..args.len() {
+		// add parameter's type info to argument
+		if let Some((param_ty, _)) = params.get(i) {
+			args[i].type_info.replace(Some(param_ty.get_concrete_type(type_args).clone()));
+		}
+		
+		let arg_type = args[i]
+			.get_expr()
+			.borrow_mut()
+			.validate(scope, None, meta)?;
+		
+		if let Some((param_ty, _)) = params.get(i) {
+			let concrete = param_ty.get_concrete_type(type_args);
+
+			if !args[i]
+				.get_expr()
+				.borrow()
+				.coercable_to(&arg_type, &concrete, scope)
+			{
+				return Err((
+					CMNError::new(CMNErrorCode::InvalidCoercion {
+						from: arg_type,
+						to: concrete.clone(),
+					}),
+					args[i].token_data,
+				));
+			}
+
+			if arg_type != concrete {
+				args[i].wrap_expr_in_cast(Some(arg_type), concrete.clone());
+			}
+		} else {
+			// no parameter type for this argument (possible for varadiac functions)
+			// so just set the type info to the provided argument's type
+			args[i].type_info.replace(Some(arg_type));
+		}
+	}
+
+	// All good, return function's return type
+	Ok(func.ret.get_concrete_type(type_args))
 }
 
 pub fn validate_namespace(
@@ -998,7 +1006,7 @@ impl Expr {
 										}
 
 										// Method call on algebraic type
-										Expr::Atom(Atom::FnCall { name, args, .. }, _) => {
+										Expr::Atom(Atom::FnCall { name, args, type_args, .. }, _) => {
 											// jesse. we have to call METHods
 											// TODO: Factor this out into a proper call resolution module
 											if let Some((
@@ -1032,9 +1040,9 @@ impl Expr {
 												let method = method.read().unwrap();
 
 												match validate_fn_call(
-													&method.ret,
-													&args,
-													&method.params,
+													&method,
+													args,
+													type_args,
 													scope,
 													meta.clone(),
 												) {
@@ -1164,7 +1172,7 @@ impl Atom {
 				}
 			}
 
-			Atom::FnCall { name, args, ret } => {
+			Atom::FnCall { name, args, type_args, ret } => {
 				scope
 					.context
 					.borrow()
@@ -1173,9 +1181,9 @@ impl Atom {
 							let func = func.read().unwrap();
 
 							*ret = Some(validate_fn_call(
-								&func.ret,
+								&func,
 								args,
-								&func.params,
+								type_args,
 								scope,
 								meta.clone(),
 							)?);

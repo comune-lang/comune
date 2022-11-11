@@ -7,7 +7,7 @@ use crate::{
 	semantic::{get_attribute, namespace::Identifier, types::Basic},
 };
 
-use super::{CIRFunction, CIRModule, CIRStmt, CIRType, CIRTypeDef, Operand, RValue, TypeName};
+use super::{CIRFunction, CIRModule, CIRStmt, CIRType, CIRTypeDef, Operand, RValue, TypeName, FuncName, CIRFnMap};
 
 // A set of requested Generic monomorphizations, with a Vec of type arguments
 // TODO: Extend system to support constants as arguments
@@ -15,8 +15,10 @@ type MonoizationList = HashSet<(Identifier, Vec<CIRType>)>;
 
 type TypeSubstitutions = Vec<CIRType>;
 
-// Map from TypeIndex + parameters to existing instance TypeIndexes
+// Map from index + parameters to indices of existing instances
 type TypeInstances = HashMap<TypeName, HashMap<TypeSubstitutions, TypeName>>;
+type FuncInstances = HashMap<FuncName, HashMap<TypeSubstitutions, FuncName>>;
+
 
 impl CIRModule {
 	// monoize() consumes `self` and returns a CIRModule with all generics monomorphized, names mangled, etc.
@@ -29,118 +31,290 @@ impl CIRModule {
 	}
 
 	fn monoize_generics(&mut self) {
-		let mut fn_instances = HashSet::new();
+		let mut ty_instances = HashMap::new();
+		let mut fn_instances = HashMap::new();
+		let mut functions_mono = HashMap::new();
 
-		for func in &self.functions {
-			let func = &func.1 .0;
+		// While types can be modified in-place, function instantiations are monomorphized
+		// by traversing the function list. And because Rust makes us write code that's
+		// "correct" and "responsible" and "halfway decent", we have to clone the function
+		// list here so we can mutate the clone. And yes, I *am* grumpy about it.
+		let function_names: Vec<_> = self.functions.keys().cloned().collect();
 
-			for block in &func.blocks {
-				for stmt in block {
-					match &stmt {
-						CIRStmt::Expression(expr, _)
-						| CIRStmt::Assignment(_, (expr, _))
-						| CIRStmt::Branch(expr, _, _)
-						| CIRStmt::Return(Some((expr, _))) => {
-							fn_instances.extend(self.get_rvalue_monoizations(expr));
-						}
+		for name in function_names {
 
-						_ => {}
-					}
-				}
+			// We can't monomorphize a generic function without its type parameters, only plain functions
+			// Those plain functions call generic functions, which are then monoized from the call site
+			if !self.functions[&name].type_params.is_empty() {
+				continue;
 			}
+
+
+			let function_monoized = Self::monoize_function(
+				&self.functions,
+				&mut functions_mono,
+				&self.functions[&name],
+				&mut self.types,
+				&vec![],
+				&mut ty_instances,
+				&mut fn_instances,
+			);
+
+			functions_mono.insert(name, function_monoized);
 		}
 
-		let mut instantiations = HashMap::new();
-
-		for func in &mut self.functions {
-			for (var, _) in &mut func.1 .0.variables {
-				Self::monoize_type(&mut self.types, var, &vec![], &mut instantiations);
-			}
-
-			for block in &mut func.1 .0.blocks {
-				for mut stmt in block {
-					match &mut stmt {
-						CIRStmt::Expression(expr, _)
-						| CIRStmt::Assignment(_, (expr, _))
-						| CIRStmt::Branch(expr, _, _)
-						| CIRStmt::Return(Some((expr, _))) => {
-							Self::monoize_rvalue_types(
-								&mut self.types,
-								expr,
-								&vec![],
-								&mut instantiations,
-							);
-						}
-
-						_ => {}
-					}
-
-					if let CIRStmt::Assignment((_lval, _), _) = &mut stmt {
-						// TODO: Find RValues in LValue projection
-					}
-				}
-			}
-		}
-
-		// Remove generics
-		for generic in instantiations.keys() {
+		// Remove generic types
+		for generic in ty_instances.keys() {
 			self.types.remove(generic);
 		}
+
+		// Remove generic functions
+		for generic in fn_instances.keys() {
+			functions_mono.remove(generic);
+		}
+
+		self.functions = functions_mono;
 	}
 
-	fn get_rvalue_monoizations(&self, rval: &RValue) -> MonoizationList {
-		match rval {
-			RValue::Atom(_, _, op) => self.get_operand_monoizations(op),
+	fn monoize_function(
+		functions_in: &CIRFnMap,
+		functions_out: &mut CIRFnMap,
+		func: &CIRFunction,
+		types: &mut HashMap<TypeName, CIRTypeDef>,
+		param_map: &TypeSubstitutions,
+		ty_instances: &mut TypeInstances,
+		fn_instances: &mut FuncInstances,
+	) -> CIRFunction {
 
-			RValue::Cons(_, [(_, lhs), (_, rhs)], _) => {
-				let mut result = self.get_operand_monoizations(lhs);
-				result.extend(self.get_operand_monoizations(rhs));
-				result
+		let mut func = func.clone();
+
+		for (var, _) in &mut func.variables {
+			Self::monoize_type(types, var, param_map, ty_instances);
+		}
+
+		Self::monoize_type(types, &mut func.ret, param_map, ty_instances);
+
+		for block in &mut func.blocks {
+			for stmt in block {
+				if let CIRStmt::Assignment((_lval, _), _) = stmt {
+					// TODO: Find RValues in LValue projection
+				}
+
+				match stmt {
+					CIRStmt::Expression(expr, _)
+					| CIRStmt::Assignment(_, (expr, _))
+					| CIRStmt::Branch(expr, _, _)
+					| CIRStmt::Return(Some((expr, _))) => {
+						
+						Self::monoize_rvalue_types(
+							types,
+							expr,
+							param_map,
+							ty_instances,
+						);
+
+						
+						Self::monoize_fn_calls(
+							functions_in,
+							functions_out,
+							expr,
+							types,
+							param_map, 
+							ty_instances,
+							fn_instances,
+						)
+					}
+
+					_ => {}
+				}
+			}
+		}
+
+		func
+	}
+
+	fn monoize_fn_calls(
+		functions_in: &CIRFnMap,
+		functions_out: &mut CIRFnMap,
+		rval: &mut RValue,
+		types: &mut HashMap<TypeName, CIRTypeDef>,
+		param_map: &TypeSubstitutions,
+		ty_instances: &mut TypeInstances,
+		fn_instances: &mut FuncInstances,	
+	) {
+		match rval {
+			RValue::Atom(_, _, Operand::FnCall(name, _, type_args)) => {
+				let mut param_map = param_map.clone();
+				param_map.append(type_args);
+
+				Self::monoize_call(
+					functions_in,
+					functions_out, 
+					name,
+					types, 
+					&param_map, 
+					ty_instances,
+					fn_instances
+				)
 			}
 
-			RValue::Cast { val, .. } => self.get_operand_monoizations(val),
+			RValue::Cons(_, [(_, lhs), (_, rhs)], _) => {
+				if let Operand::FnCall(name, _, type_args) = lhs {
+					let mut param_map = param_map.clone();
+					param_map.append(type_args);
+
+					Self::monoize_call(
+						functions_in,
+						functions_out, 
+						name, 
+						types,
+						&param_map, 
+						ty_instances,
+						fn_instances
+					)
+				}
+
+				if let Operand::FnCall(name, _, type_args) = rhs {
+					let mut param_map = param_map.clone();
+					param_map.append(type_args);
+
+					Self::monoize_call(
+						functions_in,
+						functions_out, 
+						name, 
+						types,
+						&param_map, 
+						ty_instances,
+						fn_instances
+					)
+				}
+			}
+
+			RValue::Cast { val: Operand::FnCall(name, _, type_args), .. } => {
+				let mut param_map = param_map.clone();
+				param_map.append(type_args);
+
+				Self::monoize_call(
+					functions_in,
+					functions_out, 
+					name, 
+					types,
+					&param_map, 
+					ty_instances,
+					fn_instances
+				)
+			}
+
+			_ => {}
 		}
 	}
 
-	fn get_operand_monoizations(&self, op: &Operand) -> MonoizationList {
-		match op {
-			Operand::FnCall(_name, args, _) => {
-				let mut result = HashSet::new();
 
-				// TODO: Add type parameters to Atom::FnCall and Operand::FnCall
+	fn monoize_call(
+		functions_in: &CIRFnMap,
+		functions_out: &mut CIRFnMap,
+		func: &mut FuncName,
+		types: &mut HashMap<TypeName, CIRTypeDef>,
+		param_map: &TypeSubstitutions,
+		ty_instances: &mut TypeInstances,
+		fn_instances: &mut FuncInstances,
+	) {
+		if param_map.is_empty() {
+			return;
+		}
+		
+		if !fn_instances.contains_key(func) {
+			fn_instances.insert(func.clone(), HashMap::new());
+		}
 
-				for arg in args {
-					result.extend(self.get_rvalue_monoizations(arg));
-				}
+		if fn_instances[func].contains_key(param_map) {
+			*func = fn_instances[func][param_map].clone();
+		} else {
+			let monoized = Self::monoize_function(
+				functions_in,
+				functions_out, 
+				&functions_in[func], 
+				types,
+				param_map,
+				ty_instances, 
+				fn_instances
+			);
+		
+			let mut insert_name = func.clone();
+			let mut name_suffix = "<".to_string();
+			let mut param_iter = param_map.iter();
 
-				result
+			name_suffix.push_str(&param_iter.next().unwrap().to_string());
+
+			for param in param_iter {
+				name_suffix.push_str(", ");
+				name_suffix.push_str(&param.to_string());
 			}
+			
+			name_suffix += ">";
 
-			_ => HashSet::new(),
+			insert_name.path.push(name_suffix.into());
+
+			fn_instances.get_mut(func).unwrap().insert(param_map.clone(), insert_name.clone());
+			functions_out.insert(insert_name.clone(), monoized);
+
+			*func = insert_name;
 		}
 	}
 
 	fn monoize_rvalue_types(
 		types: &mut HashMap<String, CIRTypeDef>,
 		rval: &mut RValue,
-		// Maps parameter indices to the actual types being instantiated
 		param_map: &TypeSubstitutions,
-		instances: &mut TypeInstances,
+		type_instances: &mut TypeInstances,
 	) {
 		match rval {
-			RValue::Atom(ty, _, _) => {
-				Self::monoize_type(types, ty, param_map, instances);
+			RValue::Atom(ty, _, val) => {
+				if let Operand::FnCall(_, _, type_args) = val {
+					let mut param_map = param_map.clone();
+					param_map.append(&mut type_args.clone());
+
+					Self::monoize_type(types, ty, &param_map, type_instances);
+				} else {
+					Self::monoize_type(types, ty, param_map, type_instances);
+				}
 			}
 
-			RValue::Cons(ty, [(lty, _), (rty, _)], _) => {
-				Self::monoize_type(types, lty, param_map, instances);
-				Self::monoize_type(types, rty, param_map, instances);
-				Self::monoize_type(types, ty, param_map, instances);
+			RValue::Cons(ty, [(lty, lhs), (rty, rhs)], _) => {
+				
+				if let Operand::FnCall(_, _, type_args) = lhs {
+					let mut param_map = param_map.clone();
+					param_map.append(&mut type_args.clone());
+
+					Self::monoize_type(types, lty, &param_map, type_instances);
+				} else {
+					Self::monoize_type(types, lty, param_map, type_instances);
+				}
+
+				if let Operand::FnCall(_, _, type_args) = rhs {
+					let mut param_map = param_map.clone();
+					param_map.append(&mut type_args.clone());
+
+					Self::monoize_type(types, rty, &param_map, type_instances);
+				} else {
+					Self::monoize_type(types, rty, param_map, type_instances);
+				}
+
+				Self::monoize_type(types, ty, &param_map, type_instances);
 			}
 
-			RValue::Cast { from, to, .. } => {
-				Self::monoize_type(types, from, param_map, instances);
-				Self::monoize_type(types, to, param_map, instances);
+			RValue::Cast { from, to, val } => {
+				if let Operand::FnCall(_, _, type_args) = val {
+					let mut param_map = param_map.clone();
+					param_map.append(&mut type_args.clone());
+
+					Self::monoize_type(types, from, &param_map, type_instances);
+					Self::monoize_type(types, to, &param_map, type_instances);
+				} else {
+					Self::monoize_type(types, from, param_map, type_instances);
+					Self::monoize_type(types, to, param_map, type_instances);
+				}
+
 			}
 		}
 	}
@@ -218,76 +392,25 @@ impl CIRModule {
 	fn mangle(&mut self) {
 		// Mangle functions
 
-		for func in &mut self.functions {
+		for (id, func) in &mut self.functions {
 			// Check if the function has a `no_mangle` or `export_as` attribute, or if it's `main`. If not, mangle the name
-			if get_attribute(&func.1 .0.attributes, "no_mangle").is_some()
-				|| (&**func.0.name() == "main" && !func.0.is_qualified())
+			if get_attribute(&func.attributes, "no_mangle").is_some()
+				|| (&**id.name() == "main" && !id.is_qualified())
 			{
-				func.1 .1 = Some(func.0.name().to_string());
-			} else if let Some(export_name) = get_attribute(&func.1 .0.attributes, "export_as") {
+				func.mangled_name = Some(id.name().to_string());
+			} else if let Some(export_name) = get_attribute(&func.attributes, "export_as") {
 				// Export with custom symbol name
 				if let Some(first_arg) = export_name.args.get(0) {
 					if let Some(Token::StringLiteral(name)) = first_arg.get(0) {
-						func.1 .1 = Some(name.clone())
+						func.mangled_name = Some(name.clone())
 					} else {
 						panic!() //TODO: Proper error handling
 					}
 				}
 			} else {
 				// Mangle name
-				func.1 .1 = Some(mangle_name(func.0, &func.1 .0));
+				func.mangled_name = Some(mangle_name(id, &func));
 			}
-		}
-
-		for func in &self.functions {
-			for block in &func.1 .0.blocks {
-				for stmt in block {
-					match stmt {
-						CIRStmt::Expression(expr, _) => {
-							self.mangle_rvalue(&expr);
-						}
-
-						CIRStmt::Assignment(_, (expr, _)) => {
-							self.mangle_rvalue(&expr);
-						}
-
-						CIRStmt::Branch(cond, _, _) => {
-							self.mangle_rvalue(&cond);
-						}
-
-						CIRStmt::Return(Some((expr, _))) => {
-							self.mangle_rvalue(expr);
-						}
-
-						_ => {}
-					}
-				}
-			}
-		}
-	}
-
-	fn mangle_rvalue(&self, expr: &RValue) {
-		match expr {
-			RValue::Atom(_, _, op) => self.mangle_operand(op),
-
-			RValue::Cons(_, [(_, lhs), (_, rhs)], _) => {
-				self.mangle_operand(lhs);
-				self.mangle_operand(rhs);
-			}
-
-			RValue::Cast { val, .. } => self.mangle_operand(val),
-		}
-	}
-
-	fn mangle_operand(&self, op: &Operand) {
-		match op {
-			Operand::FnCall(id, _, mangled) => {
-				mangled
-					.write()
-					.unwrap()
-					.replace(self.functions[&id].1.as_ref().unwrap().clone());
-			}
-			_ => {}
 		}
 	}
 }

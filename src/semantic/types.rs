@@ -322,6 +322,17 @@ impl Basic {
 }
 
 impl Type {
+	pub fn get_concrete_type(&self, type_args: &Vec<(Arc<str>, Type)>) -> Type {
+		match self {
+			Type::Basic(b) => Type::Basic(b.clone()),
+			Type::Pointer(ptr) => Type::Pointer(Box::new(ptr.get_concrete_type(type_args))),
+			Type::Reference(refee) => Type::Reference(Box::new(refee.get_concrete_type(type_args))),
+			Type::Array(arr_ty, size) => Type::Array(Box::new(arr_ty.get_concrete_type(type_args)), size.clone()),
+			Type::TypeRef(ty) => Type::TypeRef(ty.clone()),
+			Type::TypeParam(param) => type_args[*param].1.clone(),
+		}
+	}
+
 	pub fn ptr_type(&self) -> Self {
 		Type::Pointer(Box::new(self.clone()))
 	}

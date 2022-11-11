@@ -925,11 +925,17 @@ impl Parser {
 			if let Token::Operator(op) = next {
 				match op {
 					// Function declaration
-					"(" => {
+					"<" | "(" => {
+						let mut type_params = vec![];
+
+						if op == "<" {
+							type_params = self.parse_type_parameter_list()?;
+						}
+						
 						let t = FnDef {
 							ret: t,
 							params: self.parse_parameter_list()?,
-							type_params: vec![],
+							type_params,
 						};
 
 						// Past the parameter list, check if we're at a function body or not
@@ -1214,46 +1220,42 @@ impl Parser {
 				if result.is_none() {
 					// Variable or function name
 					result = Some(Atom::Identifier(name.clone()));
-					while let Token::Operator(op) = next {
-						match op {
-							"(" => {
-								// Function call
-								let mut args = vec![];
-								next = self.get_next()?;
 
-								if next != Token::Operator(")") {
-									loop {
-										args.push(self.parse_expression()?);
+					if let Token::Operator("(" | "<") = next {
+						let mut type_args = vec![];
 
-										current = self.get_current()?;
-
-										if let Token::Other(',') = current {
-											self.get_next()?;
-										} else if current == Token::Operator(")") {
-											break;
-										} else {
-											return Err(self.err(CMNErrorCode::UnexpectedToken));
-										}
-									}
-								}
-								self.get_next()?;
-
-								result = Some(Atom::FnCall {
-									name: name.clone(),
-									args,
-									ret: None,
-								});
-								break;
-							}
-
-							"<" => {
-								// TODO: Generics
-								result = Some(Atom::Identifier(name.clone()));
-								break;
-							}
-
-							_ => break,
+						// TODO: Disambiguate between fn call and comparison. Perform function resolution here?
+						if next == Token::Operator("<") {
+							type_args = self.parse_type_argument_list()?.into_iter().map(|item| ("".into(), item)).collect();
 						}
+
+						// Function call
+						let mut args = vec![];
+						next = self.get_next()?;
+
+						if next != Token::Operator(")") {
+							loop {
+								args.push(self.parse_expression()?);
+
+								current = self.get_current()?;
+
+								if let Token::Other(',') = current {
+									self.get_next()?;
+								} else if current == Token::Operator(")") {
+									break;
+								} else {
+									return Err(self.err(CMNErrorCode::UnexpectedToken));
+								}
+							}
+						}
+						self.get_next()?;
+
+						result = Some(Atom::FnCall {
+							name: name.clone(),
+							args,
+							type_args,
+							ret: None,
+						});
 					}
 				}
 			}
@@ -1522,40 +1524,23 @@ impl Parser {
 						}
 
 						"<" => {
-							self.get_next()?;
-
-							let mut i = 0;
-
-							loop {
-								let generic = self.parse_type(true)?;
-
-								if let Type::TypeRef(ItemRef::Resolved(TypeRef {
+							if let Type::TypeRef(ItemRef::Resolved(TypeRef {
 									def, args, ..
 								})) = &mut result
-								{
-									let def = def.upgrade().unwrap();
-									let TypeDef::Algebraic(agg) = &*def.read().unwrap() else { panic!() };
-									let name = &agg.params[i].0; // TODO: Real error handling
+							{
+								let def = def.upgrade().unwrap();
+								let TypeDef::Algebraic(agg) = &*def.read().unwrap() else { panic!() };
 
-									args.push((name.clone(), generic));
-								} else {
-									panic!("can't apply type parameters to this type of Type!") // TODO: Real error handling
+								let type_args = self.parse_type_argument_list()?;
+
+								for i in 0..type_args.len() {
+									let name = agg.params[i].0.clone(); // TODO: Real error handling
+									args.push((name, type_args[i].clone()));
 								}
 
-								if self.get_current()? == Token::Other(',') {
-									self.get_next()?;
-									i += 1;
-								} else {
-									break;
-								}
+							} else {
+								panic!("can't apply type parameters to this type of Type!") // TODO: Real error handling
 							}
-
-							if self.get_current()? != Token::Operator(">") {
-								return Err(self.err(CMNErrorCode::UnexpectedToken));
-							}
-
-							// consume closing angle bracket
-							self.get_next()?;
 						}
 
 						_ => {
@@ -1694,6 +1679,33 @@ impl Parser {
 			}
 		}
 
+		self.get_next()?;
+
+		Ok(result)
+	}
+
+	fn parse_type_argument_list(&self) -> ParseResult<Vec<Type>> {
+		self.get_next()?;
+
+		let mut result = vec![];
+
+		loop {
+			let generic = self.parse_type(true)?;
+			result.push(generic);
+		
+
+			if self.get_current()? == Token::Other(',') {
+				self.get_next()?;
+			} else {
+				break;
+			}
+		}
+
+		if self.get_current()? != Token::Operator(">") {
+			return Err(self.err(CMNErrorCode::UnexpectedToken));
+		}
+
+		// consume closing angle bracket
 		self.get_next()?;
 
 		Ok(result)

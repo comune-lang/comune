@@ -31,19 +31,21 @@ struct Vector<T> {
 	usize capacity;
 }
 
+T cool_generic_function<T>(T t) {
+	return t;
+}
+
 int main() {
 	printf("This is main()!\n\0");
-
-	printf("This is a vararg test! the magic number is %i\n\0", 42);
+	printf("This is a vararg & generics test! the magic number is %i\n\0", cool_generic_function<i32>(42));
 	
 	Vector<int> my_cool_generic;
 
 	my_cool_generic.data = malloc(8) as int*;
-
 	*my_cool_generic.data = 69;
-
+	
+	// This fucks with lifeline's liveness check - something to do with sublocation tracking
 	i32 generic_get = *my_cool_generic.data;
-
 	*my_cool_generic.data = 69;
 
 	// Borrowck stuff
@@ -57,5 +59,7 @@ int main() {
 	int cool = test.a;
 	test.a = cool;
 
+	free(my_cool_generic.data as void*);
+	
 	return test.sum();
 }

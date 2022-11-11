@@ -314,6 +314,7 @@ pub enum Atom {
 	FnCall {
 		name: Identifier,
 		args: Vec<ASTElem>,
+		type_args: Vec<(Name, Type)>,
 		ret: Option<Type>,
 	},
 }
