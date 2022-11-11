@@ -1226,7 +1226,26 @@ impl Parser {
 
 						// TODO: Disambiguate between fn call and comparison. Perform function resolution here?
 						if next == Token::Operator("<") {
-							type_args = self.parse_type_argument_list()?.into_iter().map(|item| ("".into(), item)).collect();
+							let ctx = self.current_namespace().borrow();
+
+							let root = &self
+								.root_namespace
+								.as_ref()
+								.unwrap_or(self.current_namespace())
+								.borrow();
+
+							let mut is_function = false;
+
+							ctx.with_item(&name, root, |item, _| {
+								is_function = matches!(&item.0, NamespaceItem::Function(..));
+							});
+							
+							if is_function {
+								type_args = self.parse_type_argument_list()?.into_iter().map(|item| ("".into(), item)).collect();
+							} else {
+								// Not a function, return as plain Identifier early
+								return Ok(result.unwrap());
+							}
 						}
 
 						// Function call
