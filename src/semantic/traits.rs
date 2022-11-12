@@ -53,11 +53,18 @@ impl Hash for TraitRef {
 	}
 }
 
-pub fn resolve_obligation<'ctx>(
+// The result of a trait obligation resolution
+pub enum TraitDeduction<'ctx> {
+	Impl(&'ctx TraitImpl),
+	Inherent,
+}
+
+pub fn resolve_trait_obligation<'ctx>(
 	ty: &TypeRef,
 	tr: &TraitRef,
-	namespace: &'ctx Namespace,
-	root_namespace: &'ctx Namespace,
-) -> Option<&'ctx TraitImpl> {
+	root: &'ctx Namespace,
+) -> Option<TraitDeduction<'ctx>> {
+	// trait solver - deduce whether a trait implementation exists and is visible
+
 	None
 }

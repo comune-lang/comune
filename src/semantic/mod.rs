@@ -25,7 +25,6 @@ pub mod ast;
 pub mod controlflow;
 pub mod expression;
 pub mod namespace;
-pub mod resolve;
 pub mod traits;
 pub mod types;
 
