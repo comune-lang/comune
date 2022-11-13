@@ -363,7 +363,7 @@ impl Parser {
 								match self.get_next()? {
 									Token::Other('{') => {
 										// Regular impl
-										impl_name = id.clone();
+										impl_name = Identifier::from_parent(scope, id.expect_scopeless()?.clone());
 										self.get_next()?;
 									}
 
@@ -372,7 +372,7 @@ impl Parser {
 										trait_name = Some(id);
 
 										if let Token::Identifier(id) = self.get_next()? {
-											impl_name = id;
+											impl_name = Identifier::from_parent(scope, id.expect_scopeless()?.clone());;
 										} else {
 											return Err(self.err(CMNErrorCode::ExpectedIdentifier));
 										}
@@ -1395,10 +1395,10 @@ impl Parser {
 	}
 
 	fn parse_type(&self, immediate_resolve: bool) -> ParseResult<Type> {
-		let mut result = Type::TypeRef(ItemRef::Unresolved(Identifier {
-			path: vec![],
-			absolute: false,
-		}));
+		let mut result = Type::TypeRef(ItemRef::Unresolved {
+			name: Identifier::new(false),
+			scope: self.current_scope.clone(),
+		});
 
 		if self.is_at_type_token(immediate_resolve)? {
 			let mut current = self.get_current()?;
@@ -1449,7 +1449,7 @@ impl Parser {
 					return Err(self.err(CMNErrorCode::UnresolvedTypename(typename.to_string())));
 				}
 			} else {
-				result = Type::TypeRef(ItemRef::Unresolved(typename));
+				result = Type::TypeRef(ItemRef::Unresolved { name: typename, scope: self.current_scope.clone() });
 			}
 
 			let mut next = self.get_next()?;
@@ -1607,7 +1607,7 @@ impl Parser {
 
 						// Collect trait bounds
 						while let Token::Identifier(tr) = current {
-							traits.push(ItemRef::Unresolved(tr));
+							traits.push(ItemRef::Unresolved { name: tr, scope: self.current_scope.clone() });
 
 							current = self.get_next()?;
 

@@ -267,11 +267,8 @@ pub fn resolve_type(
 
 		Type::Array(pointee, _size) => resolve_type(pointee, namespace, generics),
 
-		Type::TypeRef(ItemRef::Unresolved(id)) => {
-			let id = id.clone();
-
+		Type::TypeRef(ItemRef::Unresolved { name: id, scope }) => {
 			let mut result = None;
-
 			let generic_pos = generics.iter().position(|(name, _)| name == id.name());
 
 			if let Some(b) = Basic::get_basic_type(id.name()) {
@@ -282,7 +279,7 @@ pub fn resolve_type(
 				// Generic type parameter
 				result = Some(Type::TypeParam(generic_pos.unwrap()));
 			} else {
-				namespace.with_item(&id.clone(), &Identifier::new(true), |item, id| {
+				namespace.with_item(id, scope, |item, id| {
 					if let NamespaceItem::Type(t) = &item.0 {
 						result = Some(Type::TypeRef(ItemRef::Resolved(TypeRef {
 							def: Arc::downgrade(t),

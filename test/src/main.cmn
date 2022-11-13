@@ -40,7 +40,7 @@ int main() {
 
 	printf(
 		"This is a vararg & generics test! the magic number is %i\n\0", 
-		cool_generic_function<i32>(42)
+		cool_generic_function<u64>(fib(3)) as i32
 	);
 	
 	Vector<int> my_cool_generic;

@@ -120,7 +120,7 @@ pub struct Namespace {
 
 #[derive(Clone)]
 pub enum ItemRef<T: Clone> {
-	Unresolved(Identifier),
+	Unresolved{ name: Identifier, scope: Identifier },
 	Resolved(T),
 }
 
@@ -131,7 +131,7 @@ where
 {
 	fn eq(&self, other: &Self) -> bool {
 		match (self, other) {
-			(Self::Unresolved(l0), Self::Unresolved(r0)) => l0 == r0,
+			(Self::Unresolved { name: l0, scope: l1 }, Self::Unresolved { name: r0, scope: r1 }) => l0 == r0 && l1 == r1,
 			(Self::Resolved(l0), Self::Resolved(r0)) => l0 == r0,
 			_ => false,
 		}
@@ -144,7 +144,7 @@ where
 {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match self {
-			Self::Unresolved(arg0) => f.debug_tuple("Unresolved").field(arg0).finish(),
+			Self::Unresolved { name: arg0, scope: arg1 } => f.debug_tuple("Unresolved").field(arg0).field(arg1).finish(),
 			Self::Resolved(arg0) => f.debug_tuple("Resolved").field(arg0).finish(),
 		}
 	}
@@ -210,22 +210,39 @@ impl Namespace {
 					.keys()
 					.find(|item| item.path == scope_lookup_path.path)
 				{
-					return Some(closure(&self.children[found_path], found_path));
+					let found_item = &self.children[found_path];
+
+					if let NamespaceItem::Alias(alias) = &found_item.0 {
+						return self.with_item(alias, scope, closure);
+					} else {
+						return Some(closure(found_item, found_path));
+					}
 				}
 			}
 
 			// Didn't find it, fall back to absolute lookup below
 		}
 
-		if let Some(absolute_lookup) = self.children.get(id) {
+		let mut id = id.clone();
+		id.absolute = true;
+
+		if let Some(absolute_lookup) = self.children.get(&id) {
 			// Found a match for the absolute path in this namespace!
-			Some(closure(absolute_lookup, id))
+
+			if let NamespaceItem::Alias(alias) = &absolute_lookup.0 {
+				self.with_item(alias, scope, closure)
+			} else {
+				Some(closure(absolute_lookup, &id))
+			}
 		} else if let Some(imported) = self.imported.iter().find(|(item, imported)| {
 			id.path.len() > item.path.len() && &id.path[0..item.path.len()] == item.path.as_slice()
 		}) {
 			// Found an imported namespace that's a prefix of `id`!
 			// TODO: Figure out how this works for submodules
-			imported.1.with_item(id, scope, closure)
+			let mut id_relative = id.clone();
+			id_relative.path = id_relative.path[imported.0.path.len()..].to_vec();
+
+			imported.1.with_item(&id_relative, scope, closure)
 		} else {
 			// Nada
 			None

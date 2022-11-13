@@ -430,7 +430,7 @@ impl Hash for Type {
 				"+".hash(state)
 			}
 
-			Type::TypeRef(ItemRef::Unresolved(id)) => id.hash(state),
+			Type::TypeRef(ItemRef::Unresolved { name, scope }) => { name.hash(state); scope.hash(state) },
 
 			Type::TypeRef(ItemRef::Resolved(ty)) => ty.hash(state),
 
@@ -450,7 +450,7 @@ impl Display for Type {
 
 			Type::Array(t, _s) => write!(f, "{}[]", t),
 
-			Type::TypeRef(ItemRef::Unresolved(t)) => write!(f, "unresolved type \"{}\"", t),
+			Type::TypeRef(ItemRef::Unresolved { name, .. }) => write!(f, "unresolved type \"{name}\""),
 
 			Type::TypeRef(ItemRef::Resolved(TypeRef { name, args, .. })) => {
 				if args.is_empty() {
@@ -533,8 +533,8 @@ impl std::fmt::Debug for Type {
 			Self::Pointer(_) => f.debug_tuple("Pointer").finish(),
 			Self::Reference(_) => f.debug_tuple("Reference").finish(),
 			Self::Array(t, _) => f.debug_tuple("Array").field(t).finish(),
-			Self::TypeRef(ItemRef::Unresolved(arg0)) => {
-				f.debug_tuple("Unresolved").field(arg0).finish()
+			Self::TypeRef(ItemRef::Unresolved { name: arg0, scope: arg1 }) => {
+				f.debug_tuple("Unresolved").field(arg0).field(arg1).finish()
 			}
 			Self::TypeRef(ItemRef::Resolved(TypeRef { def: arg0, .. })) => {
 				f.debug_tuple("TypeRef").field(arg0).finish()
