@@ -341,7 +341,7 @@ impl Display for Namespace {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		for c in &self.children {
 			match &c.1 .0 {
-				NamespaceItem::Alias(id) => write!(f, "\t[alias] {}", id)?,
+				NamespaceItem::Alias(id) => write!(f, "\t[alias] {}\n", id)?,
 				NamespaceItem::Type(t) => write!(f, "\t[type] {}: {}\n", c.0, t.read().unwrap())?,
 				NamespaceItem::Trait(t) => {
 					write!(f, "\t[trait] {}: {:?}\n", c.0, t.read().unwrap())?
