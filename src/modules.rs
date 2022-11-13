@@ -55,12 +55,7 @@ pub fn launch_module_compilation<'scope>(
 	let mut mod_state = parse_interface(&state, &src_path, error_sender.clone())?;
 
 	// Resolve module imports
-	let module_names = mod_state
-		.parser
-		.current_namespace()
-		.borrow()
-		.referenced_modules
-		.clone();
+	let module_names = mod_state.parser.namespace.referenced_modules.clone();
 
 	let sender_lock = Mutex::new(error_sender.clone());
 
@@ -74,7 +69,7 @@ pub fn launch_module_compilation<'scope>(
 		})
 		.collect();
 
-	mod_state.parser.current_namespace().borrow_mut().imported = imports;
+	mod_state.parser.namespace.imported = imports;
 
 	match resolve_types(&state, &mut mod_state) {
 		Ok(_) => {}
@@ -88,7 +83,7 @@ pub fn launch_module_compilation<'scope>(
 		}
 	};
 
-	let interface = mod_state.parser.current_namespace().borrow().clone();
+	let interface = mod_state.parser.namespace.get_interface();
 
 	// The rest of the module's compilation happens in a worker thread
 
@@ -227,20 +222,20 @@ pub fn parse_interface(
 }
 
 pub fn resolve_types(state: &Arc<ManagerState>, mod_state: &mut ModuleState) -> ParseResult<()> {
-	let root = mod_state.parser.current_namespace();
+	let root = &mut mod_state.parser.namespace;
 
 	// At this point, all imports have been resolved, so validate namespace-level types
-	semantic::resolve_namespace_types(root, root)?;
+	semantic::resolve_namespace_types(root)?;
 
 	// Check for cyclical dependencies without indirection
 	// TODO: Nice error reporting for this
-	semantic::check_namespace_cyclical_deps(&root.borrow())?;
+	semantic::check_namespace_cyclical_deps(&root)?;
 
 	// Then register impls to their types
-	semantic::register_impls(root, root)?;
+	semantic::register_impls(root)?;
 
 	if state.verbose_output {
-		println!("\ntype resolution output:\n\n{}", root.borrow());
+		println!("\ntype resolution output:\n\n{}", root);
 	}
 
 	Ok(())
@@ -272,10 +267,7 @@ pub fn generate_code<'ctx>(
 
 	// Validate code
 
-	match semantic::validate_namespace(
-		mod_state.parser.current_namespace(),
-		mod_state.parser.current_namespace(),
-	) {
+	match semantic::validate_namespace(&mut mod_state.parser.namespace) {
 		Ok(()) => {
 			if state.verbose_output {
 				println!("generating code...");

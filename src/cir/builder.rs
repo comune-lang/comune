@@ -45,20 +45,13 @@ impl CIRModuleBuilder {
 			current_block: 0,
 		};
 
-		result.register_namespace(
-			&ast.parser.current_namespace().borrow(),
-			&ast.parser.current_namespace().borrow(),
-		);
-
-		result.generate_namespace(
-			&ast.parser.current_namespace().borrow(),
-			&ast.parser.current_namespace().borrow(),
-		);
+		result.register_namespace(&ast.parser.namespace);
+		result.generate_namespace(&ast.parser.namespace);
 
 		result
 	}
 
-	fn register_namespace(&mut self, namespace: &Namespace, root: &Namespace) {
+	fn register_namespace(&mut self, namespace: &Namespace) {
 		for im in &namespace.impls {
 			for elem in im.1 {
 				match &elem.1 .0 {
@@ -76,22 +69,15 @@ impl CIRModuleBuilder {
 		}
 
 		for import in &namespace.imported {
-			self.register_namespace(import.1, root);
+			self.register_namespace(import.1);
 		}
 
 		for elem in &namespace.children {
 			match &elem.1 .0 {
-				NamespaceItem::Namespace(ns) => {
-					self.register_namespace(&ns.as_ref().borrow(), root)
-				}
-
 				NamespaceItem::Function(func, _) => {
 					let cir_fn = self.generate_prototype(&func.read().unwrap(), elem.1 .1.clone());
 
-					self.module.functions.insert(
-						Identifier::from_parent(&namespace.path, elem.0.clone()),
-						cir_fn,
-					);
+					self.module.functions.insert(elem.0.clone(), cir_fn);
 				}
 
 				_ => {}
@@ -99,7 +85,7 @@ impl CIRModuleBuilder {
 		}
 	}
 
-	fn generate_namespace(&mut self, namespace: &Namespace, root: &Namespace) {
+	fn generate_namespace(&mut self, namespace: &Namespace) {
 		for im in &namespace.impls {
 			for elem in im.1 {
 				match &elem.1 .0 {
@@ -121,12 +107,8 @@ impl CIRModuleBuilder {
 
 		for elem in &namespace.children {
 			match &elem.1 .0 {
-				NamespaceItem::Namespace(ns) => {
-					self.generate_namespace(&ns.as_ref().borrow(), root)
-				}
-
 				NamespaceItem::Function(_, node) => {
-					let name = Identifier::from_parent(&namespace.path, elem.0.clone());
+					let name = elem.0.clone();
 					let mut cir_fn = self.module.functions.remove(&name).unwrap();
 
 					if let NamespaceASTElem::Parsed(ast) = &*node.borrow() {

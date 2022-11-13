@@ -27,6 +27,13 @@ pub struct Identifier {
 }
 
 impl Identifier {
+	pub fn new(absolute: bool) -> Self {
+		Identifier {
+			path: vec![],
+			absolute,
+		}
+	}
+
 	pub fn from_name(name: Name, absolute: bool) -> Self {
 		Identifier {
 			path: vec![name],
@@ -95,7 +102,7 @@ pub enum NamespaceItem {
 	Trait(Arc<RwLock<TraitDef>>),
 	Function(Arc<RwLock<FnDef>>, RefCell<NamespaceASTElem>),
 	Variable(Type, RefCell<NamespaceASTElem>),
-	Namespace(Box<RefCell<Namespace>>),
+	//Namespace(Box<RefCell<Namespace>>),
 	Alias(Identifier),
 }
 
@@ -106,7 +113,7 @@ pub struct Namespace {
 	pub path: Identifier,
 	pub referenced_modules: HashSet<Identifier>,
 	pub imported: HashMap<Identifier, Namespace>,
-	pub children: HashMap<Name, NamespaceEntry>,
+	pub children: HashMap<Identifier, NamespaceEntry>,
 	pub impls: HashMap<Identifier, HashMap<Name, NamespaceEntry>>, // Impls defined in this namespace
 	pub trait_impls: HashMap<Identifier, HashMap<Identifier, TraitImpl>>,
 }
@@ -177,8 +184,56 @@ impl Namespace {
 		}
 	}
 
+	pub fn get_interface(&self) -> Self {
+		self.clone() // TODO: Actually implement
+	}
+
+	pub fn with_item<Ret>(
+		&self,
+		id: &Identifier,
+		scope: &Identifier,
+		mut closure: impl FnMut(&NamespaceEntry, &Identifier) -> Ret,
+	) -> Option<Ret> {
+		if !id.absolute {
+			let mut scope_unwind = scope.clone();
+
+			// We "unwind" the scope, iterating through parent scopes and looking for a match
+			while !scope_unwind.path.is_empty() {
+				let mut scope_lookup_path = scope_unwind.clone();
+
+				scope_lookup_path.path.append(&mut id.clone().path);
+
+				scope_unwind.path.pop();
+
+				if let Some(found_path) = self
+					.children
+					.keys()
+					.find(|item| item.path == scope_lookup_path.path)
+				{
+					return Some(closure(&self.children[found_path], found_path));
+				}
+			}
+
+			// Didn't find it, fall back to absolute lookup below
+		}
+
+		if let Some(absolute_lookup) = self.children.get(id) {
+			// Found a match for the absolute path in this namespace!
+			Some(closure(absolute_lookup, id))
+		} else if let Some(imported) = self.imported.iter().find(|(item, imported)| {
+			id.path.len() > item.path.len() && &id.path[0..item.path.len()] == item.path.as_slice()
+		}) {
+			// Found an imported namespace that's a prefix of `id`!
+			// TODO: Figure out how this works for submodules
+			imported.1.with_item(id, scope, closure)
+		} else {
+			// Nada
+			None
+		}
+	}
+
 	// Children take temporary ownership of their parent to avoid lifetime hell
-	pub fn from_parent(parent: &Identifier, name: Name) -> Self {
+	/*pub fn from_parent(parent: &Identifier, name: Name) -> Self {
 		Namespace {
 			children: HashMap::new(),
 			path: Identifier::from_parent(parent, name),
@@ -279,7 +334,7 @@ impl Namespace {
 		} else {
 			None
 		}
-	}
+	}*/
 }
 
 impl Display for Namespace {
@@ -295,11 +350,6 @@ impl Display for Namespace {
 					write!(f, "\t[func] {}: {}\n", c.0, t.read().unwrap())?
 				}
 				NamespaceItem::Variable(_, _) => todo!(),
-				NamespaceItem::Namespace(ns) => write!(
-					f,
-					"\n[[sub-namespace]]\n\n{}\n[[end sub-namespace]]\n\n",
-					&ns.as_ref().borrow()
-				)?,
 			}
 		}
 		Ok(())

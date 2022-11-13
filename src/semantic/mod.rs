@@ -42,11 +42,10 @@ pub fn get_attribute<'a>(attributes: &'a Vec<Attribute>, attr_name: &str) -> Opt
 }
 
 pub struct FnScope<'ctx> {
-	context: &'ctx RefCell<Namespace>,
+	context: &'ctx Namespace,
+	scope: Identifier,
 	parent: Option<&'ctx FnScope<'ctx>>,
 	fn_return_type: Type,
-	root_namespace: &'ctx RefCell<Namespace>,
-
 	variables: HashMap<Name, Type>,
 }
 
@@ -54,23 +53,19 @@ impl<'ctx> FnScope<'ctx> {
 	pub fn from_parent(parent: &'ctx FnScope) -> Self {
 		FnScope {
 			context: parent.context,
+			scope: parent.scope.clone(),
 			parent: Some(parent),
 			fn_return_type: parent.fn_return_type.clone(),
-			root_namespace: parent.root_namespace,
 			variables: HashMap::new(),
 		}
 	}
 
-	pub fn new(
-		context: &'ctx RefCell<Namespace>,
-		root_namespace: &'ctx RefCell<Namespace>,
-		return_type: Type,
-	) -> Self {
+	pub fn new(context: &'ctx Namespace, scope: Identifier, return_type: Type) -> Self {
 		FnScope {
 			context,
+			scope,
 			parent: None,
 			fn_return_type: return_type,
-			root_namespace,
 			variables: HashMap::new(),
 		}
 	}
@@ -97,10 +92,7 @@ impl<'ctx> FnScope<'ctx> {
 
 		if result.is_none() {
 			// Look for it in the namespace tree
-			let namespace = self.context.borrow();
-			let root = self.root_namespace.borrow();
-
-			namespace.with_item(&id, &root, |item, id| {
+			self.context.with_item(&id, &self.scope, |item, id| {
 				if let NamespaceItem::Function(fn_type, _) = &item.0 {
 					result = Some((
 						id.clone(),
@@ -119,16 +111,16 @@ impl<'ctx> FnScope<'ctx> {
 }
 
 pub fn validate_function(
+	name: &Identifier,
 	func: &FnDef,
 	elem: &RefCell<NamespaceASTElem>,
-	namespace: &RefCell<Namespace>,
-	root: &RefCell<Namespace>,
+	namespace: &Namespace,
 ) -> AnalyzeResult<()> {
-	let mut scope;
-	let ret;
+	let mut ctx_scope = name.clone();
+	ctx_scope.path.pop();
 
-	ret = func.ret.clone();
-	scope = FnScope::new(namespace, root, ret.clone());
+	let ret = func.ret.clone();
+	let mut scope = FnScope::new(namespace, ctx_scope, ret.clone());
 
 	for param in &func.params.params {
 		scope.add_variable(param.0.clone(), param.1.clone().unwrap())
@@ -236,29 +228,23 @@ pub fn validate_fn_call(
 	Ok(func.ret.get_concrete_type(type_args))
 }
 
-pub fn validate_namespace(
-	namespace: &RefCell<Namespace>,
-	root_namespace: &RefCell<Namespace>,
-) -> AnalyzeResult<()> {
-	for c in &namespace.borrow().children {
-		match &c.1 .0 {
-			// Validate child namespace
-			NamespaceItem::Namespace(ns) => validate_namespace(ns, root_namespace)?,
-
+pub fn validate_namespace(namespace: &mut Namespace) -> AnalyzeResult<()> {
+	for (id, child) in &namespace.children {
+		match &child.0 {
 			// Validate function
 			NamespaceItem::Function(func, elem) => {
-				validate_function(&func.read().unwrap(), elem, namespace, root_namespace)?
+				validate_function(id, &func.read().unwrap(), elem, namespace)?
 			}
 
 			_ => {}
 		}
 	}
 
-	for im in &namespace.borrow().impls {
+	for im in &namespace.impls {
 		for item in im.1 {
 			match &item.1 .0 {
 				NamespaceItem::Function(func, elem) => {
-					validate_function(&func.read().unwrap(), elem, namespace, root_namespace)?
+					validate_function(&im.0, &func.read().unwrap(), elem, namespace)?
 				}
 
 				_ => panic!(),
@@ -272,15 +258,14 @@ pub fn validate_namespace(
 pub fn resolve_type(
 	ty: &mut Type,
 	namespace: &Namespace,
-	root: &RefCell<Namespace>,
 	generics: &TypeParamList,
 ) -> ParseResult<()> {
 	match ty {
-		Type::Pointer(pointee) => resolve_type(pointee, namespace, root, generics),
+		Type::Pointer(pointee) => resolve_type(pointee, namespace, generics),
 
-		Type::Reference(refee) => resolve_type(refee, namespace, root, generics),
+		Type::Reference(refee) => resolve_type(refee, namespace, generics),
 
-		Type::Array(pointee, _size) => resolve_type(pointee, namespace, root, generics),
+		Type::Array(pointee, _size) => resolve_type(pointee, namespace, generics),
 
 		Type::TypeRef(ItemRef::Unresolved(id)) => {
 			let id = id.clone();
@@ -297,7 +282,7 @@ pub fn resolve_type(
 				// Generic type parameter
 				result = Some(Type::TypeParam(generic_pos.unwrap()));
 			} else {
-				namespace.with_item(&id.clone(), &root.borrow(), |item, id| {
+				namespace.with_item(&id.clone(), &Identifier::new(true), |item, id| {
 					if let NamespaceItem::Type(t) = &item.0 {
 						result = Some(Type::TypeRef(ItemRef::Resolved(TypeRef {
 							def: Arc::downgrade(t),
@@ -326,7 +311,6 @@ pub fn resolve_type_def(
 	ty: &mut TypeDef,
 	attributes: &Vec<Attribute>,
 	namespace: &Namespace,
-	root: &RefCell<Namespace>,
 	base_generics: &TypeParamList,
 ) -> ParseResult<()> {
 	match ty {
@@ -336,14 +320,10 @@ pub fn resolve_type_def(
 
 			for item in &mut agg.items {
 				match &mut item.1 .0 {
-					NamespaceItem::Variable(t, _) => resolve_type(t, &namespace, root, &generics)?,
-					NamespaceItem::Type(t) => resolve_type_def(
-						&mut t.write().unwrap(),
-						&vec![],
-						&namespace,
-						root,
-						&generics,
-					)?,
+					NamespaceItem::Variable(t, _) => resolve_type(t, &namespace, &generics)?,
+					NamespaceItem::Type(t) => {
+						resolve_type_def(&mut t.write().unwrap(), &vec![], &namespace, &generics)?
+					}
 					_ => (),
 				}
 			}
@@ -379,52 +359,35 @@ pub fn resolve_type_def(
 	Ok(())
 }
 
-pub fn resolve_namespace_types(
-	namespace: &RefCell<Namespace>,
-	root: &RefCell<Namespace>,
-) -> ParseResult<()> {
-	for child in &namespace.borrow().children {
-		if let NamespaceItem::Namespace(ref ns) = child.1 .0 {
-			resolve_namespace_types(ns, root)?;
-		}
-	}
-
+pub fn resolve_namespace_types(namespace: &Namespace) -> ParseResult<()> {
 	// Resolve types
-	{
-		let namespace = namespace.borrow();
 
-		for child in &namespace.children {
-			match &child.1 .0 {
-				NamespaceItem::Function(func, _) => {
-					let FnDef {
-						ret,
-						params,
-						type_params: generics,
-					} = &mut *func.write().unwrap();
+	for child in &namespace.children {
+		match &child.1 .0 {
+			NamespaceItem::Function(func, _) => {
+				let FnDef {
+					ret,
+					params,
+					type_params: generics,
+				} = &mut *func.write().unwrap();
 
-					resolve_type(ret, &namespace, root, &generics)?;
+				resolve_type(ret, &namespace, &generics)?;
 
-					for param in &mut params.params {
-						resolve_type(&mut param.0, &namespace, root, &generics)?;
-					}
+				for param in &mut params.params {
+					resolve_type(&mut param.0, &namespace, &generics)?;
 				}
+			}
 
-				NamespaceItem::Namespace(_) => {}
+			NamespaceItem::Type(t) => {
+				resolve_type_def(&mut *t.write().unwrap(), &child.1 .1, &namespace, &vec![])?
+			}
 
-				NamespaceItem::Type(t) => resolve_type_def(
-					&mut *t.write().unwrap(),
-					&child.1 .1,
-					&namespace,
-					root,
-					&vec![],
-				)?,
+			NamespaceItem::Alias(_) => {}
 
-				NamespaceItem::Alias(_) => {}
-
-				_ => todo!(),
-			};
-		}
+			_ => todo!(),
+		};
 	}
+
 	Ok(())
 }
 
@@ -469,25 +432,20 @@ pub fn check_namespace_cyclical_deps(namespace: &Namespace) -> ParseResult<()> {
 	for item in &namespace.children {
 		match &item.1 .0 {
 			NamespaceItem::Type(ty) => check_cyclical_deps(&ty, &mut vec![])?,
-			NamespaceItem::Namespace(ns) => check_namespace_cyclical_deps(&ns.as_ref().borrow())?,
 			_ => {}
 		}
 	}
 	Ok(())
 }
 
-pub fn register_impls(
-	namespace: &RefCell<Namespace>,
-	root: &RefCell<Namespace>,
-) -> ParseResult<()> {
+pub fn register_impls(namespace: &mut Namespace) -> ParseResult<()> {
 	let mut impls_remapped = HashMap::new();
 
-	for im in &namespace.borrow().impls {
+	for im in &namespace.impls {
 		// Impls can be defined with relative Identifiers, so we make them all fully-qualified members of the root namespace here
 
 		namespace
-			.borrow()
-			.with_item(&im.0, &root.borrow(), |item, id| {
+			.with_item(&im.0, &Identifier::new(true), |item, id| {
 				if let NamespaceItem::Type(t_def) = &item.0 {
 					if let TypeDef::Algebraic(_) = &mut *t_def.write().unwrap() {
 						let mut this_impl = HashMap::new();
@@ -503,15 +461,10 @@ pub fn register_impls(
 										type_params,
 									} = &mut *func_lock.write().unwrap();
 
-									resolve_type(ret, &namespace.borrow(), root, &type_params)?;
+									resolve_type(ret, namespace, &type_params)?;
 
 									for param in &mut params.params {
-										resolve_type(
-											&mut param.0,
-											&namespace.borrow(),
-											root,
-											&type_params,
-										)?;
+										resolve_type(&mut param.0, namespace, &type_params)?;
 									}
 
 									this_impl.insert(
@@ -535,7 +488,7 @@ pub fn register_impls(
 			.unwrap()?;
 	}
 
-	root.borrow_mut().impls = impls_remapped;
+	namespace.impls = impls_remapped;
 
 	Ok(())
 }
@@ -1023,8 +976,7 @@ impl Expr {
 												_,
 												(NamespaceItem::Function(method, _), _, _),
 											)) = scope
-												.root_namespace
-												.borrow()
+												.context
 												.impls
 												.get(&lhs_ref.name)
 												.unwrap_or(&HashMap::new())
@@ -1190,8 +1142,7 @@ impl Atom {
 			} => {
 				scope
 					.context
-					.borrow()
-					.with_item(name, &scope.root_namespace.borrow(), |item, _| {
+					.with_item(name, &scope.scope, |item, _| {
 						if let NamespaceItem::Function(func, _) = &item.0 {
 							let func = func.read().unwrap();
 

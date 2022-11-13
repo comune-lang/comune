@@ -141,12 +141,12 @@ impl AlgebraicDef {
 		}
 		None
 	}
-
+	/*
 	pub fn with_item<Ret>(
 		&self,
 		name: &Identifier,
 		parent: &Namespace,
-		root: &Namespace,
+		scope: &Identifier,
 		mut closure: impl FnMut(&NamespaceEntry, &Identifier) -> Ret,
 	) -> Option<Ret> {
 		if !name.is_qualified() {
@@ -155,7 +155,7 @@ impl AlgebraicDef {
 
 				if let NamespaceItem::Alias(id) = &item.1 .0 {
 					// It's an alias, so look up the actual item
-					return parent.with_item(&id, root, closure);
+					return parent.with_item(&id, scope, closure);
 				} else {
 					// Generate absolute identifier
 					let id = Identifier::from_parent(&parent.path, name.name().clone());
@@ -171,7 +171,7 @@ impl AlgebraicDef {
 							let mut name_clone = name.clone();
 							name_clone.path.remove(0);
 
-							return alg.with_item(&name_clone, parent, root, closure);
+							return alg.with_item(&name_clone, parent, scope, closure);
 						}
 
 						_ => panic!(),
@@ -183,7 +183,7 @@ impl AlgebraicDef {
 		}
 
 		None
-	}
+	}*/
 }
 
 impl Basic {
