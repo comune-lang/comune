@@ -1,7 +1,7 @@
-import module_test;
+//import module_test;
 //import lifetimes;
 
-using module_test::{fib, foo};
+//using module_test::{fib, foo};
 
 @no_mangle
 void printf(char* fmt, ...);
@@ -40,7 +40,7 @@ int main() {
 
 	printf(
 		"This is a vararg & generics test! the magic number is %i\n\0", 
-		cool_generic_function<u64>(fib(3)) as i32
+		cool_generic_function<u64>(3) as i32
 	);
 	
 	Vector<int> my_cool_generic;

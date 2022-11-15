@@ -124,14 +124,14 @@ pub fn launch_module_compilation<'scope>(
 	Ok(interface)
 }
 
-// TODO: Add proper module searching support, based on a list of module search dirs, as well as support for .cmn, .h, .hpp etc
+// TODO: Add proper module searching support, based on a list of module search dirs, as well as support for .co, .h, .hpp etc
 pub fn get_module_source_path(state: &Arc<ManagerState>, module: &Identifier) -> PathBuf {
 	let mut result = get_src_folder(state);
 
 	fs::create_dir_all(result.clone()).unwrap();
 
 	result.push(&**module.name());
-	result.set_extension("cmn");
+	result.set_extension("co");
 	result
 }
 
