@@ -512,22 +512,29 @@ impl Expr {
 						let idx_type = Type::Basic(Basic::SIZEINT { signed: false });
 
 						let first_t = lhs.validate(scope)?;
-						let second_t = rhs.validate(scope)?;
+						let mut second_t = rhs.validate(scope)?;
 
 						if let Type::Array(ty, _) = &first_t {
-							if second_t == idx_type {
-								lhs.get_node_data_mut().ty = Some(first_t.clone());
-								rhs.get_node_data_mut().ty = Some(second_t);
 
-								return Ok(*ty.clone());
-							} else {
-								return Err((
-									CMNError::new(CMNErrorCode::InvalidSubscriptRHS {
-										t: second_t,
-									}),
-									meta.tk,
-								));
+							if second_t != idx_type {
+								if rhs.coercable_to(&second_t, &idx_type, scope) {
+									rhs.wrap_in_cast(idx_type.clone());
+									second_t = idx_type.clone();
+								} else {
+									return Err((
+										CMNError::new(CMNErrorCode::InvalidSubscriptRHS {
+											t: second_t,
+										}),
+										meta.tk,
+									));
+								}
 							}
+
+							lhs.get_node_data_mut().ty = Some(first_t.clone());
+							rhs.get_node_data_mut().ty = Some(second_t);
+
+							return Ok(*ty.clone());
+
 						} else {
 							return Err((
 								CMNError::new(CMNErrorCode::InvalidSubscriptLHS { t: first_t }),
@@ -548,9 +555,9 @@ impl Expr {
 							// Try to coerce one to the other
 
 							if lhs.coercable_to(&first_t, &second_t, scope) {
-								todo!()
+								lhs.wrap_in_cast(second_t.clone());
 							} else if rhs.coercable_to(&second_t, &first_t, scope) {
-								todo!()
+								rhs.wrap_in_cast(first_t.clone());
 							} else {
 								return Err((
 									CMNError::new(CMNErrorCode::ExprTypeMismatch(
