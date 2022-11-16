@@ -47,7 +47,6 @@ int main() {
 		42
 	};
 	
-	
 	// This fucks with lifeline's liveness check - something to do with sublocation tracking
 	i32 generic_get = *my_cool_generic.data;
 	*my_cool_generic.data = 69;
@@ -65,5 +64,5 @@ int main() {
 
 	free(my_cool_generic.data as void*);
 	
-	return test.sum()
+	test.sum()
 }

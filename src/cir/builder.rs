@@ -281,14 +281,8 @@ impl CIRModuleBuilder {
 
 				let (ty, name) = &bindings[0];
 
-				let cir_ty = self.convert_type(ty);
-				let idx = self.get_fn().variables.len();
-
-				self.get_fn_mut()
-					.variables
-					.push((cir_ty, Some(name.clone())));
-
 				let var = self.insert_variable(name.clone(), ty.clone());
+				let idx = var.local;
 
 				if let Some(expr) = expr {
 					let Some(val) = self.generate_expr(expr) else { return };

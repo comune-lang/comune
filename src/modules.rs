@@ -345,6 +345,7 @@ pub fn generate_code<'ctx>(
 
 	// Optimization passes
 	let mpm = PassManager::<Module>::create(());
+	
 	mpm.add_instruction_combining_pass();
 	mpm.add_reassociate_pass();
 	mpm.add_gvn_pass();
@@ -353,7 +354,7 @@ pub fn generate_code<'ctx>(
 	mpm.add_promote_memory_to_register_pass();
 	mpm.add_instruction_combining_pass();
 	mpm.add_reassociate_pass();
-
+	
 	mpm.run_on(&backend.module);
 
 	Ok(backend)
