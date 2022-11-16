@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use rayon::prelude::{IntoParallelRefIterator, ParallelIterator};
 
-use crate::{errors::CMNError, parser::AnalyzeResult, semantic::ast::TokenData};
+use crate::{errors::CMNError, parser::AnalyzeResult, semantic::TokenData};
 
 use super::{BlockIndex, CIRBlock, CIRFunction, CIRModule, CIRStmt, StmtIndex};
 

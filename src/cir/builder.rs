@@ -1,15 +1,14 @@
-use std::{borrow::BorrowMut, collections::HashMap, sync::RwLock};
+use std::{borrow::BorrowMut, collections::HashMap};
 
 use crate::{
 	constexpr::{ConstExpr, ConstValue},
 	modules::ModuleState,
 	semantic::{
-		ast::{ASTElem, ASTNode},
 		controlflow::ControlFlow,
 		expression::{Atom, Expr, Operator},
 		namespace::{Identifier, ItemRef, Name, Namespace, NamespaceASTElem, NamespaceItem},
 		types::{Basic, FnDef, Type, TypeDef, TypeRef},
-		Attribute,
+		Attribute, statement::Stmt,
 	},
 };
 
@@ -72,12 +71,12 @@ impl CIRModuleBuilder {
 			self.register_namespace(import.1);
 		}
 
-		for elem in &namespace.children {
-			match &elem.1 .0 {
+		for (name, elem) in &namespace.children {
+			match &elem.0 {
 				NamespaceItem::Function(func, _) => {
-					let cir_fn = self.generate_prototype(&func.read().unwrap(), elem.1 .1.clone());
+					let cir_fn = self.generate_prototype(&func.read().unwrap(), elem.1.clone());
 
-					self.module.functions.insert(elem.0.clone(), cir_fn);
+					self.module.functions.insert(name.clone(), cir_fn);
 				}
 
 				_ => {}
@@ -87,14 +86,14 @@ impl CIRModuleBuilder {
 
 	fn generate_namespace(&mut self, namespace: &Namespace) {
 		for im in &namespace.impls {
-			for elem in im.1 {
-				match &elem.1 .0 {
+			for (impl_name, elem) in im.1 {
+				match &elem.0 {
 					NamespaceItem::Function(_, ast) => {
-						let name = Identifier::from_parent(im.0, elem.0.clone());
+						let name = Identifier::from_parent(im.0, impl_name.clone());
 						let mut cir_fn = self.module.functions.remove(&name).unwrap();
 
 						if let NamespaceASTElem::Parsed(ast) = &*ast.borrow() {
-							cir_fn = self.generate_function(cir_fn, &ast.node);
+							cir_fn = self.generate_function(cir_fn, ast);
 						}
 
 						self.module.functions.insert(name, cir_fn);
@@ -112,7 +111,7 @@ impl CIRModuleBuilder {
 					let mut cir_fn = self.module.functions.remove(&name).unwrap();
 
 					if let NamespaceASTElem::Parsed(ast) = &*node.borrow() {
-						cir_fn = self.generate_function(cir_fn, &ast.node);
+						cir_fn = self.generate_function(cir_fn, ast);
 					}
 
 					self.module.functions.insert(name, cir_fn);
@@ -238,12 +237,10 @@ impl CIRModuleBuilder {
 		self.current_fn.take().unwrap()
 	}
 
-	pub fn generate_function(&mut self, func: CIRFunction, fn_block: &ASTNode) -> CIRFunction {
+	pub fn generate_function(&mut self, func: CIRFunction, fn_block: &Expr) -> CIRFunction {
 		self.current_fn = Some(func);
 
-		if let ASTNode::Block(elems) = fn_block {
-			self.generate_block(elems);
-		}
+		let result = self.generate_expr(fn_block);
 
 		self.current_fn.borrow_mut().as_mut().unwrap().is_extern = false;
 
@@ -269,176 +266,41 @@ impl CIRModuleBuilder {
 		self.current_block
 	}
 
-	fn generate_block<'ctx>(&mut self, block: &Vec<ASTElem>) -> BlockIndex {
-		self.append_block();
-		self.name_map_stack.push(HashMap::new());
+	fn generate_stmt(&mut self, stmt: &Stmt) {
+		match stmt {
+			Stmt::Expr(expr) => {
+				let Some(expr_ir) = self.generate_expr(expr) else { return };
+				self.write(CIRStmt::Expression(expr_ir, expr.get_node_data().tk));
+			}
 
-		for elem in block {
-			match &elem.node {
-				ASTNode::Block(elems) => {
-					self.generate_block(elems);
-					self.append_block();
+			Stmt::Decl(bindings, expr, tk) => {
+				if bindings.len() != 1 { todo!() }
+				
+				let (ty, name) = &bindings[0];
+
+				let cir_ty = self.convert_type(ty);
+				let idx = self.get_fn().variables.len();
+
+				self.get_fn_mut()
+					.variables
+					.push((cir_ty, Some(name.clone())));
+
+				let var = self.insert_variable(name.clone(), ty.clone());
+
+				if let Some(expr) = expr {
+					let Some(val) = self.generate_expr(expr) else { return };
+					self.write(CIRStmt::Assignment((var, *tk), (val, expr.get_node_data().tk)));
 				}
 
-				ASTNode::Expression(expr) => {
-					let expr_ir = self
-						.generate_expr(&expr.borrow(), elem.type_info.borrow().as_ref().unwrap());
-					self.write(CIRStmt::Expression(expr_ir, elem.token_data));
-				}
-
-				ASTNode::Declaration(ty, name, elem) => self.generate_decl(ty, name.clone(), elem),
-
-				ASTNode::ControlFlow(ctrl) => match &**ctrl {
-					ControlFlow::Return { expr } => {
-						if let Some(expr) = expr {
-							let expr_ir = self.generate_expr(
-								&expr.get_expr().borrow(),
-								expr.type_info.borrow().as_ref().unwrap(),
-							);
-							self.write(CIRStmt::Return(Some((expr_ir, expr.token_data))));
-						} else {
-							self.write(CIRStmt::Return(None));
-						}
-					}
-
-					ControlFlow::If {
-						cond,
-						body,
-						else_body,
-					} => {
-						let cond_ir = self.generate_expr(
-							&cond.get_expr().borrow(),
-							cond.type_info.borrow().as_ref().unwrap(),
-						);
-						let start_block = self.current_block;
-						let if_block = if let ASTNode::Block(elems) = &body.node {
-							self.generate_block(elems)
-						} else {
-							panic!()
-						};
-
-						if let Some(else_body) = else_body {
-							let else_block = if let ASTNode::Block(elems) = &else_body.node {
-								self.generate_block(elems)
-							} else {
-								panic!()
-							};
-							let cont_block = self.append_block();
-
-							self.current_block = start_block;
-							self.write(CIRStmt::Branch(cond_ir, if_block, else_block));
-
-							self.get_fn_mut().blocks[if_block].push(CIRStmt::Jump(cont_block));
-							self.get_fn_mut().blocks[else_block].push(CIRStmt::Jump(cont_block));
-							self.current_block = cont_block;
-						} else {
-							let cont_block = self.append_block();
-
-							self.current_block = start_block;
-							self.write(CIRStmt::Branch(cond_ir, if_block, cont_block));
-
-							self.get_fn_mut().blocks[if_block].push(CIRStmt::Jump(cont_block));
-							self.current_block = cont_block;
-						}
-					}
-
-					ControlFlow::While { cond, body } => {
-						let start_block = self.current_block;
-						let cond_block = self.append_block();
-
-						// Write jump-to-cond to start block
-						self.current_block = start_block;
-						self.write(CIRStmt::Jump(cond_block));
-
-						// Generate body
-						let body_block = if let ASTNode::Block(elems) = &body.node {
-							self.generate_block(elems)
-						} else {
-							panic!()
-						};
-
-						// Write jump-to-cond to body block
-						self.write(CIRStmt::Jump(cond_block));
-
-						let next_block = self.append_block();
-
-						self.current_block = cond_block;
-						let cond_ir = self.generate_expr(
-							&cond.get_expr().borrow(),
-							cond.type_info.borrow().as_ref().unwrap(),
-						);
-						self.write(CIRStmt::Branch(cond_ir, body_block, next_block));
-
-						self.current_block = next_block;
-					}
-
-					ControlFlow::For {
-						init,
-						cond,
-						iter,
-						body,
-					} => {
-						let start_block = self.current_block;
-
-						// Write init and jump to start block
-
-						if let Some(init) = init {
-							if let ASTNode::Declaration(ty, name, elem) = &init.node {
-								self.generate_decl(ty, name.clone(), elem);
-							}
-						}
-
-						let loop_block = self.append_block();
-						self.current_block = start_block;
-						self.write(CIRStmt::Jump(loop_block));
-
-						// Generate body
-						let body_block = if let ASTNode::Block(elems) = &body.node {
-							self.generate_block(elems)
-						} else {
-							panic!()
-						};
-
-						// Add iter statement to body
-						if let Some(iter) = iter {
-							let iter_ir = self.generate_expr(
-								&iter.get_expr().borrow(),
-								iter.type_info.borrow().as_ref().unwrap(),
-							);
-							self.write(CIRStmt::Expression(iter_ir, iter.token_data));
-						}
-
-						// Write jump-to-loop to body block
-						self.write(CIRStmt::Jump(loop_block));
-
-						let next_block = self.append_block();
-						self.current_block = loop_block;
-
-						if let Some(cond) = cond {
-							let cond_ir = self.generate_expr(
-								&cond.get_expr().borrow(),
-								cond.type_info.borrow().as_ref().unwrap(),
-							);
-							self.write(CIRStmt::Branch(cond_ir, body_block, next_block));
-						} else {
-							self.write(CIRStmt::Jump(body_block));
-						}
-
-						self.current_block = next_block;
-					}
-
-					ControlFlow::Break => todo!(),
-
-					ControlFlow::Continue => todo!(),
-				},
+				self.name_map_stack
+					.last_mut()
+					.unwrap()
+					.insert(name.clone(), idx);
 			}
 		}
-		self.name_map_stack.pop();
-
-		self.current_block
 	}
 
-	fn generate_decl(&mut self, ty: &Type, name: Name, elem: &Option<Box<ASTElem>>) {
+	fn generate_binding(&mut self, ty: &Type, name: Name, elem: &Option<Box<Expr>>) {
 		let cir_ty = self.convert_type(ty);
 		let idx = self.get_fn().variables.len();
 
@@ -456,39 +318,47 @@ impl CIRModuleBuilder {
 		};
 
 		if let Some(elem) = elem {
-			let rval = self.generate_expr(&elem.get_expr().borrow(), ty);
-			self.write(CIRStmt::Assignment((lval, (0, 0)), (rval, elem.token_data)));
+			if let Some(rval) = self.generate_expr(elem) {
+				self.write(CIRStmt::Assignment(
+					(lval, (0, 0)),
+					(rval, elem.get_node_data().tk),
+				));
+			}
 		}
 	}
 
-	fn generate_expr(&mut self, expr: &Expr, expr_ty: &Type) -> RValue {
+	// generate_expr only returns None if `expr` is a "never expression"
+	// aka an expression that will never evaluate to a value
+	fn generate_expr(&mut self, expr: &Expr) -> Option<RValue> {
+		let expr_ty = expr.get_type();
+
 		match expr {
 			Expr::Atom(atom, _) => match atom {
 				Atom::IntegerLit(i, b) => {
-					if let Some(b) = b {
+					Some(if let Some(b) = b {
 						RValue::Atom(CIRType::Basic(*b), None, Operand::IntegerLit(*i))
 					} else {
 						RValue::Atom(self.convert_type(expr_ty), None, Operand::IntegerLit(*i))
-					}
+					})
 				}
 
 				Atom::FloatLit(f, b) => {
-					if let Some(b) = b {
+					Some(if let Some(b) = b {
 						RValue::Atom(CIRType::Basic(*b), None, Operand::FloatLit(*f))
 					} else {
 						RValue::Atom(self.convert_type(expr_ty), None, Operand::FloatLit(*f))
-					}
+					})
 				}
 
 				Atom::BoolLit(b) => {
-					RValue::Atom(CIRType::Basic(Basic::BOOL), None, Operand::BoolLit(*b))
+					Some(RValue::Atom(CIRType::Basic(Basic::BOOL), None, Operand::BoolLit(*b)))
 				}
 
-				Atom::StringLit(s) => RValue::Atom(
+				Atom::StringLit(s) => Some(RValue::Atom(
 					CIRType::Basic(Basic::STR),
 					None,
 					Operand::StringLit(s.clone()),
-				),
+				)),
 
 				Atom::ArrayLit(_a) => todo!(),
 
@@ -517,47 +387,47 @@ impl CIRModuleBuilder {
 					);
 
 					for i in 0..indices.len() {
-						let mem_expr = self.generate_expr(
-							&elems[i].1.get_expr().borrow(),
-							elems[i].1.type_info.borrow().as_ref().unwrap(),
-						);
+						let mem_expr = self.generate_expr(&elems[i].1);
 						let mut mem_lval = tmp.clone();
 
 						mem_lval.projection.push(PlaceElem::Field(indices[i]));
 
-						self.write(CIRStmt::Assignment(
-							(mem_lval, (0, 0)),
-							(mem_expr, elems[i].2),
-						))
+						if let Some(mem_expr) = mem_expr {
+							self.write(CIRStmt::Assignment(
+								(mem_lval, (0, 0)),
+								(mem_expr, elems[i].1.get_node_data().tk),
+							))
+						}
 					}
 
-					RValue::Atom(cir_ty, None, Operand::LValue(tmp))
+					Some(RValue::Atom(cir_ty, None, Operand::LValue(tmp)))
 				}
 
 				Atom::Identifier(id) => {
-					let idx = self.get_var_index(id.expect_scopeless().unwrap()).unwrap();
+					let idx = self.get_var_index(id.expect_scopeless().unwrap()).expect(&format!("cIR error: failed to fetch variable {}", id.expect_scopeless().unwrap()));
 					let lval_ty = &self.get_fn().variables[idx].0;
-					RValue::Atom(
+					Some(RValue::Atom(
 						lval_ty.clone(),
 						None,
 						Operand::LValue(LValue {
 							local: idx,
 							projection: vec![],
 						}),
-					)
+					))
 				}
 
 				Atom::Cast(expr, to) => {
-					let castee = self.generate_expr(
-						&expr.get_expr().borrow(),
-						expr.type_info.borrow().as_ref().unwrap(),
-					);
-					let from = self.convert_type(expr.type_info.borrow().as_ref().unwrap());
+					let from = self.convert_type(expr.get_type());
 					let to = self.convert_type(to);
-					RValue::Cast {
-						val: self.get_as_operand(from.clone(), castee),
-						from,
-						to,
+
+					if let Some(castee) = self.generate_expr(expr) {
+						Some(RValue::Cast {
+							val: self.get_as_operand(from.clone(), castee),
+							from,
+							to,
+						})
+					} else {
+						None
 					}
 				}
 
@@ -570,12 +440,8 @@ impl CIRModuleBuilder {
 					let cir_args = args
 						.iter()
 						.map(|arg| {
-							let cir_ty =
-								self.convert_type(arg.type_info.borrow().as_ref().unwrap());
-							let cir_expr = self.generate_expr(
-								&arg.get_expr().borrow(),
-								arg.type_info.borrow().as_ref().unwrap(),
-							);
+							let cir_ty = self.convert_type(arg.get_type());
+							let cir_expr = self.generate_expr(arg).unwrap();
 
 							self.insert_temporary(cir_ty, cir_expr)
 						})
@@ -589,21 +455,185 @@ impl CIRModuleBuilder {
 					let mut name = name.clone();
 					name.absolute = true;
 
-					RValue::Atom(
+					Some(RValue::Atom(
 						self.convert_type(ret.as_ref().unwrap()),
 						None,
 						Operand::FnCall(name, cir_args, cir_type_args),
-					)
+					))
 				}
+				
+				Atom::Block { items, result } => {
+					self.append_block();
+					self.name_map_stack.push(HashMap::new());
+
+					for item in items {
+						self.generate_stmt(item);
+					}
+
+					if let Some(result) = result {
+						let result_ir = self.generate_expr(result)?;
+						let result_type = self.convert_type(result.get_type());
+						let result = self.get_as_operand(result_type.clone(), result_ir);
+
+						self.name_map_stack.pop();
+
+						Some(RValue::Atom(result_type, None, result))
+					} else {
+						self.name_map_stack.pop();
+						None
+					}
+				}
+
+				Atom::CtrlFlow(ctrl) => match &**ctrl {
+
+					ControlFlow::Return { expr } => {
+						if let Some(expr) = expr {
+							let expr_ir = self.generate_expr(expr)?;
+
+							self.write(CIRStmt::Return(Some((expr_ir, expr.get_node_data().tk))));
+						} else {
+							self.write(CIRStmt::Return(None));
+						}
+
+						None
+					}
+
+					ControlFlow::If {
+						cond,
+						body,
+						else_body,
+					} => {
+						let cir_ty = self.convert_type(expr_ty);
+						let result = self.insert_temporary(cir_ty.clone(), RValue::Atom(cir_ty.clone(), None, Operand::Undef));
+						let mut has_result = false;
+
+						let cond_ir = self.generate_expr(cond)?;
+						let start_block = self.current_block;
+
+						if let Some(if_val) = self.generate_expr(body) {
+							self.write(CIRStmt::Assignment((result.clone(), (0, 0)), (if_val, body.get_node_data().tk)));
+							has_result = true;
+						}
+						
+						let if_idx = self.current_block;
+
+						
+						if let Some(else_body) = else_body {
+							if let Some(else_val) = self.generate_expr(else_body) {
+								self.write(CIRStmt::Assignment((result.clone(), (0, 0)), (else_val, body.get_node_data().tk)));
+								has_result = true;
+							}
+							let else_idx = self.current_block;
+							let cont_block = self.append_block();
+
+							self.current_block = start_block;
+							self.write(CIRStmt::Branch(cond_ir, if_idx, else_idx));
+
+							self.get_fn_mut().blocks[if_idx].push(CIRStmt::Jump(cont_block));
+							self.get_fn_mut().blocks[else_idx].push(CIRStmt::Jump(cont_block));
+							self.current_block = cont_block;
+						} else {
+							let cont_block = self.append_block();
+
+							self.current_block = start_block;
+							self.write(CIRStmt::Branch(cond_ir, if_idx, cont_block));
+
+							self.get_fn_mut().blocks[if_idx].push(CIRStmt::Jump(cont_block));
+							self.current_block = cont_block;
+						}
+
+						if has_result {
+							Some(RValue::Atom(cir_ty, None, Operand::LValue(result)))
+						} else {
+							None
+						}
+					}
+
+					ControlFlow::While { cond, body } => {
+						let cond_ir = self.generate_expr(cond)?;
+
+						let start_block = self.current_block;
+						let cond_block = self.append_block();
+
+						// Write jump-to-cond to start block
+						self.current_block = start_block;
+						self.write(CIRStmt::Jump(cond_block));
+
+						// Generate body
+						self.generate_expr(body);
+						let body_idx = self.current_block;
+
+						// Write jump-to-cond to body block
+						self.write(CIRStmt::Jump(cond_block));
+
+						let next_block = self.append_block();
+
+						self.current_block = cond_block;
+						self.write(CIRStmt::Branch(cond_ir, body_idx, next_block));
+
+						self.current_block = next_block;
+						todo!()
+					}
+
+					ControlFlow::For {
+						init,
+						cond,
+						iter,
+						body,
+					} => {
+						let start_block = self.current_block;
+
+						// Write init and jump to start block
+
+						if let Some(init) = init {
+							self.generate_stmt(init);
+						}
+
+						let loop_block = self.append_block();
+						self.current_block = start_block;
+						self.write(CIRStmt::Jump(loop_block));
+
+						// Generate body
+						self.generate_expr(body);
+						let body_idx = self.current_block;
+
+						// Add iter statement to body
+						if let Some(iter) = iter {
+							self.generate_expr(iter);
+						}
+
+						// Write jump-to-loop to body block
+						self.write(CIRStmt::Jump(loop_block));
+
+						let next_block = self.append_block();
+						self.current_block = loop_block;
+
+						if let Some(cond) = cond {
+							if let Some(cond_ir) = self.generate_expr(cond) {
+								self.write(CIRStmt::Branch(cond_ir, body_idx, next_block));
+							}
+						} else {
+							self.write(CIRStmt::Jump(body_idx));
+						}
+
+						self.current_block = next_block;
+						todo!()
+					}
+
+					ControlFlow::Break => todo!(),
+
+					ControlFlow::Continue => todo!(),
+				},
 			},
 
-			Expr::Cons(op, elems, _) => {
+			Expr::Cons([lhs, rhs], op, _) => {
 				if op.is_compound_assignment() {
 					let op = op.get_compound_operator();
-					let lval_ir = self.generate_lvalue_expr(&elems[0].0);
-					let rval_ir = self.generate_expr(&elems[1].0, elems[1].1.as_ref().unwrap());
-					let l_ty = self.convert_type(elems[0].1.as_ref().unwrap());
-					let r_ty = self.convert_type(elems[1].1.as_ref().unwrap());
+					let lval_ir = self.generate_lvalue_expr(lhs)?;
+					let rval_ir = self.generate_expr(rhs)?;
+
+					let l_ty = self.convert_type(lhs.get_type());
+					let r_ty = self.convert_type(rhs.get_type());
 
 					let r_tmp = self.get_as_operand(r_ty.clone(), rval_ir);
 
@@ -619,158 +649,151 @@ impl CIRModuleBuilder {
 					let expr_tmp = self.get_as_operand(l_ty.clone(), expr);
 
 					self.write(CIRStmt::Assignment(
-						(lval_ir.clone(), elems[0].2),
-						(RValue::Atom(r_ty, None, expr_tmp), elems[1].2),
+						(lval_ir.clone(), lhs.get_node_data().tk),
+						(RValue::Atom(r_ty, None, expr_tmp), rhs.get_node_data().tk),
 					));
 
-					RValue::Atom(l_ty, None, Operand::LValue(lval_ir))
+					Some(RValue::Atom(l_ty, None, Operand::LValue(lval_ir)))
 				} else {
-					if elems.len() == 1 {
-						let sub_expr =
-							self.generate_expr(&elems[0].0, elems[0].1.as_ref().unwrap());
-						let cir_ty = self.convert_type(elems[0].1.as_ref().unwrap());
-						let temp = self.get_as_operand(cir_ty.clone(), sub_expr);
+					match op {
+						Operator::MemberAccess => match &**rhs {
+							Expr::Atom(
+								Atom::FnCall {
+									name,
+									args,
+									type_args,
+									..
+								},
+								_,
+							) => {
+								let rhs_ty = self.convert_type(rhs.get_type());
 
-						RValue::Atom(cir_ty, Some(op.clone()), temp)
-					} else {
-						match op {
-							Operator::MemberAccess => match &elems[1].0 {
-								Expr::Atom(
-									Atom::FnCall {
-										name,
-										args,
-										type_args,
-										..
-									},
-									_,
-								) => {
-									let rhs_ty = self.convert_type(elems[1].1.as_ref().unwrap());
+								let mut cir_args = vec![];
+								cir_args.reserve(args.len());
 
-									let cir_args = args
-										.iter()
-										.map(|arg| {
-											let cir_ty = self.convert_type(
-												arg.type_info.borrow().as_ref().unwrap(),
-											);
-											let cir_expr = self.generate_expr(
-												&arg.get_expr().borrow(),
-												arg.type_info.borrow().as_ref().unwrap(),
-											);
-
-											self.insert_temporary(cir_ty, cir_expr)
-										})
-										.collect();
-
-									let cir_type_args = type_args
-										.iter()
-										.map(|arg| self.convert_type(&arg.1))
-										.collect();
-
-									RValue::Atom(
-										rhs_ty,
-										None,
-										Operand::FnCall(name.clone(), cir_args, cir_type_args),
-									)
+								for arg in args {
+									let cir_ty = self.convert_type(arg.get_type());
+									let cir_expr = self.generate_expr(arg)?;
+									cir_args.push(self.insert_temporary(cir_ty, cir_expr))
 								}
 
-								Expr::Atom(Atom::Identifier(_), _) => {
-									let lval = self.generate_lvalue_expr(expr);
-									let cir_ty = self.convert_type(elems[1].1.as_ref().unwrap());
-									RValue::Atom(cir_ty, None, Operand::LValue(lval))
-								}
+								let cir_type_args = type_args
+									.iter()
+									.map(|arg| self.convert_type(&arg.1))
+									.collect();
 
-								_ => panic!(),
-							},
-
-							Operator::Subscr => {
-								let lval = self.generate_lvalue_expr(expr);
-								let cir_ty = self.convert_type(expr_ty);
-								RValue::Atom(cir_ty, None, Operand::LValue(lval))
+								Some(RValue::Atom(
+									rhs_ty,
+									None,
+									Operand::FnCall(name.clone(), cir_args, cir_type_args),
+								))
 							}
 
-							Operator::Assign => {
-								let lval_ir = self.generate_lvalue_expr(&elems[0].0);
-								let rval_ir =
-									self.generate_expr(&elems[1].0, elems[1].1.as_ref().unwrap());
-								let l_ty = self.convert_type(elems[0].1.as_ref().unwrap());
-								let r_ty = self.convert_type(elems[1].1.as_ref().unwrap());
-
-								let r_tmp = self.get_as_operand(r_ty.clone(), rval_ir);
-
-								self.write(CIRStmt::Assignment(
-									(lval_ir.clone(), elems[0].2),
-									(RValue::Atom(r_ty, None, r_tmp), elems[1].2),
-								));
-
-								RValue::Atom(l_ty, None, Operand::LValue(lval_ir))
+							Expr::Atom(Atom::Identifier(_), _) => {
+								let lval = self.generate_lvalue_expr(expr)?;
+								let cir_ty = self.convert_type(rhs.get_type());
+								Some(RValue::Atom(cir_ty, None, Operand::LValue(lval)))
 							}
 
-							_ => {
-								let lhs =
-									self.generate_expr(&elems[0].0, elems[0].1.as_ref().unwrap());
-								let rhs =
-									self.generate_expr(&elems[1].0, elems[1].1.as_ref().unwrap());
-								let lhs_ty = self.convert_type(elems[0].1.as_ref().unwrap());
-								let rhs_ty = self.convert_type(elems[1].1.as_ref().unwrap());
-								let lhs_tmp = self.get_as_operand(lhs_ty.clone(), lhs);
-								let rhs_tmp = self.get_as_operand(rhs_ty.clone(), rhs);
-								RValue::Cons(
-									self.convert_type(expr_ty),
-									[(lhs_ty, lhs_tmp), (rhs_ty, rhs_tmp)],
-									op.clone(),
-								)
-							}
+							_ => panic!(),
+						},
+
+						Operator::Subscr => {
+							let lval = self.generate_lvalue_expr(expr)?;
+							let cir_ty = self.convert_type(expr_ty);
+							Some(RValue::Atom(cir_ty, None, Operand::LValue(lval)))
+						}
+
+						Operator::Assign => {
+							let lval_ir = self.generate_lvalue_expr(lhs)?;
+							let rval_ir = self.generate_expr(rhs)?;
+							let l_ty = self.convert_type(lhs.get_type());
+							let r_ty = self.convert_type(rhs.get_type());
+
+							let r_tmp = self.get_as_operand(r_ty.clone(), rval_ir);
+
+							self.write(CIRStmt::Assignment(
+								(lval_ir.clone(), lhs.get_node_data().tk),
+								(RValue::Atom(r_ty, None, r_tmp), rhs.get_node_data().tk),
+							));
+
+							Some(RValue::Atom(l_ty, None, Operand::LValue(lval_ir)))
+						}
+
+						_ => {
+							let lhs_ir = self.generate_expr(lhs)?;
+							let rhs_ir = self.generate_expr(rhs)?;
+							let lhs_ty = self.convert_type(lhs.get_type());
+							let rhs_ty = self.convert_type(rhs.get_type());
+							let lhs_tmp = self.get_as_operand(lhs_ty.clone(), lhs_ir);
+							let rhs_tmp = self.get_as_operand(rhs_ty.clone(), rhs_ir);
+							Some(RValue::Cons(
+								self.convert_type(expr_ty),
+								[(lhs_ty, lhs_tmp), (rhs_ty, rhs_tmp)],
+								op.clone(),
+							))
 						}
 					}
 				}
 			}
+
+			Expr::Unary(sub, op, _) => {
+				let sub_expr = self.generate_expr(sub)?;
+				let cir_ty = self.convert_type(sub.get_type());
+				let temp = self.get_as_operand(cir_ty.clone(), sub_expr);
+
+				Some(RValue::Atom(cir_ty, Some(op.clone()), temp))
+			}
 		}
 	}
 
-	fn generate_lvalue_expr(&mut self, expr: &Expr) -> LValue {
+	fn generate_lvalue_expr(&mut self, expr: &Expr) -> Option<LValue> {
 		match expr {
 			Expr::Atom(atom, _) => match atom {
-				Atom::Identifier(id) => LValue {
+				Atom::Identifier(id) => Some(LValue {
 					local: self.get_var_index(id.expect_scopeless().unwrap()).unwrap(),
 					projection: vec![],
-				},
+				}),
 
 				_ => panic!(),
 			},
 
-			Expr::Cons(op, elems, _) => match op {
+			Expr::Cons([lhs, rhs], op, _) => match op {
 				Operator::MemberAccess => {
-					let mut lhs = self.generate_lvalue_expr(&elems[0].0);
-					let lhs_ty = self.convert_type(&elems[0].1.as_ref().unwrap());
+					let mut lhs_ir = self.generate_lvalue_expr(lhs)?;
+					let lhs_ty = self.convert_type(lhs.get_type());
 
-					if let CIRType::TypeRef(id, _params) = lhs_ty {
-						if let CIRTypeDef::Algebraic { members_map, .. } = &self.module.types[&id] {
-							if let Expr::Atom(Atom::Identifier(id), _) = &elems[1].0 {
-								let idx = members_map[id.expect_scopeless().unwrap()];
+					let CIRType::TypeRef(id, _params) = lhs_ty else { panic!() };	
+					let CIRTypeDef::Algebraic { members_map, .. } = &self.module.types[&id] else { panic!() };
 
-								lhs.projection.push(PlaceElem::Field(idx));
+					let Expr::Atom(Atom::Identifier(id), _) = &**rhs else { panic!() };
+					
+					let idx = members_map[id.expect_scopeless().unwrap()];
 
-								return lhs;
-							}
-						}
-					}
-					panic!()
-				}
+					lhs_ir.projection.push(PlaceElem::Field(idx));
 
-				Operator::Deref => {
-					let mut derefee = self.generate_lvalue_expr(&elems[0].0);
-					derefee.projection.push(PlaceElem::Deref);
-					derefee
+					return Some(lhs_ir);
 				}
 
 				Operator::Subscr => {
-					let mut indexed = self.generate_lvalue_expr(&elems[0].0);
-					let index = self.generate_expr(&elems[1].0, elems[1].1.as_ref().unwrap());
-					indexed.projection.push(PlaceElem::Index(index));
+					let mut indexed = self.generate_lvalue_expr(lhs)?;
 					indexed
+						.projection
+						.push(PlaceElem::Index(self.generate_expr(rhs)?));
+					Some(indexed)
 				}
 
 				_ => panic!(),
+			},
+
+			Expr::Unary(val, op, _) => match op {
+				Operator::Deref => {
+					let mut derefee = self.generate_lvalue_expr(val)?;
+					derefee.projection.push(PlaceElem::Deref);
+					Some(derefee)
+				}
+
+				_ => panic!()
 			},
 		}
 	}
@@ -784,8 +807,7 @@ impl CIRModuleBuilder {
 		None
 	}
 
-	fn insert_variable(&mut self, name: Name, ty: Type) {
-		// TODO: Deal with shadowing and scopes
+	fn insert_variable(&mut self, name: Name, ty: Type) -> LValue {
 		let cir_ty = self.convert_type(&ty);
 		let idx = self.get_fn().variables.len();
 
@@ -794,6 +816,7 @@ impl CIRModuleBuilder {
 			.push((cir_ty, Some(name.clone())));
 
 		self.name_map_stack.last_mut().unwrap().insert(name, idx);
+		LValue { local: idx, projection: vec![] }
 	}
 
 	fn get_as_operand(&mut self, ty: CIRType, rval: RValue) -> Operand {

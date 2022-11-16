@@ -8,17 +8,6 @@ use super::types::{Basic, Type, Typed};
 use super::FnScope;
 use crate::parser::AnalyzeResult;
 
-pub type TokenData = (usize, usize); // idx, len
-
-// ASTElem contains metadata for an ASTNode, used for error reporting and stuff
-#[derive(Clone, Debug, PartialEq)]
-pub struct ASTElem {
-	pub node: ASTNode,
-
-	// For error reporting
-	pub token_data: TokenData,
-	pub type_info: RefCell<Option<Type>>,
-}
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum ASTNode {

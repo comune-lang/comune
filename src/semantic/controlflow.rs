@@ -1,90 +1,33 @@
 use std::fmt::Display;
 
-use crate::parser::AnalyzeResult;
-
-use super::{
-	ast::ASTElem,
-	types::{Basic, Type, Typed},
-	FnScope,
-};
+use super::{expression::Expr, statement::Stmt};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum ControlFlow {
 	If {
-		cond: ASTElem,
-		body: ASTElem,
-		else_body: Option<ASTElem>,
+		cond: Expr,
+		body: Expr,
+		else_body: Option<Expr>,
 	},
 
 	While {
-		cond: ASTElem,
-		body: ASTElem,
+		cond: Expr,
+		body: Expr,
 	},
 
 	For {
-		init: Option<ASTElem>,
-		cond: Option<ASTElem>,
-		iter: Option<ASTElem>,
-		body: ASTElem,
+		init: Option<Stmt>,
+		cond: Option<Expr>,
+		iter: Option<Expr>,
+		body: Expr,
 	},
 
 	Return {
-		expr: Option<ASTElem>,
+		expr: Option<Expr>,
 	},
 
 	Break,
 	Continue,
-}
-
-impl Typed for ControlFlow {
-	fn get_type<'ctx>(&self, scope: &'ctx FnScope<'ctx>) -> AnalyzeResult<Type> {
-		match self {
-			ControlFlow::If {
-				cond: _,
-				body,
-				else_body,
-			} => {
-				if let Some(else_body) = else_body {
-					// Has an else branch, so evaluates to a type both bodies are coercable to
-					let _body_type = body.get_type(scope)?;
-					let _else_type = else_body.get_type(scope)?;
-
-					//if else_body.get_expr().borrow().coercable_to(&else_type, &body_type, scope) {
-					//	Ok(body_type)
-					//} else if body.get_expr().borrow().coercable_to(&body_type, &else_type, scope) {
-					//	Ok(else_type)
-					//} else {
-					//	Err((CMNError::ExprTypeMismatch(body_type, else_type), else_body.token_data))
-					//}
-
-					todo!(); // I don't remember what this is relevant for rn lol
-				} else {
-					// No else branch, evaluates to void
-					Ok(Type::Basic(Basic::VOID))
-				}
-			}
-
-			// Loops are always of type void
-			ControlFlow::While { cond: _, body: _ }
-			| ControlFlow::For {
-				init: _,
-				cond: _,
-				iter: _,
-				body: _,
-			} => Ok(Type::Basic(Basic::VOID)),
-
-			ControlFlow::Return { expr } => {
-				if let Some(expr) = expr {
-					expr.get_type(scope)
-				} else {
-					Ok(Type::Basic(Basic::VOID))
-				}
-			}
-
-			ControlFlow::Break => todo!(),
-			ControlFlow::Continue => todo!(),
-		}
-	}
 }
 
 impl Display for ControlFlow {

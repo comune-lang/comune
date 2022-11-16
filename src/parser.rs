@@ -6,15 +6,15 @@ use crate::constexpr::ConstExpr;
 use crate::errors::{CMNError, CMNErrorCode};
 use crate::lexer::{Lexer, Token};
 
-use crate::semantic::ast::{ASTElem, ASTNode, TokenData};
 use crate::semantic::controlflow::ControlFlow;
-use crate::semantic::expression::{Atom, Expr, Operator};
+use crate::semantic::expression::{Atom, Expr, NodeData, Operator};
 use crate::semantic::namespace::{Identifier, ItemRef, Namespace, NamespaceASTElem, NamespaceItem};
+use crate::semantic::statement::Stmt;
 use crate::semantic::traits::{TraitDef, TraitImpl};
 use crate::semantic::types::{
 	AlgebraicDef, Basic, FnDef, FnParamList, Type, TypeDef, TypeParamList, TypeRef, Visibility,
 };
-use crate::semantic::Attribute;
+use crate::semantic::{Attribute, TokenData};
 
 // Convenience function that matches a &str against various token kinds
 fn token_compare(token: &Token, text: &str) -> bool {
@@ -363,7 +363,10 @@ impl Parser {
 								match self.get_next()? {
 									Token::Other('{') => {
 										// Regular impl
-										impl_name = Identifier::from_parent(scope, id.expect_scopeless()?.clone());
+										impl_name = Identifier::from_parent(
+											scope,
+											id.expect_scopeless()?.clone(),
+										);
 										self.get_next()?;
 									}
 
@@ -372,7 +375,10 @@ impl Parser {
 										trait_name = Some(id);
 
 										if let Token::Identifier(id) = self.get_next()? {
-											impl_name = Identifier::from_parent(scope, id.expect_scopeless()?.clone());;
+											impl_name = Identifier::from_parent(
+												scope,
+												id.expect_scopeless()?.clone(),
+											);
 										} else {
 											return Err(self.err(CMNErrorCode::ExpectedIdentifier));
 										}
@@ -588,7 +594,7 @@ impl Parser {
 		Ok(self.get_next()?)
 	}
 
-	fn parse_block(&self) -> ParseResult<ASTElem> {
+	fn parse_block(&self) -> ParseResult<Expr> {
 		let begin = self.get_current_start_index();
 		let mut current = self.get_current()?;
 
@@ -596,20 +602,32 @@ impl Parser {
 			return Err(self.err(CMNErrorCode::UnexpectedToken));
 		}
 
-		let mut result = Vec::<ASTElem>::new();
-
+		let mut items = vec![];
+		let mut result = None;
+		
 		self.get_next()?;
 
 		while self.get_current()? != Token::Other('}') {
 			let stmt = self.parse_statement()?;
 
 			if self.verbose {
-				stmt.print();
+				todo!()
+				//stmt.print();
 			}
 
-			result.push(stmt);
-
 			current = self.get_current()?;
+
+			if current == Token::Other('}') {
+				if let Stmt::Expr(expr) = stmt {
+					result = Some(Box::new(expr));
+				} else {
+					panic!() // TODO: Error handling
+				}
+				
+				break;
+			}
+
+			items.push(stmt);
 
 			while current == Token::Other(';') {
 				current = self.get_next()?;
@@ -620,35 +638,41 @@ impl Parser {
 
 		let end = self.get_current_start_index();
 
-		Ok(ASTElem {
-			node: ASTNode::Block(result),
-			token_data: (begin, end - begin),
-			type_info: RefCell::new(None),
-		})
+		Ok(Expr::Atom(
+			Atom::Block { items, result },
+			NodeData {
+				tk: (begin, end - begin),
+				ty: None,
+			},
+		))
 	}
 
-	fn parse_statement(&self) -> ParseResult<ASTElem> {
+	fn parse_statement(&self) -> ParseResult<Stmt> {
 		let mut current = self.get_current()?;
 		let begin = self.get_current_start_index();
 		let mut result = None;
 
 		if self.is_at_type_token(true)? {
-			// This is a variable declaration
+			// This is a declaration
 
-			let t = self.parse_type(true)?;
+			let ty = self.parse_type(true)?;
+
 			if let Token::Identifier(name) = self.get_current()? {
 				let mut expr = None;
 
 				if token_compare(&self.get_next()?, "=") {
 					self.get_next()?;
-					expr = Some(Box::new(self.parse_expression()?));
+					expr = Some(self.parse_expression()?);
 				}
-				self.check_semicolon()?;
-				result = Some(ASTNode::Declaration(
-					t,
-					name.expect_scopeless()?.clone(),
+
+				let stmt_result = Stmt::Decl(
+					vec![(ty, name.expect_scopeless()?.clone())], 
 					expr,
-				));
+					(begin, self.get_current_start_index() - begin)
+				);
+
+				self.check_semicolon()?;
+				return Ok(stmt_result);
 			} else {
 				return Err(self.err(CMNErrorCode::ExpectedIdentifier));
 			}
@@ -661,28 +685,56 @@ impl Parser {
 						let next = self.get_next()?;
 
 						if next == Token::Other(';') {
-							result = Some(ASTNode::ControlFlow(Box::new(ControlFlow::Return {
-								expr: None,
-							})));
+							result = Some(Expr::Atom(
+								Atom::CtrlFlow(Box::new(ControlFlow::Return { expr: None })),
+								NodeData {
+									ty: None,
+									tk: (begin, self.get_current_start_index() - begin),
+								},
+							));
 						} else {
-							result = Some(ASTNode::ControlFlow(Box::new(ControlFlow::Return {
-								expr: Some(self.parse_expression()?),
-							})));
+							result = Some(Expr::Atom(
+								Atom::CtrlFlow(Box::new(ControlFlow::Return {
+									expr: Some(self.parse_expression()?),
+								})),
+								NodeData {
+									ty: None,
+									tk: (begin, self.get_current_start_index() - begin),
+								},
+							));
 						}
 						self.check_semicolon()?;
 					}
 
 					"break" => {
 						let _next = self.get_next()?;
+
 						// TODO: Labeled break and continue
-						result = Some(ASTNode::ControlFlow(Box::new(ControlFlow::Break)));
+
+						result = Some(Expr::Atom(
+							Atom::CtrlFlow(Box::new(ControlFlow::Break)),
+							NodeData {
+								ty: None,
+								tk: (begin, self.get_current_start_index() - begin),
+							},
+						));
+
 						self.check_semicolon()?;
 					}
 
 					"continue" => {
 						let _next = self.get_next()?;
+
 						// TODO: Labeled break and continue
-						result = Some(ASTNode::ControlFlow(Box::new(ControlFlow::Continue)));
+
+						result = Some(Expr::Atom(
+							Atom::CtrlFlow(Box::new(ControlFlow::Continue)),
+							NodeData {
+								ty: None,
+								tk: (begin, self.get_current_start_index() - begin),
+							},
+						));
+
 						self.check_semicolon()?;
 					}
 
@@ -728,16 +780,22 @@ impl Parser {
 							}
 						}
 
-						result = Some(ASTNode::ControlFlow(Box::new(ControlFlow::If {
-							cond,
-							body,
+						result = Some(Expr::Atom(
+							Atom::CtrlFlow(Box::new(ControlFlow::If {
+								cond,
+								body,
 
-							// TODO: Add proper metadata to this
-							else_body: match else_body {
-								None => None,
-								Some(e) => Some(e),
+								// TODO: Add proper metadata to this
+								else_body: match else_body {
+									None => None,
+									Some(e) => Some(e),
+								},
+							})),
+							NodeData {
+								ty: None,
+								tk: (begin, self.get_current_start_index() - begin),
 							},
-						})));
+						));
 					}
 
 					// Parse while loop
@@ -776,10 +834,13 @@ impl Parser {
 							body = self.parse_statement()?.wrap_in_block();
 						}
 
-						result = Some(ASTNode::ControlFlow(Box::new(ControlFlow::While {
-							cond,
-							body,
-						})));
+						result = Some(Expr::Atom(
+							Atom::CtrlFlow(Box::new(ControlFlow::While { cond, body })),
+							NodeData {
+								ty: None,
+								tk: (begin, self.get_current_start_index() - begin),
+							},
+						));
 					}
 
 					// Parse for loop
@@ -837,12 +898,18 @@ impl Parser {
 							body = self.parse_statement()?.wrap_in_block();
 						}
 
-						result = Some(ASTNode::ControlFlow(Box::new(ControlFlow::For {
-							init,
-							cond,
-							iter,
-							body,
-						})));
+						result = Some(Expr::Atom(
+							Atom::CtrlFlow(Box::new(ControlFlow::For {
+								init,
+								cond,
+								iter,
+								body,
+							})),
+							NodeData {
+								ty: None,
+								tk: (begin, self.get_current_start_index() - begin),
+							},
+						));
 					}
 
 					// Invalid keyword at start of statement
@@ -853,19 +920,13 @@ impl Parser {
 
 		// Check if we found a valid interpretation of the statement yet. If not, parse it as an expression
 		if result.is_some() {
-			let end = self.get_current_start_index();
-			let len = end - begin;
-			return Ok(ASTElem {
-				node: result.unwrap(),
-				token_data: (begin, len),
-				type_info: RefCell::new(None),
-			});
+			return Ok(Stmt::Expr(result.unwrap()));
 		}
 
 		// Not any of the above, try parsing an expression
 		let expr = self.parse_expression()?;
 		self.check_semicolon()?;
-		return Ok(expr);
+		return Ok(Stmt::Expr(expr));
 	}
 
 	fn check_semicolon(&self) -> ParseResult<()> {
@@ -956,15 +1017,8 @@ impl Parser {
 		}
 	}
 
-	fn parse_expression(&self) -> ParseResult<ASTElem> {
-		let begin = self.get_current_start_index();
-		let expr = ASTNode::Expression(RefCell::new(self.parse_expression_bp(0)?));
-		let len = self.get_current_start_index() - begin;
-		Ok(ASTElem {
-			node: expr,
-			token_data: (begin, len),
-			type_info: RefCell::new(None),
-		})
+	fn parse_expression(&self) -> ParseResult<Expr> {
+		self.parse_expression_bp(0)
 	}
 
 	// World's most hacked-together pratt parser (tm)
@@ -980,7 +1034,10 @@ impl Parser {
 			| Token::NumLiteral(_, _)
 			| Token::BoolLiteral(_) => Expr::Atom(
 				self.parse_atom()?,
-				(begin_lhs, self.get_current_start_index() - begin_lhs),
+				NodeData {
+					ty: None,
+					tk: (begin_lhs, self.get_current_start_index() - begin_lhs),
+				},
 			),
 
 			// Handle unary prefix operators
@@ -1009,8 +1066,8 @@ impl Parser {
 
 							let end_index = self.get_current_start_index();
 
-							let meta = (begin_lhs, end_index - begin_lhs);
-							Expr::Cons(op, vec![(rhs, None, meta)], meta)
+							let tk = (begin_lhs, end_index - begin_lhs);
+							Expr::Unary(Box::new(rhs), op, NodeData { ty: None, tk })
 						}
 					}
 
@@ -1022,8 +1079,6 @@ impl Parser {
 				return Err(self.err(CMNErrorCode::UnexpectedToken));
 			}
 		};
-
-		let end_lhs = self.get_current_start_index();
 
 		// Parse RHS
 		loop {
@@ -1064,7 +1119,7 @@ impl Parser {
 					let end_index = self.get_current_start_index();
 					let meta = (begin_lhs, end_index - begin_lhs);
 
-					lhs = Expr::create_cast(lhs, None, goal_t, meta);
+					lhs = Expr::create_cast(lhs, None, goal_t, NodeData { ty: None, tk: meta });
 				}
 
 				Operator::PostInc | Operator::PostDec => {
@@ -1072,30 +1127,36 @@ impl Parser {
 
 					// Create compound assignment expression
 					lhs = Expr::Cons(
+						[
+							Box::new(lhs),
+							Box::new(Expr::Atom(
+								Atom::IntegerLit(1, None),
+								NodeData {
+									ty: None,
+									tk: (0, 0),
+								},
+							)),
+						],
 						match op {
 							Operator::PostInc => Operator::AssAdd,
 							Operator::PostDec => Operator::AssSub,
 							_ => panic!(),
 						},
-						vec![
-							(lhs, None, meta),
-							(Expr::Atom(Atom::IntegerLit(1, None), (0, 0)), None, (0, 0)),
-						],
-						meta,
+						NodeData { ty: None, tk: meta },
 					);
 				}
 
 				Operator::Subscr => {
 					let rhs = self.parse_expression_bp(rbp)?;
-
 					let end_rhs = self.get_current_start_index();
-					let lhs_meta = (begin_lhs, end_lhs - begin_lhs);
-					let rhs_meta = (begin_rhs, end_rhs - begin_rhs);
 
 					lhs = Expr::Cons(
+						[Box::new(lhs), Box::new(rhs)],
 						op,
-						vec![(lhs, None, lhs_meta), (rhs, None, rhs_meta)],
-						(begin_rhs, end_rhs - begin_rhs),
+						NodeData {
+							ty: None,
+							tk: (begin_rhs, end_rhs - begin_rhs),
+						},
 					);
 
 					if self.get_current()? == Token::Operator("]") {
@@ -1107,15 +1168,15 @@ impl Parser {
 
 				_ => {
 					let rhs = self.parse_expression_bp(rbp)?;
-
 					let end_rhs = self.get_current_start_index();
-					let lhs_meta = (begin_lhs, end_lhs - begin_lhs);
-					let rhs_meta = (begin_rhs, end_rhs - begin_rhs);
 
 					lhs = Expr::Cons(
+						[Box::new(lhs), Box::new(rhs)],
 						op,
-						vec![(lhs, None, lhs_meta), (rhs, None, rhs_meta)],
-						(begin_rhs, end_rhs - begin_rhs),
+						NodeData {
+							ty: None,
+							tk: (begin_rhs, end_rhs - begin_rhs),
+						},
 					);
 				}
 			}
@@ -1155,7 +1216,6 @@ impl Parser {
 											inits.push((
 												Some(member_name.expect_scopeless()?.clone()),
 												expr,
-												(0, 0),
 											));
 										} else {
 											return Err(self.err(CMNErrorCode::UnexpectedToken));
@@ -1426,12 +1486,17 @@ impl Parser {
 			if immediate_resolve {
 				let mut found = false;
 
-				if let Some(b) = Basic::get_basic_type(typename.name()) {
-					if !typename.is_qualified() {
+				if !typename.is_qualified() {
+					if let Some(b) = Basic::get_basic_type(typename.name()) {
 						result = Type::Basic(b);
 						found = true;
+					} else if &**typename.name() == "never" {
+						result = Type::Never;
+						found = true;
 					}
-				} else {
+				}
+
+				if !found {
 					self.namespace
 						.with_item(&typename, &self.current_scope, |item, id| {
 							if let NamespaceItem::Type(t) = &item.0 {
@@ -1449,7 +1514,10 @@ impl Parser {
 					return Err(self.err(CMNErrorCode::UnresolvedTypename(typename.to_string())));
 				}
 			} else {
-				result = Type::TypeRef(ItemRef::Unresolved { name: typename, scope: self.current_scope.clone() });
+				result = Type::TypeRef(ItemRef::Unresolved {
+					name: typename,
+					scope: self.current_scope.clone(),
+				});
 			}
 
 			let mut next = self.get_next()?;
@@ -1472,7 +1540,6 @@ impl Parser {
 						"[" => {
 							self.get_next()?;
 							let const_expr = self.parse_expression()?;
-							let dummy_expr = Expr::Atom(Atom::IntegerLit(0, None), (0, 0));
 
 							if self.get_current()? != Token::Operator("]") {
 								return Err(self.err(CMNErrorCode::UnexpectedToken));
@@ -1480,9 +1547,7 @@ impl Parser {
 
 							result = Type::Array(
 								Box::new(result),
-								Arc::new(RwLock::new(vec![ConstExpr::Expr(
-									const_expr.get_expr().replace(dummy_expr),
-								)])),
+								Arc::new(RwLock::new(vec![ConstExpr::Expr(const_expr)])),
 							);
 
 							self.get_next()?;
@@ -1607,7 +1672,10 @@ impl Parser {
 
 						// Collect trait bounds
 						while let Token::Identifier(tr) = current {
-							traits.push(ItemRef::Unresolved { name: tr, scope: self.current_scope.clone() });
+							traits.push(ItemRef::Unresolved {
+								name: tr,
+								scope: self.current_scope.clone(),
+							});
 
 							current = self.get_next()?;
 

@@ -3,11 +3,10 @@
 use std::{collections::HashMap, hash::Hash};
 
 use crate::semantic::{
-	ast::TokenData,
 	expression::Operator,
 	namespace::{Identifier, Name},
 	types::{Basic, DataLayout, TypeParamList},
-	Attribute,
+	Attribute, TokenData,
 };
 
 pub mod analyze;
