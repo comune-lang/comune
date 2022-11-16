@@ -17,6 +17,7 @@ use self::{
 	controlflow::ControlFlow,
 	expression::{Atom, Expr, NodeData, Operator},
 	namespace::{Identifier, ItemRef, Name, Namespace, NamespaceASTElem, NamespaceItem},
+	statement::Stmt,
 	types::{FnDef, TypeParamList, TypeRef},
 };
 
@@ -151,6 +152,20 @@ pub fn validate_function(
 			}
 		}
 		*/
+		let Expr::Atom(Atom::Block { items, result }, _) = elem else { panic!() };
+
+		// Turn result values into explicit return expressions
+
+		if result.is_some() {
+			let expr = *result.take().unwrap();
+			let node_data = expr.get_node_data().clone();
+			items.push(Stmt::Expr(Expr::Atom(
+				Atom::CtrlFlow(Box::new(ControlFlow::Return { expr: Some(expr) })),
+				node_data,
+			)));
+		}
+
+		// TODO: Implement new terminator check. god i'm tired
 		if !expr_ty.castable_to(&scope.fn_return_type) {
 			return Err((
 				CMNError::new(CMNErrorCode::ReturnTypeMismatch {
@@ -161,6 +176,7 @@ pub fn validate_function(
 			));
 		}
 	}
+
 	Ok(())
 }
 
@@ -389,7 +405,10 @@ pub fn check_cyclical_deps(
 	if let TypeDef::Algebraic(agg) = &*ty.as_ref().read().unwrap() {
 		for member in agg.items.iter() {
 			match &member.1 .0 {
-				NamespaceItem::Variable(Type::TypeRef(ItemRef::Resolved(TypeRef { def: ref_t, .. })), _) => {
+				NamespaceItem::Variable(
+					Type::TypeRef(ItemRef::Resolved(TypeRef { def: ref_t, .. })),
+					_,
+				) => {
 					if parent_types
 						.iter()
 						.any(|elem| Arc::ptr_eq(elem, &ref_t.upgrade().unwrap()))
@@ -691,10 +710,7 @@ impl Expr {
 		Expr::Atom(Atom::Cast(Box::new(expr), to), meta)
 	}
 
-	pub fn validate<'ctx>(
-		&mut self,
-		scope: &mut FnScope<'ctx>,
-	) -> AnalyzeResult<Type> {
+	pub fn validate<'ctx>(&mut self, scope: &mut FnScope<'ctx>) -> AnalyzeResult<Type> {
 		let result = match self {
 			Expr::Atom(a, meta) => {
 				let ty = a.validate(scope, meta)?;
@@ -804,11 +820,11 @@ impl Expr {
 								meta.tk,
 							))
 						}
-					}
+					},
 
 					_ => Ok(expr_ty),
 				}
-			},
+			}
 		}?;
 
 		if self.get_node_data().ty.is_none() {
@@ -906,9 +922,7 @@ impl Expr {
 						TypeDef::Algebraic(t) => match &mut **rhs {
 							// Member access on algebraic type
 							Expr::Atom(Atom::Identifier(id), _) => {
-								if let Some((_, m)) =
-									t.get_member(id.name(), Some(&lhs_ref.args))
-								{
+								if let Some((_, m)) = t.get_member(id.name(), Some(&lhs_ref.args)) {
 									lhs.get_node_data_mut().ty =
 										Some(Type::TypeRef(ItemRef::Resolved(lhs_ref.clone())));
 
@@ -929,27 +943,20 @@ impl Expr {
 							) => {
 								// jesse. we have to call METHods
 								// TODO: Factor this out into a proper call resolution module
-								if let Some((_, (NamespaceItem::Function(method, _), _, _))) =
-									scope
-										.context
-										.impls
-										.get(&lhs_ref.name)
-										.unwrap_or(&HashMap::new())
-										.iter()
-										.find(|meth| meth.0 == name.name())
+								if let Some((_, (NamespaceItem::Function(method, _), _, _))) = scope
+									.context
+									.impls
+									.get(&lhs_ref.name)
+									.unwrap_or(&HashMap::new())
+									.iter()
+									.find(|meth| meth.0 == name.name())
 								{
 									// Insert `this` into the arg list
 									args.insert(0, *lhs.clone());
 
 									let method = method.read().unwrap();
 
-									match validate_fn_call(
-										&method,
-										args,
-										type_args,
-										scope,
-										meta,
-									) {
+									match validate_fn_call(&method, args, type_args, scope, meta) {
 										Ok(res) => {
 											// Method call OK
 											lhs.get_node_data_mut().ty = Some(Type::TypeRef(
@@ -960,8 +967,7 @@ impl Expr {
 											*name = lhs_ref.name.clone();
 											name.path.push(method_name);
 
-											rhs.get_node_data_mut().ty =
-												Some(method.ret.clone());
+											rhs.get_node_data_mut().ty = Some(method.ret.clone());
 
 											return Ok(res);
 										}
@@ -973,11 +979,10 @@ impl Expr {
 													expected,
 													got,
 												} => {
-													err.0.code =
-														CMNErrorCode::ParamCountMismatch {
-															expected: expected - 1,
-															got: got - 1,
-														};
+													err.0.code = CMNErrorCode::ParamCountMismatch {
+														expected: expected - 1,
+														got: got - 1,
+													};
 													return Err(err);
 												}
 
@@ -1084,13 +1089,7 @@ impl Atom {
 						if let NamespaceItem::Function(func, _) = &item.0 {
 							let func = func.read().unwrap();
 
-							*ret = Some(validate_fn_call(
-								&func,
-								args,
-								type_args,
-								scope,
-								meta.tk,
-							)?);
+							*ret = Some(validate_fn_call(&func, args, type_args, scope, meta.tk)?);
 
 							Ok(ret.as_ref().unwrap().clone())
 						} else {
@@ -1149,88 +1148,107 @@ impl Atom {
 				for item in items {
 					item.validate(scope)?;
 				}
-				
+
 				if let Some(result) = result {
 					result.validate(scope)
 				} else {
 					Ok(Type::Basic(Basic::VOID))
 				}
 			}
-			
-			Atom::CtrlFlow(ctrl) => {
-				match &mut **ctrl {
-					ControlFlow::If { cond, body, else_body } => {
-						let bool_ty = Type::Basic(Basic::BOOL);
-						let mut subscope = FnScope::from_parent(scope);
 
-						let cond_ty = cond.validate(&mut subscope)?;
-						
-						if cond_ty != bool_ty {
-							if cond_ty.castable_to(&bool_ty) {
-								cond.wrap_in_cast(bool_ty.clone());
-							} else {
-								todo!()
-							}
-						}
-						
-						let body_ty = body.validate(&mut subscope)?;
+			Atom::CtrlFlow(ctrl) => match &mut **ctrl {
+				ControlFlow::If {
+					cond,
+					body,
+					else_body,
+				} => {
+					let bool_ty = Type::Basic(Basic::BOOL);
+					let mut subscope = FnScope::from_parent(scope);
 
-						if let Some(else_body) = else_body {
-							let else_ty = else_body.validate(&mut subscope)?;
+					let cond_ty = cond.validate(&mut subscope)?;
 
-							if body_ty == else_ty {
-								Ok(body_ty)
-							} else {
-								todo!()
-							}
+					if cond_ty != bool_ty {
+						if cond_ty.castable_to(&bool_ty) {
+							cond.wrap_in_cast(bool_ty.clone());
 						} else {
+							todo!()
+						}
+					}
+
+					let body_ty = body.validate(&mut subscope)?;
+
+					if let Some(else_body) = else_body {
+						let else_ty = else_body.validate(&mut subscope)?;
+
+						if body_ty == else_ty {
 							Ok(body_ty)
-						}
-
-					}
-
-					ControlFlow::While { cond, body } => {
-						let bool_ty = Type::Basic(Basic::BOOL);
-						let mut subscope = FnScope::from_parent(scope);
-
-						let cond_ty = cond.validate(&mut subscope)?;
-						
-						if cond_ty != bool_ty {
-							if cond_ty.castable_to(&bool_ty) {
-								cond.wrap_in_cast(bool_ty);
-							} else {
-								todo!()
-							}
-						}
-
-						body.validate(&mut subscope)
-					}
-
-					ControlFlow::For { init, cond, iter, body } => todo!(),
-					ControlFlow::Return { expr } => {
-						if let Some(expr) = expr {
-							let expr_ty = expr.validate(scope)?;
-							
-							if expr_ty == scope.fn_return_type {
-								Ok(Type::Never)
-							} else if expr.coercable_to(&expr_ty, &scope.fn_return_type, scope) {
-								expr.wrap_in_cast(scope.fn_return_type.clone());
-								Ok(Type::Never)
-							} else {
-								Err((CMNError::new(CMNErrorCode::ReturnTypeMismatch { expected: scope.fn_return_type.clone(), got: expr_ty }), meta.tk))
-							}
 						} else {
-							if scope.fn_return_type == Type::Basic(Basic::VOID) {
-								Ok(Type::Never)
-							} else {
-								Err((CMNError::new(CMNErrorCode::ReturnTypeMismatch { expected: scope.fn_return_type.clone(), got: Type::Basic(Basic::VOID) }), meta.tk))
-							}
+							todo!()
+						}
+					} else {
+						Ok(body_ty)
+					}
+				}
+
+				ControlFlow::While { cond, body } => {
+					let bool_ty = Type::Basic(Basic::BOOL);
+					let mut subscope = FnScope::from_parent(scope);
+
+					let cond_ty = cond.validate(&mut subscope)?;
+
+					if cond_ty != bool_ty {
+						if cond_ty.castable_to(&bool_ty) {
+							cond.wrap_in_cast(bool_ty);
+						} else {
+							todo!()
 						}
 					}
-					ControlFlow::Break => todo!(),
-					ControlFlow::Continue => todo!(),
+
+					body.validate(&mut subscope)
 				}
-			}
+
+				ControlFlow::For {
+					init,
+					cond,
+					iter,
+					body,
+				} => todo!(),
+				ControlFlow::Return { expr } => {
+					if let Some(expr) = expr {
+						let expr_ty = expr.validate(scope)?;
+
+						if expr_ty == scope.fn_return_type {
+							Ok(Type::Never)
+						} else if expr.coercable_to(&expr_ty, &scope.fn_return_type, scope) {
+							expr.wrap_in_cast(scope.fn_return_type.clone());
+							Ok(Type::Never)
+						} else {
+							Err((
+								CMNError::new(CMNErrorCode::ReturnTypeMismatch {
+									expected: scope.fn_return_type.clone(),
+									got: expr_ty,
+								}),
+								meta.tk,
+							))
+						}
+					} else {
+						if scope.fn_return_type == Type::Basic(Basic::VOID) {
+							Ok(Type::Never)
+						} else {
+							Err((
+								CMNError::new(CMNErrorCode::ReturnTypeMismatch {
+									expected: scope.fn_return_type.clone(),
+									got: Type::Basic(Basic::VOID),
+								}),
+								meta.tk,
+							))
+						}
+					}
+				}
+
+				ControlFlow::Break => todo!(),
+				ControlFlow::Continue => todo!(),
+			},
 		}
 	}
 

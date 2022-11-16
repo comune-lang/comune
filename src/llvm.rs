@@ -574,10 +574,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 			),
 			Operand::LValue(l) => Some(self.builder.build_load(self.generate_lvalue(l), "lread")),
 			Operand::Undef => Some(
-				self.get_llvm_type(ty)
-					.into_struct_type()
-					.get_undef()
-					.as_basic_value_enum(),
+				self.get_undef(&Self::to_basic_type(self.get_llvm_type(ty))),
 			),
 		}
 	}
@@ -760,6 +757,17 @@ impl<'ctx> LLVMBackend<'ctx> {
 			],
 			true,
 		)
+	}
+
+	fn get_undef(&self, ty: &BasicTypeEnum<'ctx>) -> BasicValueEnum<'ctx> {
+		match ty {
+			BasicTypeEnum::ArrayType(a) => a.get_undef().as_basic_value_enum(),
+			BasicTypeEnum::FloatType(f) => f.get_undef().as_basic_value_enum(),
+			BasicTypeEnum::IntType(i) => i.get_undef().as_basic_value_enum(),
+			BasicTypeEnum::PointerType(p) => p.get_undef().as_basic_value_enum(),
+			BasicTypeEnum::StructType(s) => s.get_undef().as_basic_value_enum(),
+			BasicTypeEnum::VectorType(v) => v.get_undef().as_basic_value_enum(),
+		}
 	}
 
 	fn to_int_predicate(op: &Operator, signed: bool) -> IntPredicate {

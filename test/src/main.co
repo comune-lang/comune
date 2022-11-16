@@ -21,7 +21,7 @@ struct Test {
 impl Test {
 	int sum(Test self) {
 		printf("This is a method call!\n\0");
-		return self.a + self.b;
+		self.a + self.b
 	}
 }
 
@@ -31,28 +31,22 @@ struct Vector<T> {
 	usize capacity;
 }
 
-T cool_generic_function<T>(T t) {
-	return t + t;
-}
-
 int main() {
 	printf("This is main()!\n\0");
 
-	printf(
-		"This is a vararg & generics test! the magic number is %i\n\0", 
-		cool_generic_function<u64>(3) as i32
-	);
+	printf("This is a vararg & generics test! the magic number is %i\n\0", 32);
 
-	if (true) {
-		printf("True!\n\0");
-	} else {
-		printf("False!\n\0");
-	};
-	
 	Vector<int> my_cool_generic;
 
 	my_cool_generic.data = malloc(8) as int*;
-	*my_cool_generic.data = 69;
+	*my_cool_generic.data = if (true) {
+		printf("True!\n\0");
+		69
+	} else {
+		printf("False!\n\0");
+		42
+	};
+	
 	
 	// This fucks with lifeline's liveness check - something to do with sublocation tracking
 	i32 generic_get = *my_cool_generic.data;
@@ -71,5 +65,5 @@ int main() {
 
 	free(my_cool_generic.data as void*);
 	
-	return test.sum();
+	return test.sum()
 }

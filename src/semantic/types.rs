@@ -100,16 +100,15 @@ impl AlgebraicDef {
 	fn get_concrete_type(&self, ty: Type, type_args: &Vec<(Name, Type)>) -> Type {
 		match ty {
 			Type::Basic(_) => ty,
-			Type::Pointer(pointee) => Type::Pointer(Box::new(
-				self.get_concrete_type(*pointee, type_args),
-			)),
+			Type::Pointer(pointee) => {
+				Type::Pointer(Box::new(self.get_concrete_type(*pointee, type_args)))
+			}
 			Type::Reference(refee) => {
 				Type::Reference(Box::new(self.get_concrete_type(*refee, type_args)))
 			}
-			Type::Array(array_ty, size) => Type::Array(
-				Box::new(self.get_concrete_type(*array_ty, type_args)),
-				size,
-			),
+			Type::Array(array_ty, size) => {
+				Type::Array(Box::new(self.get_concrete_type(*array_ty, type_args)), size)
+			}
 			Type::TypeRef { .. } => ty,
 			Type::TypeParam(param) => type_args[param].1.clone(),
 			Type::Never => ty,

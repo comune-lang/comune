@@ -3,8 +3,9 @@ use std::{fmt::Display, ptr};
 use super::{
 	controlflow::ControlFlow,
 	namespace::{Identifier, Name},
+	statement::Stmt,
 	types::{Basic, Type},
-	TokenData, statement::Stmt,
+	TokenData,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -127,16 +128,17 @@ impl Operator {
 	}
 
 	pub fn is_compound_assignment(&self) -> bool {
-		matches!(self,
+		matches!(
+			self,
 			Operator::AssAdd
-			| Operator::AssSub
-			| Operator::AssDiv
-			| Operator::AssMul
-			| Operator::AssBitAND
-			| Operator::AssBitOR
-			| Operator::AssBitXOR
-			| Operator::AssBitShL
-			| Operator::AssBitShR
+				| Operator::AssSub
+				| Operator::AssDiv
+				| Operator::AssMul
+				| Operator::AssBitAND
+				| Operator::AssBitOR
+				| Operator::AssBitXOR
+				| Operator::AssBitShL
+				| Operator::AssBitShR
 		)
 	}
 
@@ -301,7 +303,13 @@ impl Expr {
 			// but if you managed to exhaust all the memory
 			// in your system, you've got bigger problems.
 
-			let new = Expr::Atom(Atom::Cast(Box::new(tmp), to.clone()), NodeData { ty: Some(to), tk: node_data.tk });
+			let new = Expr::Atom(
+				Atom::Cast(Box::new(tmp), to.clone()),
+				NodeData {
+					ty: Some(to),
+					tk: node_data.tk,
+				},
+			);
 
 			ptr::write(self, new);
 		}
@@ -325,11 +333,17 @@ impl Expr {
 
 	pub fn wrap_in_block(self) -> Self {
 		match self {
-			Expr::Atom(Atom::Block{ .. }, _) => self,
+			Expr::Atom(Atom::Block { .. }, _) => self,
 
 			_ => {
 				let node_data = self.get_node_data().clone();
-				Expr::Atom(Atom::Block { items: vec![], result: Some(Box::new(self)) }, node_data)
+				Expr::Atom(
+					Atom::Block {
+						items: vec![],
+						result: Some(Box::new(self)),
+					},
+					node_data,
+				)
 			}
 		}
 	}
@@ -351,7 +365,10 @@ impl Display for Expr {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Atom {
 	// has_result determines whether the result of the last expression is used as the block's result value
-	Block { items: Vec<Stmt>, result: Option<Box<Expr>> }, 
+	Block {
+		items: Vec<Stmt>,
+		result: Option<Box<Expr>>,
+	},
 
 	CtrlFlow(Box<ControlFlow>),
 

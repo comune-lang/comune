@@ -604,33 +604,28 @@ impl Parser {
 
 		let mut items = vec![];
 		let mut result = None;
-		
+
 		self.get_next()?;
 
 		while self.get_current()? != Token::Other('}') {
 			let stmt = self.parse_statement()?;
-
-			if self.verbose {
-				todo!()
-				//stmt.print();
-			}
 
 			current = self.get_current()?;
 
 			if current == Token::Other('}') {
 				if let Stmt::Expr(expr) = stmt {
 					result = Some(Box::new(expr));
+					break;
 				} else {
 					panic!() // TODO: Error handling
 				}
-				
-				break;
 			}
 
+			self.check_semicolon()?;
 			items.push(stmt);
 
-			while current == Token::Other(';') {
-				current = self.get_next()?;
+			while self.get_current()? == Token::Other(';') {
+				self.get_next()?;
 			}
 		}
 
@@ -648,9 +643,7 @@ impl Parser {
 	}
 
 	fn parse_statement(&self) -> ParseResult<Stmt> {
-		let mut current = self.get_current()?;
 		let begin = self.get_current_start_index();
-		let mut result = None;
 
 		if self.is_at_type_token(true)? {
 			// This is a declaration
@@ -666,25 +659,20 @@ impl Parser {
 				}
 
 				let stmt_result = Stmt::Decl(
-					vec![(ty, name.expect_scopeless()?.clone())], 
+					vec![(ty, name.expect_scopeless()?.clone())],
 					expr,
-					(begin, self.get_current_start_index() - begin)
+					(begin, self.get_current_start_index() - begin),
 				);
 
-				self.check_semicolon()?;
 				return Ok(stmt_result);
 			} else {
 				return Err(self.err(CMNErrorCode::ExpectedIdentifier));
 			}
 		} else {
-			// This isn't a declaration, parse it as an expression instead
-			if result.is_some() {
-				return Ok(Stmt::Expr(result.unwrap()));
-			}
-	
-			// Not any of the above, try parsing an expression
+			// This isn't a declaration, so parse an expression
+
 			let expr = self.parse_expression()?;
-			self.check_semicolon()?;
+
 			return Ok(Stmt::Expr(expr));
 		}
 	}
@@ -947,8 +935,8 @@ impl Parser {
 	}
 
 	fn parse_atom(&self) -> ParseResult<Atom> {
-		let mut current = self.get_current()?;
 		let mut result;
+		let mut current = self.get_current()?;
 		let mut next = self.get_next()?;
 
 		match current {
@@ -1090,15 +1078,12 @@ impl Parser {
 			Token::Keyword(keyword) => match keyword {
 				// Parse return statement
 				"return" => {
-
 					if next == Token::Other(';') || next == Token::Other('}') {
 						result = Some(Atom::CtrlFlow(Box::new(ControlFlow::Return { expr: None })));
 					} else {
-						result = Some(
-							Atom::CtrlFlow(Box::new(ControlFlow::Return {
-								expr: Some(self.parse_expression()?),
-							}))
-						);
+						result = Some(Atom::CtrlFlow(Box::new(ControlFlow::Return {
+							expr: Some(self.parse_expression()?),
+						})));
 					}
 				}
 
@@ -1109,7 +1094,6 @@ impl Parser {
 				}
 
 				"continue" => {
-
 					// TODO: Labeled break and continue
 
 					result = Some(Atom::CtrlFlow(Box::new(ControlFlow::Continue)));
@@ -1117,7 +1101,6 @@ impl Parser {
 
 				// Parse if statement
 				"if" => {
-
 					// Check opening brace
 					if token_compare(&next, "(") {
 						self.get_next()?;
@@ -1156,17 +1139,16 @@ impl Parser {
 						}
 					}
 
-					result = Some(
-						Atom::CtrlFlow(Box::new(ControlFlow::If {
-							cond,
-							body,
+					result = Some(Atom::CtrlFlow(Box::new(ControlFlow::If {
+						cond,
+						body,
 
-							// TODO: Add proper metadata to this
-							else_body: match else_body {
-								None => None,
-								Some(e) => Some(e),
-							},
-						})));
+						// TODO: Add proper metadata to this
+						else_body: match else_body {
+							None => None,
+							Some(e) => Some(e),
+						},
+					})));
 				}
 
 				// Parse while loop
@@ -1269,8 +1251,7 @@ impl Parser {
 
 				// Invalid keyword at start of statement
 				_ => return Err(self.err(CMNErrorCode::UnexpectedKeyword)),
-			}
-		
+			},
 
 			_ => return Err(self.err(CMNErrorCode::UnexpectedToken)),
 		};

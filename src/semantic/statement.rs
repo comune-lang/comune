@@ -2,8 +2,12 @@ use std::fmt::Display;
 
 use crate::parser::AnalyzeResult;
 
-use super::{expression::{Expr, NodeData, Atom}, types::Type, namespace::Name, FnScope, TokenData};
-
+use super::{
+	expression::{Atom, Expr, NodeData},
+	namespace::Name,
+	types::Type,
+	FnScope, TokenData,
+};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Stmt {
@@ -12,24 +16,20 @@ pub enum Stmt {
 }
 
 impl Stmt {
-	pub fn validate<'ctx>(
-		&mut self,
-		scope: &mut FnScope<'ctx>
-	) -> AnalyzeResult<Type> {
+	pub fn validate<'ctx>(&mut self, scope: &mut FnScope<'ctx>) -> AnalyzeResult<Type> {
 		match self {
-
 			Stmt::Decl(names, expr, tk) => {
 				if names.len() != 1 {
 					todo!()
 				}
-				
+
 				let (binding_ty, binding_name) = names[0].clone();
 
 				if let Some(expr) = expr {
 					expr.get_node_data_mut().ty = Some(binding_ty.clone());
 
 					let expr_ty = expr.validate(scope)?;
-					
+
 					if expr_ty != binding_ty {
 						todo!()
 					}
@@ -40,8 +40,7 @@ impl Stmt {
 					scope.add_variable(binding_ty.clone(), binding_name);
 					Ok(binding_ty)
 				}
-				
-			},
+			}
 
 			Stmt::Expr(expr) => expr.validate(scope),
 		}
@@ -51,9 +50,13 @@ impl Stmt {
 		match self {
 			Stmt::Expr(expr) => expr.wrap_in_block(),
 
-			Stmt::Decl(_, _, tk) => {
-				Expr::Atom(Atom::Block { items: vec![self], result: None }, NodeData { ty: None, tk })
-			}
+			Stmt::Decl(_, _, tk) => Expr::Atom(
+				Atom::Block {
+					items: vec![self],
+					result: None,
+				},
+				NodeData { ty: None, tk },
+			),
 		}
 	}
 }
@@ -62,7 +65,7 @@ impl Display for Stmt {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match self {
 			Stmt::Decl(..) => todo!(),
-			Stmt::Expr(expr) => expr.fmt(f)
+			Stmt::Expr(expr) => expr.fmt(f),
 		}
 	}
 }

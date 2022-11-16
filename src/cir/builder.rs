@@ -7,8 +7,9 @@ use crate::{
 		controlflow::ControlFlow,
 		expression::{Atom, Expr, Operator},
 		namespace::{Identifier, ItemRef, Name, Namespace, NamespaceASTElem, NamespaceItem},
+		statement::Stmt,
 		types::{Basic, FnDef, Type, TypeDef, TypeRef},
-		Attribute, statement::Stmt,
+		Attribute,
 	},
 };
 
@@ -274,8 +275,10 @@ impl CIRModuleBuilder {
 			}
 
 			Stmt::Decl(bindings, expr, tk) => {
-				if bindings.len() != 1 { todo!() }
-				
+				if bindings.len() != 1 {
+					todo!()
+				}
+
 				let (ty, name) = &bindings[0];
 
 				let cir_ty = self.convert_type(ty);
@@ -289,7 +292,10 @@ impl CIRModuleBuilder {
 
 				if let Some(expr) = expr {
 					let Some(val) = self.generate_expr(expr) else { return };
-					self.write(CIRStmt::Assignment((var, *tk), (val, expr.get_node_data().tk)));
+					self.write(CIRStmt::Assignment(
+						(var, *tk),
+						(val, expr.get_node_data().tk),
+					));
 				}
 
 				self.name_map_stack
@@ -334,25 +340,23 @@ impl CIRModuleBuilder {
 
 		match expr {
 			Expr::Atom(atom, _) => match atom {
-				Atom::IntegerLit(i, b) => {
-					Some(if let Some(b) = b {
-						RValue::Atom(CIRType::Basic(*b), None, Operand::IntegerLit(*i))
-					} else {
-						RValue::Atom(self.convert_type(expr_ty), None, Operand::IntegerLit(*i))
-					})
-				}
+				Atom::IntegerLit(i, b) => Some(if let Some(b) = b {
+					RValue::Atom(CIRType::Basic(*b), None, Operand::IntegerLit(*i))
+				} else {
+					RValue::Atom(self.convert_type(expr_ty), None, Operand::IntegerLit(*i))
+				}),
 
-				Atom::FloatLit(f, b) => {
-					Some(if let Some(b) = b {
-						RValue::Atom(CIRType::Basic(*b), None, Operand::FloatLit(*f))
-					} else {
-						RValue::Atom(self.convert_type(expr_ty), None, Operand::FloatLit(*f))
-					})
-				}
+				Atom::FloatLit(f, b) => Some(if let Some(b) = b {
+					RValue::Atom(CIRType::Basic(*b), None, Operand::FloatLit(*f))
+				} else {
+					RValue::Atom(self.convert_type(expr_ty), None, Operand::FloatLit(*f))
+				}),
 
-				Atom::BoolLit(b) => {
-					Some(RValue::Atom(CIRType::Basic(Basic::BOOL), None, Operand::BoolLit(*b)))
-				}
+				Atom::BoolLit(b) => Some(RValue::Atom(
+					CIRType::Basic(Basic::BOOL),
+					None,
+					Operand::BoolLit(*b),
+				)),
 
 				Atom::StringLit(s) => Some(RValue::Atom(
 					CIRType::Basic(Basic::STR),
@@ -404,7 +408,12 @@ impl CIRModuleBuilder {
 				}
 
 				Atom::Identifier(id) => {
-					let idx = self.get_var_index(id.expect_scopeless().unwrap()).expect(&format!("cIR error: failed to fetch variable {}", id.expect_scopeless().unwrap()));
+					let idx = self
+						.get_var_index(id.expect_scopeless().unwrap())
+						.expect(&format!(
+							"cIR error: failed to fetch variable {}",
+							id.expect_scopeless().unwrap()
+						));
 					let lval_ty = &self.get_fn().variables[idx].0;
 					Some(RValue::Atom(
 						lval_ty.clone(),
@@ -461,7 +470,7 @@ impl CIRModuleBuilder {
 						Operand::FnCall(name, cir_args, cir_type_args),
 					))
 				}
-				
+
 				Atom::Block { items, result } => {
 					self.append_block();
 					self.name_map_stack.push(HashMap::new());
@@ -485,7 +494,6 @@ impl CIRModuleBuilder {
 				}
 
 				Atom::CtrlFlow(ctrl) => match &**ctrl {
-
 					ControlFlow::Return { expr } => {
 						if let Some(expr) = expr {
 							let expr_ir = self.generate_expr(expr)?;
@@ -504,13 +512,15 @@ impl CIRModuleBuilder {
 						else_body,
 					} => {
 						let cir_ty = self.convert_type(expr_ty);
-						
-						let result = 
-							if cir_ty != CIRType::Basic(Basic::VOID) {
-								Some(self.insert_temporary(cir_ty.clone(), RValue::Atom(cir_ty.clone(), None, Operand::Undef)))
-							} else {
-								None
-							};
+
+						let result = if cir_ty != CIRType::Basic(Basic::VOID) {
+							Some(self.insert_temporary(
+								cir_ty.clone(),
+								RValue::Atom(cir_ty.clone(), None, Operand::Undef),
+							))
+						} else {
+							None
+						};
 
 						let mut has_result = false;
 
@@ -519,23 +529,31 @@ impl CIRModuleBuilder {
 
 						if let Some(if_val) = self.generate_expr(body) {
 							if let Some(result) = &result {
-								self.write(CIRStmt::Assignment((result.clone(), (0, 0)), (if_val, body.get_node_data().tk)));
+								self.write(CIRStmt::Assignment(
+									(result.clone(), (0, 0)),
+									(if_val, body.get_node_data().tk),
+								));
 								has_result = true;
 							} else {
 								self.write(CIRStmt::Expression(if_val, body.get_node_data().tk));
 							}
 						}
-						
+
 						let if_idx = self.current_block;
 
-						
 						if let Some(else_body) = else_body {
 							if let Some(else_val) = self.generate_expr(else_body) {
 								if let Some(result) = &result {
-									self.write(CIRStmt::Assignment((result.clone(), (0, 0)), (else_val, else_body.get_node_data().tk)));
+									self.write(CIRStmt::Assignment(
+										(result.clone(), (0, 0)),
+										(else_val, else_body.get_node_data().tk),
+									));
 									has_result = true;
 								} else {
-									self.write(CIRStmt::Expression(else_val, else_body.get_node_data().tk));
+									self.write(CIRStmt::Expression(
+										else_val,
+										else_body.get_node_data().tk,
+									));
 								}
 							}
 							let else_idx = self.current_block;
@@ -782,11 +800,11 @@ impl CIRModuleBuilder {
 					let mut lhs_ir = self.generate_lvalue_expr(lhs)?;
 					let lhs_ty = self.convert_type(lhs.get_type());
 
-					let CIRType::TypeRef(id, _params) = lhs_ty else { panic!() };	
+					let CIRType::TypeRef(id, _params) = lhs_ty else { panic!() };
 					let CIRTypeDef::Algebraic { members_map, .. } = &self.module.types[&id] else { panic!() };
 
 					let Expr::Atom(Atom::Identifier(id), _) = &**rhs else { panic!() };
-					
+
 					let idx = members_map[id.expect_scopeless().unwrap()];
 
 					lhs_ir.projection.push(PlaceElem::Field(idx));
@@ -812,7 +830,7 @@ impl CIRModuleBuilder {
 					Some(derefee)
 				}
 
-				_ => panic!()
+				_ => panic!(),
 			},
 		}
 	}
@@ -835,7 +853,10 @@ impl CIRModuleBuilder {
 			.push((cir_ty, Some(name.clone())));
 
 		self.name_map_stack.last_mut().unwrap().insert(name, idx);
-		LValue { local: idx, projection: vec![] }
+		LValue {
+			local: idx,
+			projection: vec![],
+		}
 	}
 
 	fn get_as_operand(&mut self, ty: CIRType, rval: RValue) -> Operand {
