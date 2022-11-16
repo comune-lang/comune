@@ -1206,6 +1206,7 @@ impl Parser {
 						current = self.get_next()?;
 					} else {
 						init = Some(self.parse_statement()?); // TODO: Restrict to declaration?
+						self.check_semicolon()?;
 						current = self.get_current()?;
 					}
 
