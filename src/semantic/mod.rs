@@ -32,13 +32,13 @@ pub mod types;
 
 pub type TokenData = (usize, usize); // idx, len
 
-#[derive(PartialEq, Clone, Debug)]
+#[derive(PartialEq, Eq, Clone, Debug)]
 pub struct Attribute {
 	pub name: String,
 	pub args: Vec<Vec<Token>>,
 }
 
-pub fn get_attribute<'a>(attributes: &'a Vec<Attribute>, attr_name: &str) -> Option<&'a Attribute> {
+pub fn get_attribute<'a>(attributes: &'a [Attribute], attr_name: &str) -> Option<&'a Attribute> {
 	attributes.iter().find(|a| a.name.as_str() == attr_name)
 }
 
@@ -93,7 +93,7 @@ impl<'ctx> FnScope<'ctx> {
 
 		if result.is_none() {
 			// Look for it in the namespace tree
-			self.context.with_item(&id, &self.scope, |item, id| {
+			self.context.with_item(id, &self.scope, |item, id| {
 				if let NamespaceItem::Function(fn_type, _) = &item.0 {
 					result = Some((
 						id.clone(),
@@ -202,7 +202,7 @@ pub fn validate_fn_call(
 				return Err((
 					CMNError::new(CMNErrorCode::InvalidCoercion {
 						from: arg_type,
-						to: concrete.clone(),
+						to: concrete,
 					}),
 					args[i].get_node_data().tk,
 				));
@@ -238,7 +238,7 @@ pub fn validate_namespace(namespace: &mut Namespace) -> AnalyzeResult<()> {
 		for item in im.1 {
 			match &item.1 .0 {
 				NamespaceItem::Function(func, elem) => {
-					validate_function(&im.0, &func.read().unwrap(), elem, namespace)?
+					validate_function(im.0, &func.read().unwrap(), elem, namespace)?
 				}
 
 				_ => panic!(),
@@ -311,9 +311,9 @@ pub fn resolve_type_def(
 
 			for item in &mut agg.items {
 				match &mut item.1 .0 {
-					NamespaceItem::Variable(t, _) => resolve_type(t, &namespace, &generics)?,
+					NamespaceItem::Variable(t, _) => resolve_type(t, namespace, &generics)?,
 					NamespaceItem::Type(t) => {
-						resolve_type_def(&mut t.write().unwrap(), &vec![], &namespace, &generics)?
+						resolve_type_def(&mut t.write().unwrap(), &vec![], namespace, &generics)?
 					}
 					_ => (),
 				}
@@ -362,15 +362,15 @@ pub fn resolve_namespace_types(namespace: &Namespace) -> ParseResult<()> {
 					type_params: generics,
 				} = &mut *func.write().unwrap();
 
-				resolve_type(ret, &namespace, &generics)?;
+				resolve_type(ret, namespace, generics)?;
 
 				for param in &mut params.params {
-					resolve_type(&mut param.0, &namespace, &generics)?;
+					resolve_type(&mut param.0, namespace, generics)?;
 				}
 			}
 
 			NamespaceItem::Type(t) => {
-				resolve_type_def(&mut *t.write().unwrap(), &child.1 .1, &namespace, &vec![])?
+				resolve_type_def(&mut t.write().unwrap(), &child.1 .1, namespace, &vec![])?
 			}
 
 			NamespaceItem::Alias(_) => {}
@@ -389,21 +389,17 @@ pub fn check_cyclical_deps(
 	if let TypeDef::Algebraic(agg) = &*ty.as_ref().read().unwrap() {
 		for member in agg.items.iter() {
 			match &member.1 .0 {
-				NamespaceItem::Variable(t, _) => {
-					if let Type::TypeRef(ItemRef::Resolved(TypeRef { def: ref_t, .. })) = &t {
-						// Check if
-						if parent_types
-							.iter()
-							.find(|elem| Arc::ptr_eq(elem, &ref_t.upgrade().unwrap()))
-							.is_some()
-						{
-							return Err(CMNError::new(CMNErrorCode::InfiniteSizeType));
-						}
-
-						parent_types.push(ty.clone());
-						check_cyclical_deps(&ref_t.upgrade().unwrap(), parent_types)?;
-						parent_types.pop();
+				NamespaceItem::Variable(Type::TypeRef(ItemRef::Resolved(TypeRef { def: ref_t, .. })), _) => {
+					if parent_types
+						.iter()
+						.any(|elem| Arc::ptr_eq(elem, &ref_t.upgrade().unwrap()))
+					{
+						return Err(CMNError::new(CMNErrorCode::InfiniteSizeType));
 					}
+
+					parent_types.push(ty.clone());
+					check_cyclical_deps(&ref_t.upgrade().unwrap(), parent_types)?;
+					parent_types.pop();
 				}
 
 				NamespaceItem::Type(t) => {
@@ -422,7 +418,7 @@ pub fn check_cyclical_deps(
 pub fn check_namespace_cyclical_deps(namespace: &Namespace) -> ParseResult<()> {
 	for item in &namespace.children {
 		match &item.1 .0 {
-			NamespaceItem::Type(ty) => check_cyclical_deps(&ty, &mut vec![])?,
+			NamespaceItem::Type(ty) => check_cyclical_deps(ty, &mut vec![])?,
 			_ => {}
 		}
 	}
@@ -436,7 +432,7 @@ pub fn register_impls(namespace: &mut Namespace) -> ParseResult<()> {
 		// Impls can be defined with relative Identifiers, so we make them all fully-qualified members of the root namespace here
 
 		namespace
-			.with_item(&im.0, &Identifier::new(true), |item, id| {
+			.with_item(im.0, &Identifier::new(true), |item, id| {
 				if let NamespaceItem::Type(t_def) = &item.0 {
 					if let TypeDef::Algebraic(_) = &mut *t_def.write().unwrap() {
 						let mut this_impl = HashMap::new();
@@ -452,10 +448,10 @@ pub fn register_impls(namespace: &mut Namespace) -> ParseResult<()> {
 										type_params,
 									} = &mut *func_lock.write().unwrap();
 
-									resolve_type(ret, namespace, &type_params)?;
+									resolve_type(ret, namespace, type_params)?;
 
 									for param in &mut params.params {
-										resolve_type(&mut param.0, namespace, &type_params)?;
+										resolve_type(&mut param.0, namespace, type_params)?;
 									}
 
 									this_impl.insert(
@@ -692,7 +688,7 @@ impl ASTElem {
 
 impl Expr {
 	pub fn create_cast(expr: Expr, from: Option<Type>, to: Type, meta: NodeData) -> Expr {
-		Expr::Atom(Atom::Cast(Box::new(expr), to.clone()), meta)
+		Expr::Atom(Atom::Cast(Box::new(expr), to), meta)
 	}
 
 	pub fn validate<'ctx>(
@@ -800,7 +796,7 @@ impl Expr {
 					}
 
 					Operator::Deref => match expr_ty {
-						Type::Pointer(t) | Type::Reference(t) => Ok(*t.clone()),
+						Type::Pointer(t) | Type::Reference(t) => Ok(*t),
 
 						_ => {
 							return Err((
@@ -838,10 +834,8 @@ impl Expr {
 
 				Atom::StringLit(_) => {
 					if let Type::Pointer(other_p) = &target {
-						if let Type::Basic(other_b) = **other_p {
-							if let Basic::CHAR = other_b {
-								return true;
-							}
+						if let Type::Basic(Basic::CHAR) = **other_p {
+							return true;
 						}
 					}
 
@@ -902,111 +896,106 @@ impl Expr {
 			},
 
 			Expr::Cons([lhs, rhs], op, _) => {
-				match op {
-					// Only these operators can result in lvalues
-					Operator::MemberAccess => {
-						let Type::TypeRef(ItemRef::Resolved(lhs_ref)) = lhs.validate_lvalue(scope, meta)? else {
-							todo!("error reporting")
-						};
+				if op == &Operator::MemberAccess {
+					let Type::TypeRef(ItemRef::Resolved(lhs_ref)) = lhs.validate_lvalue(scope, meta)? else {
+						todo!("error reporting")
+					};
 
-						match &mut *lhs_ref.def.upgrade().unwrap().write().unwrap() {
-							// Dot operator is on an algebraic type, so check if it's a member access or method call
-							TypeDef::Algebraic(t) => match &mut **rhs {
-								// Member access on algebraic type
-								Expr::Atom(Atom::Identifier(id), _) => {
-									if let Some((_, m)) =
-										t.get_member(id.name(), Some(&lhs_ref.args))
-									{
-										lhs.get_node_data_mut().ty =
-											Some(Type::TypeRef(ItemRef::Resolved(lhs_ref.clone())));
+					match &mut *lhs_ref.def.upgrade().unwrap().write().unwrap() {
+						// Dot operator is on an algebraic type, so check if it's a member access or method call
+						TypeDef::Algebraic(t) => match &mut **rhs {
+							// Member access on algebraic type
+							Expr::Atom(Atom::Identifier(id), _) => {
+								if let Some((_, m)) =
+									t.get_member(id.name(), Some(&lhs_ref.args))
+								{
+									lhs.get_node_data_mut().ty =
+										Some(Type::TypeRef(ItemRef::Resolved(lhs_ref.clone())));
 
-										rhs.get_node_data_mut().ty = Some(m.clone());
-										return Ok(m.clone());
-									}
+									rhs.get_node_data_mut().ty = Some(m.clone());
+									return Ok(m);
 								}
+							}
 
-								// Method call on algebraic type
-								Expr::Atom(
-									Atom::FnCall {
-										name,
+							// Method call on algebraic type
+							Expr::Atom(
+								Atom::FnCall {
+									name,
+									args,
+									type_args,
+									..
+								},
+								_,
+							) => {
+								// jesse. we have to call METHods
+								// TODO: Factor this out into a proper call resolution module
+								if let Some((_, (NamespaceItem::Function(method, _), _, _))) =
+									scope
+										.context
+										.impls
+										.get(&lhs_ref.name)
+										.unwrap_or(&HashMap::new())
+										.iter()
+										.find(|meth| meth.0 == name.name())
+								{
+									// Insert `this` into the arg list
+									args.insert(0, *lhs.clone());
+
+									let method = method.read().unwrap();
+
+									match validate_fn_call(
+										&method,
 										args,
 										type_args,
-										..
-									},
-									_,
-								) => {
-									// jesse. we have to call METHods
-									// TODO: Factor this out into a proper call resolution module
-									if let Some((_, (NamespaceItem::Function(method, _), _, _))) =
-										scope
-											.context
-											.impls
-											.get(&lhs_ref.name)
-											.unwrap_or(&HashMap::new())
-											.iter()
-											.find(|meth| meth.0 == name.name())
-									{
-										// Insert `this` into the arg list
-										args.insert(0, *lhs.clone());
+										scope,
+										meta,
+									) {
+										Ok(res) => {
+											// Method call OK
+											lhs.get_node_data_mut().ty = Some(Type::TypeRef(
+												ItemRef::Resolved(lhs_ref.clone()),
+											));
 
-										let method = method.read().unwrap();
+											let method_name = name.path.pop().unwrap();
+											*name = lhs_ref.name.clone();
+											name.path.push(method_name);
 
-										match validate_fn_call(
-											&method,
-											args,
-											type_args,
-											scope,
-											meta.clone(),
-										) {
-											Ok(res) => {
-												// Method call OK
-												lhs.get_node_data_mut().ty = Some(Type::TypeRef(
-													ItemRef::Resolved(lhs_ref.clone()),
-												));
+											rhs.get_node_data_mut().ty =
+												Some(method.ret.clone());
 
-												let method_name = name.path.pop().unwrap();
-												*name = lhs_ref.name.clone();
-												name.path.push(method_name);
+											return Ok(res);
+										}
 
-												rhs.get_node_data_mut().ty =
-													Some(method.ret.clone());
-
-												return Ok(res);
-											}
-
-											Err(e) => {
-												match e.0.code {
-													// If the parameter count doesn't match, adjust the message for the implicit `self` param
-													CMNErrorCode::ParamCountMismatch {
-														expected,
-														got,
-													} => {
-														let mut err = e.clone();
-														err.0.code =
-															CMNErrorCode::ParamCountMismatch {
-																expected: expected - 1,
-																got: got - 1,
-															};
-														return Err(err);
-													}
-
-													_ => return Err(e),
+										Err(mut err) => {
+											match err.0.code {
+												// If the parameter count doesn't match, adjust the message for the implicit `self` param
+												CMNErrorCode::ParamCountMismatch {
+													expected,
+													got,
+												} => {
+													err.0.code =
+														CMNErrorCode::ParamCountMismatch {
+															expected: expected - 1,
+															got: got - 1,
+														};
+													return Err(err);
 												}
+
+												_ => return Err(err),
 											}
 										}
 									}
 								}
+							}
 
-								_ => {}
-							},
 							_ => {}
-						}
+						},
+						_ => {}
 					}
-					_ => {}
 				}
 			}
 		};
-		return Err((CMNError::new(CMNErrorCode::InvalidLValue), meta));
+		Err((CMNError::new(CMNErrorCode::InvalidLValue), meta))
 	}
 }
 
@@ -1034,14 +1023,14 @@ impl Atom {
 
 			Atom::FloatLit(_, t) => {
 				if let Some(t) = t {
-					Ok(Type::Basic(t.clone()))
+					Ok(Type::Basic(*t))
 				} else {
 					if let Some(Type::Basic(b)) = meta.ty {
-						*t = Some(b.clone());
+						*t = Some(b);
 						Ok(meta.ty.as_ref().unwrap().clone())
 					} else {
 						*t = Some(Basic::FLOAT { size_bytes: 4 });
-						Ok(Type::Basic(t.unwrap().clone()))
+						Ok(Type::Basic(t.unwrap()))
 					}
 				}
 			}
@@ -1100,7 +1089,7 @@ impl Atom {
 								args,
 								type_args,
 								scope,
-								meta.tk.clone(),
+								meta.tk,
 							)?);
 
 							Ok(ret.as_ref().unwrap().clone())
@@ -1127,7 +1116,7 @@ impl Atom {
 					if let TypeDef::Algebraic(alg) = &*def.upgrade().unwrap().read().unwrap() {
 						for elem in elems {
 							let member_ty = if let Some((_, ty)) =
-								alg.get_member(elem.0.as_ref().unwrap(), Some(&args))
+								alg.get_member(elem.0.as_ref().unwrap(), Some(args))
 							{
 								ty
 							} else {
@@ -1142,7 +1131,7 @@ impl Atom {
 								return Err((
 									CMNError::new(CMNErrorCode::AssignTypeMismatch {
 										expr: expr_ty,
-										to: member_ty.clone(),
+										to: member_ty,
 									}),
 									elem.1.get_node_data().tk,
 								));
@@ -1208,7 +1197,7 @@ impl Atom {
 						
 						if cond_ty != bool_ty {
 							if cond_ty.castable_to(&bool_ty) {
-								cond.wrap_in_cast(bool_ty.clone());
+								cond.wrap_in_cast(bool_ty);
 							} else {
 								todo!()
 							}
@@ -1260,7 +1249,7 @@ impl Atom {
 						Type::Pointer(to_ptr) => {
 							if let Type::Basic(Basic::CHAR) = **to_ptr {
 								if let Atom::StringLit(s) = self {
-									if s.chars().last() != Some('\0') {
+									if s.ends_with('\0') {
 										s.push('\0');
 										todo!();
 										// TODO: Pass down Parser ref through functions?
@@ -1287,7 +1276,7 @@ impl Atom {
 	pub fn get_lvalue_type<'ctx>(&self, scope: &'ctx FnScope<'ctx>) -> AnalyzeResult<Type> {
 		match self {
 			Atom::Identifier(id) => match scope.find_symbol(id) {
-				Some(t) => return Ok(t.1),
+				Some(t) => Ok(t.1),
 				None => Err((
 					CMNError::new(CMNErrorCode::UndeclaredIdentifier(id.to_string())),
 					(0, 0),

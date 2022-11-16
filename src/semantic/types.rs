@@ -101,13 +101,13 @@ impl AlgebraicDef {
 		match ty {
 			Type::Basic(_) => ty,
 			Type::Pointer(pointee) => Type::Pointer(Box::new(
-				self.get_concrete_type(*pointee.clone(), type_args),
+				self.get_concrete_type(*pointee, type_args),
 			)),
 			Type::Reference(refee) => {
-				Type::Reference(Box::new(self.get_concrete_type(*refee.clone(), type_args)))
+				Type::Reference(Box::new(self.get_concrete_type(*refee, type_args)))
 			}
 			Type::Array(array_ty, size) => Type::Array(
-				Box::new(self.get_concrete_type(*array_ty.clone(), type_args)),
+				Box::new(self.get_concrete_type(*array_ty, type_args)),
 				size,
 			),
 			Type::TypeRef { .. } => ty,
@@ -116,7 +116,7 @@ impl AlgebraicDef {
 		}
 	}
 
-	pub fn get_member<'a>(
+	pub fn get_member(
 		&self,
 		name: &Name,
 		type_args: Option<&Vec<(Name, Type)>>,
@@ -274,7 +274,7 @@ impl Basic {
 impl Type {
 	pub fn get_concrete_type(&self, type_args: &Vec<(Arc<str>, Type)>) -> Type {
 		match self {
-			Type::Basic(b) => Type::Basic(b.clone()),
+			Type::Basic(b) => Type::Basic(*b),
 			Type::Pointer(ptr) => Type::Pointer(Box::new(ptr.get_concrete_type(type_args))),
 			Type::Reference(refee) => Type::Reference(Box::new(refee.get_concrete_type(type_args))),
 			Type::Array(arr_ty, size) => {

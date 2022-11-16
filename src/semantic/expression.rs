@@ -127,7 +127,7 @@ impl Operator {
 	}
 
 	pub fn is_compound_assignment(&self) -> bool {
-		match self {
+		matches!(self,
 			Operator::AssAdd
 			| Operator::AssSub
 			| Operator::AssDiv
@@ -136,10 +136,8 @@ impl Operator {
 			| Operator::AssBitOR
 			| Operator::AssBitXOR
 			| Operator::AssBitShL
-			| Operator::AssBitShR => true,
-
-			_ => false,
-		}
+			| Operator::AssBitShR
+		)
 	}
 
 	pub fn get_compound_operator(&self) -> Self {

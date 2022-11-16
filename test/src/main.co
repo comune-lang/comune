@@ -47,7 +47,7 @@ int main() {
 		printf("True!\n\0");
 	} else {
 		printf("False!\n\0");
-	}
+	};
 	
 	Vector<int> my_cool_generic;
 

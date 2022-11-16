@@ -20,7 +20,7 @@ use super::{
 
 pub type Name = Arc<str>;
 
-#[derive(Default, Debug, Clone, PartialEq, Eq)]
+#[derive(Default, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Identifier {
 	pub path: Vec<Name>,
 	pub absolute: bool,
@@ -61,15 +61,6 @@ impl Identifier {
 		} else {
 			Err(CMNError::new(CMNErrorCode::ExpectedIdentifier)) // TODO: Give appropriate error
 		}
-	}
-}
-
-impl Hash for Identifier {
-	fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-		// Absolute Identifiers are used to definitively and uniquely identify NamespaceItems in HashMaps.
-		// A relative Identifier can't be meaningfully hashed, and doing so indicates a logic error in the code.
-		self.path.hash(state);
-		self.absolute.hash(state);
 	}
 }
 

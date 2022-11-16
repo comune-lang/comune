@@ -677,256 +677,16 @@ impl Parser {
 				return Err(self.err(CMNErrorCode::ExpectedIdentifier));
 			}
 		} else {
-			// This isn't a variable declaration, check if it's a control flow statement
-			if let Token::Keyword(keyword) = &current {
-				match *keyword {
-					// Parse return statement
-					"return" => {
-						let next = self.get_next()?;
-
-						if next == Token::Other(';') {
-							result = Some(Expr::Atom(
-								Atom::CtrlFlow(Box::new(ControlFlow::Return { expr: None })),
-								NodeData {
-									ty: None,
-									tk: (begin, self.get_current_start_index() - begin),
-								},
-							));
-						} else {
-							result = Some(Expr::Atom(
-								Atom::CtrlFlow(Box::new(ControlFlow::Return {
-									expr: Some(self.parse_expression()?),
-								})),
-								NodeData {
-									ty: None,
-									tk: (begin, self.get_current_start_index() - begin),
-								},
-							));
-						}
-						self.check_semicolon()?;
-					}
-
-					"break" => {
-						let _next = self.get_next()?;
-
-						// TODO: Labeled break and continue
-
-						result = Some(Expr::Atom(
-							Atom::CtrlFlow(Box::new(ControlFlow::Break)),
-							NodeData {
-								ty: None,
-								tk: (begin, self.get_current_start_index() - begin),
-							},
-						));
-
-						self.check_semicolon()?;
-					}
-
-					"continue" => {
-						let _next = self.get_next()?;
-
-						// TODO: Labeled break and continue
-
-						result = Some(Expr::Atom(
-							Atom::CtrlFlow(Box::new(ControlFlow::Continue)),
-							NodeData {
-								ty: None,
-								tk: (begin, self.get_current_start_index() - begin),
-							},
-						));
-
-						self.check_semicolon()?;
-					}
-
-					// Parse if statement
-					"if" => {
-						current = self.get_next()?;
-
-						// Check opening brace
-						if token_compare(&current, "(") {
-							self.get_next()?;
-						} else {
-							return Err(self.err(CMNErrorCode::UnexpectedToken));
-						}
-
-						let cond = self.parse_expression()?;
-
-						current = self.get_current()?;
-
-						// Check closing brace
-						if token_compare(&current, ")") {
-							self.get_next()?;
-						} else {
-							return Err(self.err(CMNErrorCode::UnexpectedToken));
-						}
-
-						// Parse body
-						let body;
-						let mut else_body = None;
-
-						if token_compare(&self.get_current()?, "{") {
-							body = self.parse_block()?;
-						} else {
-							body = self.parse_statement()?.wrap_in_block();
-						}
-
-						if token_compare(&self.get_current()?, "else") {
-							self.get_next()?;
-
-							if token_compare(&self.get_current()?, "{") {
-								else_body = Some(self.parse_block()?);
-							} else {
-								else_body = Some(self.parse_statement()?.wrap_in_block());
-							}
-						}
-
-						result = Some(Expr::Atom(
-							Atom::CtrlFlow(Box::new(ControlFlow::If {
-								cond,
-								body,
-
-								// TODO: Add proper metadata to this
-								else_body: match else_body {
-									None => None,
-									Some(e) => Some(e),
-								},
-							})),
-							NodeData {
-								ty: None,
-								tk: (begin, self.get_current_start_index() - begin),
-							},
-						));
-					}
-
-					// Parse while loop
-					"while" => {
-						current = self.get_next()?;
-
-						// Check opening brace
-						if token_compare(&current, "(") {
-							current = self.get_next()?;
-						} else {
-							return Err(self.err(CMNErrorCode::UnexpectedToken));
-						}
-
-						let cond;
-
-						if token_compare(&current, ")") {
-							// No condtion in while statement!
-							return Err(self.err(CMNErrorCode::UnexpectedToken));
-						} else {
-							cond = self.parse_expression()?;
-							current = self.get_current()?;
-						}
-
-						// Check closing brace
-						if token_compare(&current, ")") {
-							current = self.get_next()?;
-						} else {
-							return Err(self.err(CMNErrorCode::UnexpectedToken));
-						}
-
-						// Parse body
-						let body;
-						if token_compare(&current, "{") {
-							body = self.parse_block()?;
-						} else {
-							body = self.parse_statement()?.wrap_in_block();
-						}
-
-						result = Some(Expr::Atom(
-							Atom::CtrlFlow(Box::new(ControlFlow::While { cond, body })),
-							NodeData {
-								ty: None,
-								tk: (begin, self.get_current_start_index() - begin),
-							},
-						));
-					}
-
-					// Parse for loop
-					"for" => {
-						current = self.get_next()?;
-
-						// Check opening brace
-						if token_compare(&current, "(") {
-							current = self.get_next()?;
-						} else {
-							return Err(self.err(CMNErrorCode::UnexpectedToken));
-						}
-
-						let mut init = None;
-						let mut cond = None;
-						let mut iter = None;
-
-						if token_compare(&current, ";") {
-							// No init statement, skip
-							current = self.get_next()?;
-						} else {
-							init = Some(self.parse_statement()?); // TODO: Restrict to declaration?
-							current = self.get_current()?;
-						}
-
-						if token_compare(&current, ";") {
-							// No iter expression, skip
-							current = self.get_next()?;
-						} else {
-							cond = Some(self.parse_expression()?);
-							self.check_semicolon()?;
-							current = self.get_current()?;
-						}
-
-						if token_compare(&current, ";") {
-							// No cond expression, skip
-							current = self.get_next()?;
-						} else if !token_compare(&current, ")") {
-							iter = Some(self.parse_expression()?);
-							current = self.get_current()?;
-						}
-
-						// Check closing brace
-						if token_compare(&current, ")") {
-							current = self.get_next()?;
-						} else {
-							return Err(self.err(CMNErrorCode::UnexpectedToken));
-						}
-
-						// Parse body
-						let body;
-						if token_compare(&current, "{") {
-							body = self.parse_block()?;
-						} else {
-							body = self.parse_statement()?.wrap_in_block();
-						}
-
-						result = Some(Expr::Atom(
-							Atom::CtrlFlow(Box::new(ControlFlow::For {
-								init,
-								cond,
-								iter,
-								body,
-							})),
-							NodeData {
-								ty: None,
-								tk: (begin, self.get_current_start_index() - begin),
-							},
-						));
-					}
-
-					// Invalid keyword at start of statement
-					_ => return Err(self.err(CMNErrorCode::UnexpectedKeyword)),
-				}
+			// This isn't a declaration, parse it as an expression instead
+			if result.is_some() {
+				return Ok(Stmt::Expr(result.unwrap()));
 			}
+	
+			// Not any of the above, try parsing an expression
+			let expr = self.parse_expression()?;
+			self.check_semicolon()?;
+			return Ok(Stmt::Expr(expr));
 		}
-
-		// Check if we found a valid interpretation of the statement yet. If not, parse it as an expression
-		if result.is_some() {
-			return Ok(Stmt::Expr(result.unwrap()));
-		}
-
-		// Not any of the above, try parsing an expression
-		let expr = self.parse_expression()?;
-		self.check_semicolon()?;
-		return Ok(Stmt::Expr(expr));
 	}
 
 	fn check_semicolon(&self) -> ParseResult<()> {
@@ -1032,7 +792,8 @@ impl Parser {
 			Token::Identifier(_)
 			| Token::StringLiteral(_)
 			| Token::NumLiteral(_, _)
-			| Token::BoolLiteral(_) => Expr::Atom(
+			| Token::BoolLiteral(_)
+			| Token::Keyword(_) => Expr::Atom(
 				self.parse_atom()?,
 				NodeData {
 					ty: None,
@@ -1325,6 +1086,191 @@ impl Parser {
 			}
 
 			Token::BoolLiteral(b) => result = Some(Atom::BoolLit(b)),
+
+			Token::Keyword(keyword) => match keyword {
+				// Parse return statement
+				"return" => {
+
+					if next == Token::Other(';') || next == Token::Other('}') {
+						result = Some(Atom::CtrlFlow(Box::new(ControlFlow::Return { expr: None })));
+					} else {
+						result = Some(
+							Atom::CtrlFlow(Box::new(ControlFlow::Return {
+								expr: Some(self.parse_expression()?),
+							}))
+						);
+					}
+				}
+
+				"break" => {
+					// TODO: Labeled break and continue
+
+					result = Some(Atom::CtrlFlow(Box::new(ControlFlow::Break)));
+				}
+
+				"continue" => {
+
+					// TODO: Labeled break and continue
+
+					result = Some(Atom::CtrlFlow(Box::new(ControlFlow::Continue)));
+				}
+
+				// Parse if statement
+				"if" => {
+
+					// Check opening brace
+					if token_compare(&next, "(") {
+						self.get_next()?;
+					} else {
+						return Err(self.err(CMNErrorCode::UnexpectedToken));
+					}
+
+					let cond = self.parse_expression()?;
+
+					current = self.get_current()?;
+
+					// Check closing brace
+					if token_compare(&current, ")") {
+						self.get_next()?;
+					} else {
+						return Err(self.err(CMNErrorCode::UnexpectedToken));
+					}
+
+					// Parse body
+					let body;
+					let mut else_body = None;
+
+					if token_compare(&self.get_current()?, "{") {
+						body = self.parse_block()?;
+					} else {
+						body = self.parse_statement()?.wrap_in_block();
+					}
+
+					if token_compare(&self.get_current()?, "else") {
+						self.get_next()?;
+
+						if token_compare(&self.get_current()?, "{") {
+							else_body = Some(self.parse_block()?);
+						} else {
+							else_body = Some(self.parse_statement()?.wrap_in_block());
+						}
+					}
+
+					result = Some(
+						Atom::CtrlFlow(Box::new(ControlFlow::If {
+							cond,
+							body,
+
+							// TODO: Add proper metadata to this
+							else_body: match else_body {
+								None => None,
+								Some(e) => Some(e),
+							},
+						})));
+				}
+
+				// Parse while loop
+				"while" => {
+					// Check opening brace
+					if token_compare(&next, "(") {
+						current = self.get_next()?;
+					} else {
+						return Err(self.err(CMNErrorCode::UnexpectedToken));
+					}
+
+					let cond;
+
+					if token_compare(&current, ")") {
+						// No condtion in while statement!
+						return Err(self.err(CMNErrorCode::UnexpectedToken));
+					} else {
+						cond = self.parse_expression()?;
+						current = self.get_current()?;
+					}
+
+					// Check closing brace
+					if token_compare(&current, ")") {
+						current = self.get_next()?;
+					} else {
+						return Err(self.err(CMNErrorCode::UnexpectedToken));
+					}
+
+					// Parse body
+					let body;
+					if token_compare(&current, "{") {
+						body = self.parse_block()?;
+					} else {
+						body = self.parse_statement()?.wrap_in_block();
+					}
+
+					result = Some(Atom::CtrlFlow(Box::new(ControlFlow::While { cond, body })));
+				}
+
+				// Parse for loop
+				"for" => {
+					// Check opening brace
+					if token_compare(&next, "(") {
+						current = self.get_next()?;
+					} else {
+						return Err(self.err(CMNErrorCode::UnexpectedToken));
+					}
+
+					let mut init = None;
+					let mut cond = None;
+					let mut iter = None;
+
+					if token_compare(&current, ";") {
+						// No init statement, skip
+						current = self.get_next()?;
+					} else {
+						init = Some(self.parse_statement()?); // TODO: Restrict to declaration?
+						current = self.get_current()?;
+					}
+
+					if token_compare(&current, ";") {
+						// No iter expression, skip
+						current = self.get_next()?;
+					} else {
+						cond = Some(self.parse_expression()?);
+						self.check_semicolon()?;
+						current = self.get_current()?;
+					}
+
+					if token_compare(&current, ";") {
+						// No cond expression, skip
+						current = self.get_next()?;
+					} else if !token_compare(&current, ")") {
+						iter = Some(self.parse_expression()?);
+						current = self.get_current()?;
+					}
+
+					// Check closing brace
+					if token_compare(&current, ")") {
+						current = self.get_next()?;
+					} else {
+						return Err(self.err(CMNErrorCode::UnexpectedToken));
+					}
+
+					// Parse body
+					let body;
+					if token_compare(&current, "{") {
+						body = self.parse_block()?;
+					} else {
+						body = self.parse_statement()?.wrap_in_block();
+					}
+
+					result = Some(Atom::CtrlFlow(Box::new(ControlFlow::For {
+						init,
+						cond,
+						iter,
+						body,
+					})));
+				}
+
+				// Invalid keyword at start of statement
+				_ => return Err(self.err(CMNErrorCode::UnexpectedKeyword)),
+			}
+		
 
 			_ => return Err(self.err(CMNErrorCode::UnexpectedToken)),
 		};
