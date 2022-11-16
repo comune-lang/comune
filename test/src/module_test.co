@@ -12,7 +12,8 @@ u64 fib(u64 n) {
 		store[0] = store[1];
 		store[1] = store[2];
 		printf("Loop!\n\0");
-	}
+	};
+	
 	return store[2];
 }
 
