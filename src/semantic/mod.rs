@@ -1001,7 +1001,33 @@ impl Atom {
 					cond,
 					iter,
 					body,
-				} => todo!(),
+				} => {
+					let bool_ty = Type::Basic(Basic::BOOL);
+					let mut subscope = FnScope::from_parent(scope);
+					
+					if let Some(init) = init {
+						init.validate(&mut subscope)?;
+					}
+
+					if let Some(cond) = cond {
+						let cond_ty = cond.validate(&mut subscope)?;
+						
+						if cond_ty != bool_ty {
+							if cond_ty.castable_to(&bool_ty) {
+								cond.wrap_in_cast(bool_ty);
+							} else {
+								todo!()
+							}
+						}	
+					}
+
+					if let Some(iter) = iter {
+						iter.validate(&mut subscope)?;
+					}
+					
+					body.validate(&mut subscope)
+				},
+
 				ControlFlow::Return { expr } => {
 					if let Some(expr) = expr {
 						let expr_ty = expr.validate(scope)?;
