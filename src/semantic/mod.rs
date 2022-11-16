@@ -129,33 +129,11 @@ pub fn validate_function(
 
 	if let NamespaceASTElem::Parsed(elem) = &mut *elem.borrow_mut() {
 		// Validate function block & get return type, make sure it matches the signature
-		let void = Type::Basic(Basic::VOID);
-		let expr_ty = elem.validate(&mut scope)?;
-		/*
-		if ret != void {
-			// No returns in non-void function
-			return Err((
-				CMNError::new(CMNErrorCode::ReturnTypeMismatch {
-					expected: ret.clone(),
-					got: void,
-				}),
-				elem.get_node_data().tk,
-			));
-		} else {
-			// Add implicit return statement to void fn
-			if let ASTNode::Block(elems) = &mut elem.node {
-				elems.push(ASTElem {
-					node: ASTNode::ControlFlow(Box::new(ControlFlow::Return { expr: None })),
-					token_data: (0, 0),
-					type_info: RefCell::new(None),
-				});
-			}
-		}
-		*/
+		elem.validate(&mut scope)?;
+
 		let Expr::Atom(Atom::Block { items, result }, _) = elem else { panic!() };
 
 		// Turn result values into explicit return expressions
-
 		if result.is_some() {
 			let expr = *result.take().unwrap();
 			let node_data = expr.get_node_data().clone();
@@ -164,17 +142,27 @@ pub fn validate_function(
 				node_data,
 			)));
 		}
+		
+		match items.last() {
+			Some(Stmt::Decl(_, Some(expr), _) | Stmt::Expr(expr)) => {
+				let expr_ty = expr.get_type();
 
-		// TODO: Implement new terminator check. god i'm tired
-		if !expr_ty.castable_to(&scope.fn_return_type) {
-			return Err((
-				CMNError::new(CMNErrorCode::ReturnTypeMismatch {
-					expected: scope.fn_return_type.clone(),
-					got: expr_ty,
-				}),
-				elem.get_node_data().tk,
-			));
+				if !expr_ty.castable_to(&scope.fn_return_type) {
+					return Err((
+						CMNError::new(CMNErrorCode::ReturnTypeMismatch {
+							expected: scope.fn_return_type,
+							got: expr_ty.clone(),
+						}),
+						elem.get_node_data().tk,
+					));
+				}
+			}
+
+			_ => todo!()
 		}
+	
+
+		
 	}
 
 	Ok(())
