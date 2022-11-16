@@ -504,15 +504,26 @@ impl CIRModuleBuilder {
 						else_body,
 					} => {
 						let cir_ty = self.convert_type(expr_ty);
-						let result = self.insert_temporary(cir_ty.clone(), RValue::Atom(cir_ty.clone(), None, Operand::Undef));
+						
+						let result = 
+							if cir_ty != CIRType::Basic(Basic::VOID) {
+								Some(self.insert_temporary(cir_ty.clone(), RValue::Atom(cir_ty.clone(), None, Operand::Undef)))
+							} else {
+								None
+							};
+
 						let mut has_result = false;
 
 						let cond_ir = self.generate_expr(cond)?;
 						let start_block = self.current_block;
 
 						if let Some(if_val) = self.generate_expr(body) {
-							self.write(CIRStmt::Assignment((result.clone(), (0, 0)), (if_val, body.get_node_data().tk)));
-							has_result = true;
+							if let Some(result) = &result {
+								self.write(CIRStmt::Assignment((result.clone(), (0, 0)), (if_val, body.get_node_data().tk)));
+								has_result = true;
+							} else {
+								self.write(CIRStmt::Expression(if_val, body.get_node_data().tk));
+							}
 						}
 						
 						let if_idx = self.current_block;
@@ -520,8 +531,12 @@ impl CIRModuleBuilder {
 						
 						if let Some(else_body) = else_body {
 							if let Some(else_val) = self.generate_expr(else_body) {
-								self.write(CIRStmt::Assignment((result.clone(), (0, 0)), (else_val, body.get_node_data().tk)));
-								has_result = true;
+								if let Some(result) = &result {
+									self.write(CIRStmt::Assignment((result.clone(), (0, 0)), (else_val, else_body.get_node_data().tk)));
+									has_result = true;
+								} else {
+									self.write(CIRStmt::Expression(else_val, else_body.get_node_data().tk));
+								}
 							}
 							let else_idx = self.current_block;
 							let cont_block = self.append_block();
@@ -543,7 +558,11 @@ impl CIRModuleBuilder {
 						}
 
 						if has_result {
-							Some(RValue::Atom(cir_ty, None, Operand::LValue(result)))
+							if let Some(result) = result {
+								Some(RValue::Atom(cir_ty, None, Operand::LValue(result)))
+							} else {
+								Some(RValue::Atom(cir_ty, None, Operand::Undef))
+							}
 						} else {
 							None
 						}
