@@ -1,9 +1,11 @@
-use std::fmt::Display;
+use std::{fmt::Display, ptr};
 
 use super::{
-	ast::{ASTElem, TokenData},
+	controlflow::ControlFlow,
 	namespace::{Identifier, Name},
+	statement::Stmt,
 	types::{Basic, Type},
+	TokenData,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -126,19 +128,18 @@ impl Operator {
 	}
 
 	pub fn is_compound_assignment(&self) -> bool {
-		match self {
+		matches!(
+			self,
 			Operator::AssAdd
-			| Operator::AssSub
-			| Operator::AssDiv
-			| Operator::AssMul
-			| Operator::AssBitAND
-			| Operator::AssBitOR
-			| Operator::AssBitXOR
-			| Operator::AssBitShL
-			| Operator::AssBitShR => true,
-
-			_ => false,
-		}
+				| Operator::AssSub
+				| Operator::AssDiv
+				| Operator::AssMul
+				| Operator::AssBitAND
+				| Operator::AssBitOR
+				| Operator::AssBitXOR
+				| Operator::AssBitShL
+				| Operator::AssBitShR
+		)
 	}
 
 	pub fn get_compound_operator(&self) -> Self {
@@ -270,50 +271,124 @@ impl Display for Operator {
 	}
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NodeData {
+	pub ty: Option<Type>,
+	pub tk: TokenData,
+}
+
 // Expression node
-// Cons' Option<Type> field carries extra type data for when the full expression's type isn't sufficient (like when using relational operators)
 #[derive(Clone, Debug, PartialEq)]
 pub enum Expr {
-	Atom(Atom, TokenData),
-	Cons(Operator, Vec<(Expr, Option<Type>, TokenData)>, TokenData),
+	Atom(Atom, NodeData),
+	Unary(Box<Expr>, Operator, NodeData),
+	Cons([Box<Expr>; 2], Operator, NodeData),
+}
+
+impl Expr {
+	pub fn wrap_in_cast(&mut self, to: Type) {
+		if let Expr::Atom(Atom::Cast(_, cast_ty), _) = self {
+			if to == *cast_ty {
+				return;
+			}
+		}
+
+		let node_data = self.get_node_data().clone();
+
+		// Swap out self behind a &mut
+		unsafe {
+			let tmp = ptr::read(self);
+
+			// Technically unsafe if Box::new() panics here,
+			// but if you managed to exhaust all the memory
+			// in your system, you've got bigger problems.
+
+			let new = Expr::Atom(
+				Atom::Cast(Box::new(tmp), to.clone()),
+				NodeData {
+					ty: Some(to),
+					tk: node_data.tk,
+				},
+			);
+
+			ptr::write(self, new);
+		}
+	}
+
+	pub fn get_type(&self) -> &Type {
+		self.get_node_data().ty.as_ref().unwrap()
+	}
+
+	pub fn get_node_data(&self) -> &NodeData {
+		match self {
+			Expr::Atom(_, data) | Expr::Unary(_, _, data) | Expr::Cons(_, _, data) => data,
+		}
+	}
+
+	pub fn get_node_data_mut(&mut self) -> &mut NodeData {
+		match self {
+			Expr::Atom(_, data) | Expr::Unary(_, _, data) | Expr::Cons(_, _, data) => data,
+		}
+	}
+
+	pub fn wrap_in_block(self) -> Self {
+		match self {
+			Expr::Atom(Atom::Block { .. }, _) => self,
+
+			_ => {
+				let node_data = self.get_node_data().clone();
+				Expr::Atom(
+					Atom::Block {
+						items: vec![],
+						result: Some(Box::new(self)),
+					},
+					node_data,
+				)
+			}
+		}
+	}
 }
 
 impl Display for Expr {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match self {
+			// TODO: Display operator is it's Some
 			Expr::Atom(tk, _) => write!(f, "{}", tk),
 
-			Expr::Cons(op, params, _) => {
-				write!(f, "({:?}", op)?;
+			Expr::Unary(param, op, _) => write!(f, "{op} {param}"),
 
-				for param in params {
-					write!(f, " {}", param.0)?;
-				}
-
-				write!(f, ")")
-			}
+			Expr::Cons([lhs, rhs], op, _) => write!(f, "({lhs} {op} {rhs})"),
 		}
 	}
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Atom {
+	// has_result determines whether the result of the last expression is used as the block's result value
+	Block {
+		items: Vec<Stmt>,
+		result: Option<Box<Expr>>,
+	},
+
+	CtrlFlow(Box<ControlFlow>),
+
+	// Basic literals
 	IntegerLit(i128, Option<Basic>),
 	FloatLit(f64, Option<Basic>),
 	BoolLit(bool),
 	StringLit(String),
-	ArrayLit(Vec<ASTElem>),
 
-	// Struct/enum literal
-	AlgebraicLit(Type, Vec<(Option<Name>, ASTElem, TokenData)>),
+	// Advanced literals
+	ArrayLit(Vec<Expr>),
+	AlgebraicLit(Type, Vec<(Option<Name>, Expr)>),
 
 	Identifier(Identifier),
 
-	Cast(Box<ASTElem>, Type),
+	Cast(Box<Expr>, Type),
 
 	FnCall {
 		name: Identifier,
-		args: Vec<ASTElem>,
+		args: Vec<Expr>,
 		type_args: Vec<(Name, Type)>,
 		ret: Option<Type>,
 	},
@@ -355,6 +430,23 @@ impl Display for Atom {
 			Atom::Cast(elem, to) => write!(f, "{}({})", to, elem),
 
 			Atom::Identifier(var) => write!(f, "{}", var),
+
+			Atom::Block { items, result } => {
+				write!(f, "{{\n")?;
+
+				for item in items {
+					write!(f, "\t{item}; \n")?
+				}
+
+				if let Some(result) = result {
+					write!(f, "\t{result}\n")?
+				}
+
+				write!(f, "}}\n")
+			}
+
+			Atom::CtrlFlow(_) => todo!(),
+
 			Atom::AlgebraicLit(_, _) => todo!(),
 		}
 	}

@@ -12,7 +12,7 @@ use crate::{
 };
 
 use super::{
-	ast::ASTElem,
+	expression::Expr,
 	traits::{TraitDef, TraitImpl},
 	types::{FnDef, Type, TypeDef},
 	Attribute,
@@ -20,13 +20,20 @@ use super::{
 
 pub type Name = Arc<str>;
 
-#[derive(Default, Debug, Clone, PartialEq, Eq)]
+#[derive(Default, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Identifier {
 	pub path: Vec<Name>,
 	pub absolute: bool,
 }
 
 impl Identifier {
+	pub fn new(absolute: bool) -> Self {
+		Identifier {
+			path: vec![],
+			absolute,
+		}
+	}
+
 	pub fn from_name(name: Name, absolute: bool) -> Self {
 		Identifier {
 			path: vec![name],
@@ -57,15 +64,6 @@ impl Identifier {
 	}
 }
 
-impl Hash for Identifier {
-	fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-		// Absolute Identifiers are used to definitively and uniquely identify NamespaceItems in HashMaps.
-		// A relative Identifier can't be meaningfully hashed, and doing so indicates a logic error in the code.
-		self.path.hash(state);
-		self.absolute.hash(state);
-	}
-}
-
 impl Display for Identifier {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		let mut result = String::new();
@@ -83,7 +81,7 @@ impl Display for Identifier {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum NamespaceASTElem {
-	Parsed(ASTElem),
+	Parsed(Expr),
 	Unparsed(usize), // Token index
 	NoElem,
 }
@@ -95,7 +93,7 @@ pub enum NamespaceItem {
 	Trait(Arc<RwLock<TraitDef>>),
 	Function(Arc<RwLock<FnDef>>, RefCell<NamespaceASTElem>),
 	Variable(Type, RefCell<NamespaceASTElem>),
-	Namespace(Box<RefCell<Namespace>>),
+	//Namespace(Box<RefCell<Namespace>>),
 	Alias(Identifier),
 }
 
@@ -106,14 +104,14 @@ pub struct Namespace {
 	pub path: Identifier,
 	pub referenced_modules: HashSet<Identifier>,
 	pub imported: HashMap<Identifier, Namespace>,
-	pub children: HashMap<Name, NamespaceEntry>,
+	pub children: HashMap<Identifier, NamespaceEntry>,
 	pub impls: HashMap<Identifier, HashMap<Name, NamespaceEntry>>, // Impls defined in this namespace
 	pub trait_impls: HashMap<Identifier, HashMap<Identifier, TraitImpl>>,
 }
 
 #[derive(Clone)]
 pub enum ItemRef<T: Clone> {
-	Unresolved(Identifier),
+	Unresolved { name: Identifier, scope: Identifier },
 	Resolved(T),
 }
 
@@ -124,7 +122,16 @@ where
 {
 	fn eq(&self, other: &Self) -> bool {
 		match (self, other) {
-			(Self::Unresolved(l0), Self::Unresolved(r0)) => l0 == r0,
+			(
+				Self::Unresolved {
+					name: l0,
+					scope: l1,
+				},
+				Self::Unresolved {
+					name: r0,
+					scope: r1,
+				},
+			) => l0 == r0 && l1 == r1,
 			(Self::Resolved(l0), Self::Resolved(r0)) => l0 == r0,
 			_ => false,
 		}
@@ -137,29 +144,11 @@ where
 {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match self {
-			Self::Unresolved(arg0) => f.debug_tuple("Unresolved").field(arg0).finish(),
+			Self::Unresolved {
+				name: arg0,
+				scope: arg1,
+			} => f.debug_tuple("Unresolved").field(arg0).field(arg1).finish(),
 			Self::Resolved(arg0) => f.debug_tuple("Resolved").field(arg0).finish(),
-		}
-	}
-}
-
-impl<T> ItemRef<T>
-where
-	T: Clone,
-{
-	fn resolved(&self) -> Option<&T> {
-		if let ItemRef::Resolved(item) = self {
-			Some(item)
-		} else {
-			None
-		}
-	}
-
-	fn resolved_mut(&mut self) -> Option<&mut T> {
-		if let ItemRef::Resolved(item) = self {
-			Some(item)
-		} else {
-			None
 		}
 	}
 }
@@ -177,106 +166,67 @@ impl Namespace {
 		}
 	}
 
-	// Children take temporary ownership of their parent to avoid lifetime hell
-	pub fn from_parent(parent: &Identifier, name: Name) -> Self {
-		Namespace {
-			children: HashMap::new(),
-			path: Identifier::from_parent(parent, name),
-			referenced_modules: HashSet::new(),
-			imported: HashMap::new(),
-			impls: HashMap::new(),
-			trait_impls: HashMap::new(),
-		}
+	pub fn get_interface(&self) -> Self {
+		self.clone() // TODO: Actually implement
 	}
 
 	pub fn with_item<Ret>(
 		&self,
-		name: &Identifier,
-		root: &Namespace,
+		id: &Identifier,
+		scope: &Identifier,
 		mut closure: impl FnMut(&NamespaceEntry, &Identifier) -> Ret,
 	) -> Option<Ret> {
-		let self_is_root = root as *const _ == self as *const _;
+		if !id.absolute {
+			let mut scope_unwind = scope.clone();
 
-		// If name is an absolute path, look in root
-		if name.absolute && !self_is_root {
-			return root.with_item(name, root, closure);
-		}
+			// We "unwind" the scope, iterating through parent scopes and looking for a match
+			while !scope_unwind.path.is_empty() {
+				let mut scope_lookup_path = scope_unwind.clone();
 
-		if !name.is_qualified() {
-			if self.children.contains_key(name.name()) {
-				// It's one of this namespace's children!
+				scope_lookup_path.path.append(&mut id.clone().path);
 
-				if let NamespaceItem::Alias(id) = &self.children.get(name.name()).unwrap().0 {
-					// It's an alias, so look up the actual item
-					return self.with_item(&id, root, closure);
-				} else {
-					// Generate absolute identifier
-					let id = Identifier::from_parent(&self.path, name.name().clone());
+				scope_unwind.path.pop();
 
-					return Some(closure(&self.children.get(name.name()).unwrap(), &id));
+				if let Some(found_path) = self
+					.children
+					.keys()
+					.find(|item| item.path == scope_lookup_path.path)
+				{
+					let found_item = &self.children[found_path];
+
+					if let NamespaceItem::Alias(alias) = &found_item.0 {
+						return self.with_item(alias, scope, closure);
+					} else {
+						return Some(closure(found_item, found_path));
+					}
 				}
 			}
-		} else {
-			if let Some(child) = self.children.get(&name.path[0]) {
-				match &child.0 {
-					NamespaceItem::Namespace(child) => {
-						// Found child namespace matching first scope path member
 
-						let mut name_clone = name.clone();
-						name_clone.path.remove(0);
-
-						return child
-							.as_ref()
-							.borrow()
-							.with_item(&name_clone, root, closure);
-					}
-
-					NamespaceItem::Type(ty) => match &*ty.read().unwrap() {
-						TypeDef::Algebraic(alg) => {
-							let mut name_clone = name.clone();
-							name_clone.path.remove(0);
-
-							return alg.with_item(&name_clone, self, root, closure);
-						}
-
-						_ => panic!(),
-					},
-
-					NamespaceItem::Alias(alias_id) => {
-						let mut merged_path = alias_id.path.clone();
-
-						merged_path.append(&mut name.path.clone());
-
-						return self.with_item(
-							&Identifier {
-								path: merged_path,
-								absolute: alias_id.absolute,
-							},
-							root,
-							closure,
-						);
-					}
-
-					_ => panic!(), // TODO: Proper error
-				}
-			} else if let Some(imported) = self
-				.imported
-				.get(&Identifier::from_name(name.path[0].clone(), false))
-			{
-				// Found imported namespace matching scope path
-
-				let mut name_clone = name.clone();
-				name_clone.path.remove(0);
-
-				return imported.with_item(&name_clone, imported, closure);
-			}
+			// Didn't find it, fall back to absolute lookup below
 		}
 
-		// Didn't find it in our own namespace
+		let mut id = id.clone();
+		id.absolute = true;
 
-		if !self_is_root {
-			root.with_item(name, root, closure)
+		if let Some(absolute_lookup) = self.children.get(&id) {
+			// Found a match for the absolute path in this namespace!
+
+			if let NamespaceItem::Alias(alias) = &absolute_lookup.0 {
+				self.with_item(alias, scope, closure)
+			} else {
+				Some(closure(absolute_lookup, &id))
+			}
+		} else if let Some(imported) = self.imported.iter().find(|(item, imported)| {
+			id.path.len() > item.path.len() && &id.path[0..item.path.len()] == item.path.as_slice()
+		}) {
+			// Found an imported namespace that's a prefix of `id`!
+			// TODO: Figure out how this works for submodules
+			let mut id_relative = id.clone();
+			id_relative.path = id_relative.path[imported.0.path.len()..].to_vec();
+
+			imported.1.with_item(&id_relative, scope, closure)
 		} else {
+			// Nada
 			None
 		}
 	}
@@ -286,7 +236,7 @@ impl Display for Namespace {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		for c in &self.children {
 			match &c.1 .0 {
-				NamespaceItem::Alias(id) => write!(f, "\t[alias] {}", id)?,
+				NamespaceItem::Alias(id) => write!(f, "\t[alias] {}\n", id)?,
 				NamespaceItem::Type(t) => write!(f, "\t[type] {}: {}\n", c.0, t.read().unwrap())?,
 				NamespaceItem::Trait(t) => {
 					write!(f, "\t[trait] {}: {:?}\n", c.0, t.read().unwrap())?
@@ -295,11 +245,6 @@ impl Display for Namespace {
 					write!(f, "\t[func] {}: {}\n", c.0, t.read().unwrap())?
 				}
 				NamespaceItem::Variable(_, _) => todo!(),
-				NamespaceItem::Namespace(ns) => write!(
-					f,
-					"\n[[sub-namespace]]\n\n{}\n[[end sub-namespace]]\n\n",
-					&ns.as_ref().borrow()
-				)?,
 			}
 		}
 		Ok(())

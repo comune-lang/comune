@@ -3,11 +3,9 @@ use std::hash::{Hash, Hasher};
 use std::ptr;
 use std::sync::{Arc, RwLock, Weak};
 
-use super::namespace::{Identifier, ItemRef, Name, Namespace, NamespaceEntry, NamespaceItem};
+use super::namespace::{Identifier, ItemRef, Name, NamespaceEntry, NamespaceItem};
 use super::traits::TraitRef;
 use crate::constexpr::ConstExpr;
-use crate::parser::AnalyzeResult;
-use crate::semantic::FnScope;
 
 pub type BoxedType = Box<Type>;
 pub type TypeParam = Vec<ItemRef<TraitRef>>; // Generic type parameter, with trait bounds
@@ -17,12 +15,6 @@ pub type TypeParamList = Vec<(Name, TypeParam)>;
 pub struct FnParamList {
 	pub params: Vec<(Type, Option<Name>)>,
 	pub variadic: bool,
-}
-
-
-
-pub trait Typed {
-	fn get_type<'ctx>(&self, scope: &'ctx FnScope<'ctx>) -> AnalyzeResult<Type>;
 }
 
 #[derive(Debug, Clone)]
@@ -66,6 +58,7 @@ pub enum Type {
 	Array(BoxedType, Arc<RwLock<Vec<ConstExpr>>>), // N-dimensional array with constant expression for size
 	TypeRef(ItemRef<TypeRef>),                     // Reference to user-defined type
 	TypeParam(usize),                              // Reference to an in-scope type parameter
+	Never, // Return type of a function that never returns, coerces to anything
 }
 
 #[derive(Clone)]
@@ -107,22 +100,22 @@ impl AlgebraicDef {
 	fn get_concrete_type(&self, ty: Type, type_args: &Vec<(Name, Type)>) -> Type {
 		match ty {
 			Type::Basic(_) => ty,
-			Type::Pointer(pointee) => Type::Pointer(Box::new(
-				self.get_concrete_type(*pointee.clone(), type_args),
-			)),
-			Type::Reference(refee) => {
-				Type::Reference(Box::new(self.get_concrete_type(*refee.clone(), type_args)))
+			Type::Pointer(pointee) => {
+				Type::Pointer(Box::new(self.get_concrete_type(*pointee, type_args)))
 			}
-			Type::Array(array_ty, size) => Type::Array(
-				Box::new(self.get_concrete_type(*array_ty.clone(), type_args)),
-				size,
-			),
+			Type::Reference(refee) => {
+				Type::Reference(Box::new(self.get_concrete_type(*refee, type_args)))
+			}
+			Type::Array(array_ty, size) => {
+				Type::Array(Box::new(self.get_concrete_type(*array_ty, type_args)), size)
+			}
 			Type::TypeRef { .. } => ty,
 			Type::TypeParam(param) => type_args[param].1.clone(),
+			Type::Never => ty,
 		}
 	}
 
-	pub fn get_member<'a>(
+	pub fn get_member(
 		&self,
 		name: &Name,
 		type_args: Option<&Vec<(Name, Type)>>,
@@ -141,49 +134,6 @@ impl AlgebraicDef {
 				}
 			}
 		}
-		None
-	}
-
-	pub fn with_item<Ret>(
-		&self,
-		name: &Identifier,
-		parent: &Namespace,
-		root: &Namespace,
-		mut closure: impl FnMut(&NamespaceEntry, &Identifier) -> Ret,
-	) -> Option<Ret> {
-		if !name.is_qualified() {
-			if let Some(item) = self.items.iter().find(|item| &item.0 == name.name()) {
-				// It's one of this namespace's children!
-
-				if let NamespaceItem::Alias(id) = &item.1 .0 {
-					// It's an alias, so look up the actual item
-					return parent.with_item(&id, root, closure);
-				} else {
-					// Generate absolute identifier
-					let id = Identifier::from_parent(&parent.path, name.name().clone());
-
-					return Some(closure(&item.1, &id));
-				}
-			}
-		} else {
-			if let Some(item) = self.items.iter().find(|item| item.0 == name.path[0]) {
-				match &item.1 .0 {
-					NamespaceItem::Type(ty) => match &*ty.read().unwrap() {
-						TypeDef::Algebraic(alg) => {
-							let mut name_clone = name.clone();
-							name_clone.path.remove(0);
-
-							return alg.with_item(&name_clone, parent, root, closure);
-						}
-
-						_ => panic!(),
-					},
-
-					_ => panic!(), // TODO: Proper error
-				}
-			}
-		}
-
 		None
 	}
 }
@@ -207,7 +157,6 @@ impl Basic {
 				signed: true,
 				size_bytes: 1,
 			}),
-
 			"u64" => Some(Basic::INTEGRAL {
 				signed: false,
 				size_bytes: 8,
@@ -324,12 +273,15 @@ impl Basic {
 impl Type {
 	pub fn get_concrete_type(&self, type_args: &Vec<(Arc<str>, Type)>) -> Type {
 		match self {
-			Type::Basic(b) => Type::Basic(b.clone()),
+			Type::Basic(b) => Type::Basic(*b),
 			Type::Pointer(ptr) => Type::Pointer(Box::new(ptr.get_concrete_type(type_args))),
 			Type::Reference(refee) => Type::Reference(Box::new(refee.get_concrete_type(type_args))),
-			Type::Array(arr_ty, size) => Type::Array(Box::new(arr_ty.get_concrete_type(type_args)), size.clone()),
+			Type::Array(arr_ty, size) => {
+				Type::Array(Box::new(arr_ty.get_concrete_type(type_args)), size.clone())
+			}
 			Type::TypeRef(ty) => Type::TypeRef(ty.clone()),
 			Type::TypeParam(param) => type_args[*param].1.clone(),
+			Type::Never => Type::Never,
 		}
 	}
 
@@ -342,7 +294,9 @@ impl Type {
 	}
 
 	pub fn castable_to(&self, target: &Type) -> bool {
-		if *self == *target {
+		if self == target {
+			true
+		} else if self == &Type::Never {
 			true
 		} else if self.is_numeric() {
 			target.is_numeric() || target.is_boolean()
@@ -352,7 +306,6 @@ impl Type {
 			false
 		}
 	}
-
 	// Convenience
 	pub fn is_numeric(&self) -> bool {
 		if let Type::Basic(b) = self {
@@ -386,6 +339,7 @@ impl PartialEq for Type {
 			(Self::TypeRef(l0), Self::TypeRef(r0)) => l0 == r0,
 			(Self::TypeParam(l0), Self::TypeParam(r0)) => l0 == r0,
 			(Self::Array(l0, _l1), Self::Array(r0, _r1)) => l0 == r0 && todo!(),
+			(Self::Never, Self::Never) => true,
 			_ => false,
 		}
 	}
@@ -430,11 +384,16 @@ impl Hash for Type {
 				"+".hash(state)
 			}
 
-			Type::TypeRef(ItemRef::Unresolved(id)) => id.hash(state),
+			Type::TypeRef(ItemRef::Unresolved { name, scope }) => {
+				name.hash(state);
+				scope.hash(state)
+			}
 
 			Type::TypeRef(ItemRef::Resolved(ty)) => ty.hash(state),
 
 			Type::TypeParam(name) => name.hash(state),
+
+			Type::Never => "!".hash(state),
 		}
 	}
 }
@@ -450,7 +409,9 @@ impl Display for Type {
 
 			Type::Array(t, _s) => write!(f, "{}[]", t),
 
-			Type::TypeRef(ItemRef::Unresolved(t)) => write!(f, "unresolved type \"{}\"", t),
+			Type::TypeRef(ItemRef::Unresolved { name, .. }) => {
+				write!(f, "unresolved type \"{name}\"")
+			}
 
 			Type::TypeRef(ItemRef::Resolved(TypeRef { name, args, .. })) => {
 				if args.is_empty() {
@@ -469,6 +430,8 @@ impl Display for Type {
 			}
 
 			Type::TypeParam(t) => write!(f, "<{t}>"),
+
+			Type::Never => write!(f, "never"),
 		}
 	}
 }
@@ -514,9 +477,6 @@ impl Hash for AlgebraicDef {
 	fn hash<H: Hasher>(&self, state: &mut H) {
 		// We hash based on Type only, so two aggregates with the same layout have the same Hash
 		// Hashing is only relevant for LLVM codegen, so semantic analysis will already have happened
-		//self.members.iter().map(|item| &item.1.0).collect::<Vec<&Type>>().hash(state);
-		//self.variants.iter().map(|item| &item.1.0).collect::<Vec<&Box<AlgebraicType>>>().hash(state);
-		//self.methods.iter().map(|item| &item.1.0).collect::<Vec<&Type>>().hash(state);
 		for item in &self.items {
 			match &item.1 .0 {
 				NamespaceItem::Variable(t, _) => t.hash(state),
@@ -533,13 +493,15 @@ impl std::fmt::Debug for Type {
 			Self::Pointer(_) => f.debug_tuple("Pointer").finish(),
 			Self::Reference(_) => f.debug_tuple("Reference").finish(),
 			Self::Array(t, _) => f.debug_tuple("Array").field(t).finish(),
-			Self::TypeRef(ItemRef::Unresolved(arg0)) => {
-				f.debug_tuple("Unresolved").field(arg0).finish()
-			}
+			Self::TypeRef(ItemRef::Unresolved {
+				name: arg0,
+				scope: arg1,
+			}) => f.debug_tuple("Unresolved").field(arg0).field(arg1).finish(),
 			Self::TypeRef(ItemRef::Resolved(TypeRef { def: arg0, .. })) => {
 				f.debug_tuple("TypeRef").field(arg0).finish()
 			}
 			Self::TypeParam(arg0) => f.debug_tuple("TypeParam").field(arg0).finish(),
+			Self::Never => f.debug_tuple("Never").finish(),
 		}
 	}
 }

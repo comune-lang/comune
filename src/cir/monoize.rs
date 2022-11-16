@@ -7,7 +7,10 @@ use crate::{
 	semantic::{get_attribute, namespace::Identifier, types::Basic},
 };
 
-use super::{CIRFunction, CIRModule, CIRStmt, CIRType, CIRTypeDef, Operand, RValue, TypeName, FuncName, CIRFnMap};
+use super::{
+	CIRFnMap, CIRFunction, CIRModule, CIRStmt, CIRType, CIRTypeDef, FuncName, Operand, RValue,
+	TypeName,
+};
 
 // A set of requested Generic monomorphizations, with a Vec of type arguments
 // TODO: Extend system to support constants as arguments
@@ -18,7 +21,6 @@ type TypeSubstitutions = Vec<CIRType>;
 // Map from index + parameters to indices of existing instances
 type TypeInstances = HashMap<TypeName, HashMap<TypeSubstitutions, TypeName>>;
 type FuncInstances = HashMap<FuncName, HashMap<TypeSubstitutions, FuncName>>;
-
 
 impl CIRModule {
 	// monoize() consumes `self` and returns a CIRModule with all generics monomorphized, names mangled, etc.
@@ -42,13 +44,11 @@ impl CIRModule {
 		let function_names: Vec<_> = self.functions.keys().cloned().collect();
 
 		for name in function_names {
-
 			// We can't monomorphize a generic function without its type parameters, only plain functions
 			// Those plain functions call generic functions, which are then monoized from the call site
 			if !self.functions[&name].type_params.is_empty() {
 				continue;
 			}
-
 
 			let function_monoized = Self::monoize_function(
 				&self.functions,
@@ -85,7 +85,6 @@ impl CIRModule {
 		ty_instances: &mut TypeInstances,
 		fn_instances: &mut FuncInstances,
 	) -> CIRFunction {
-
 		let mut func = func.clone();
 
 		for (var, _) in &mut func.variables {
@@ -105,21 +104,14 @@ impl CIRModule {
 					| CIRStmt::Assignment(_, (expr, _))
 					| CIRStmt::Branch(expr, _, _)
 					| CIRStmt::Return(Some((expr, _))) => {
-						
-						Self::monoize_rvalue_types(
-							types,
-							expr,
-							param_map,
-							ty_instances,
-						);
+						Self::monoize_rvalue_types(types, expr, param_map, ty_instances);
 
-						
 						Self::monoize_fn_calls(
 							functions_in,
 							functions_out,
 							expr,
 							types,
-							param_map, 
+							param_map,
 							ty_instances,
 							fn_instances,
 						)
@@ -140,7 +132,7 @@ impl CIRModule {
 		types: &mut HashMap<TypeName, CIRTypeDef>,
 		param_map: &TypeSubstitutions,
 		ty_instances: &mut TypeInstances,
-		fn_instances: &mut FuncInstances,	
+		fn_instances: &mut FuncInstances,
 	) {
 		match rval {
 			RValue::Atom(_, _, Operand::FnCall(name, _, type_args)) => {
@@ -149,12 +141,12 @@ impl CIRModule {
 
 				Self::monoize_call(
 					functions_in,
-					functions_out, 
+					functions_out,
 					name,
-					types, 
-					&param_map, 
+					types,
+					&param_map,
 					ty_instances,
-					fn_instances
+					fn_instances,
 				)
 			}
 
@@ -165,12 +157,12 @@ impl CIRModule {
 
 					Self::monoize_call(
 						functions_in,
-						functions_out, 
-						name, 
+						functions_out,
+						name,
 						types,
-						&param_map, 
+						&param_map,
 						ty_instances,
-						fn_instances
+						fn_instances,
 					)
 				}
 
@@ -180,35 +172,37 @@ impl CIRModule {
 
 					Self::monoize_call(
 						functions_in,
-						functions_out, 
-						name, 
+						functions_out,
+						name,
 						types,
-						&param_map, 
+						&param_map,
 						ty_instances,
-						fn_instances
+						fn_instances,
 					)
 				}
 			}
 
-			RValue::Cast { val: Operand::FnCall(name, _, type_args), .. } => {
+			RValue::Cast {
+				val: Operand::FnCall(name, _, type_args),
+				..
+			} => {
 				let mut param_map = param_map.clone();
 				param_map.append(type_args);
 
 				Self::monoize_call(
 					functions_in,
-					functions_out, 
-					name, 
+					functions_out,
+					name,
 					types,
-					&param_map, 
+					&param_map,
 					ty_instances,
-					fn_instances
+					fn_instances,
 				)
 			}
 
 			_ => {}
 		}
 	}
-
 
 	fn monoize_call(
 		functions_in: &CIRFnMap,
@@ -222,7 +216,7 @@ impl CIRModule {
 		if param_map.is_empty() {
 			return;
 		}
-		
+
 		if !fn_instances.contains_key(func) {
 			fn_instances.insert(func.clone(), HashMap::new());
 		}
@@ -232,14 +226,14 @@ impl CIRModule {
 		} else {
 			let monoized = Self::monoize_function(
 				functions_in,
-				functions_out, 
-				&functions_in[func], 
+				functions_out,
+				&functions_in[func],
 				types,
 				param_map,
-				ty_instances, 
-				fn_instances
+				ty_instances,
+				fn_instances,
 			);
-		
+
 			let mut insert_name = func.clone();
 			let mut name_suffix = "<".to_string();
 			let mut param_iter = param_map.iter();
@@ -250,12 +244,15 @@ impl CIRModule {
 				name_suffix.push_str(", ");
 				name_suffix.push_str(&param.to_string());
 			}
-			
+
 			name_suffix += ">";
 
 			insert_name.path.push(name_suffix.into());
 
-			fn_instances.get_mut(func).unwrap().insert(param_map.clone(), insert_name.clone());
+			fn_instances
+				.get_mut(func)
+				.unwrap()
+				.insert(param_map.clone(), insert_name.clone());
 			functions_out.insert(insert_name.clone(), monoized);
 
 			*func = insert_name;
@@ -281,7 +278,6 @@ impl CIRModule {
 			}
 
 			RValue::Cons(ty, [(lty, lhs), (rty, rhs)], _) => {
-				
 				if let Operand::FnCall(_, _, type_args) = lhs {
 					let mut param_map = param_map.clone();
 					param_map.append(&mut type_args.clone());
@@ -314,7 +310,6 @@ impl CIRModule {
 					Self::monoize_type(types, from, param_map, type_instances);
 					Self::monoize_type(types, to, param_map, type_instances);
 				}
-
 			}
 		}
 	}

@@ -2,12 +2,12 @@ use std::collections::HashSet;
 
 use rayon::prelude::{IntoParallelRefIterator, ParallelIterator};
 
-use crate::{errors::CMNError, parser::AnalyzeResult, semantic::ast::TokenData};
+use crate::{errors::CMNError, parser::AnalyzeResult, semantic::TokenData};
 
 use super::{BlockIndex, CIRBlock, CIRFunction, CIRModule, CIRStmt, StmtIndex};
 
-pub mod lifeline;
 pub mod cleanup;
+pub mod lifeline;
 pub mod verify;
 
 pub trait CIRPass: Send + Sync {
@@ -60,11 +60,7 @@ impl CIRPassManager {
 		let mut errors = vec![];
 
 		// Run on each function
-		for func in module
-			.functions
-			.iter_mut()
-			.filter(|func| !func.1.is_extern)
-		{
+		for func in module.functions.iter_mut().filter(|func| !func.1.is_extern) {
 			errors.append(&mut self.run_on_function(func.1));
 		}
 

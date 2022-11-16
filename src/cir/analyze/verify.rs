@@ -4,7 +4,7 @@ use super::CIRPass;
 use crate::{
 	cir::{CIRFunction, CIRStmt},
 	errors::{CMNError, CMNErrorCode},
-	semantic::ast::TokenData,
+	semantic::TokenData,
 };
 
 pub struct Verify;
@@ -14,14 +14,15 @@ impl CIRPass for Verify {
 		let mut errors = vec![];
 
 		for block in &func.blocks {
-			if let CIRStmt::Return(_) | CIRStmt::Branch(..) | CIRStmt::Jump(_) =
-				block.last().unwrap()
-			{
+			if matches!(
+				block.last().unwrap(),
+				CIRStmt::Return(_) | CIRStmt::Branch(..) | CIRStmt::Jump(_)
+			) {
 				continue;
 			} else {
 				errors.push((
 					CMNError::new(CMNErrorCode::Custom(
-						"cIR block doesn't have a terminator!".to_string(),
+						"cIR block doesn't have a terminator".to_string(),
 					)),
 					(0, 0),
 				)); // TODO: Proper error reporting

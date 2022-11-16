@@ -3,11 +3,10 @@
 use std::{collections::HashMap, hash::Hash};
 
 use crate::semantic::{
-	ast::TokenData,
 	expression::Operator,
 	namespace::{Identifier, Name},
 	types::{Basic, DataLayout, TypeParamList},
-	Attribute,
+	Attribute, TokenData,
 };
 
 pub mod analyze;
@@ -98,11 +97,9 @@ pub enum Operand {
 impl Clone for Operand {
 	fn clone(&self) -> Self {
 		match self {
-			Operand::FnCall(id, rval, params) => Operand::FnCall(
-				id.clone(),
-				rval.clone(),
-				params.clone(), 
-			),
+			Operand::FnCall(id, rval, params) => {
+				Operand::FnCall(id.clone(), rval.clone(), params.clone())
+			}
 			Operand::IntegerLit(lit) => Operand::IntegerLit(*lit),
 			Operand::FloatLit(lit) => Operand::FloatLit(*lit),
 			Operand::StringLit(lit) => Operand::StringLit(lit.clone()),

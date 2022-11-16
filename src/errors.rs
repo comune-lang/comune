@@ -17,7 +17,7 @@ use super::types::Type;
 use crate::{
 	cir::analyze::lifeline::LivenessState,
 	parser::Parser,
-	semantic::{ast::TokenData, expression::Operator, namespace::Identifier},
+	semantic::{expression::Operator, namespace::Identifier, TokenData},
 };
 
 lazy_static! {
