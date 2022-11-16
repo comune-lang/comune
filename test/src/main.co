@@ -1,7 +1,7 @@
-import module_test;
+//import module_test;
 //import lifetimes;
 
-using module_test::{fib, foo};
+//using module_test::{fib, foo};
 
 @no_mangle
 void printf(char* fmt, ...);
@@ -61,6 +61,10 @@ int main() {
 
 	int cool = test.a;
 	test.a = cool;
+
+	for (int i = 0; i < 10; i++) {
+		printf("Loop %i!\n\0", i)
+	}
 
 	free(my_cool_generic.data as void*);
 	

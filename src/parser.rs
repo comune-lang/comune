@@ -621,7 +621,21 @@ impl Parser {
 				}
 			}
 
-			self.check_semicolon()?;
+			// Certain control flow statements don't need a semicolon 
+			// when used as a block item, so we check for those here
+
+			let mut semicolon_optional = false;
+			
+			if let Stmt::Expr(Expr::Atom(Atom::CtrlFlow(ctrl), _)) = &stmt {
+				if matches!(&**ctrl, ControlFlow::For { .. } | ControlFlow::If { .. } | ControlFlow::While { .. }) {
+					semicolon_optional = true;
+				}
+			}
+
+			if !semicolon_optional {
+				self.check_semicolon()?;
+			}
+
 			items.push(stmt);
 
 			while self.get_current()? == Token::Other(';') {

@@ -603,7 +603,8 @@ impl CIRModuleBuilder {
 						self.write(CIRStmt::Branch(cond_ir, body_idx, next_block));
 
 						self.current_block = next_block;
-						todo!()
+						
+						Some(Self::get_void_rvalue())
 					}
 
 					ControlFlow::For {
@@ -648,7 +649,8 @@ impl CIRModuleBuilder {
 						}
 
 						self.current_block = next_block;
-						todo!()
+
+						Some(Self::get_void_rvalue())
 					}
 
 					ControlFlow::Break => todo!(),
@@ -872,5 +874,9 @@ impl CIRModuleBuilder {
 		self.write(CIRStmt::Assignment((lval.clone(), (0, 0)), (rval, (0, 0))));
 
 		lval
+	}
+
+	fn get_void_rvalue() -> RValue {
+		RValue::Atom(CIRType::Basic(Basic::VOID), None, Operand::Undef)
 	}
 }

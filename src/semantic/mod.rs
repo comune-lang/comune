@@ -533,8 +533,7 @@ impl Expr {
 							lhs.get_node_data_mut().ty = Some(first_t.clone());
 							rhs.get_node_data_mut().ty = Some(second_t);
 
-							return Ok(*ty.clone());
-
+							Ok(*ty.clone())
 						} else {
 							return Err((
 								CMNError::new(CMNErrorCode::InvalidSubscriptLHS { t: first_t }),
@@ -577,9 +576,9 @@ impl Expr {
 							| Operator::Less
 							| Operator::Greater
 							| Operator::LessEq
-							| Operator::GreaterEq => return Ok(Type::Basic(Basic::BOOL)),
+							| Operator::GreaterEq => Ok(Type::Basic(Basic::BOOL)),
 
-							Operator::PostDec | Operator::PostInc => return Ok(first_t),
+							Operator::PostDec | Operator::PostInc => Ok(first_t),
 
 							_ => Ok(second_t),
 						}
@@ -1024,7 +1023,7 @@ impl Atom {
 					if let Some(iter) = iter {
 						iter.validate(&mut subscope)?;
 					}
-					
+
 					body.validate(&mut subscope)
 				},
 
