@@ -302,7 +302,7 @@ impl Expr {
 			// Technically unsafe if Box::new() panics here,
 			// but if you managed to exhaust all the memory
 			// in your system, you've got bigger problems.
-			println!("casting from {} to {}", node_data.ty.unwrap(), &to);
+
 			let new = Expr::Atom(
 				Atom::Cast(Box::new(tmp), to.clone()),
 				NodeData {
