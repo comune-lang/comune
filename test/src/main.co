@@ -1,7 +1,7 @@
-//import module_test;
+import module_test;
 //import lifetimes;
 
-//using module_test::{fib, foo};
+using module_test::{fib, foo};
 
 @no_mangle
 void printf(char* fmt, ...);

@@ -491,11 +491,7 @@ impl Expr {
 
 	pub fn validate<'ctx>(&mut self, scope: &mut FnScope<'ctx>) -> AnalyzeResult<Type> {
 		let result = match self {
-			Expr::Atom(a, meta) => {
-				let ty = a.validate(scope, meta)?;
-				meta.ty = Some(ty.clone());
-				Ok(ty)
-			}
+			Expr::Atom(a, meta) => a.validate(scope, meta),
 
 			Expr::Cons([lhs, rhs], op, meta) => {
 				match op {
@@ -543,8 +539,8 @@ impl Expr {
 						let first_t = lhs.validate(scope)?;
 						let second_t = rhs.validate(scope)?;
 
-						lhs.get_node_data_mut().ty = Some(first_t.clone());
-						rhs.get_node_data_mut().ty = Some(second_t.clone());
+						//lhs.get_node_data_mut().ty = Some(first_t.clone());
+						//rhs.get_node_data_mut().ty = Some(second_t.clone());
 
 						if first_t != second_t {
 							// Try to coerce one to the other
@@ -611,9 +607,9 @@ impl Expr {
 			}
 		}?;
 
-		if self.get_node_data().ty.is_none() {
-			self.get_node_data_mut().ty.replace(result.clone());
-		}
+		result.validate(scope, self.get_node_data())?;
+
+		self.get_node_data_mut().ty.replace(result.clone());
 
 		Ok(result)
 	}
@@ -672,19 +668,13 @@ impl Expr {
 		match self {
 			Expr::Atom(a, meta) => {
 				a.validate(scope, meta)?;
-				return a.get_lvalue_type(scope);
+				a.get_lvalue_type(scope)
 			}
 
 			Expr::Unary(e, op, meta) => match op {
 				Operator::Deref => {
 					return match e.validate(scope).unwrap() {
-						Type::Pointer(t) => {
-							e.get_node_data_mut().ty = Some(Type::Pointer(t.clone()));
-							Ok(*t)
-						}
-
-						Type::Reference(t) => {
-							e.get_node_data_mut().ty = Some(Type::Reference(t.clone()));
+						Type::Pointer(t) | Type::Reference(t) => {
 							Ok(*t)
 						}
 
@@ -711,7 +701,9 @@ impl Expr {
 										Some(Type::TypeRef(ItemRef::Resolved(lhs_ref.clone())));
 
 									rhs.get_node_data_mut().ty = Some(m.clone());
-									return Ok(m);
+									Ok(m)
+								} else {
+									panic!()
 								}
 							}
 
@@ -753,7 +745,7 @@ impl Expr {
 
 											rhs.get_node_data_mut().ty = Some(method.ret.clone());
 
-											return Ok(res);
+											Ok(res)
 										}
 
 										Err(mut err) => {
@@ -767,24 +759,27 @@ impl Expr {
 														expected: expected - 1,
 														got: got - 1,
 													};
-													return Err(err);
+													Err(err)
 												}
 
-												_ => return Err(err),
+												_ => Err(err)
 											}
 										}
 									}
+								} else {
+									panic!()
 								}
 							}
 
-							_ => {}
+							_ => panic!(),
 						},
-						_ => {}
+						_ => panic!(),
 					}
+				} else {
+					panic!()
 				}
 			}
-		};
-		Err((CMNError::new(CMNErrorCode::InvalidLValue), meta))
+		}
 	}
 }
 
@@ -1112,5 +1107,39 @@ impl Atom {
 			},
 			_ => Err((CMNError::new(CMNErrorCode::InvalidLValue), (0, 0))),
 		}
+	}
+}
+
+impl Type {
+	pub fn validate<'ctx>(
+		&self,
+		scope: &'ctx FnScope<'ctx>,
+		_meta: &NodeData,
+	) -> AnalyzeResult<()> {
+		match self {
+			Type::Array(_, n) => {
+				// Old fashioned way to make life easier with the RefCell
+				let mut idx = 0;
+				let len = n.read().unwrap().len();
+
+				while idx < len {
+					let mut result = None;
+
+					if let ConstExpr::Expr(e) = &n.read().unwrap()[idx] {
+						result = Some(ConstExpr::Result(e.eval_const(scope)?));
+					}
+
+					if let Some(result) = result {
+						n.write().unwrap()[idx] = result;
+					}
+
+					idx += 1;
+				}
+			}
+
+			_ => {}
+		}
+
+		Ok(())
 	}
 }
