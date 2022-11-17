@@ -573,9 +573,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 					.as_basic_value_enum(),
 			),
 			Operand::LValue(l) => Some(self.builder.build_load(self.generate_lvalue(l), "lread")),
-			Operand::Undef => Some(
-				self.get_undef(&Self::to_basic_type(self.get_llvm_type(ty))),
-			),
+			Operand::Undef => Some(self.get_undef(&Self::to_basic_type(self.get_llvm_type(ty)))),
 		}
 	}
 

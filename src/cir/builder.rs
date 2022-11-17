@@ -603,7 +603,7 @@ impl CIRModuleBuilder {
 						self.write(CIRStmt::Branch(cond_ir, body_idx, next_block));
 
 						self.current_block = next_block;
-						
+
 						Some(Self::get_void_rvalue())
 					}
 

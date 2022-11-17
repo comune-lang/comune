@@ -142,7 +142,7 @@ pub fn validate_function(
 				node_data,
 			)));
 		}
-		
+
 		match items.last() {
 			Some(Stmt::Decl(_, Some(expr), _) | Stmt::Expr(expr)) => {
 				let expr_ty = expr.get_type();
@@ -158,11 +158,8 @@ pub fn validate_function(
 				}
 			}
 
-			_ => todo!()
+			_ => todo!(),
 		}
-	
-
-		
 	}
 
 	Ok(())
@@ -515,7 +512,6 @@ impl Expr {
 						let mut second_t = rhs.validate(scope)?;
 
 						if let Type::Array(ty, _) = &first_t {
-
 							if second_t != idx_type {
 								if rhs.coercable_to(&second_t, &idx_type, scope) {
 									rhs.wrap_in_cast(idx_type.clone());
@@ -1003,21 +999,21 @@ impl Atom {
 				} => {
 					let bool_ty = Type::Basic(Basic::BOOL);
 					let mut subscope = FnScope::from_parent(scope);
-					
+
 					if let Some(init) = init {
 						init.validate(&mut subscope)?;
 					}
 
 					if let Some(cond) = cond {
 						let cond_ty = cond.validate(&mut subscope)?;
-						
+
 						if cond_ty != bool_ty {
 							if cond_ty.castable_to(&bool_ty) {
 								cond.wrap_in_cast(bool_ty);
 							} else {
 								todo!()
 							}
-						}	
+						}
 					}
 
 					if let Some(iter) = iter {
@@ -1025,7 +1021,7 @@ impl Atom {
 					}
 
 					body.validate(&mut subscope)
-				},
+				}
 
 				ControlFlow::Return { expr } => {
 					if let Some(expr) = expr {
