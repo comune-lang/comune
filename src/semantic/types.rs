@@ -97,24 +97,6 @@ impl AlgebraicDef {
 		}
 	}
 
-	fn get_concrete_type(&self, ty: Type, type_args: &Vec<(Name, Type)>) -> Type {
-		match ty {
-			Type::Basic(_) => ty,
-			Type::Pointer(pointee) => {
-				Type::Pointer(Box::new(self.get_concrete_type(*pointee, type_args)))
-			}
-			Type::Reference(refee) => {
-				Type::Reference(Box::new(self.get_concrete_type(*refee, type_args)))
-			}
-			Type::Array(array_ty, size) => {
-				Type::Array(Box::new(self.get_concrete_type(*array_ty, type_args)), size)
-			}
-			Type::TypeRef { .. } => ty,
-			Type::TypeParam(param) => type_args[param].1.clone(),
-			Type::Never => ty,
-		}
-	}
-
 	pub fn get_member(
 		&self,
 		name: &Name,
@@ -126,7 +108,7 @@ impl AlgebraicDef {
 			if let NamespaceItem::Variable(t, _) = &item.1 .0 {
 				if &item.0 == name {
 					if let Some(type_args) = type_args {
-						return Some((index, self.get_concrete_type(t.clone(), type_args)));
+						return Some((index, t.get_concrete_type(type_args)));
 					}
 					return Some((index, t.clone()));
 				} else {
@@ -271,7 +253,7 @@ impl Basic {
 }
 
 impl Type {
-	pub fn get_concrete_type(&self, type_args: &Vec<(Arc<str>, Type)>) -> Type {
+	pub fn get_concrete_type(&self, type_args: &Vec<(Name, Type)>) -> Type {
 		match self {
 			Type::Basic(b) => Type::Basic(*b),
 			Type::Pointer(ptr) => Type::Pointer(Box::new(ptr.get_concrete_type(type_args))),
