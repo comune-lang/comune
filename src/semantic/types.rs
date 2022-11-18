@@ -29,9 +29,11 @@ pub struct FnDef {
 // Algebraics (strums?) can contain member variables, inner type aliases, variants (aka subtype definitions), etc...
 // Hence we give them the same data structure as Namespaces, a list of `String`s and `NamespaceEntry`s
 // However, since declaration order *is* meaningful in strums, we store them as a Vec, rather than a HashMap
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct AlgebraicDef {
-	pub items: Vec<(Name, NamespaceEntry, Visibility)>,
+	//pub items: Vec<(Name, NamespaceEntry, Visibility)>,
+	pub members: Vec<(Name, Type, Visibility)>,
+	pub variants: Vec<(Name, AlgebraicDef)>,
 	pub layout: DataLayout,
 	pub params: TypeParamList,
 }
@@ -58,6 +60,7 @@ pub enum Type {
 	Array(BoxedType, Arc<RwLock<Vec<ConstExpr>>>), // N-dimensional array with constant expression for size
 	TypeRef(ItemRef<TypeRef>),                     // Reference to user-defined type
 	TypeParam(usize),                              // Reference to an in-scope type parameter
+	Tuple(AlgebraicDef),
 	Never, // Return type of a function that never returns, coerces to anything
 }
 
@@ -91,8 +94,9 @@ pub enum DataLayout {
 impl AlgebraicDef {
 	pub fn new() -> Self {
 		AlgebraicDef {
-			items: vec![],
 			layout: DataLayout::Declared,
+			members: vec![],
+			variants: vec![],
 			params: vec![],
 		}
 	}
@@ -104,16 +108,14 @@ impl AlgebraicDef {
 	) -> Option<(usize, Type)> {
 		let mut index = 0;
 
-		for item in &self.items {
-			if let NamespaceItem::Variable(t, _) = &item.1 .0 {
-				if &item.0 == name {
-					if let Some(type_args) = type_args {
-						return Some((index, t.get_concrete_type(type_args)));
-					}
-					return Some((index, t.clone()));
-				} else {
-					index += 1;
+		for (member_name, ty, vis) in &self.members {
+			if member_name == name {
+				if let Some(type_args) = type_args {
+					return Some((index, ty.get_concrete_type(type_args)));
 				}
+				return Some((index, ty.clone()));
+			} else {
+				index += 1;
 			}
 		}
 		None
@@ -264,6 +266,7 @@ impl Type {
 			Type::TypeRef(ty) => Type::TypeRef(ty.clone()),
 			Type::TypeParam(param) => type_args[*param].1.clone(),
 			Type::Never => Type::Never,
+			Type::Tuple(alg) => todo!(),
 		}
 	}
 
@@ -376,6 +379,8 @@ impl Hash for Type {
 			Type::TypeParam(name) => name.hash(state),
 
 			Type::Never => "!".hash(state),
+			
+			Type::Tuple(alg) => alg.hash(state),
 		}
 	}
 }
@@ -414,6 +419,8 @@ impl Display for Type {
 			Type::TypeParam(t) => write!(f, "<{t}>"),
 
 			Type::Never => write!(f, "never"),
+			
+			Type::Tuple(alg) => write!(f, "(tuple)"),
 		}
 	}
 }
@@ -444,12 +451,12 @@ impl Display for FnDef {
 
 impl Display for AlgebraicDef {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		let mut members = self.items.iter();
+		let mut members = self.members.iter();
 
-		write!(f, "Struct {{{:?}", members.next().unwrap().1 .0)?;
+		write!(f, "Struct {{{:?}", members.next().unwrap().1)?;
 
 		for mem in members {
-			write!(f, ", {:?}", mem.1 .0)?;
+			write!(f, ", {:?}", mem.1)?;
 		}
 		write!(f, "}}")
 	}
@@ -459,11 +466,8 @@ impl Hash for AlgebraicDef {
 	fn hash<H: Hasher>(&self, state: &mut H) {
 		// We hash based on Type only, so two aggregates with the same layout have the same Hash
 		// Hashing is only relevant for LLVM codegen, so semantic analysis will already have happened
-		for item in &self.items {
-			match &item.1 .0 {
-				NamespaceItem::Variable(t, _) => t.hash(state),
-				_ => todo!(),
-			}
+		for (_, ty, _) in &self.members {
+			ty.hash(state)
 		}
 	}
 }
@@ -471,19 +475,20 @@ impl Hash for AlgebraicDef {
 impl std::fmt::Debug for Type {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match self {
-			Self::Basic(arg0) => f.debug_tuple("Basic").field(arg0).finish(),
-			Self::Pointer(_) => f.debug_tuple("Pointer").finish(),
-			Self::Reference(_) => f.debug_tuple("Reference").finish(),
-			Self::Array(t, _) => f.debug_tuple("Array").field(t).finish(),
-			Self::TypeRef(ItemRef::Unresolved {
+			Type::Basic(arg0) => f.debug_tuple("Basic").field(arg0).finish(),
+			Type::Pointer(_) => f.debug_tuple("Pointer").finish(),
+			Type::Reference(_) => f.debug_tuple("Reference").finish(),
+			Type::Array(t, _) => f.debug_tuple("Array").field(t).finish(),
+			Type::TypeRef(ItemRef::Unresolved {
 				name: arg0,
 				scope: arg1,
 			}) => f.debug_tuple("Unresolved").field(arg0).field(arg1).finish(),
-			Self::TypeRef(ItemRef::Resolved(TypeRef { def: arg0, .. })) => {
+			Type::TypeRef(ItemRef::Resolved(TypeRef { def: arg0, .. })) => {
 				f.debug_tuple("TypeRef").field(arg0).finish()
 			}
-			Self::TypeParam(arg0) => f.debug_tuple("TypeParam").field(arg0).finish(),
-			Self::Never => f.debug_tuple("Never").finish(),
+			Type::TypeParam(arg0) => f.debug_tuple("TypeParam").field(arg0).finish(),
+			Type::Never => f.debug_tuple("Never").finish(),
+			Type::Tuple(alg) => f.debug_tuple("Tuple").field(alg).finish()
 		}
 	}
 }

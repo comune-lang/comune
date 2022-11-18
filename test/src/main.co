@@ -18,6 +18,11 @@ struct Test {
 	int b;
 }
 
+enum EnumTest {
+	VariantA(u8, u8, u8, u8),
+	VariantB(u16),
+}
+
 impl Test {
 	int sum(Test self) {
 		printf("This is a method call!\n\0");

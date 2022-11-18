@@ -276,6 +276,10 @@ impl Lexer {
 		self.current()
 	}
 
+	pub fn peek_next(&self) -> Option<&(usize, Token)> {
+		self.token_buffer.get(self.token_index + 1)
+	}
+
 	pub fn parse_next(&mut self) -> io::Result<(usize, Token)> {
 		let mut result_token = Ok(Token::EOF);
 		let mut start = self.file_index;

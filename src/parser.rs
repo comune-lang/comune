@@ -178,96 +178,142 @@ impl Parser {
 				Token::Keyword(keyword) => {
 					match keyword {
 						"enum" => {
-							todo!()
+							let mut aggregate = AlgebraicDef::new();
+							let Token::Identifier(name) = self.get_next()? else { return Err(self.err(CMNErrorCode::ExpectedIdentifier)) };
+							
+							let mut next = self.get_next()?;
+
+							if token_compare(&next, "<") {
+								aggregate.params = self.parse_type_parameter_list()?;
+								next = self.get_current()?;
+							}
+
+							if !token_compare(&next, "{") {
+								return Err(self.err(CMNErrorCode::UnexpectedToken));
+							}
+
+							next = self.get_next()?; // Consume brace
+							
+							while !token_compare(&next, "}") {
+								let Token::Identifier(variant_name) = next else { return Err(self.err(CMNErrorCode::UnexpectedToken)) };
+								let variant_name = variant_name.expect_scopeless()?.clone();
+
+								self.get_next()?;
+
+								let tuple = self.parse_tuple_type()?;
+								aggregate.variants.push((variant_name, tuple));
+
+								next = self.get_current()?;
+
+								match next {
+									Token::Other(',') => next = self.get_next()?,
+
+									Token::Other('}') => break,
+
+									_ => return Err(self.err(CMNErrorCode::UnexpectedToken))
+								}
+							}
+							
+							self.get_next()?; // Consume closing brace
+
+							let aggregate = TypeDef::Algebraic(aggregate);
+
+							self.namespace.children.insert(
+								Identifier::from_parent(
+									scope,
+									name.expect_scopeless()?.clone(),
+								),
+								(
+									NamespaceItem::Type(Arc::new(RwLock::new(aggregate))),
+									current_attributes,
+									None,
+								),
+							);
+							
+							current_attributes = vec![];
 						}
 
 						"struct" => {
 							// Register algebraic type
 							let mut current_visibility = Visibility::Public;
 							let mut aggregate = AlgebraicDef::new();
-							let name_token = self.get_next()?;
+							let Token::Identifier(name) = self.get_next()? else { return Err(self.err(CMNErrorCode::ExpectedIdentifier)) };
+							
+							let mut next = self.get_next()?;
 
-							if let Token::Identifier(name) = name_token {
-								let mut next = self.get_next()?;
-
-								if token_compare(&next, "<") {
-									aggregate.params = self.parse_type_parameter_list()?;
-
-									next = self.get_current()?;
-								}
-
-								if !token_compare(&next, "{") {
-									return Err(self.err(CMNErrorCode::UnexpectedToken));
-								}
-
-								next = self.get_next()?; // Consume brace
-
-								while !token_compare(&next, "}") {
-									match next {
-										Token::Identifier(_) => {
-											let result = self.parse_namespace_declaration()?;
-
-											match result.1 {
-												NamespaceItem::Variable(t, n) => {
-													aggregate.items.push((
-														result.0.into(),
-														(
-															NamespaceItem::Variable(t, n),
-															vec![],
-															None,
-														),
-														current_visibility.clone(),
-													))
-												}
-
-												_ => todo!(),
-											}
-
-											next = self.get_current()?;
-										}
-
-										Token::Keyword(k) => {
-											match k {
-												"public" => {
-													current_visibility = Visibility::Public;
-												}
-												"private" => {
-													current_visibility = Visibility::Private;
-												}
-												"protected" => {
-													current_visibility = Visibility::Protected;
-												}
-												_ => {
-													return Err(
-														self.err(CMNErrorCode::UnexpectedKeyword)
-													)
-												}
-											}
-											self.get_next()?;
-											next = self.get_next()?;
-										}
-
-										_ => return Err(self.err(CMNErrorCode::ExpectedIdentifier)),
-									}
-								}
-
-								self.get_next()?; // Consume closing brace
-
-								let aggregate = TypeDef::Algebraic(aggregate);
-
-								self.namespace.children.insert(
-									Identifier::from_parent(
-										scope,
-										name.expect_scopeless()?.clone(),
-									),
-									(
-										NamespaceItem::Type(Arc::new(RwLock::new(aggregate))),
-										current_attributes,
-										None,
-									),
-								);
-								current_attributes = vec![];
+							if token_compare(&next, "<") {
+								aggregate.params = self.parse_type_parameter_list()?;
+								next = self.get_current()?;
 							}
+
+							if !token_compare(&next, "{") {
+								return Err(self.err(CMNErrorCode::UnexpectedToken));
+							}
+
+							next = self.get_next()?; // Consume brace
+
+							while !token_compare(&next, "}") {
+								match next {
+									Token::Identifier(_) => {
+										let result = self.parse_namespace_declaration()?;
+
+										match result.1 {
+											NamespaceItem::Variable(t, n) => {
+												aggregate.members.push((
+													result.0.into(),
+													t,
+													current_visibility.clone(),
+												))
+											}
+
+											_ => todo!(),
+										}
+
+										next = self.get_current()?;
+									}
+
+									Token::Keyword(k) => {
+										match k {
+											"public" => {
+												current_visibility = Visibility::Public;
+											}
+											"private" => {
+												current_visibility = Visibility::Private;
+											}
+											"protected" => {
+												current_visibility = Visibility::Protected;
+											}
+											_ => {
+												return Err(
+													self.err(CMNErrorCode::UnexpectedKeyword)
+												)
+											}
+										}
+										self.get_next()?;
+										next = self.get_next()?;
+									}
+
+									_ => return Err(self.err(CMNErrorCode::ExpectedIdentifier)),
+								}
+							}
+
+							self.get_next()?; // Consume closing brace
+
+							let aggregate = TypeDef::Algebraic(aggregate);
+
+							self.namespace.children.insert(
+								Identifier::from_parent(
+									scope,
+									name.expect_scopeless()?.clone(),
+								),
+								(
+									NamespaceItem::Type(Arc::new(RwLock::new(aggregate))),
+									current_attributes,
+									None,
+								),
+							);
+
+							current_attributes = vec![];
 						}
 
 						"trait" => {
@@ -1305,7 +1351,14 @@ impl Parser {
 	// Returns true if the current token is the start of a Type.
 	// In ambiguous contexts (i.e. function blocks), `resolve_idents` enables basic name resolution
 	fn is_at_type_token(&self, resolve_idents: bool) -> ParseResult<bool> {
-		match self.get_current()? {
+		let mut current = self.get_current()?;
+			
+		if current == Token::Operator("(") {
+			// This might be the start of a tuple OR expression, so we gotta peek ahead whoops
+			current = self.lexer.borrow().peek_next().unwrap().1.clone();
+		}
+
+		match current {
 			Token::Identifier(typename) => {
 				if resolve_idents {
 					let mut found = false;
@@ -1420,113 +1473,119 @@ impl Parser {
 				current = self.get_next()?;
 			}
 
-			if let Token::Identifier(id) = current {
-				typename = id;
-			} else {
-				return Err(self.err(CMNErrorCode::ExpectedIdentifier));
-			}
-
-			// Typename
-
-			if immediate_resolve {
-				let mut found = false;
-
-				if !typename.is_qualified() {
-					if let Some(b) = Basic::get_basic_type(typename.name()) {
-						result = Type::Basic(b);
-						found = true;
-					} else if &**typename.name() == "never" {
-						result = Type::Never;
-						found = true;
-					}
+			match current {
+				Token::Operator("(") => {
+					Ok(Type::Tuple(self.parse_tuple_type()?))
 				}
 
-				if !found {
-					self.namespace
-						.with_item(&typename, &self.current_scope, |item, id| {
-							if let NamespaceItem::Type(t) = &item.0 {
-								result = Type::TypeRef(ItemRef::Resolved(TypeRef {
-									def: Arc::downgrade(t),
-									name: id.clone(),
-									args: vec![],
-								}));
+				Token::Identifier(id) => {
+					typename = id;
+					// Typename
+
+					if immediate_resolve {
+						let mut found = false;
+
+						if !typename.is_qualified() {
+							if let Some(b) = Basic::get_basic_type(typename.name()) {
+								result = Type::Basic(b);
+								found = true;
+							} else if &**typename.name() == "never" {
+								result = Type::Never;
 								found = true;
 							}
+						}
+
+						if !found {
+							self.namespace
+								.with_item(&typename, &self.current_scope, |item, id| {
+									if let NamespaceItem::Type(t) = &item.0 {
+										result = Type::TypeRef(ItemRef::Resolved(TypeRef {
+											def: Arc::downgrade(t),
+											name: id.clone(),
+											args: vec![],
+										}));
+										found = true;
+									}
+								});
+						}
+
+						if !found {
+							return Err(self.err(CMNErrorCode::UnresolvedTypename(typename.to_string())));
+						}
+					} else {
+						result = Type::TypeRef(ItemRef::Unresolved {
+							name: typename,
+							scope: self.current_scope.clone(),
 						});
-				}
+					}
 
-				if !found {
-					return Err(self.err(CMNErrorCode::UnresolvedTypename(typename.to_string())));
-				}
-			} else {
-				result = Type::TypeRef(ItemRef::Unresolved {
-					name: typename,
-					scope: self.current_scope.clone(),
-				});
-			}
+					let mut next = self.get_next()?;
 
-			let mut next = self.get_next()?;
-
-			match next {
-				Token::Operator(op) => {
-					match op {
-						"*" => {
-							while token_compare(&next, "*") {
-								result = Type::Pointer(Box::new(result));
-								next = self.get_next()?;
-							}
-						}
-
-						"&" => {
-							result = Type::Reference(Box::new(result));
-							self.get_next()?;
-						}
-
-						"[" => {
-							self.get_next()?;
-							let const_expr = self.parse_expression()?;
-
-							if self.get_current()? != Token::Operator("]") {
-								return Err(self.err(CMNErrorCode::UnexpectedToken));
-							}
-
-							result = Type::Array(
-								Box::new(result),
-								Arc::new(RwLock::new(vec![ConstExpr::Expr(const_expr)])),
-							);
-
-							self.get_next()?;
-						}
-
-						"<" => {
-							if let Type::TypeRef(ItemRef::Resolved(TypeRef { def, args, .. })) =
-								&mut result
-							{
-								let def = def.upgrade().unwrap();
-								let TypeDef::Algebraic(agg) = &*def.read().unwrap() else { panic!() };
-
-								let type_args = self.parse_type_argument_list()?;
-
-								for i in 0..type_args.len() {
-									let name = agg.params[i].0.clone(); // TODO: Real error handling
-									args.push((name, type_args[i].clone()));
+					match next {
+						Token::Operator(op) => {
+							match op {
+								"*" => {
+									while token_compare(&next, "*") {
+										result = Type::Pointer(Box::new(result));
+										next = self.get_next()?;
+									}
 								}
-							} else {
-								panic!("can't apply type parameters to this type of Type!") // TODO: Real error handling
+
+								"&" => {
+									result = Type::Reference(Box::new(result));
+									self.get_next()?;
+								}
+
+								"[" => {
+									self.get_next()?;
+									let const_expr = self.parse_expression()?;
+
+									if self.get_current()? != Token::Operator("]") {
+										return Err(self.err(CMNErrorCode::UnexpectedToken));
+									}
+
+									result = Type::Array(
+										Box::new(result),
+										Arc::new(RwLock::new(vec![ConstExpr::Expr(const_expr)])),
+									);
+
+									self.get_next()?;
+								}
+
+								"<" => {
+									if let Type::TypeRef(ItemRef::Resolved(TypeRef { def, args, .. })) =
+										&mut result
+									{
+										let def = def.upgrade().unwrap();
+										let TypeDef::Algebraic(agg) = &*def.read().unwrap() else { panic!() };
+
+										let type_args = self.parse_type_argument_list()?;
+
+										for i in 0..type_args.len() {
+											let name = agg.params[i].0.clone(); // TODO: Real error handling
+											args.push((name, type_args[i].clone()));
+										}
+									} else {
+										panic!("can't apply type parameters to this type of Type!") // TODO: Real error handling
+									}
+								}
+
+								_ => {
+									//
+									return Ok(result);
+								}
 							}
 						}
-
 						_ => {
-							//
 							return Ok(result);
 						}
 					}
+
+					Ok(result)
 				}
-				_ => {
-					return Ok(result);
-				}
+
+				_ => Err(self.err(CMNErrorCode::UnexpectedToken))
 			}
-			Ok(result)
 		} else {
 			Err(self.err(CMNErrorCode::ExpectedIdentifier))
 		}
@@ -1682,6 +1741,76 @@ impl Parser {
 
 		// consume closing angle bracket
 		self.get_next()?;
+
+		Ok(result)
+	}
+
+
+	fn parse_tuple_type(&self) -> ParseResult<AlgebraicDef> {
+		let mut result = AlgebraicDef::new();
+		let mut types = vec![];
+
+		if self.get_current()? != Token::Operator("(") {
+			return Err(self.err(CMNErrorCode::UnexpectedToken));
+		}
+
+		let mut next = self.get_next()?;
+		
+		enum TupleKind {
+			Unknown,
+			Product,
+			Sum
+		}
+
+		let mut kind = TupleKind::Unknown;
+
+		while next != Token::Operator(")") {
+			types.push(self.parse_type(false)?);
+			
+			match self.get_current()? {
+				
+				Token::Other(',') => {
+					// Check if tuple kind is consistent
+					if matches!(kind, TupleKind::Sum) {
+						return Err(self.err(CMNErrorCode::UnexpectedToken));
+					}
+					
+					kind = TupleKind::Product;
+				}
+
+				Token::Operator("|") => {
+					// Ditto
+					if matches!(kind, TupleKind::Product) {
+						return Err(self.err(CMNErrorCode::UnexpectedToken));
+					}
+
+					kind = TupleKind::Sum;
+				}
+
+				Token::Operator(")") => {
+					self.get_next()?;
+					break
+				}
+
+				_ => {
+					return Err(self.err(CMNErrorCode::UnexpectedToken));
+				}
+			}
+
+			next = self.get_next()?;
+		}
+
+		match kind {
+			TupleKind::Product | TupleKind::Unknown => {
+				for (i, ty) in types.into_iter().enumerate() { 
+					result.members.push((i.to_string().into(), ty, Visibility::Public))
+				}
+			}
+
+			TupleKind::Sum => {
+				todo!()
+			}
+		}
 
 		Ok(result)
 	}

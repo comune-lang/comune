@@ -175,19 +175,9 @@ impl CIRModuleBuilder {
 					let mut members = vec![];
 					let mut members_map = HashMap::new();
 
-					for item in &alg.items {
-						match &item.1 .0 {
-							NamespaceItem::Variable(ty, _) => {
-								members_map.insert(item.0.clone(), members.len());
-								members.push(self.convert_type(&ty));
-							}
-
-							NamespaceItem::Type(_ty) => {
-								todo!()
-							}
-
-							_ => panic!(),
-						}
+					for (name, ty, _) in &alg.members {
+						members_map.insert(name.clone(), members.len());
+						members.push(self.convert_type(&ty));
 					}
 
 					// TODO: Variant mapping

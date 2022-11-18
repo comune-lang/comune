@@ -18,7 +18,7 @@ use self::{
 	expression::{Atom, Expr, NodeData, Operator},
 	namespace::{Identifier, ItemRef, Name, Namespace, NamespaceASTElem, NamespaceItem},
 	statement::Stmt,
-	types::{FnDef, TypeParamList, TypeRef},
+	types::{FnDef, TypeParamList, TypeRef, AlgebraicDef},
 };
 
 pub mod controlflow;
@@ -295,60 +295,67 @@ pub fn resolve_type(
 			}
 		}
 
+		Type::Tuple(agg) => resolve_algebraic_def(agg, &vec![], namespace, generics),
+
 		Type::TypeRef { .. } | Type::Basic(_) | Type::TypeParam(_) | Type::Never => Ok(()),
 	}
 }
 
+pub fn resolve_algebraic_def(
+	agg: &mut AlgebraicDef,
+	attributes: &[Attribute],
+	namespace: &Namespace,
+	base_generics: &TypeParamList,
+) -> ParseResult<()> {
+	let mut generics = base_generics.clone();
+	generics.extend(agg.params.clone());
+
+	for (_, variant) in &mut agg.variants {
+		resolve_algebraic_def(variant, attributes, namespace, base_generics)?;
+	}
+
+	for (_, ty, _) in &mut agg.members {
+		resolve_type(ty, namespace, &generics)?;
+	}
+
+	if let Some(layout) = get_attribute(attributes, "layout") {
+		if layout.args.len() != 1 {
+			return Err(CMNError::new(CMNErrorCode::ParamCountMismatch {
+				expected: 1,
+				got: layout.args.len(),
+			}));
+		}
+		if layout.args[0].len() != 1 {
+			return Err(CMNError::new(CMNErrorCode::ParamCountMismatch {
+				expected: 1,
+				got: layout.args[0].len(),
+			}));
+		}
+
+		if let Token::Identifier(layout_name) = &layout.args[0][0] {
+			agg.layout = match &**layout_name.expect_scopeless()? {
+				"declared" => types::DataLayout::Declared,
+				"optimized" => types::DataLayout::Optimized,
+				"packed" => types::DataLayout::Packed,
+				_ => return Err(CMNError::new(CMNErrorCode::UnexpectedToken)),
+			}
+		}
+	}
+
+	Ok(())
+}
+
 pub fn resolve_type_def(
 	ty: &mut TypeDef,
-	attributes: &Vec<Attribute>,
+	attributes: &[Attribute],
 	namespace: &Namespace,
 	base_generics: &TypeParamList,
 ) -> ParseResult<()> {
 	match ty {
-		TypeDef::Algebraic(agg) => {
-			let mut generics = base_generics.clone();
-			generics.extend(agg.params.clone());
-
-			for item in &mut agg.items {
-				match &mut item.1 .0 {
-					NamespaceItem::Variable(t, _) => resolve_type(t, namespace, &generics)?,
-					NamespaceItem::Type(t) => {
-						resolve_type_def(&mut t.write().unwrap(), &vec![], namespace, &generics)?
-					}
-					_ => (),
-				}
-			}
-
-			if let Some(layout) = get_attribute(attributes, "layout") {
-				if layout.args.len() != 1 {
-					return Err(CMNError::new(CMNErrorCode::ParamCountMismatch {
-						expected: 1,
-						got: layout.args.len(),
-					}));
-				}
-				if layout.args[0].len() != 1 {
-					return Err(CMNError::new(CMNErrorCode::ParamCountMismatch {
-						expected: 1,
-						got: layout.args[0].len(),
-					}));
-				}
-
-				if let Token::Identifier(layout_name) = &layout.args[0][0] {
-					agg.layout = match &**layout_name.expect_scopeless()? {
-						"declared" => types::DataLayout::Declared,
-						"optimized" => types::DataLayout::Optimized,
-						"packed" => types::DataLayout::Packed,
-						_ => return Err(CMNError::new(CMNErrorCode::UnexpectedToken)),
-					}
-				}
-			}
-		}
+		TypeDef::Algebraic(agg) => resolve_algebraic_def(agg, attributes, namespace, base_generics),
 
 		_ => todo!(),
 	}
-
-	Ok(())
 }
 
 pub fn resolve_namespace_types(namespace: &Namespace) -> ParseResult<()> {
@@ -388,12 +395,9 @@ pub fn check_cyclical_deps(
 	parent_types: &mut Vec<Arc<RwLock<TypeDef>>>,
 ) -> ParseResult<()> {
 	if let TypeDef::Algebraic(agg) = &*ty.as_ref().read().unwrap() {
-		for member in agg.items.iter() {
-			match &member.1 .0 {
-				NamespaceItem::Variable(
-					Type::TypeRef(ItemRef::Resolved(TypeRef { def: ref_t, .. })),
-					_,
-				) => {
+		for member in agg.members.iter() {
+			match &member.1 {
+				Type::TypeRef(ItemRef::Resolved(TypeRef { def: ref_t, .. })) => {
 					if parent_types
 						.iter()
 						.any(|elem| Arc::ptr_eq(elem, &ref_t.upgrade().unwrap()))
@@ -403,12 +407,6 @@ pub fn check_cyclical_deps(
 
 					parent_types.push(ty.clone());
 					check_cyclical_deps(&ref_t.upgrade().unwrap(), parent_types)?;
-					parent_types.pop();
-				}
-
-				NamespaceItem::Type(t) => {
-					parent_types.push(ty.clone());
-					check_cyclical_deps(t, parent_types)?;
 					parent_types.pop();
 				}
 
@@ -538,9 +536,6 @@ impl Expr {
 					_ => {
 						let first_t = lhs.validate(scope)?;
 						let second_t = rhs.validate(scope)?;
-
-						//lhs.get_node_data_mut().ty = Some(first_t.clone());
-						//rhs.get_node_data_mut().ty = Some(second_t.clone());
 
 						if first_t != second_t {
 							// Try to coerce one to the other
