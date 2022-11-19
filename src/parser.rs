@@ -12,7 +12,8 @@ use crate::semantic::namespace::{Identifier, ItemRef, Namespace, NamespaceASTEle
 use crate::semantic::statement::Stmt;
 use crate::semantic::traits::{TraitDef, TraitImpl};
 use crate::semantic::types::{
-	AlgebraicDef, Basic, FnDef, FnParamList, Type, TypeDef, TypeParamList, TypeRef, Visibility, TupleType,
+	AlgebraicDef, Basic, FnDef, FnParamList, TupleKind, Type, TypeDef, TypeParamList, TypeRef,
+	Visibility,
 };
 use crate::semantic::{Attribute, TokenData};
 
@@ -154,24 +155,14 @@ impl Parser {
 					return Err(self.err(CMNErrorCode::UnexpectedEOF));
 				}
 
-				Token::Other(tk) => {
-					match tk {
-						';' => {
-							self.get_next()?;
-						}
+				Token::Other(';') => {
+					self.get_next()?;
+				}
 
-						'}' => return Ok(()),
-
-						'@' => {
-							// Parse attributes
-							while token_compare(&self.get_current()?, "@") {
-								current_attributes.push(self.parse_attribute()?);
-							}
-						}
-
-						_ => {
-							return Err(self.err(CMNErrorCode::UnexpectedToken));
-						}
+				Token::Other('@') => {
+					// Parse attributes
+					while token_compare(&self.get_current()?, "@") {
+						current_attributes.push(self.parse_attribute()?);
 					}
 				}
 
@@ -180,7 +171,7 @@ impl Parser {
 						"enum" => {
 							let mut aggregate = AlgebraicDef::new();
 							let Token::Identifier(name) = self.get_next()? else { return Err(self.err(CMNErrorCode::ExpectedIdentifier)) };
-							
+
 							let mut next = self.get_next()?;
 
 							if token_compare(&next, "<") {
@@ -193,14 +184,14 @@ impl Parser {
 							}
 
 							next = self.get_next()?; // Consume brace
-							
+
 							while !token_compare(&next, "}") {
 								let Token::Identifier(variant_name) = next else { return Err(self.err(CMNErrorCode::UnexpectedToken)) };
 								let variant_name = variant_name.expect_scopeless()?.clone();
 
 								self.get_next()?;
 
-								let tuple = self.parse_tuple_type()?;
+								let tuple = self.parse_tuple_type(false)?;
 								//aggregate.variants.push((variant_name, tuple));
 
 								next = self.get_current()?;
@@ -210,26 +201,23 @@ impl Parser {
 
 									Token::Other('}') => break,
 
-									_ => return Err(self.err(CMNErrorCode::UnexpectedToken))
+									_ => return Err(self.err(CMNErrorCode::UnexpectedToken)),
 								}
 							}
-							
+
 							self.get_next()?; // Consume closing brace
 
 							let aggregate = TypeDef::Algebraic(aggregate);
 
 							self.namespace.children.insert(
-								Identifier::from_parent(
-									scope,
-									name.expect_scopeless()?.clone(),
-								),
+								Identifier::from_parent(scope, name.expect_scopeless()?.clone()),
 								(
 									NamespaceItem::Type(Arc::new(RwLock::new(aggregate))),
 									current_attributes,
 									None,
 								),
 							);
-							
+
 							current_attributes = vec![];
 						}
 
@@ -238,7 +226,7 @@ impl Parser {
 							let mut current_visibility = Visibility::Public;
 							let mut aggregate = AlgebraicDef::new();
 							let Token::Identifier(name) = self.get_next()? else { return Err(self.err(CMNErrorCode::ExpectedIdentifier)) };
-							
+
 							let mut next = self.get_next()?;
 
 							if token_compare(&next, "<") {
@@ -302,10 +290,7 @@ impl Parser {
 							let aggregate = TypeDef::Algebraic(aggregate);
 
 							self.namespace.children.insert(
-								Identifier::from_parent(
-									scope,
-									name.expect_scopeless()?.clone(),
-								),
+								Identifier::from_parent(scope, name.expect_scopeless()?.clone()),
 								(
 									NamespaceItem::Type(Arc::new(RwLock::new(aggregate))),
 									current_attributes,
@@ -573,7 +558,7 @@ impl Parser {
 					}
 				}
 
-				Token::Identifier(_) => {
+				_ => {
 					// Parse declaration/definition
 					let result = self.parse_namespace_declaration()?;
 
@@ -587,11 +572,6 @@ impl Parser {
 					};
 
 					current_attributes = vec![];
-				}
-
-				_ => {
-					// Other types of tokens (literals etc) not valid at this point
-					return Err(self.err(CMNErrorCode::UnexpectedToken));
 				}
 			}
 
@@ -931,7 +911,7 @@ impl Parser {
 					let end_index = self.get_current_start_index();
 					let meta = (begin_lhs, end_index - begin_lhs);
 
-					lhs = Expr::create_cast(lhs, None, goal_t, NodeData { ty: None, tk: meta });
+					lhs = Expr::create_cast(lhs, goal_t, NodeData { ty: None, tk: meta });
 				}
 
 				Operator::PostInc | Operator::PostDec => {
@@ -1352,7 +1332,7 @@ impl Parser {
 	// In ambiguous contexts (i.e. function blocks), `resolve_idents` enables basic name resolution
 	fn is_at_type_token(&self, resolve_idents: bool) -> ParseResult<bool> {
 		let mut current = self.get_current()?;
-			
+
 		if current == Token::Operator("(") {
 			// This might be the start of a tuple OR expression, so we gotta peek ahead whoops
 			current = self.lexer.borrow().peek_next().unwrap().1.clone();
@@ -1475,7 +1455,8 @@ impl Parser {
 
 			match current {
 				Token::Operator("(") => {
-					Ok(Type::Tuple(self.parse_tuple_type()?))
+					let (kind, types) = self.parse_tuple_type(immediate_resolve)?;
+					Ok(Type::Tuple(kind, types))
 				}
 
 				Token::Identifier(id) => {
@@ -1510,7 +1491,9 @@ impl Parser {
 						}
 
 						if !found {
-							return Err(self.err(CMNErrorCode::UnresolvedTypename(typename.to_string())));
+							return Err(
+								self.err(CMNErrorCode::UnresolvedTypename(typename.to_string()))
+							);
 						}
 					} else {
 						result = Type::TypeRef(ItemRef::Unresolved {
@@ -1553,8 +1536,11 @@ impl Parser {
 								}
 
 								"<" => {
-									if let Type::TypeRef(ItemRef::Resolved(TypeRef { def, args, .. })) =
-										&mut result
+									if let Type::TypeRef(ItemRef::Resolved(TypeRef {
+										def,
+										args,
+										..
+									})) = &mut result
 									{
 										let def = def.upgrade().unwrap();
 										let TypeDef::Algebraic(agg) = &*def.read().unwrap() else { panic!() };
@@ -1584,7 +1570,7 @@ impl Parser {
 					Ok(result)
 				}
 
-				_ => Err(self.err(CMNErrorCode::UnexpectedToken))
+				_ => Err(self.err(CMNErrorCode::UnexpectedToken)),
 			}
 		} else {
 			Err(self.err(CMNErrorCode::ExpectedIdentifier))
@@ -1745,8 +1731,7 @@ impl Parser {
 		Ok(result)
 	}
 
-
-	fn parse_tuple_type(&self) -> ParseResult<TupleType> {
+	fn parse_tuple_type(&self, immediate_resolve: bool) -> ParseResult<(TupleKind, Vec<Type>)> {
 		let mut types = vec![];
 
 		if self.get_current()? != Token::Operator("(") {
@@ -1754,41 +1739,34 @@ impl Parser {
 		}
 
 		let mut next = self.get_next()?;
-		
-		enum TupleKind {
-			Unknown,
-			Product,
-			Sum
-		}
 
-		let mut kind = TupleKind::Unknown;
+		let mut kind = None;
 
 		while next != Token::Operator(")") {
-			types.push(self.parse_type(false)?);
-			
+			types.push(self.parse_type(immediate_resolve)?);
+
 			match self.get_current()? {
-				
 				Token::Other(',') => {
 					// Check if tuple kind is consistent
-					if matches!(kind, TupleKind::Sum) {
+					if matches!(kind, Some(TupleKind::Sum)) {
 						return Err(self.err(CMNErrorCode::UnexpectedToken));
 					}
-					
-					kind = TupleKind::Product;
+
+					kind = Some(TupleKind::Product);
 				}
 
 				Token::Operator("|") => {
 					// Ditto
-					if matches!(kind, TupleKind::Product) {
+					if matches!(kind, Some(TupleKind::Product)) {
 						return Err(self.err(CMNErrorCode::UnexpectedToken));
 					}
 
-					kind = TupleKind::Sum;
+					kind = Some(TupleKind::Sum);
 				}
 
 				Token::Operator(")") => {
 					self.get_next()?;
-					break
+					break;
 				}
 
 				_ => {
@@ -1800,13 +1778,9 @@ impl Parser {
 		}
 
 		match kind {
-			TupleKind::Product | TupleKind::Unknown => {
-				Ok(TupleType::Product(types))
-			}
+			Some(kind) => Ok((kind, types)),
 
-			TupleKind::Sum => {
-				Ok(TupleType::Sum(types))
-			}
+			None => Ok((TupleKind::Product, types)),
 		}
 	}
 }

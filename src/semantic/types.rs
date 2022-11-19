@@ -20,7 +20,7 @@ pub enum Type {
 	Array(BoxedType, Arc<RwLock<Vec<ConstExpr>>>), // N-dimensional array with constant expression for size
 	TypeRef(ItemRef<TypeRef>),                     // Reference to user-defined type
 	TypeParam(usize),                              // Reference to an in-scope type parameter
-	Tuple(TupleType),
+	Tuple(TupleKind, Vec<Type>),                   // Sum/product tuple
 	Never, // Return type of a function that never returns, coerces to anything
 }
 
@@ -37,12 +37,17 @@ pub struct FnDef {
 	pub type_params: TypeParamList,
 }
 
-#[derive(Debug, Clone, Hash)]
-pub enum TupleType {
-	Product(Vec<Type>),
-	Sum(Vec<Type>),
-}
+//#[derive(Debug, Clone, Hash)]
+//pub enum TupleType {
+//	Product(Vec<Type>),
+//	Sum(Vec<Type>),
+//}
 
+#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
+pub enum TupleKind {
+	Product,
+	Sum,
+}
 // The internal representation of algebraic types, like structs, enums, and (shocker) struct enums
 //
 // Algebraics (strums?) can contain member variables, inner type aliases, variants (aka subtype definitions), etc...
@@ -271,7 +276,14 @@ impl Type {
 			Type::TypeRef(ty) => Type::TypeRef(ty.clone()),
 			Type::TypeParam(param) => type_args[*param].1.clone(),
 			Type::Never => Type::Never,
-			Type::Tuple(alg) => todo!(),
+
+			Type::Tuple(kind, types) => Type::Tuple(
+				*kind,
+				types
+					.iter()
+					.map(|ty| ty.get_concrete_type(type_args))
+					.collect(),
+			),
 		}
 	}
 
@@ -296,10 +308,27 @@ impl Type {
 			false
 		}
 	}
+
 	// Convenience
 	pub fn is_numeric(&self) -> bool {
 		if let Type::Basic(b) = self {
 			b.is_numeric()
+		} else {
+			false
+		}
+	}
+
+	pub fn is_integral(&self) -> bool {
+		if let Type::Basic(b) = self {
+			b.is_integral()
+		} else {
+			false
+		}
+	}
+
+	pub fn is_floating_point(&self) -> bool {
+		if let Type::Basic(b) = self {
+			b.is_floating_point()
 		} else {
 			false
 		}
@@ -329,6 +358,7 @@ impl PartialEq for Type {
 			(Self::TypeRef(l0), Self::TypeRef(r0)) => l0 == r0,
 			(Self::TypeParam(l0), Self::TypeParam(r0)) => l0 == r0,
 			(Self::Array(l0, _l1), Self::Array(r0, _r1)) => l0 == r0 && todo!(),
+			(Self::Tuple(l0, l1), Self::Tuple(r0, r1)) => l0 == r0 && l1 == r1,
 			(Self::Never, Self::Never) => true,
 			_ => false,
 		}
@@ -384,8 +414,11 @@ impl Hash for Type {
 			Type::TypeParam(name) => name.hash(state),
 
 			Type::Never => "!".hash(state),
-			
-			Type::Tuple(alg) => alg.hash(state),
+
+			Type::Tuple(kind, types) => {
+				kind.hash(state);
+				types.hash(state)
+			}
 		}
 	}
 }
@@ -425,7 +458,25 @@ impl Display for Type {
 
 			Type::Never => write!(f, "never"),
 
-			Type::Tuple(alg) => write!(f, "(tuple)"),
+			Type::Tuple(kind, types) => {
+				if types.is_empty() {
+					write!(f, "()")
+				} else {
+					let mut iter = types.iter();
+
+					write!(f, "({}", iter.next().unwrap())?;
+
+					for ty in iter {
+						if matches!(kind, TupleKind::Product) {
+							write!(f, ", {ty}")?;
+						} else {
+							write!(f, " | {ty}")?;
+						}
+					}
+
+					write!(f, ")")
+				}
+			}
 		}
 	}
 }
@@ -493,7 +544,7 @@ impl std::fmt::Debug for Type {
 			}
 			Type::TypeParam(arg0) => f.debug_tuple("TypeParam").field(arg0).finish(),
 			Type::Never => f.debug_tuple("Never").finish(),
-			Type::Tuple(alg) => f.debug_tuple("Tuple").field(alg).finish()
+			Type::Tuple(kind, types) => f.debug_tuple("Tuple").field(kind).field(types).finish(),
 		}
 	}
 }

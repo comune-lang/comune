@@ -5,7 +5,7 @@ use std::{collections::HashMap, hash::Hash};
 use crate::semantic::{
 	expression::Operator,
 	namespace::{Identifier, Name},
-	types::{Basic, DataLayout, TypeParamList},
+	types::{Basic, DataLayout, TupleKind, TypeParamList},
 	Attribute, TokenData,
 };
 
@@ -120,6 +120,7 @@ pub enum CIRType {
 	Reference(Box<CIRType>),
 	TypeRef(TypeName, Vec<CIRType>), // TypeRef with zero or more type parameters
 	TypeParam(TypeParamIndex),
+	Tuple(TupleKind, Vec<CIRType>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

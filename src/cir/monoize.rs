@@ -344,6 +344,12 @@ impl CIRModule {
 			CIRType::TypeParam(idx) => {
 				*ty = param_map[*idx].clone();
 			}
+
+			CIRType::Tuple(_, tuple_types) => {
+				for ty in tuple_types {
+					Self::monoize_type(types, ty, param_map, instances)
+				}
+			}
 		}
 	}
 

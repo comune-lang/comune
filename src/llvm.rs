@@ -24,7 +24,7 @@ use crate::{
 	semantic::{
 		expression::Operator,
 		namespace::Identifier,
-		types::{Basic, DataLayout},
+		types::{Basic, DataLayout, TupleKind},
 	},
 };
 
@@ -340,153 +340,195 @@ impl<'ctx> LLVMBackend<'ctx> {
 			}
 
 			RValue::Cast { from, to, val } => {
-				match from {
-					CIRType::Basic(b) => {
-						if from.is_integral() || from.is_floating_point() {
-							let val = self.generate_operand(from, val).unwrap();
+				match to {
+					CIRType::Tuple(TupleKind::Sum, types) => {
+						let val = self.generate_operand(from, val).unwrap();
 
-							match val {
-								BasicValueEnum::IntValue(i) => match &to {
-									CIRType::Basic(Basic::BOOL) => {
-										return Some(
-											self.builder
-												.build_int_compare(
-													IntPredicate::NE,
-													i,
-													i.get_type().const_zero(),
-													"boolcast",
-												)
-												.as_basic_value_enum(),
-										)
-									}
+						let llvm_ty = self.get_llvm_type(to);
 
-									_ => match self.get_llvm_type(to) {
-										AnyTypeEnum::IntType(t) => {
+						let target_data = get_target_machine().get_target_data();
+						let types_mapped: Vec<_> = types
+							.iter()
+							.map(|ty| self.get_llvm_type(ty))
+							.collect();
+		
+						let data_size = types_mapped
+							.iter()
+							.map(|ty| target_data.get_store_size(ty))
+							.max()
+							.unwrap();
+
+						let idx = types.iter().position(|ty| ty == from).unwrap();
+						
+						let result = llvm_ty.into_struct_type().const_named_struct(
+							&[
+								self.context.i32_type().const_int(idx as u64, false).as_basic_value_enum(),
+								self.context.i8_type().array_type(data_size as u32).get_undef().as_basic_value_enum()
+							]);
+						
+						let tmp_alloca = self.builder.build_alloca(llvm_ty.into_struct_type(), "sumtmp");
+						
+						self.builder.build_store(tmp_alloca, result);
+
+						let ptr = self.builder.build_pointer_cast(
+							self.builder.build_struct_gep(tmp_alloca, 1, "sumgep").unwrap(), 
+							Self::to_basic_type(self.get_llvm_type(from)).ptr_type(AddressSpace::Generic), 
+							"sumcast"
+						);
+
+						self.builder.build_store(ptr, val);
+
+						return Some(self.builder.build_load(tmp_alloca, "sumload"));
+					}
+
+					_ => match from {
+						CIRType::Basic(b) => {
+							if from.is_integral() || from.is_floating_point() {
+								let val = self.generate_operand(from, val).unwrap();
+
+								match val {
+									BasicValueEnum::IntValue(i) => match &to {
+										CIRType::Basic(Basic::BOOL) => {
 											return Some(
 												self.builder
-													.build_int_cast(i, t, "icast")
+													.build_int_compare(
+														IntPredicate::NE,
+														i,
+														i.get_type().const_zero(),
+														"boolcast",
+													)
 													.as_basic_value_enum(),
 											)
 										}
 
-										AnyTypeEnum::FloatType(t) => {
-											if from.is_signed() {
+										_ => match self.get_llvm_type(to) {
+											AnyTypeEnum::IntType(t) => {
 												return Some(
 													self.builder
-														.build_signed_int_to_float(i, t, "fcast")
+														.build_int_cast(i, t, "icast")
+														.as_basic_value_enum(),
+												)
+											}
+
+											AnyTypeEnum::FloatType(t) => {
+												if from.is_signed() {
+													return Some(
+														self.builder
+															.build_signed_int_to_float(i, t, "fcast")
+															.as_basic_value_enum(),
+													);
+												} else {
+													return Some(
+														self.builder
+															.build_unsigned_int_to_float(i, t, "fcast")
+															.as_basic_value_enum(),
+													);
+												}
+											}
+
+											_ => panic!()
+										},
+									},
+
+									BasicValueEnum::FloatValue(f) => match self.get_llvm_type(to) {
+										AnyTypeEnum::FloatType(t) => {
+											return Some(
+												self.builder
+													.build_float_cast(f, t, "fcast")
+													.as_basic_value_enum(),
+											)
+										}
+
+										AnyTypeEnum::IntType(t) => {
+											if to.is_signed() {
+												return Some(
+													self.builder
+														.build_float_to_signed_int(f, t, "icast")
 														.as_basic_value_enum(),
 												);
 											} else {
 												return Some(
 													self.builder
-														.build_unsigned_int_to_float(i, t, "fcast")
+														.build_float_to_unsigned_int(f, t, "icast")
 														.as_basic_value_enum(),
 												);
 											}
 										}
 
-										_ => panic!(),
-									},
-								},
-
-								BasicValueEnum::FloatValue(f) => match self.get_llvm_type(to) {
-									AnyTypeEnum::FloatType(t) => {
-										return Some(
-											self.builder
-												.build_float_cast(f, t, "fcast")
-												.as_basic_value_enum(),
-										)
+										_ => panic!()
 									}
 
-									AnyTypeEnum::IntType(t) => {
-										if to.is_signed() {
-											return Some(
-												self.builder
-													.build_float_to_signed_int(f, t, "icast")
-													.as_basic_value_enum(),
-											);
-										} else {
-											return Some(
-												self.builder
-													.build_float_to_unsigned_int(f, t, "icast")
-													.as_basic_value_enum(),
-											);
-										}
-									}
+									_ => panic!()
+								}
+							} else {
+								// Not numeric, match other Basics
 
-									_ => panic!(),
-								},
+								match b {
+									Basic::STR => {
+										if let CIRType::Pointer(other_p) = &to {
+											if let CIRType::Basic(other_b) = **other_p {
+												if let Basic::CHAR = other_b {
+													// Cast from `str` to char*
+													let val = self.generate_operand(from, val).unwrap();
 
-								_ => panic!(),
-							}
-						} else {
-							// Not numeric, match other Basics
-
-							match b {
-								Basic::STR => {
-									if let CIRType::Pointer(other_p) = &to {
-										if let CIRType::Basic(other_b) = **other_p {
-											if let Basic::CHAR = other_b {
-												// Cast from `str` to char*
-												let val = self.generate_operand(from, val).unwrap();
-
-												match val {
-													BasicValueEnum::StructValue(struct_val) => {
-														let val_extracted = match self
-															.builder
-															.build_extract_value(
-																struct_val, 0, "cast",
-															)
-															.unwrap()
-														{
-															BasicValueEnum::PointerValue(p) => p,
-															_ => panic!(),
-														};
-
-														return Some(
-															self.builder
-																.build_pointer_cast(
-																	val_extracted,
-																	self.context
-																		.i8_type()
-																		.ptr_type(
-																			AddressSpace::Generic,
-																		),
-																	"charcast",
+													match val {
+														BasicValueEnum::StructValue(struct_val) => {
+															let val_extracted = match self
+																.builder
+																.build_extract_value(
+																	struct_val, 0, "cast",
 																)
-																.as_basic_value_enum(),
-														);
+																.unwrap()
+															{
+																BasicValueEnum::PointerValue(p) => p,
+																_ => panic!(),
+															};
+
+															return Some(
+																self.builder
+																	.build_pointer_cast(
+																		val_extracted,
+																		self.context
+																			.i8_type()
+																			.ptr_type(
+																				AddressSpace::Generic,
+																			),
+																		"charcast",
+																	)
+																	.as_basic_value_enum(),
+															);
+														}
+														_ => panic!(),
 													}
-													_ => panic!(),
 												}
 											}
 										}
+										panic!()
 									}
-									panic!()
+
+									Basic::BOOL => todo!(),
+
+									_ => todo!(),
 								}
-
-								Basic::BOOL => todo!(),
-
-								_ => todo!(),
 							}
 						}
-					}
 
-					CIRType::Pointer(_) => {
-						let val = self.generate_operand(from, val).unwrap();
-						let to_ir = self.get_llvm_type(to);
-						Some(
-							self.builder
-								.build_pointer_cast(
-									val.into_pointer_value(),
-									to_ir.into_pointer_type(),
-									"ptrcast",
-								)
-								.as_basic_value_enum(),
-						)
-					}
+						CIRType::Pointer(_) => {
+							let val = self.generate_operand(from, val).unwrap();
+							let to_ir = self.get_llvm_type(to);
+							Some(
+								self.builder
+									.build_pointer_cast(
+										val.into_pointer_value(),
+										to_ir.into_pointer_type(),
+										"ptrcast",
+									)
+									.as_basic_value_enum(),
+							)
+						}
 
-					_ => todo!(),
+						_ => todo!(),
+					}
 				}
 			}
 		}
@@ -742,6 +784,44 @@ impl<'ctx> LLVMBackend<'ctx> {
 			}
 
 			CIRType::TypeRef(idx, _) => self.type_map[idx].clone(),
+
+			CIRType::Tuple(kind, types) => {
+				let types_mapped: Vec<_> = types
+					.iter()
+					.map(|ty| Self::to_basic_type(self.get_llvm_type(ty)))
+					.collect();
+
+				match kind {
+					TupleKind::Product => self
+						.context
+						.struct_type(&types_mapped, false)
+						.as_any_type_enum(),
+
+					TupleKind::Sum => {
+						let discriminant = self.context.i32_type(); // TODO: Adapt to variant count
+						let target_data = get_target_machine().get_target_data();
+
+						let biggest_variant = types_mapped
+							.iter()
+							.map(|ty| target_data.get_store_size(ty))
+							.max()
+							.unwrap();
+
+						self.context
+							.struct_type(
+								&[
+									discriminant.as_basic_type_enum(),
+									self.context
+										.i8_type()
+										.array_type(biggest_variant as u32)
+										.as_basic_type_enum(),
+								],
+								false,
+							)
+							.as_any_type_enum()
+					}
+				}
+			}
 
 			CIRType::TypeParam(_) => panic!("unexpected TypeParam in codegen!"),
 		}

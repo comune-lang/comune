@@ -31,8 +31,8 @@ struct Vector<T> {
 	usize capacity;
 }
 
-(i32 | f64) whoKnows() {
-	return 32;
+(i32 | f32) who_knows(i32 cool) {
+	return cool * 2;
 }
 
 int main() {
@@ -71,6 +71,8 @@ int main() {
 	}
 
 	free(my_cool_generic.data as void*);
+
+	(i32 | f32) who_knows_result = who_knows(21);
 	
-	test.sum()
+	*(&who_knows_result as i32*)
 }

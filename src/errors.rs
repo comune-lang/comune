@@ -1,14 +1,15 @@
-use std::io::Write;
 use colored::Colorize;
+use std::io::Write;
 use std::{
 	ffi::OsString,
 	fmt::Display,
+	io,
 	sync::{
 		atomic::{AtomicU32, Ordering},
 		mpsc::{self, Sender},
 		Arc,
 	},
-	thread, io,
+	thread,
 };
 
 use backtrace::Backtrace;
@@ -287,14 +288,22 @@ pub fn spawn_logger(backtrace_on_error: bool) -> Sender<CMNMessageLog> {
 					// Print message
 					match msg {
 						CMNMessage::Error(_) => {
-							write!(out, "\n{}: {}", "error".bold().red(), msg.to_string().bold()).unwrap();
+							write!(
+								out,
+								"\n{}: {}",
+								"error".bold().red(),
+								msg.to_string().bold()
+							)
+							.unwrap();
 						}
 						CMNMessage::Warning(_) => {
-							write!(out, 
+							write!(
+								out,
 								"\n{}: {}",
 								"warning".bold().yellow(),
 								msg.to_string().bold()
-							).unwrap();
+							)
+							.unwrap();
 						}
 					}
 
@@ -307,18 +316,22 @@ pub fn spawn_logger(backtrace_on_error: bool) -> Sender<CMNMessageLog> {
 							length,
 							..
 						} => {
-							writeln!(out, 
+							writeln!(
+								out,
 								"{}",
 								format!(" in {}:{}:{}\n", filename, line + 1, column)
 									.bright_black()
-							).unwrap();
+							)
+							.unwrap();
 
 							// Print code snippet
-							writeln!(out, 
+							writeln!(
+								out,
 								"{} {}",
 								format!("{}\t{}", line + 1, "|").bright_black(),
 								line_text
-							).unwrap();
+							)
+							.unwrap();
 
 							// Print squiggle
 							write!(out, "\t{: <1$}", "", column + 1).unwrap();
@@ -326,7 +339,8 @@ pub fn spawn_logger(backtrace_on_error: bool) -> Sender<CMNMessageLog> {
 						}
 
 						CMNMessageLog::Plain { .. } => {
-							writeln!(out, "{}", format!(" in {}", filename,).bright_black()).unwrap();
+							writeln!(out, "{}", format!(" in {}", filename,).bright_black())
+								.unwrap();
 						}
 
 						_ => panic!(),

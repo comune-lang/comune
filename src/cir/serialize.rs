@@ -1,6 +1,9 @@
 use std::fmt::Display;
 
-use crate::{lexer, semantic::types::DataLayout};
+use crate::{
+	lexer,
+	semantic::types::{DataLayout, TupleKind},
+};
 
 use super::{
 	CIRFunction, CIRModule, CIRStmt, CIRType, CIRTypeDef, LValue, Operand, PlaceElem, RValue,
@@ -178,6 +181,28 @@ impl Display for CIRType {
 			CIRType::Reference(r) => write!(f, "{r}&"),
 			CIRType::TypeRef(name, _) => write!(f, "{name}"),
 			CIRType::TypeParam(idx) => write!(f, "<{idx}>"),
+
+			CIRType::Tuple(kind, types) => {
+				if types.is_empty() {
+					write!(f, "()")
+				} else {
+					let mut iter = types.iter();
+
+					write!(f, "({}", iter.next().unwrap())?;
+
+					if kind == &TupleKind::Product {
+						for ty in iter {
+							write!(f, ", {ty}")?;
+						}
+					} else {
+						for ty in iter {
+							write!(f, " | {ty}")?;
+						}
+					}
+
+					write!(f, ")")
+				}
+			}
 		}
 	}
 }

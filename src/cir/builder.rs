@@ -159,6 +159,11 @@ impl CIRModuleBuilder {
 				CIRType::Array(arr_ty_cir, dimensions)
 			}
 
+			Type::Tuple(kind, types) => CIRType::Tuple(
+				*kind,
+				types.iter().map(|ty| self.convert_type(ty)).collect(),
+			),
+
 			_ => todo!(),
 		}
 	}

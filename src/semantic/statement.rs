@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use crate::parser::AnalyzeResult;
+use crate::{parser::AnalyzeResult, errors::{CMNError, CMNErrorCode}};
 
 use super::{
 	expression::{Atom, Expr, NodeData},
@@ -26,12 +26,13 @@ impl Stmt {
 				let (binding_ty, binding_name) = names[0].clone();
 
 				if let Some(expr) = expr {
+					binding_ty.validate(scope)?;
 					expr.get_node_data_mut().ty = Some(binding_ty.clone());
 
 					let expr_ty = expr.validate(scope)?;
 
 					if expr_ty != binding_ty {
-						todo!()
+						return Err((CMNError::new(CMNErrorCode::AssignTypeMismatch { expr: expr_ty, to: binding_ty }), *tk))
 					}
 
 					scope.add_variable(binding_ty, binding_name);
