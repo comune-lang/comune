@@ -18,7 +18,7 @@ use self::{
 	expression::{Atom, Expr, NodeData, Operator},
 	namespace::{Identifier, ItemRef, Name, Namespace, NamespaceASTElem, NamespaceItem},
 	statement::Stmt,
-	types::{FnDef, TypeParamList, TypeRef, AlgebraicDef},
+	types::{FnDef, TypeParamList, TypeRef, AlgebraicDef, TupleType},
 };
 
 pub mod controlflow;
@@ -295,7 +295,15 @@ pub fn resolve_type(
 			}
 		}
 
-		Type::Tuple(agg) => resolve_algebraic_def(agg, &vec![], namespace, generics),
+		Type::Tuple(agg) => match agg {
+			TupleType::Product(types) | TupleType::Sum(types) => {
+				for ty in types {
+					resolve_type(ty, namespace, generics)?;
+				}
+
+				Ok(())
+			}
+		}
 
 		Type::TypeRef { .. } | Type::Basic(_) | Type::TypeParam(_) | Type::Never => Ok(()),
 	}

@@ -1,15 +1,28 @@
+use std::collections::HashSet;
 use std::fmt::Display;
 use std::hash::{Hash, Hasher};
 use std::ptr;
 use std::sync::{Arc, RwLock, Weak};
 
-use super::namespace::{Identifier, ItemRef, Name, NamespaceEntry, NamespaceItem};
+use super::namespace::{Identifier, ItemRef, Name};
 use super::traits::TraitRef;
 use crate::constexpr::ConstExpr;
 
 pub type BoxedType = Box<Type>;
 pub type TypeParam = Vec<ItemRef<TraitRef>>; // Generic type parameter, with trait bounds
 pub type TypeParamList = Vec<(Name, TypeParam)>;
+
+#[derive(Clone)]
+pub enum Type {
+	Basic(Basic),                                  // Fundamental type
+	Pointer(BoxedType),                            // Pointer-to-<BoxedType>
+	Reference(BoxedType),                          // Reference-to-<BoxedType>
+	Array(BoxedType, Arc<RwLock<Vec<ConstExpr>>>), // N-dimensional array with constant expression for size
+	TypeRef(ItemRef<TypeRef>),                     // Reference to user-defined type
+	TypeParam(usize),                              // Reference to an in-scope type parameter
+	Tuple(TupleType),
+	Never, // Return type of a function that never returns, coerces to anything
+}
 
 #[derive(Debug, Clone)]
 pub struct FnParamList {
@@ -24,6 +37,12 @@ pub struct FnDef {
 	pub type_params: TypeParamList,
 }
 
+#[derive(Debug, Clone, Hash)]
+pub enum TupleType {
+	Product(Vec<Type>),
+	Sum(Vec<Type>),
+}
+
 // The internal representation of algebraic types, like structs, enums, and (shocker) struct enums
 //
 // Algebraics (strums?) can contain member variables, inner type aliases, variants (aka subtype definitions), etc...
@@ -31,7 +50,6 @@ pub struct FnDef {
 // However, since declaration order *is* meaningful in strums, we store them as a Vec, rather than a HashMap
 #[derive(Debug, Clone)]
 pub struct AlgebraicDef {
-	//pub items: Vec<(Name, NamespaceEntry, Visibility)>,
 	pub members: Vec<(Name, Type, Visibility)>,
 	pub variants: Vec<(Name, AlgebraicDef)>,
 	pub layout: DataLayout,
@@ -48,22 +66,6 @@ pub enum Basic {
 	VOID,
 	STR,
 }
-
-// Don't mutate TypeDefs through TypeRef or so help me god
-unsafe impl Send for Type {}
-
-#[derive(Clone)]
-pub enum Type {
-	Basic(Basic),                                  // Fundamental type
-	Pointer(BoxedType),                            // Pointer-to-<BoxedType>
-	Reference(BoxedType),                          // Reference-to-<BoxedType>
-	Array(BoxedType, Arc<RwLock<Vec<ConstExpr>>>), // N-dimensional array with constant expression for size
-	TypeRef(ItemRef<TypeRef>),                     // Reference to user-defined type
-	TypeParam(usize),                              // Reference to an in-scope type parameter
-	Tuple(AlgebraicDef),
-	Never, // Return type of a function that never returns, coerces to anything
-}
-
 #[derive(Clone)]
 pub struct TypeRef {
 	pub def: Weak<RwLock<TypeDef>>,
@@ -91,6 +93,9 @@ pub enum DataLayout {
 	Packed,    // Layout is packed in declaration order with no padding (inner alignment is 1 byte)
 }
 
+// Don't mutate TypeDefs through TypeRef or so help me god
+unsafe impl Send for Type {}
+
 impl AlgebraicDef {
 	pub fn new() -> Self {
 		AlgebraicDef {
@@ -108,7 +113,7 @@ impl AlgebraicDef {
 	) -> Option<(usize, Type)> {
 		let mut index = 0;
 
-		for (member_name, ty, vis) in &self.members {
+		for (member_name, ty, _) in &self.members {
 			if member_name == name {
 				if let Some(type_args) = type_args {
 					return Some((index, ty.get_concrete_type(type_args)));
@@ -419,7 +424,7 @@ impl Display for Type {
 			Type::TypeParam(t) => write!(f, "<{t}>"),
 
 			Type::Never => write!(f, "never"),
-			
+
 			Type::Tuple(alg) => write!(f, "(tuple)"),
 		}
 	}

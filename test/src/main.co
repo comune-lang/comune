@@ -18,11 +18,6 @@ struct Test {
 	int b;
 }
 
-enum EnumTest {
-	VariantA(u8, u8, u8, u8),
-	VariantB(u16),
-}
-
 impl Test {
 	int sum(Test self) {
 		printf("This is a method call!\n\0");
@@ -34,6 +29,10 @@ struct Vector<T> {
 	T* data;
 	usize len;
 	usize capacity;
+}
+
+(i32 | f64) whoKnows() {
+	return 32;
 }
 
 int main() {

@@ -87,6 +87,9 @@ fn main() -> color_eyre::eyre::Result<()> {
 			)))
 			.unwrap();
 
+		// Block until the error logger is done writing, so we don't exit early
+		let _ = std::io::stdout().lock();
+
 		return Ok(());
 	}
 

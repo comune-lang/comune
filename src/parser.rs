@@ -12,7 +12,7 @@ use crate::semantic::namespace::{Identifier, ItemRef, Namespace, NamespaceASTEle
 use crate::semantic::statement::Stmt;
 use crate::semantic::traits::{TraitDef, TraitImpl};
 use crate::semantic::types::{
-	AlgebraicDef, Basic, FnDef, FnParamList, Type, TypeDef, TypeParamList, TypeRef, Visibility,
+	AlgebraicDef, Basic, FnDef, FnParamList, Type, TypeDef, TypeParamList, TypeRef, Visibility, TupleType,
 };
 use crate::semantic::{Attribute, TokenData};
 
@@ -201,7 +201,7 @@ impl Parser {
 								self.get_next()?;
 
 								let tuple = self.parse_tuple_type()?;
-								aggregate.variants.push((variant_name, tuple));
+								//aggregate.variants.push((variant_name, tuple));
 
 								next = self.get_current()?;
 
@@ -1746,8 +1746,7 @@ impl Parser {
 	}
 
 
-	fn parse_tuple_type(&self) -> ParseResult<AlgebraicDef> {
-		let mut result = AlgebraicDef::new();
+	fn parse_tuple_type(&self) -> ParseResult<TupleType> {
 		let mut types = vec![];
 
 		if self.get_current()? != Token::Operator("(") {
@@ -1802,16 +1801,12 @@ impl Parser {
 
 		match kind {
 			TupleKind::Product | TupleKind::Unknown => {
-				for (i, ty) in types.into_iter().enumerate() { 
-					result.members.push((i.to_string().into(), ty, Visibility::Public))
-				}
+				Ok(TupleType::Product(types))
 			}
 
 			TupleKind::Sum => {
-				todo!()
+				Ok(TupleType::Sum(types))
 			}
 		}
-
-		Ok(result)
 	}
 }

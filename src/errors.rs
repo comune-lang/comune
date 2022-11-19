@@ -1,3 +1,4 @@
+use std::io::Write;
 use colored::Colorize;
 use std::{
 	ffi::OsString,
@@ -7,7 +8,7 @@ use std::{
 		mpsc::{self, Sender},
 		Arc,
 	},
-	thread,
+	thread, io,
 };
 
 use backtrace::Backtrace;
@@ -281,17 +282,19 @@ pub fn spawn_logger(backtrace_on_error: bool) -> Sender<CMNMessageLog> {
 						_ => panic!(),
 					};
 
+					let mut out = io::stdout().lock();
+
 					// Print message
 					match msg {
 						CMNMessage::Error(_) => {
-							print!("\n{}: {}", "error".bold().red(), msg.to_string().bold());
+							write!(out, "\n{}: {}", "error".bold().red(), msg.to_string().bold()).unwrap();
 						}
 						CMNMessage::Warning(_) => {
-							print!(
+							write!(out, 
 								"\n{}: {}",
 								"warning".bold().yellow(),
 								msg.to_string().bold()
-							)
+							).unwrap();
 						}
 					}
 
@@ -304,26 +307,26 @@ pub fn spawn_logger(backtrace_on_error: bool) -> Sender<CMNMessageLog> {
 							length,
 							..
 						} => {
-							println!(
+							writeln!(out, 
 								"{}",
 								format!(" in {}:{}:{}\n", filename, line + 1, column)
 									.bright_black()
-							);
+							).unwrap();
 
 							// Print code snippet
-							println!(
+							writeln!(out, 
 								"{} {}",
 								format!("{}\t{}", line + 1, "|").bright_black(),
 								line_text
-							);
+							).unwrap();
 
 							// Print squiggle
-							print!("\t{: <1$}", "", column + 1);
-							println!("{:~<1$}", "", length);
+							write!(out, "\t{: <1$}", "", column + 1).unwrap();
+							writeln!(out, "{:~<1$}", "", length).unwrap();
 						}
 
 						CMNMessageLog::Plain { .. } => {
-							println!("{}", format!(" in {}", filename,).bright_black())
+							writeln!(out, "{}", format!(" in {}", filename,).bright_black()).unwrap();
 						}
 
 						_ => panic!(),
@@ -332,15 +335,16 @@ pub fn spawn_logger(backtrace_on_error: bool) -> Sender<CMNMessageLog> {
 					let notes = msg.get_notes();
 
 					for note in notes {
-						println!("{} {}\n", "note:".bold().italic(), note.1.italic());
+						writeln!(out, "{} {}\n", "note:".bold().italic(), note.1.italic()).unwrap();
 					}
 
 					// Print compiler backtrace
 					if let CMNMessage::Error(err) = &msg {
 						if backtrace_on_error {
-							println!("\ncompiler backtrace:\n\n{:?}", err.origin);
+							writeln!(out, "\ncompiler backtrace:\n\n{:?}", err.origin).unwrap();
 						}
 					}
+					out.flush().unwrap();
 				}
 
 				// All channels closed
