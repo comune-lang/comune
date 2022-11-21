@@ -24,6 +24,7 @@ use self::{
 pub mod controlflow;
 pub mod expression;
 pub mod namespace;
+pub mod pattern;
 pub mod statement;
 pub mod traits;
 pub mod types;

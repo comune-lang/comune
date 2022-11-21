@@ -6,16 +6,16 @@ use crate::constexpr::ConstExpr;
 use crate::errors::{CMNError, CMNErrorCode};
 use crate::lexer::{Lexer, Token};
 
-use crate::semantic::controlflow::ControlFlow;
-use crate::semantic::expression::{Atom, Expr, NodeData, Operator};
-use crate::semantic::namespace::{Identifier, ItemRef, Namespace, NamespaceASTElem, NamespaceItem};
-use crate::semantic::statement::Stmt;
-use crate::semantic::traits::{TraitDef, TraitImpl};
-use crate::semantic::types::{
+use crate::ast::controlflow::ControlFlow;
+use crate::ast::expression::{Atom, Expr, NodeData, Operator};
+use crate::ast::namespace::{Identifier, ItemRef, Namespace, NamespaceASTElem, NamespaceItem};
+use crate::ast::statement::Stmt;
+use crate::ast::traits::{TraitDef, TraitImpl};
+use crate::ast::types::{
 	AlgebraicDef, Basic, FnDef, FnParamList, TupleKind, Type, TypeDef, TypeParamList, TypeRef,
 	Visibility,
 };
-use crate::semantic::{Attribute, TokenData};
+use crate::ast::{Attribute, TokenData};
 
 // Convenience function that matches a &str against various token kinds
 fn token_compare(token: &Token, text: &str) -> bool {

@@ -19,7 +19,7 @@ use super::types::Type;
 use crate::{
 	cir::analyze::lifeline::LivenessState,
 	parser::Parser,
-	semantic::{expression::Operator, namespace::Identifier, TokenData},
+	ast::{expression::Operator, namespace::Identifier, TokenData},
 };
 
 lazy_static! {

@@ -21,7 +21,7 @@ use crate::{
 	cir::{
 		CIRFunction, CIRModule, CIRStmt, CIRType, CIRTypeDef, LValue, Operand, PlaceElem, RValue,
 	},
-	semantic::{
+	ast::{
 		expression::Operator,
 		namespace::Identifier,
 		types::{Basic, DataLayout, TupleKind},
@@ -358,12 +358,13 @@ impl<'ctx> LLVMBackend<'ctx> {
 							.max()
 							.unwrap();
 
+						let data_ty = self.context.i8_type().array_type(data_size as u32);
 						let idx = types.iter().position(|ty| ty == from).unwrap();
 						
 						let result = llvm_ty.into_struct_type().const_named_struct(
 							&[
 								self.context.i32_type().const_int(idx as u64, false).as_basic_value_enum(),
-								self.context.i8_type().array_type(data_size as u32).get_undef().as_basic_value_enum()
+								data_ty.get_undef().as_basic_value_enum()
 							]);
 						
 						let tmp_alloca = self.builder.build_alloca(llvm_ty.into_struct_type(), "sumtmp");

@@ -3,7 +3,7 @@ use std::{borrow::BorrowMut, collections::HashMap};
 use crate::{
 	constexpr::{ConstExpr, ConstValue},
 	modules::ModuleState,
-	semantic::{
+	ast::{
 		controlflow::ControlFlow,
 		expression::{Atom, Expr, Operator},
 		namespace::{Identifier, ItemRef, Name, Namespace, NamespaceASTElem, NamespaceItem},

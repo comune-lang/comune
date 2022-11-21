@@ -7,7 +7,7 @@ use std::sync::mpsc::Sender;
 
 use crate::errors::{CMNMessage, CMNMessageLog};
 
-use crate::semantic::namespace::Identifier;
+use crate::ast::namespace::Identifier;
 
 static KEYWORDS: [&'static str; 31] = [
 	"if",

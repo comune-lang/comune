@@ -2,7 +2,7 @@
 
 use std::{collections::HashMap, hash::Hash};
 
-use crate::semantic::{
+use crate::ast::{
 	expression::Operator,
 	namespace::{Identifier, Name},
 	types::{Basic, DataLayout, TupleKind, TypeParamList},

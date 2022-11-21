@@ -1,6 +1,6 @@
 use crate::{
 	parser::AnalyzeResult,
-	semantic::{
+	ast::{
 		expression::{Atom, Expr, Operator},
 		types::Basic,
 		FnScope,

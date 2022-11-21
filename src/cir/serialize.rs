@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use crate::{
 	lexer,
-	semantic::types::{DataLayout, TupleKind},
+	ast::types::{DataLayout, TupleKind},
 };
 
 use super::{

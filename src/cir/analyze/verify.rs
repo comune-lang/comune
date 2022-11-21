@@ -4,7 +4,7 @@ use super::CIRPass;
 use crate::{
 	cir::{CIRFunction, CIRStmt},
 	errors::{CMNError, CMNErrorCode},
-	semantic::TokenData,
+	ast::TokenData,
 };
 
 pub struct Verify;

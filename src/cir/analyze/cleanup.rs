@@ -3,7 +3,7 @@ use super::CIRPassMut;
 use crate::{
 	cir::{CIRFunction, CIRStmt, Operand, RValue},
 	errors::CMNError,
-	semantic::TokenData,
+	ast::TokenData,
 };
 
 pub struct RemoveNoOps;

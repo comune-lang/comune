@@ -5,11 +5,11 @@ mod lexer;
 mod llvm;
 mod modules;
 mod parser;
-mod semantic;
+mod ast;
 
 use clap::Parser;
 use colored::Colorize;
-use semantic::{namespace::Identifier, types};
+use ast::{namespace::Identifier, types};
 use std::process::Command;
 use std::{
 	ffi::OsString,

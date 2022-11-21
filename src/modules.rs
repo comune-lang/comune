@@ -18,7 +18,7 @@ use crate::{
 	lexer::Lexer,
 	llvm::{self, LLVMBackend},
 	parser::{ParseResult, Parser},
-	semantic::{
+	ast::{
 		self,
 		namespace::{Identifier, Namespace},
 	},
@@ -225,14 +225,14 @@ pub fn resolve_types(state: &Arc<ManagerState>, mod_state: &mut ModuleState) -> 
 	let root = &mut mod_state.parser.namespace;
 
 	// At this point, all imports have been resolved, so validate namespace-level types
-	semantic::resolve_namespace_types(root)?;
+	ast::resolve_namespace_types(root)?;
 
 	// Check for cyclical dependencies without indirection
 	// TODO: Nice error reporting for this
-	semantic::check_namespace_cyclical_deps(&root)?;
+	ast::check_namespace_cyclical_deps(&root)?;
 
 	// Then register impls to their types
-	semantic::register_impls(root)?;
+	ast::register_impls(root)?;
 
 	if state.verbose_output {
 		println!("\ntype resolution output:\n\n{}", root);
@@ -267,7 +267,7 @@ pub fn generate_code<'ctx>(
 
 	// Validate code
 
-	match semantic::validate_namespace(&mut mod_state.parser.namespace) {
+	match ast::validate_namespace(&mut mod_state.parser.namespace) {
 		Ok(()) => {
 			if state.verbose_output {
 				println!("generating code...");

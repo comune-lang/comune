@@ -7,7 +7,7 @@ use crate::{
 	cir::{CIRFunction, CIRStmt, CIRType, LValue, Operand, PlaceElem, RValue},
 	errors::{CMNError, CMNErrorCode},
 	parser::AnalyzeResult,
-	semantic::{namespace::Identifier, TokenData},
+	ast::{namespace::Identifier, TokenData},
 };
 
 pub struct BorrowCheck;

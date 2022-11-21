@@ -74,5 +74,5 @@ int main() {
 
 	(i32 | f32) who_knows_result = who_knows(21);
 	
-	*(&who_knows_result as i32*)
+	test.sum()
 }

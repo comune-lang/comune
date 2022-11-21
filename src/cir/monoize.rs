@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::{
 	lexer::Token,
-	semantic::{get_attribute, namespace::Identifier, types::Basic},
+	ast::{get_attribute, namespace::Identifier, types::Basic},
 };
 
 use super::{
