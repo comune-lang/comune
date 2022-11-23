@@ -1144,24 +1144,9 @@ impl Parser {
 
 				// Parse if statement
 				"if" => {
-					// Check opening brace
-					if token_compare(&next, "(") {
-						self.get_next()?;
-					} else {
-						return Err(self.err(CMNErrorCode::UnexpectedToken));
-					}
-
+					// Parse condition
 					let cond = self.parse_expression()?;
-
-					current = self.get_current()?;
-
-					// Check closing brace
-					if token_compare(&current, ")") {
-						self.get_next()?;
-					} else {
-						return Err(self.err(CMNErrorCode::UnexpectedToken));
-					}
-
+					
 					// Parse body
 					let body;
 					let mut else_body = None;
@@ -1169,7 +1154,7 @@ impl Parser {
 					if token_compare(&self.get_current()?, "{") {
 						body = self.parse_block()?;
 					} else {
-						body = self.parse_statement()?.wrap_in_block();
+						return Err(self.err(CMNErrorCode::UnexpectedToken));
 					}
 
 					if token_compare(&self.get_current()?, "else") {
@@ -1178,7 +1163,7 @@ impl Parser {
 						if token_compare(&self.get_current()?, "{") {
 							else_body = Some(self.parse_block()?);
 						} else {
-							else_body = Some(self.parse_statement()?.wrap_in_block());
+							return Err(self.err(CMNErrorCode::UnexpectedToken));
 						}
 					}
 
@@ -1196,29 +1181,9 @@ impl Parser {
 
 				// Parse while loop
 				"while" => {
-					// Check opening brace
-					if token_compare(&next, "(") {
-						current = self.get_next()?;
-					} else {
-						return Err(self.err(CMNErrorCode::UnexpectedToken));
-					}
 
-					let cond;
-
-					if token_compare(&current, ")") {
-						// No condtion in while statement!
-						return Err(self.err(CMNErrorCode::UnexpectedToken));
-					} else {
-						cond = self.parse_expression()?;
-						current = self.get_current()?;
-					}
-
-					// Check closing brace
-					if token_compare(&current, ")") {
-						current = self.get_next()?;
-					} else {
-						return Err(self.err(CMNErrorCode::UnexpectedToken));
-					}
+					let	cond = self.parse_expression()?;
+					current = self.get_current()?;
 
 					// Parse body
 					let body;

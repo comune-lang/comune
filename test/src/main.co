@@ -43,7 +43,8 @@ int main() {
 	Vector<int> my_cool_generic;
 
 	my_cool_generic.data = malloc(8) as int*;
-	*my_cool_generic.data = if (true) {
+	
+	*my_cool_generic.data = if true {
 		printf("True!\n\0");
 		69
 	} else {
@@ -73,6 +74,6 @@ int main() {
 	free(my_cool_generic.data as void*);
 
 	(i32 | f32) who_knows_result = who_knows(21);
-	
+
 	test.sum()
 }

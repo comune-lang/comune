@@ -29,8 +29,9 @@ pub mod statement;
 pub mod traits;
 pub mod types;
 
-// SEMANTIC ANALYSIS
-// This module contains structs and impls related to AST checking, name resolution, and type validation.
+// AST & SEMANTIC ANALYSIS
+// This module contains structs and impls related to the AST, name resolution, and type validation.
+// TODO: This module is pretty big, the semantic analysis code could probably be organized better
 
 pub type TokenData = (usize, usize); // idx, len
 
