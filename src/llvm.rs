@@ -190,18 +190,18 @@ impl<'ctx> LLVMBackend<'ctx> {
 						self.builder.build_unconditional_branch(self.blocks[*block]);
 					}
 
-					CIRStmt::Branch(cond, a, b) => {
+					CIRStmt::Switch(cond, branches, else_block) => {
 						let cond_ir = self
 							.generate_rvalue(cond)
 							.unwrap()
 							.as_basic_value_enum()
 							.into_int_value();
 
-						self.builder.build_conditional_branch(
-							cond_ir,
-							self.blocks[*a],
-							self.blocks[*b],
-						);
+						let cases: Vec<_> = branches.iter().map(|(ty, val, branch)| 
+							(self.generate_operand(ty, val).unwrap().into_int_value(), self.blocks[*branch])
+						).collect();
+
+						self.builder.build_switch(cond_ir, self.blocks[*else_block], &cases);
 					}
 
 					CIRStmt::Return(expr) => {

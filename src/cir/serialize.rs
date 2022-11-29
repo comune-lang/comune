@@ -81,7 +81,15 @@ impl Display for CIRStmt {
 			CIRStmt::Expression(expr, _) => write!(f, "{expr};\n"),
 			CIRStmt::Assignment((lval, _), (expr, _)) => write!(f, "{lval} = {expr};\n"),
 			CIRStmt::Jump(block) => write!(f, "jmp bb{block};\n"),
-			CIRStmt::Branch(cond, a, b) => write!(f, "branch {cond}, bb{a}, bb{b};\n"),
+			CIRStmt::Switch(expr, branches, else_branch) => {
+				write!(f, "switch {expr} {{\n")?;
+
+				for (ty, val, branch) in branches {
+					write!(f, "\t{val}:{ty} => bb{branch},\n")?;
+				}
+
+				write!(f, "else => bb{else_branch},\n\t}}")
+			}
 
 			CIRStmt::Return(expr_opt) => {
 				if let Some((expr, _)) = expr_opt {

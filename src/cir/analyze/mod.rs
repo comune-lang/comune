@@ -152,15 +152,12 @@ impl CIRFunction {
 				errors.append(&mut self.walk_block(*jmp, state, f, processed_jumps))
 			}
 
-			CIRStmt::Branch(_, a, b) => {
-				if !processed_jumps.contains(&((j, i), *a)) {
-					processed_jumps.insert(((j, i), *a));
-					errors.append(&mut self.walk_block(*a, state.clone(), f, processed_jumps));
-				}
-
-				if !processed_jumps.contains(&((j, i), *b)) {
-					processed_jumps.insert(((j, i), *b));
-					errors.append(&mut self.walk_block(*b, state, f, processed_jumps));
+			CIRStmt::Switch(_, branches, _) => {
+				for (_, _, branch) in branches {
+					if !processed_jumps.contains(&((j, i), *branch)) {
+						processed_jumps.insert(((j, i), *branch));
+						errors.append(&mut self.walk_block(*branch, state.clone(), f, processed_jumps));
+					}
 				}
 			}
 
@@ -198,18 +195,13 @@ impl CIRFunction {
 				}
 			}
 
-			CIRStmt::Branch(_, a, b) => {
-				let a = *a;
-				let b = *b; // Make the borrow checker happy
-
-				if !processed_jumps.contains(&((j, i), a)) {
-					processed_jumps.insert(((j, i), a));
-					errors.append(&mut self.walk_block_mut(a, state.clone(), &f, processed_jumps));
-				}
-
-				if !processed_jumps.contains(&((j, i), b)) {
-					processed_jumps.insert(((j, i), b));
-					errors.append(&mut self.walk_block_mut(b, state, &f, processed_jumps));
+			CIRStmt::Switch(_, branches, _) => {
+				let branches = branches.clone();
+				for (_, _, branch) in &branches {
+					if !processed_jumps.contains(&((j, i), *branch)) {
+						processed_jumps.insert(((j, i), *branch));
+						errors.append(&mut self.walk_block_mut(*branch, state.clone(), &f, processed_jumps));
+					}
 				}
 			}
 

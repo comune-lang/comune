@@ -142,7 +142,7 @@ pub enum CIRStmt {
 	Expression(RValue, TokenData),
 	Assignment((LValue, TokenData), (RValue, TokenData)),
 	Jump(BlockIndex),
-	Branch(RValue, BlockIndex, BlockIndex),
+	Switch(RValue, Vec<(CIRType, Operand, BlockIndex)>, BlockIndex),
 	Return(Option<(RValue, TokenData)>),
 }
 

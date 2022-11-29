@@ -16,7 +16,7 @@ impl CIRPass for Verify {
 		for block in &func.blocks {
 			if matches!(
 				block.last().unwrap(),
-				CIRStmt::Return(_) | CIRStmt::Branch(..) | CIRStmt::Jump(_)
+				CIRStmt::Return(_) | CIRStmt::Switch(..) | CIRStmt::Jump(_)
 			) {
 				continue;
 			} else {
