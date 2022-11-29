@@ -1066,6 +1066,33 @@ impl Atom {
 
 				ControlFlow::Break => todo!(),
 				ControlFlow::Continue => todo!(),
+				
+				ControlFlow::Match { scrutinee, branches } => {
+					if branches.is_empty() {
+						return Ok(Type::Basic(Basic::VOID));
+					}
+
+					let mut branch_iter = branches.iter_mut();
+					let mut last_branch_type = branch_iter.next().unwrap().1.validate(scope)?;
+					
+					let scrutinee_type = scrutinee.validate(scope)?;
+
+					for branch in branch_iter {
+						let branch_ty = branch.1.validate(scope)?;
+
+						if branch_ty != last_branch_type {
+							todo!()
+						}
+
+						last_branch_type = branch_ty;
+						
+						if !branch.0.get_type().is_subtype_of(&scrutinee_type) {
+							todo!()
+						}
+					}
+
+					Ok(last_branch_type)
+				},
 			},
 		}
 	}

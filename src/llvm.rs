@@ -344,40 +344,27 @@ impl<'ctx> LLVMBackend<'ctx> {
 					CIRType::Tuple(TupleKind::Sum, types) => {
 						let val = self.generate_operand(from, val).unwrap();
 
-						let llvm_ty = self.get_llvm_type(to);
+						let store_ty = self.get_llvm_type(to);
+						let data_ty = self.context.struct_type(&[
+							self.context.i32_type().as_basic_type_enum(),
+							val.get_type(),
+						], false);
 
-						let target_data = get_target_machine().get_target_data();
-						let types_mapped: Vec<_> = types
-							.iter()
-							.map(|ty| self.get_llvm_type(ty))
-							.collect();
-		
-						let data_size = types_mapped
-							.iter()
-							.map(|ty| target_data.get_store_size(ty))
-							.max()
-							.unwrap();
-
-						let data_ty = self.context.i8_type().array_type(data_size as u32);
 						let idx = types.iter().position(|ty| ty == from).unwrap();
-						
-						let result = llvm_ty.into_struct_type().const_named_struct(
-							&[
-								self.context.i32_type().const_int(idx as u64, false).as_basic_value_enum(),
-								data_ty.get_undef().as_basic_value_enum()
-							]);
-						
-						let tmp_alloca = self.builder.build_alloca(llvm_ty.into_struct_type(), "sumtmp");
-						
-						self.builder.build_store(tmp_alloca, result);
+						let discriminant = self.context.i32_type().const_int(idx as u64, false).as_basic_value_enum();
+						let tmp_alloca = self.builder.build_alloca(store_ty.into_struct_type(), "sumtmp");
 
-						let ptr = self.builder.build_pointer_cast(
-							self.builder.build_struct_gep(tmp_alloca, 1, "sumgep").unwrap(), 
-							Self::to_basic_type(self.get_llvm_type(from)).ptr_type(AddressSpace::Generic), 
-							"sumcast"
+						let ptr = self.builder.build_pointer_cast(tmp_alloca, data_ty.ptr_type(AddressSpace::Generic), "variantcast");
+
+						self.builder.build_store(ptr, data_ty.const_named_struct(&[
+							discriminant,
+							val.get_type().const_zero()
+						]));
+
+						self.builder.build_store(
+							self.builder.build_struct_gep(ptr, 1, "variantstore").unwrap(),
+							val,
 						);
-
-						self.builder.build_store(ptr, val);
 
 						return Some(self.builder.build_load(tmp_alloca, "sumload"));
 					}

@@ -73,7 +73,17 @@ int main() {
 
 	free(my_cool_generic.data as void*);
 
-	(i32 | f32) who_knows_result = who_knows(21);
+	(int | float) who_knows_result = who_knows(21);
+
+	match who_knows_result {
+		int int_result => {
+
+		}
+
+		float float_result => {
+
+		}
+	}
 
 	test.sum()
 }

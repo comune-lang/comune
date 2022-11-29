@@ -1,15 +1,17 @@
-use super::types::Type;
+use super::{types::Type, namespace::Name};
 
-struct PatternDecon {
-	ctor: Constructor,
-	fields: Vec<PatternDecon>,
-	ty: Type,
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Pattern {
+	Binding(Option<Name>, Type),			// Binding pattern, matches any value. If None, it's a wildcard
+	Destructure(Vec<(Option<Name>, Pattern)>, Type),	// Destructures an aggregate type into its constituents
+	Or(Vec<Pattern>, Type),								// Combines two or more patterns
 }
 
-enum Constructor {
-	Single,
-	Variant(usize),
-	Opaque,
-	Binding,
-	Or,
+impl Pattern {
+	pub fn get_type(&self) -> &Type {
+		match self {
+			Pattern::Binding(_, ty) | Pattern::Destructure(_, ty) | Pattern::Or(_, ty) => ty
+		}
+	}
 }

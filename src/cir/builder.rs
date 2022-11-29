@@ -651,6 +651,7 @@ impl CIRModuleBuilder {
 					ControlFlow::Break => todo!(),
 
 					ControlFlow::Continue => todo!(),
+					ControlFlow::Match { scrutinee, branches } => todo!(),
 				},
 			},
 

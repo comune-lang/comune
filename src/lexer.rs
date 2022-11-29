@@ -9,7 +9,7 @@ use crate::errors::{CMNMessage, CMNMessageLog};
 
 use crate::ast::namespace::Identifier;
 
-static KEYWORDS: [&'static str; 31] = [
+static KEYWORDS: [&'static str; 32] = [
 	"if",
 	"use",
 	"else",
@@ -41,12 +41,13 @@ static KEYWORDS: [&'static str; 31] = [
 	"trait",
 	"impl",
 	"enum",
+	"match",
 ];
 
-static OPERATORS: [&str; 41] = [
+static OPERATORS: [&str; 42] = [
 	"+", "-", "/", "*", "%", "^", "|", "||", "&", "&&", "=", "==", "/=", "*=", "+=", "-=", "%=",
 	"&=", "|=", "^=", "++", "--", "->", "(", ")", "[", "]", ".", "::", "<", ">", "<=", ">=", "!=",
-	"<<", ">>", ">>=", "<<=", "..", "...", "as", // yeah `as` is technically an operator lol
+	"<<", ">>", ">>=", "<<=", "..", "...", "=>", "as", // yeah `as` is technically an operator lol
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -2,6 +2,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
+use crate::ast::pattern::Pattern;
 use crate::constexpr::ConstExpr;
 use crate::errors::{CMNError, CMNErrorCode};
 use crate::lexer::{Lexer, Token};
@@ -655,7 +656,7 @@ impl Parser {
 			if let Stmt::Expr(Expr::Atom(Atom::CtrlFlow(ctrl), _)) = &stmt {
 				if matches!(
 					&**ctrl,
-					ControlFlow::For { .. } | ControlFlow::If { .. } | ControlFlow::While { .. }
+					ControlFlow::For { .. } | ControlFlow::If { .. } | ControlFlow::While { .. } | ControlFlow::Match { .. }
 				) {
 					semicolon_optional = true;
 				}
@@ -683,41 +684,6 @@ impl Parser {
 				ty: None,
 			},
 		))
-	}
-
-	fn parse_statement(&self) -> ParseResult<Stmt> {
-		let begin = self.get_current_start_index();
-
-		if self.is_at_type_token(true)? {
-			// This is a declaration
-
-			let ty = self.parse_type(true)?;
-
-			if let Token::Identifier(name) = self.get_current()? {
-				let mut expr = None;
-
-				if token_compare(&self.get_next()?, "=") {
-					self.get_next()?;
-					expr = Some(self.parse_expression()?);
-				}
-
-				let stmt_result = Stmt::Decl(
-					vec![(ty, name.expect_scopeless()?.clone())],
-					expr,
-					(begin, self.get_current_start_index() - begin),
-				);
-
-				return Ok(stmt_result);
-			} else {
-				return Err(self.err(CMNErrorCode::ExpectedIdentifier));
-			}
-		} else {
-			// This isn't a declaration, so parse an expression
-
-			let expr = self.parse_expression()?;
-
-			return Ok(Stmt::Expr(expr));
-		}
 	}
 
 	fn check_semicolon(&self) -> ParseResult<()> {
@@ -805,6 +771,61 @@ impl Parser {
 			Ok((id.name().to_string(), item))
 		} else {
 			Err(self.err(CMNErrorCode::ExpectedIdentifier))
+		}
+	}
+
+	fn parse_statement(&self) -> ParseResult<Stmt> {
+		let begin = self.get_current_start_index();
+
+		if self.is_at_type_token(true)? {
+			// This is a declaration
+
+			let ty = self.parse_type(true)?;
+
+			if let Token::Identifier(name) = self.get_current()? {
+				let mut expr = None;
+
+				if token_compare(&self.get_next()?, "=") {
+					self.get_next()?;
+					expr = Some(self.parse_expression()?);
+				}
+
+				let stmt_result = Stmt::Decl(
+					vec![(ty, name.expect_scopeless()?.clone())],
+					expr,
+					(begin, self.get_current_start_index() - begin),
+				);
+
+				return Ok(stmt_result);
+			} else {
+				return Err(self.err(CMNErrorCode::ExpectedIdentifier));
+			}
+		} else {
+			// This isn't a declaration, so parse an expression
+
+			let expr = self.parse_expression()?;
+
+			return Ok(Stmt::Expr(expr));
+		}
+	}
+
+	fn parse_pattern(&self) -> ParseResult<Pattern> {
+		if self.is_at_type_token(true)? {
+			let pattern_ty = self.parse_type(true)?;
+
+			match self.get_current()? {
+				Token::Identifier(id) => {
+					self.get_next()?;
+
+					Ok(Pattern::Binding(Some(id.expect_scopeless()?.clone()), pattern_ty))
+				}
+
+				Token::Other('{') => todo!(),
+
+				_ => return Err(self.err(CMNErrorCode::UnexpectedToken))
+			}
+		} else {
+			Err(self.err(CMNErrorCode::UnexpectedToken))
 		}
 	}
 
@@ -1142,6 +1163,52 @@ impl Parser {
 					result = Some(Atom::CtrlFlow(Box::new(ControlFlow::Continue)));
 				}
 
+				"match" => {					
+					let scrutinee = self.parse_expression()?;
+					current = self.get_current()?;
+					
+					if current != Token::Other('{') {
+						return Err(self.err(CMNErrorCode::UnexpectedToken));
+					}
+
+					current = self.get_next()?;
+
+					let mut branches = vec![];
+					
+					while current != Token::Other('}') {
+						let branch_pat = self.parse_pattern()?;
+						let branch_block;
+
+						if self.get_current()? != Token::Operator("=>") {
+							return Err(self.err(CMNErrorCode::UnexpectedToken));
+						}
+						
+						if self.get_next()? == Token::Other('{') {
+							branch_block = self.parse_block()?;
+						} else {
+							branch_block = self.parse_expression()?;
+
+							// After a bare expression, a comma is required
+							if self.get_current()? != Token::Other(',') {
+								return Err(self.err(CMNErrorCode::UnexpectedToken));
+							}
+
+							self.get_next()?;
+						}
+
+						while self.get_current()? == Token::Other(',') {
+							self.get_next()?;
+						}
+
+						current = self.get_current()?;
+						branches.push((branch_pat, branch_block));
+					}
+
+					self.get_next()?;
+
+					result = Some(Atom::CtrlFlow(Box::new(ControlFlow::Match { scrutinee, branches })));
+				}
+
 				// Parse if statement
 				"if" => {
 					// Parse condition
@@ -1181,18 +1248,9 @@ impl Parser {
 
 				// Parse while loop
 				"while" => {
-
 					let	cond = self.parse_expression()?;
-					current = self.get_current()?;
-
-					// Parse body
-					let body;
-					if token_compare(&current, "{") {
-						body = self.parse_block()?;
-					} else {
-						body = self.parse_statement()?.wrap_in_block();
-					}
-
+					let body = self.parse_block()?;
+					
 					result = Some(Atom::CtrlFlow(Box::new(ControlFlow::While { cond, body })));
 				}
 
