@@ -620,12 +620,15 @@ impl CIRModuleBuilder {
 						let loop_block = self.append_block();
 
 						// Generate body
-						self.generate_expr(body)?;
+						let body_ir = self.generate_expr(body)?;
+						self.write(CIRStmt::Expression(body_ir, (0, 0)));
+						
 						let body_block = self.current_block;
 
 						// Add iter statement to body
 						if let Some(iter) = iter {
-							self.generate_expr(iter)?;
+							let iter_ir = self.generate_expr(iter)?;
+							self.write(CIRStmt::Expression(iter_ir, (0, 0)));
 						}
 
 						self.current_block = body_block;
