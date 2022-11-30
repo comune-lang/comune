@@ -14,12 +14,10 @@ impl CIRPass for Verify {
 		let mut errors = vec![];
 
 		for block in &func.blocks {
-			if matches!(
-				block.last().unwrap(),
+			if !matches!(
+				block.last().expect("found empty block during cIR verification!"),
 				CIRStmt::Return(_) | CIRStmt::Switch(..) | CIRStmt::Jump(_)
 			) {
-				continue;
-			} else {
 				errors.push((
 					CMNError::new(CMNErrorCode::Custom(
 						"cIR block doesn't have a terminator".to_string(),

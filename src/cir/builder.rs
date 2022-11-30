@@ -236,7 +236,7 @@ impl CIRModuleBuilder {
 	pub fn generate_function(&mut self, func: CIRFunction, fn_block: &Expr) -> CIRFunction {
 		self.current_fn = Some(func);
 
-		let result = self.generate_expr(fn_block);
+		let _ = self.generate_expr(fn_block);
 
 		self.current_fn.borrow_mut().as_mut().unwrap().is_extern = false;
 
@@ -324,6 +324,7 @@ impl CIRModuleBuilder {
 
 	// generate_expr only returns None if `expr` is a "never expression"
 	// aka an expression that will never evaluate to a value
+	#[must_use]
 	fn generate_expr(&mut self, expr: &Expr) -> Option<RValue> {
 		let expr_ty = expr.get_type();
 
@@ -478,7 +479,7 @@ impl CIRModuleBuilder {
 						Some(RValue::Atom(result_type, None, result))
 					} else {
 						self.name_map_stack.pop();
-						None
+						Some(Self::get_void_rvalue())
 					}
 				}
 
@@ -514,7 +515,6 @@ impl CIRModuleBuilder {
 						let mut has_result = false;
 
 						let cond_ir = self.generate_expr(cond)?;
-						let cond_ty = self.convert_type(cond.get_type());
 						let start_block = self.current_block;
 
 						if let Some(if_val) = self.generate_expr(body) {
@@ -579,7 +579,6 @@ impl CIRModuleBuilder {
 
 					ControlFlow::While { cond, body } => {
 						let cond_ir = self.generate_expr(cond)?;
-						let cond_ty = self.convert_type(cond.get_type());
 
 						let start_block = self.current_block;
 						let cond_block = self.append_block();
@@ -589,7 +588,7 @@ impl CIRModuleBuilder {
 						self.write(CIRStmt::Jump(cond_block));
 
 						// Generate body
-						self.generate_expr(body);
+						self.generate_expr(body)?;
 						let body_idx = self.current_block;
 
 						// Write jump-to-cond to body block
@@ -613,39 +612,37 @@ impl CIRModuleBuilder {
 					} => {
 						let start_block = self.current_block;
 
-						// Write init and jump to start block
-
+						// Write init to start block
 						if let Some(init) = init {
 							self.generate_stmt(init);
 						}
 
 						let loop_block = self.append_block();
-						self.current_block = start_block;
-						self.write(CIRStmt::Jump(loop_block));
 
 						// Generate body
-						self.generate_expr(body);
-						let body_idx = self.current_block;
+						self.generate_expr(body)?;
+						let body_block = self.current_block;
 
 						// Add iter statement to body
 						if let Some(iter) = iter {
-							self.generate_expr(iter);
+							self.generate_expr(iter)?;
 						}
 
-						// Write jump-to-loop to body block
+						self.current_block = body_block;
+						self.write(CIRStmt::Jump(loop_block));
+
+						self.current_block = start_block;
 						self.write(CIRStmt::Jump(loop_block));
 
 						let next_block = self.append_block();
 						self.current_block = loop_block;
 
 						if let Some(cond) = cond {
-							let cond_ty = self.convert_type(cond.get_type());
-
 							if let Some(cond_ir) = self.generate_expr(cond) {
-								self.generate_branch(cond_ir, body_idx, next_block);
+								self.generate_branch(cond_ir, body_block, next_block);
 							}
 						} else {
-							self.write(CIRStmt::Jump(body_idx));
+							self.write(CIRStmt::Jump(body_block));
 						}
 
 						self.current_block = next_block;
@@ -654,8 +651,8 @@ impl CIRModuleBuilder {
 					}
 
 					ControlFlow::Break => todo!(),
-
 					ControlFlow::Continue => todo!(),
+					
 					ControlFlow::Match { scrutinee, branches } => todo!(),
 				},
 			},

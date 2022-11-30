@@ -85,10 +85,10 @@ impl Display for CIRStmt {
 				write!(f, "switch {expr} {{\n")?;
 
 				for (ty, val, branch) in branches {
-					write!(f, "\t{val}:{ty} => bb{branch},\n")?;
+					write!(f, "\t\t{val}:{ty} => bb{branch},\n")?;
 				}
 
-				write!(f, "else => bb{else_branch},\n\t}}")
+				write!(f, "\t\telse => bb{else_branch},\n\t}}\n")
 			}
 
 			CIRStmt::Return(expr_opt) => {

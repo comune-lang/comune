@@ -307,6 +307,8 @@ pub fn generate_code<'ctx>(
 				error.1 .1,
 				CMNMessage::Error(error.0),
 			);
+
+			println!("{cir_module}\n");
 		}
 
 		return Err(CMNError::new(CMNErrorCode::Pack(return_errors)));
