@@ -318,7 +318,7 @@ impl Lexer {
 						"false" => Ok(Token::BoolLiteral(false)),
 
 						_ => Ok(Token::Keyword(
-							*KEYWORDS
+							KEYWORDS
 								.iter()
 								.find(|x_static| **x_static == result.as_str())
 								.unwrap(),
@@ -326,7 +326,7 @@ impl Lexer {
 					}
 				} else if OPERATORS.contains(&result.as_str()) {
 					result_token = Ok(Token::Operator(
-						*OPERATORS
+						OPERATORS
 							.iter()
 							.find(|x_static| **x_static == result.as_str())
 							.unwrap(),
@@ -456,21 +456,21 @@ impl Lexer {
 						self.get_next_char()?;
 
 						result_token = Ok(Token::Operator(
-							*OPERATORS
+							OPERATORS
 								.iter()
 								.find(|x_static| **x_static == result_triple.as_str())
 								.unwrap(),
 						));
 					} else {
 						result_token = Ok(Token::Operator(
-							*OPERATORS
+							OPERATORS
 								.iter()
 								.find(|x_static| **x_static == result_double.as_str())
 								.unwrap(),
 						));
 					}
 				} else if OPERATORS.contains(&result.as_str()) {
-					result_token = Ok(Token::Operator(*op));
+					result_token = Ok(Token::Operator(op));
 				} else {
 					result_token = Ok(Token::Other(token));
 				}
@@ -487,12 +487,10 @@ impl Lexer {
 					if escaped {
 						result.push(get_escaped_char(token).unwrap());
 						escaped = false;
+					} else if token == '\\' {
+						escaped = true;
 					} else {
-						if token == '\\' {
-							escaped = true;
-						} else {
-							result.push(token);
-						}
+						result.push(token);
 					}
 
 					token = self.get_next_char()?;
@@ -501,13 +499,11 @@ impl Lexer {
 				// Consume ending quote
 				self.get_next_char()?;
 				result_token = Ok(Token::StringLiteral(result));
+			} else if self.eof_reached() && token.is_whitespace() {
+				return Ok((start, Token::EOF));
 			} else {
-				if self.eof_reached() && token.is_whitespace() {
-					return Ok((start, Token::EOF));
-				} else {
-					result_token = Ok(Token::Other(token));
-					self.get_next_char()?;
-				}
+				result_token = Ok(Token::Other(token));
+				self.get_next_char()?;
 			}
 		}
 
@@ -559,7 +555,7 @@ impl Lexer {
 		self.file_buffer[self.file_index..]
 			.chars()
 			.next()
-			.ok_or(Error::new(io::ErrorKind::UnexpectedEof, "Unexpected EOF"))
+			.ok_or_else(|| Error::new(io::ErrorKind::UnexpectedEof, "Unexpected EOF"))
 	}
 
 	pub fn log_msg_at(&self, char_idx: usize, token_len: usize, e: CMNMessage) {
@@ -631,12 +627,10 @@ pub fn get_escaped(string: &str) -> String {
 		if escaped {
 			result.push(get_escaped_char(c).unwrap());
 			escaped = false;
+		} else if c == '\\' {
+			escaped = true;
 		} else {
-			if c == '\\' {
-				escaped = true;
-			} else {
-				result.push(c);
-			}
+			result.push(c);
 		}
 	}
 

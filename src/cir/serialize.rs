@@ -51,26 +51,26 @@ impl Display for CIRFunction {
 		}
 
 		if self.is_extern {
-			write!(f, ";\n\n")
+			writeln!(f, ";\n")
 		} else {
-			write!(f, " {{\n")?;
+			writeln!(f, " {{")?;
 
 			for i in 0..self.variables.len() {
 				if let Some(name) = &self.variables[i].1 {
-					write!(f, "\tlet _{i}: {}; ({name})\n", &self.variables[i].0)?;
+					writeln!(f, "\tlet _{i}: {}; ({name})", &self.variables[i].0)?;
 				} else {
-					write!(f, "\tlet _{i}: {};\n", &self.variables[i].0)?;
+					writeln!(f, "\tlet _{i}: {};", &self.variables[i].0)?;
 				}
 			}
 
 			for block in 0..self.blocks.len() {
-				write!(f, "bb{block}:\n")?;
+				writeln!(f, "bb{block}:")?;
 
 				for stmt in &self.blocks[block] {
 					write!(f, "\t{stmt}")?;
 				}
 			}
-			write!(f, "}}\n\n")
+			writeln!(f, "}}\n")
 		}
 	}
 }
@@ -78,24 +78,24 @@ impl Display for CIRFunction {
 impl Display for CIRStmt {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match self {
-			CIRStmt::Expression(expr, _) => write!(f, "{expr};\n"),
-			CIRStmt::Assignment((lval, _), (expr, _)) => write!(f, "{lval} = {expr};\n"),
-			CIRStmt::Jump(block) => write!(f, "jmp bb{block};\n"),
+			CIRStmt::Expression(expr, _) => writeln!(f, "{expr};"),
+			CIRStmt::Assignment((lval, _), (expr, _)) => writeln!(f, "{lval} = {expr};"),
+			CIRStmt::Jump(block) => writeln!(f, "jmp bb{block};"),
 			CIRStmt::Switch(expr, branches, else_branch) => {
-				write!(f, "switch {expr} {{\n")?;
+				writeln!(f, "switch {expr} {{")?;
 
 				for (ty, val, branch) in branches {
-					write!(f, "\t\t{val}:{ty} => bb{branch},\n")?;
+					writeln!(f, "\t\t{val}:{ty} => bb{branch},")?;
 				}
 
-				write!(f, "\t\telse => bb{else_branch},\n\t}}\n")
+				write!(f, "\t\telse => bb{else_branch},\n\t}}")
 			}
 
 			CIRStmt::Return(expr_opt) => {
 				if let Some((expr, _)) = expr_opt {
-					write!(f, "ret {expr};\n")
+					writeln!(f, "ret {expr};")
 				} else {
-					write!(f, "ret;\n")
+					writeln!(f, "ret;")
 				}
 			}
 		}
@@ -157,8 +157,8 @@ impl Display for Operand {
 				if !type_args.is_empty() {
 					write!(f, "<{}", type_args[0])?;
 
-					for i in 1..type_args.len() {
-						write!(f, ", {}", type_args[i])?;
+					for arg in type_args {
+						write!(f, ", {arg}")?;
 					}
 
 					write!(f, ">")?;
@@ -167,8 +167,8 @@ impl Display for Operand {
 				if !args.is_empty() {
 					write!(f, "({}", args[0])?;
 
-					for i in 1..args.len() {
-						write!(f, ", {}", args[i])?;
+					for arg in args {
+						write!(f, ", {arg}")?;
 					}
 
 					write!(f, ")")
@@ -225,18 +225,18 @@ impl Display for CIRTypeDef {
 				type_params,
 				..
 			} => {
-				write!(f, "layout({layout}) {{\n")?;
+				writeln!(f, "layout({layout}) {{")?;
 
 				for (param, _) in type_params {
-					write!(f, "\tparam {param:?}\n")?;
+					writeln!(f, "\tparam {param:?}")?;
 				}
 
 				for var in variants {
-					write!(f, "\tvariant {var}\n")?;
+					writeln!(f, "\tvariant {var}")?;
 				}
 
 				for mem in members {
-					write!(f, "\tmember {mem},\n")?;
+					writeln!(f, "\tmember {mem},")?;
 				}
 
 				write!(f, "}}\n\n")

@@ -92,24 +92,14 @@ impl Parser {
 	}
 
 	pub fn generate_ast(&mut self) -> ParseResult<()> {
-		self.generate_namespace(&Identifier::new(true))?;
-
-		Ok(())
-	}
-
-	fn generate_namespace(&mut self, scope: &Identifier) -> ParseResult<()> {
 		for child in &self.namespace.children {
 			match &child.1 .0 {
 				NamespaceItem::Function(_, ast_elem) => {
 					let mut elem = ast_elem.borrow_mut();
-					match *elem {
-						NamespaceASTElem::Unparsed(idx) => {
-							// Parse function block
-							self.lexer.borrow_mut().seek_token_idx(idx);
-							*elem = NamespaceASTElem::Parsed(self.parse_block()?)
-						}
-
-						_ => {}
+					if let NamespaceASTElem::Unparsed(idx) = *elem {
+						// Parse function block
+						self.lexer.borrow_mut().seek_token_idx(idx);
+						*elem = NamespaceASTElem::Parsed(self.parse_block()?)
 					}
 				}
 
@@ -127,14 +117,10 @@ impl Parser {
 				match &method.1 .0 {
 					NamespaceItem::Function(_, elem) => {
 						let mut elem = elem.borrow_mut();
-						match *elem {
-							NamespaceASTElem::Unparsed(idx) => {
-								// Parse method block
-								self.lexer.borrow_mut().seek_token_idx(idx);
-								*elem = NamespaceASTElem::Parsed(self.parse_block()?)
-							}
-
-							_ => {}
+						if let NamespaceASTElem::Unparsed(idx) = *elem {
+							// Parse method block
+							self.lexer.borrow_mut().seek_token_idx(idx);
+							*elem = NamespaceASTElem::Parsed(self.parse_block()?)
 						}
 					}
 
@@ -247,7 +233,7 @@ impl Parser {
 										let result = self.parse_namespace_declaration()?;
 
 										match result.1 {
-											NamespaceItem::Variable(t, n) => {
+											NamespaceItem::Variable(t, _) => {
 												aggregate.members.push((
 													result.0.into(),
 													t,
@@ -618,7 +604,7 @@ impl Parser {
 			}
 		}
 
-		Ok(self.get_next()?)
+		self.get_next()
 	}
 
 	fn parse_block(&self) -> ParseResult<Expr> {
@@ -796,16 +782,16 @@ impl Parser {
 					(begin, self.get_current_start_index() - begin),
 				);
 
-				return Ok(stmt_result);
+				Ok(stmt_result)
 			} else {
-				return Err(self.err(CMNErrorCode::ExpectedIdentifier));
+				Err(self.err(CMNErrorCode::ExpectedIdentifier))
 			}
 		} else {
 			// This isn't a declaration, so parse an expression
 
 			let expr = self.parse_expression()?;
 
-			return Ok(Stmt::Expr(expr));
+			Ok(Stmt::Expr(expr))
 		}
 	}
 
@@ -822,7 +808,7 @@ impl Parser {
 
 				Token::Other('{') => todo!(),
 
-				_ => return Err(self.err(CMNErrorCode::UnexpectedToken))
+				_ => Err(self.err(CMNErrorCode::UnexpectedToken))
 			}
 		} else {
 			Err(self.err(CMNErrorCode::UnexpectedToken))
@@ -855,7 +841,7 @@ impl Parser {
 
 			// Handle unary prefix operators
 			Token::Operator(tk) => {
-				match Operator::get_operator(&tk, false) {
+				match Operator::get_operator(tk, false) {
 					Some(op) => {
 						self.get_next()?;
 
@@ -898,7 +884,7 @@ impl Parser {
 			let tk = self.get_current()?;
 
 			let op = match tk {
-				Token::Operator(op) => match Operator::get_operator(&op, true) {
+				Token::Operator(op) => match Operator::get_operator(op, true) {
 					Some(result) => result,
 					None => break,
 				},
@@ -1040,7 +1026,7 @@ impl Parser {
 									self.get_next()?;
 
 									result = Some(Atom::AlgebraicLit(
-										Type::TypeRef(ItemRef::Resolved(found.clone())),
+										Type::TypeRef(ItemRef::Resolved(found)),
 										inits,
 									));
 								}
@@ -1049,7 +1035,7 @@ impl Parser {
 							}
 						}
 
-						_ => {}
+						TypeDef::Class => todo!(),
 					}
 				}
 
@@ -1103,7 +1089,7 @@ impl Parser {
 						self.get_next()?;
 
 						result = Some(Atom::FnCall {
-							name: name.clone(),
+							name,
 							args,
 							type_args,
 							ret: None,
@@ -1121,7 +1107,7 @@ impl Parser {
 					if suffix_b.is_none() && !suffix.is_empty() {
 						suffix_b = match suffix.as_str() {
 							// Add special numeric suffixes here
-							"f" => Some(Basic::FLOAT { size_bytes: 4 }),
+							"f" => Some(Basic::Float { size_bytes: 4 }),
 
 							_ => return Err(self.err(CMNErrorCode::InvalidSuffix)),
 						};
@@ -1239,10 +1225,7 @@ impl Parser {
 						body,
 
 						// TODO: Add proper metadata to this
-						else_body: match else_body {
-							None => None,
-							Some(e) => Some(e),
-						},
+						else_body,
 					})));
 				}
 
@@ -1301,12 +1284,11 @@ impl Parser {
 					}
 
 					// Parse body
-					let body;
-					if token_compare(&current, "{") {
-						body = self.parse_block()?;
+					let body = if token_compare(&current, "{") {
+						self.parse_block()?
 					} else {
-						body = self.parse_statement()?.wrap_in_block();
-					}
+						self.parse_statement()?.wrap_in_block()
+					};
 
 					result = Some(Atom::CtrlFlow(Box::new(ControlFlow::For {
 						init,
@@ -1336,17 +1318,14 @@ impl Parser {
 		let mut result = None;
 
 		self.namespace
-			.with_item(&typename, &self.current_scope, |item, id| match &item.0 {
-				NamespaceItem::Type(t) => {
+			.with_item(typename, &self.current_scope, |item, id| 
+				if let NamespaceItem::Type(t) = &item.0 {
 					result = Some(Type::TypeRef(ItemRef::Resolved(TypeRef {
 						def: Arc::downgrade(t),
 						name: id.clone(),
 						args: vec![],
 					})))
-				}
-
-				_ => {}
-			});
+				});
 
 		result
 	}
@@ -1384,11 +1363,7 @@ impl Parser {
 				}
 			}
 
-			Token::Keyword(kw) => Ok(match kw {
-				"mut" | "const" | "ref" => true,
-
-				_ => false,
-			}),
+			Token::Keyword(kw) => Ok(matches!(kw, "mut" | "const" | "ref")),
 
 			_ => Ok(false),
 		}
@@ -1570,9 +1545,9 @@ impl Parser {
 
 										let type_args = self.parse_type_argument_list()?;
 
-										for i in 0..type_args.len() {
+										for (i, type_arg) in type_args.iter().enumerate() {
 											let name = agg.params[i].0.clone(); // TODO: Real error handling
-											args.push((name, type_args[i].clone()));
+											args.push((name, type_arg.clone()));
 										}
 									} else {
 										panic!("can't apply type parameters to this type of Type!") // TODO: Real error handling

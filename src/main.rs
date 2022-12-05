@@ -45,7 +45,7 @@ fn main() -> color_eyre::eyre::Result<()> {
 	let build_time = Instant::now();
 
 	if args.input_file.is_empty() {
-		println!("{} {}", "fatal:".red().bold(), "no input module");
+		println!("{} no input module", "fatal:".red().bold());
 		return Ok(());
 	}
 
@@ -132,8 +132,8 @@ fn main() -> color_eyre::eyre::Result<()> {
 		.output()
 		.expect("fatal: failed to link executable");
 
-	io::stdout().write(&output_result.stdout).unwrap();
-	io::stderr().write(&output_result.stderr).unwrap();
+	io::stdout().write_all(&output_result.stdout).unwrap();
+	io::stderr().write_all(&output_result.stderr).unwrap();
 
 	let link_time = build_time.elapsed() - compile_time;
 

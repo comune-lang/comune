@@ -42,11 +42,11 @@ pub struct ModuleState {
 // This is only sound under the condition that Namespaces are ONLY modified by their owning Parsers.
 unsafe impl Send for Namespace {}
 
-pub fn launch_module_compilation<'scope>(
+pub fn launch_module_compilation(
 	state: Arc<ManagerState>,
 	input_module: Identifier,
 	error_sender: Sender<CMNMessageLog>,
-	s: &rayon::Scope<'scope>,
+	s: &rayon::Scope,
 ) -> Result<Namespace, CMNError> {
 	let src_path = get_module_source_path(&state, &input_module);
 	let out_path = get_module_out_path(&state, &input_module, None);
@@ -90,7 +90,6 @@ pub fn launch_module_compilation<'scope>(
 	s.spawn(move |_s| {
 		let context = Context::create();
 		let src_name = src_path.file_name().unwrap().to_str().unwrap();
-		let out_name = out_path.file_name().unwrap().to_str().unwrap();
 
 		let result = match generate_code(&state, &mut mod_state, &context, &input_module) {
 			Ok(res) => res,
@@ -229,7 +228,7 @@ pub fn resolve_types(state: &Arc<ManagerState>, mod_state: &mut ModuleState) -> 
 
 	// Check for cyclical dependencies without indirection
 	// TODO: Nice error reporting for this
-	ast::check_namespace_cyclical_deps(&root)?;
+	ast::check_namespace_cyclical_deps(root)?;
 
 	// Then register impls to their types
 	ast::register_impls(root)?;
@@ -316,7 +315,7 @@ pub fn generate_code<'ctx>(
 
 	// Write cIR to file
 	fs::write(
-		get_module_out_path(&state, input_module, None).with_extension("cir"),
+		get_module_out_path(state, input_module, None).with_extension("cir"),
 		cir_module.to_string(),
 	)
 	.unwrap();
@@ -325,7 +324,7 @@ pub fn generate_code<'ctx>(
 
 	// Write cIR to file
 	fs::write(
-		get_module_out_path(&state, input_module, None).with_extension("cir_mono"),
+		get_module_out_path(state, input_module, None).with_extension("cir_mono"),
 		module_mono.to_string(),
 	)
 	.unwrap();

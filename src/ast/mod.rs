@@ -106,7 +106,7 @@ impl<'ctx> FnScope<'ctx> {
 			});
 		}
 
-		return result;
+		result
 	}
 
 	pub fn add_variable(&mut self, t: Type, n: Name) {
@@ -187,21 +187,21 @@ pub fn validate_fn_call(
 		));
 	}
 
-	for i in 0..args.len() {
+	for (i, arg) in args.iter_mut().enumerate() {
 		// add parameter's type info to argument
 		if let Some((param_ty, _)) = params.get(i) {
-			args[i]
+			arg
 				.get_node_data_mut()
 				.ty
 				.replace(param_ty.get_concrete_type(type_args));
 		}
 
-		let arg_type = args[i].validate(scope)?;
+		let arg_type = arg.validate(scope)?;
 
 		if let Some((param_ty, _)) = params.get(i) {
 			let concrete = param_ty.get_concrete_type(type_args);
 
-			if !args[i].coercable_to(&arg_type, &concrete, scope) {
+			if !arg.coercable_to(&arg_type, &concrete, scope) {
 				return Err((
 					CMNError::new(CMNErrorCode::InvalidCoercion {
 						from: arg_type,
@@ -212,12 +212,12 @@ pub fn validate_fn_call(
 			}
 
 			if arg_type != concrete {
-				args[i].wrap_in_cast(concrete);
+				arg.wrap_in_cast(concrete);
 			}
 		} else {
 			// no parameter type for this argument (possible for varadiac functions)
 			// so just set the type info to the provided argument's type
-			args[i].get_node_data_mut().ty.replace(arg_type);
+			arg.get_node_data_mut().ty.replace(arg_type);
 		}
 	}
 
@@ -227,13 +227,8 @@ pub fn validate_fn_call(
 
 pub fn validate_namespace(namespace: &mut Namespace) -> AnalyzeResult<()> {
 	for (id, child) in &namespace.children {
-		match &child.0 {
-			// Validate function
-			NamespaceItem::Function(func, elem) => {
-				validate_function(id, &func.read().unwrap(), elem, namespace)?
-			}
-
-			_ => {}
+		if let NamespaceItem::Function(func, elem) = &child.0 {
+			validate_function(id, &func.read().unwrap(), elem, namespace)?
 		}
 	}
 
@@ -404,21 +399,17 @@ pub fn check_cyclical_deps(
 ) -> ParseResult<()> {
 	if let TypeDef::Algebraic(agg) = &*ty.as_ref().read().unwrap() {
 		for member in agg.members.iter() {
-			match &member.1 {
-				Type::TypeRef(ItemRef::Resolved(TypeRef { def: ref_t, .. })) => {
-					if parent_types
-						.iter()
-						.any(|elem| Arc::ptr_eq(elem, &ref_t.upgrade().unwrap()))
-					{
-						return Err(CMNError::new(CMNErrorCode::InfiniteSizeType));
-					}
-
-					parent_types.push(ty.clone());
-					check_cyclical_deps(&ref_t.upgrade().unwrap(), parent_types)?;
-					parent_types.pop();
+			if let Type::TypeRef(ItemRef::Resolved(TypeRef { def: ref_t, .. })) = &member.1 {
+				if parent_types
+					.iter()
+					.any(|elem| Arc::ptr_eq(elem, &ref_t.upgrade().unwrap()))
+				{
+					return Err(CMNError::new(CMNErrorCode::InfiniteSizeType));
 				}
 
-				_ => {}
+				parent_types.push(ty.clone());
+				check_cyclical_deps(&ref_t.upgrade().unwrap(), parent_types)?;
+				parent_types.pop();
 			}
 		}
 	}
@@ -427,11 +418,11 @@ pub fn check_cyclical_deps(
 
 pub fn check_namespace_cyclical_deps(namespace: &Namespace) -> ParseResult<()> {
 	for item in &namespace.children {
-		match &item.1 .0 {
-			NamespaceItem::Type(ty) => check_cyclical_deps(ty, &mut vec![])?,
-			_ => {}
+		if let NamespaceItem::Type(ty) = &item.1 .0 {
+			check_cyclical_deps(ty, &mut vec![])?
 		}
 	}
+
 	Ok(())
 }
 
@@ -507,7 +498,7 @@ impl Expr {
 					}
 
 					Operator::Subscr => {
-						let idx_type = Type::Basic(Basic::SIZEINT { signed: false });
+						let idx_type = Type::Basic(Basic::PtrSizeInt { signed: false });
 
 						let first_t = lhs.validate_lvalue(scope)?;
 						let second_t = rhs.validate(scope)?;
@@ -515,7 +506,7 @@ impl Expr {
 						if let Type::Array(ty, _) = &first_t {
 							if second_t != idx_type {
 								if rhs.coercable_to(&second_t, &idx_type, scope) {
-									rhs.wrap_in_cast(idx_type.clone());
+									rhs.wrap_in_cast(idx_type);
 								} else {
 									return Err((
 										CMNError::new(CMNErrorCode::InvalidSubscriptRHS {
@@ -566,7 +557,7 @@ impl Expr {
 							| Operator::Less
 							| Operator::Greater
 							| Operator::LessEq
-							| Operator::GreaterEq => Ok(Type::Basic(Basic::BOOL)),
+							| Operator::GreaterEq => Ok(Type::Basic(Basic::Bool)),
 
 							Operator::PostDec | Operator::PostInc => Ok(first_t),
 
@@ -643,7 +634,7 @@ impl Expr {
 
 					Atom::StringLit(_) => {
 						if let Type::Pointer(other_p) = &target {
-							if let Type::Basic(Basic::CHAR) = **other_p {
+							if let Type::Basic(Basic::Char) = **other_p {
 								return true;
 							}
 						}
@@ -805,35 +796,31 @@ impl Atom {
 		match self {
 			Atom::IntegerLit(_, t) => {
 				if let Some(t) = t {
-					Ok(Type::Basic(t.clone()))
+					Ok(Type::Basic(*t))
+				} else if let Some(Type::Basic(_)) = meta.ty {
+					Ok(meta.ty.as_ref().unwrap().clone())
 				} else {
-					if let Some(Type::Basic(_)) = meta.ty {
-						Ok(meta.ty.as_ref().unwrap().clone())
-					} else {
-						Ok(Type::Basic(Basic::INTEGRAL {
-							signed: true,
-							size_bytes: 4,
-						}))
-					}
+					Ok(Type::Basic(Basic::Integral {
+						signed: true,
+						size_bytes: 4,
+					}))
 				}
 			}
 
 			Atom::FloatLit(_, t) => {
 				if let Some(t) = t {
 					Ok(Type::Basic(*t))
+				} else if let Some(Type::Basic(b)) = meta.ty {
+					*t = Some(b);
+					Ok(meta.ty.as_ref().unwrap().clone())
 				} else {
-					if let Some(Type::Basic(b)) = meta.ty {
-						*t = Some(b);
-						Ok(meta.ty.as_ref().unwrap().clone())
-					} else {
-						*t = Some(Basic::FLOAT { size_bytes: 4 });
-						Ok(Type::Basic(t.unwrap()))
-					}
+					*t = Some(Basic::Float { size_bytes: 4 });
+					Ok(Type::Basic(t.unwrap()))
 				}
 			}
 
-			Atom::BoolLit(_) => Ok(Type::Basic(Basic::BOOL)),
-			Atom::StringLit(_) => Ok(Type::Basic(Basic::STR)),
+			Atom::BoolLit(_) => Ok(Type::Basic(Basic::Bool)),
+			Atom::StringLit(_) => Ok(Type::Basic(Basic::Str)),
 
 			Atom::Identifier(name) => {
 				if let Some((id, ty)) = scope.find_symbol(name) {
@@ -944,7 +931,7 @@ impl Atom {
 				if let Some(result) = result {
 					result.validate(scope)
 				} else {
-					Ok(Type::Basic(Basic::VOID))
+					Ok(Type::Basic(Basic::Void))
 				}
 			}
 
@@ -954,14 +941,14 @@ impl Atom {
 					body,
 					else_body,
 				} => {
-					let bool_ty = Type::Basic(Basic::BOOL);
+					let bool_ty = Type::Basic(Basic::Bool);
 					let mut subscope = FnScope::from_parent(scope);
 
 					let cond_ty = cond.validate(&mut subscope)?;
 
 					if cond_ty != bool_ty {
 						if cond_ty.castable_to(&bool_ty) {
-							cond.wrap_in_cast(bool_ty.clone());
+							cond.wrap_in_cast(bool_ty);
 						} else {
 							todo!()
 						}
@@ -983,7 +970,7 @@ impl Atom {
 				}
 
 				ControlFlow::While { cond, body } => {
-					let bool_ty = Type::Basic(Basic::BOOL);
+					let bool_ty = Type::Basic(Basic::Bool);
 					let mut subscope = FnScope::from_parent(scope);
 
 					let cond_ty = cond.validate(&mut subscope)?;
@@ -1005,7 +992,7 @@ impl Atom {
 					iter,
 					body,
 				} => {
-					let bool_ty = Type::Basic(Basic::BOOL);
+					let bool_ty = Type::Basic(Basic::Bool);
 					let mut subscope = FnScope::from_parent(scope);
 
 					if let Some(init) = init {
@@ -1049,27 +1036,26 @@ impl Atom {
 								meta.tk,
 							))
 						}
+					} else if scope.fn_return_type == Type::Basic(Basic::Void) {
+						Ok(Type::Never)
 					} else {
-						if scope.fn_return_type == Type::Basic(Basic::VOID) {
-							Ok(Type::Never)
-						} else {
-							Err((
-								CMNError::new(CMNErrorCode::ReturnTypeMismatch {
-									expected: scope.fn_return_type.clone(),
-									got: Type::Basic(Basic::VOID),
-								}),
-								meta.tk,
-							))
-						}
+						Err((
+							CMNError::new(CMNErrorCode::ReturnTypeMismatch {
+								expected: scope.fn_return_type.clone(),
+								got: Type::Basic(Basic::Void),
+							}),
+							meta.tk,
+						))
 					}
 				}
+				
 
 				ControlFlow::Break => todo!(),
 				ControlFlow::Continue => todo!(),
 				
 				ControlFlow::Match { scrutinee, branches } => {
 					if branches.is_empty() {
-						return Ok(Type::Basic(Basic::VOID));
+						return Ok(Type::Basic(Basic::Void));
 					}
 
 					let mut branch_iter = branches.iter_mut();
@@ -1107,10 +1093,10 @@ impl Atom {
 	) -> AnalyzeResult<()> {
 		match from {
 			Type::Basic(b) => match b {
-				Basic::STR => {
+				Basic::Str => {
 					match to {
 						Type::Pointer(to_ptr) => {
-							if let Type::Basic(Basic::CHAR) = **to_ptr {
+							if let Type::Basic(Basic::Char) = **to_ptr {
 								if let Atom::StringLit(s) = self {
 									if s.ends_with('\0') {
 										s.push('\0');

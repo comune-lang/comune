@@ -64,16 +64,19 @@ int main() {
 		b: 0
 	};
 
-	int cool = test.a;
-	test.a = cool;
-
-	for (int i = 0; i < 10; i++) {
-		printf("Loop %i!\n\0", i)
-	}
-
 	free(my_cool_generic.data as void*);
 
 	(int | float) who_knows_result = who_knows(21);
+
+	match who_knows_result {
+		int int_result => {
+			
+		}
+
+		float float_result => {
+
+		}
+	}
 
 	test.sum()
 }

@@ -93,7 +93,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 					let mut members_ir = vec![];
 
 					for mem in members {
-						members_ir.push(Self::to_basic_type(self.get_llvm_type(&mem)));
+						members_ir.push(Self::to_basic_type(self.get_llvm_type(mem)));
 					}
 
 					let type_ir = self.type_map[i].into_struct_type();
@@ -106,7 +106,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 		}
 
 		for func in &module.functions {
-			self.register_fn(func.1.mangled_name.as_ref().unwrap(), &func.1)?;
+			self.register_fn(func.1.mangled_name.as_ref().unwrap(), func.1)?;
 			self.fn_map.insert(
 				func.0.clone(),
 				func.1.mangled_name.as_ref().unwrap().clone(),
@@ -115,7 +115,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 		for func in &module.functions {
 			if !func.1.is_extern {
-				self.generate_fn(func.1.mangled_name.as_ref().unwrap(), &func.1)?;
+				self.generate_fn(func.1.mangled_name.as_ref().unwrap(), func.1)?;
 			}
 		}
 
@@ -159,12 +159,10 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 		// Build parameter stores
 		{
-			let mut idx = 0;
 			self.builder.position_at_end(self.blocks[0]);
 
-			for param in self.fn_value_opt.as_ref().unwrap().get_param_iter() {
+			for (idx, param) in self.fn_value_opt.as_ref().unwrap().get_param_iter().enumerate() {
 				self.builder.build_store(self.variables[idx], param);
-				idx += 1;
 			}
 		}
 
@@ -207,7 +205,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 					CIRStmt::Return(expr) => {
 						if let Some((expr, _)) = expr {
 							self.builder
-								.build_return(Some(&self.generate_rvalue(&expr).unwrap()));
+								.build_return(Some(&self.generate_rvalue(expr).unwrap()));
 						} else {
 							self.builder.build_return(None);
 						}
@@ -310,7 +308,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 						result = self
 							.builder
 							.build_int_compare(
-								Self::to_int_predicate(&op, lhs_ty.is_signed()),
+								Self::to_int_predicate(op, lhs_ty.is_signed()),
 								lhs_i,
 								rhs_i,
 								"icomp",
@@ -376,7 +374,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 								match val {
 									BasicValueEnum::IntValue(i) => match &to {
-										CIRType::Basic(Basic::BOOL) => {
+										CIRType::Basic(Basic::Bool) => {
 											return Some(
 												self.builder
 													.build_int_compare(
@@ -452,49 +450,47 @@ impl<'ctx> LLVMBackend<'ctx> {
 								// Not numeric, match other Basics
 
 								match b {
-									Basic::STR => {
+									Basic::Str => {
 										if let CIRType::Pointer(other_p) = &to {
-											if let CIRType::Basic(other_b) = **other_p {
-												if let Basic::CHAR = other_b {
-													// Cast from `str` to char*
-													let val = self.generate_operand(from, val).unwrap();
+											if let CIRType::Basic(Basic::Char) = **other_p {
+												// Cast from `str` to char*
+												let val = self.generate_operand(from, val).unwrap();
 
-													match val {
-														BasicValueEnum::StructValue(struct_val) => {
-															let val_extracted = match self
-																.builder
-																.build_extract_value(
-																	struct_val, 0, "cast",
+												match val {
+													BasicValueEnum::StructValue(struct_val) => {
+														let val_extracted = match self
+															.builder
+															.build_extract_value(
+																struct_val, 0, "cast",
+															)
+															.unwrap()
+														{
+															BasicValueEnum::PointerValue(p) => p,
+															_ => panic!(),
+														};
+
+														return Some(
+															self.builder
+																.build_pointer_cast(
+																	val_extracted,
+																	self.context
+																		.i8_type()
+																		.ptr_type(
+																			AddressSpace::Generic,
+																		),
+																	"charcast",
 																)
-																.unwrap()
-															{
-																BasicValueEnum::PointerValue(p) => p,
-																_ => panic!(),
-															};
-
-															return Some(
-																self.builder
-																	.build_pointer_cast(
-																		val_extracted,
-																		self.context
-																			.i8_type()
-																			.ptr_type(
-																				AddressSpace::Generic,
-																			),
-																		"charcast",
-																	)
-																	.as_basic_value_enum(),
-															);
-														}
-														_ => panic!(),
+																.as_basic_value_enum(),
+														);
 													}
+													_ => panic!(),
 												}
 											}
 										}
 										panic!()
 									}
 
-									Basic::BOOL => todo!(),
+									Basic::Bool => todo!(),
 
 									_ => todo!(),
 								}
@@ -540,16 +536,11 @@ impl<'ctx> LLVMBackend<'ctx> {
 					})
 					.collect();
 
-				if let Some(val) = self
+				self
 					.builder
 					.build_call(fn_v, &args_mapped, "fncall")
 					.try_as_basic_value()
 					.left()
-				{
-					Some(val)
-				} else {
-					None
-				}
 			}
 
 			Operand::StringLit(s) => {
@@ -599,7 +590,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 			Operand::BoolLit(b) => Some(
 				self.context
 					.bool_type()
-					.const_int(if *b { 1 } else { 0 }, false)
+					.const_int(u64::from(*b), false)
 					.as_basic_value_enum(),
 			),
 			Operand::LValue(l) => Some(self.builder.build_load(self.generate_lvalue(l), "lread")),
@@ -726,7 +717,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 	fn get_llvm_type(&self, ty: &CIRType) -> AnyTypeEnum<'ctx> {
 		match ty {
 			CIRType::Basic(basic) => match basic {
-				Basic::INTEGRAL { size_bytes, .. } => match size_bytes {
+				Basic::Integral { size_bytes, .. } => match size_bytes {
 					8 => self.context.i64_type(),
 					4 => self.context.i32_type(),
 					2 => self.context.i16_type(),
@@ -735,22 +726,22 @@ impl<'ctx> LLVMBackend<'ctx> {
 				}
 				.as_any_type_enum(),
 
-				Basic::SIZEINT { .. } => self
+				Basic::PtrSizeInt { .. } => self
 					.context
 					.ptr_sized_int_type(&get_target_machine().get_target_data(), None)
 					.as_any_type_enum(),
 
-				Basic::FLOAT { size_bytes } => if *size_bytes == 8 {
+				Basic::Float { size_bytes } => if *size_bytes == 8 {
 					self.context.f64_type()
 				} else {
 					self.context.f32_type()
 				}
 				.as_any_type_enum(),
 
-				Basic::CHAR => self.context.i8_type().as_any_type_enum(),
-				Basic::BOOL => self.context.bool_type().as_any_type_enum(),
-				Basic::VOID => self.context.void_type().as_any_type_enum(),
-				Basic::STR => self.slice_type(&self.context.i8_type()).as_any_type_enum(),
+				Basic::Char => self.context.i8_type().as_any_type_enum(),
+				Basic::Bool => self.context.bool_type().as_any_type_enum(),
+				Basic::Void => self.context.void_type().as_any_type_enum(),
+				Basic::Str => self.slice_type(&self.context.i8_type()).as_any_type_enum(),
 			},
 
 			CIRType::Array(arr_ty, size) => Self::to_basic_type(self.get_llvm_type(arr_ty))
@@ -758,7 +749,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 				.as_any_type_enum(),
 
 			CIRType::Pointer(pointee) | CIRType::Reference(pointee) => {
-				if let CIRType::Basic(Basic::VOID) = &**pointee {
+				if let CIRType::Basic(Basic::Void) = &**pointee {
 					// void* isn't valid in LLVM, so we generate an i8* type instead
 					self.context
 						.i8_type()
@@ -771,7 +762,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 				}
 			}
 
-			CIRType::TypeRef(idx, _) => self.type_map[idx].clone(),
+			CIRType::TypeRef(idx, _) => self.type_map[idx],
 
 			CIRType::Tuple(kind, types) => {
 				let types_mapped: Vec<_> = types

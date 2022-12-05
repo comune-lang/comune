@@ -8,8 +8,8 @@ use crate::{
 		expression::{Atom, Expr, Operator},
 		namespace::{Identifier, ItemRef, Name, Namespace, NamespaceASTElem, NamespaceItem},
 		statement::Stmt,
-		types::{Basic, FnDef, Type, TypeDef, TypeRef},
-		Attribute,
+		types::{Basic, FnDef, Type, TypeDef, TypeRef, TupleKind},
+		Attribute, pattern::Pattern,
 	},
 };
 
@@ -343,13 +343,13 @@ impl CIRModuleBuilder {
 				}),
 
 				Atom::BoolLit(b) => Some(RValue::Atom(
-					CIRType::Basic(Basic::BOOL),
+					CIRType::Basic(Basic::Bool),
 					None,
 					Operand::BoolLit(*b),
 				)),
 
 				Atom::StringLit(s) => Some(RValue::Atom(
-					CIRType::Basic(Basic::STR),
+					CIRType::Basic(Basic::Str),
 					None,
 					Operand::StringLit(s.clone()),
 				)),
@@ -503,7 +503,7 @@ impl CIRModuleBuilder {
 					} => {
 						let cir_ty = self.convert_type(expr_ty);
 
-						let result = if cir_ty != CIRType::Basic(Basic::VOID) {
+						let result = if cir_ty != CIRType::Basic(Basic::Void) {
 							Some(self.insert_temporary(
 								cir_ty.clone(),
 								RValue::Atom(cir_ty.clone(), None, Operand::Undef),
@@ -622,7 +622,7 @@ impl CIRModuleBuilder {
 						// Generate body
 						let body_ir = self.generate_expr(body)?;
 						self.write(CIRStmt::Expression(body_ir, (0, 0)));
-						
+
 						let body_block = self.current_block;
 
 						// Add iter statement to body
@@ -656,7 +656,23 @@ impl CIRModuleBuilder {
 					ControlFlow::Break => todo!(),
 					ControlFlow::Continue => todo!(),
 					
-					ControlFlow::Match { scrutinee, branches } => todo!(),
+					ControlFlow::Match { scrutinee, branches } => {
+						// Generate switch discriminant calculation
+						let scrutinee_ir = self.generate_expr(scrutinee)?;
+						let scrutinee_ty = self.convert_type(scrutinee.get_type());
+						let scrutinee_lval = self.insert_temporary(scrutinee_ty.clone(), scrutinee_ir);
+
+						let mut branches_ir = vec![];
+						
+						for branch in branches {
+							// TODO: There is no usefulness checking here - if a value 
+							// matches multiple branches, this will probably break
+							let match_expr = self.generate_match_expr(&branch.0, &scrutinee_lval, &scrutinee_ty);
+							branches_ir.push(match_expr);
+						}
+
+						todo!()
+					},
 				},
 			},
 
@@ -832,12 +848,43 @@ impl CIRModuleBuilder {
 		}
 	}
 
-	fn get_condition_inverse(&mut self, cond_ty: CIRType, cond: RValue) -> RValue {
-		RValue::Atom(cond_ty.clone(), Some(Operator::LogicNot), self.get_as_operand(cond_ty, cond))
+	fn generate_match_expr(&mut self, pattern: &Pattern, value: &LValue, value_ty: &CIRType) -> RValue {
+		match pattern {
+			Pattern::Binding(_, pattern_ty) => {
+				let pattern_ty = self.convert_type(pattern_ty);
+
+				if &pattern_ty == value_ty {
+					RValue::const_bool(true)
+				} else if let CIRType::Tuple(TupleKind::Sum, types) = value_ty {
+
+					let Some(discriminant) = types.iter().position(|item| item == &pattern_ty) else {
+						panic!("invalid match variant type!"); // TODO: Figure this out
+					};
+
+					// TODO: Actually figure out proper discriminant type
+					let disc_type = CIRType::Basic(Basic::Integral { signed: false, size_bytes: 4 });
+
+					RValue::Cons(
+						CIRType::Basic(Basic::Bool), 
+						[
+							(disc_type.clone(), Operand::LValue(LValue { local: value.local, projection: vec![PlaceElem::Field(0)] })), 
+							(disc_type, Operand::IntegerLit(discriminant as i128))
+						], 
+						Operator::Eq
+					)
+
+					
+				} else {
+					todo!()
+				}
+			},
+			Pattern::Destructure(_, _) => todo!(),
+			Pattern::Or(_, _) => todo!(),
+		}
 	}
 
 	fn generate_branch(&mut self, cond: RValue, a: BlockIndex, b: BlockIndex) {
-		self.write(CIRStmt::Switch(cond, vec![(CIRType::Basic(Basic::BOOL), Operand::BoolLit(true), a)], b));
+		self.write(CIRStmt::Switch(cond, vec![(CIRType::Basic(Basic::Bool), Operand::BoolLit(true), a)], b));
 	}
 
 	fn get_var_index(&self, name: &Name) -> Option<VarIndex> {
@@ -886,6 +933,6 @@ impl CIRModuleBuilder {
 	}
 
 	fn get_void_rvalue() -> RValue {
-		RValue::Atom(CIRType::Basic(Basic::VOID), None, Operand::Undef)
+		RValue::Atom(CIRType::Basic(Basic::Void), None, Operand::Undef)
 	}
 }

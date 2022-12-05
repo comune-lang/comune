@@ -419,7 +419,7 @@ impl Display for Atom {
 
 				if !args.is_empty() {
 					write!(f, "{}", args_iter.next().unwrap())?;
-					while let Some(arg) = args_iter.next() {
+					for arg in args_iter {
 						write!(f, ", {}", arg)?;
 					}
 				}
@@ -432,17 +432,17 @@ impl Display for Atom {
 			Atom::Identifier(var) => write!(f, "{}", var),
 
 			Atom::Block { items, result } => {
-				write!(f, "{{\n")?;
+				writeln!(f, "{{")?;
 
 				for item in items {
-					write!(f, "\t{item}; \n")?
+					writeln!(f, "\t{item};")?
 				}
 
 				if let Some(result) = result {
-					write!(f, "\t{result}\n")?
+					writeln!(f, "\t{result}")?
 				}
 
-				write!(f, "}}\n")
+				writeln!(f, "}}")
 			}
 
 			Atom::CtrlFlow(_) => todo!(),

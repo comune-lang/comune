@@ -464,9 +464,9 @@ impl CIRType {
 impl Basic {
 	fn mangle(&self) -> &str {
 		match self {
-			Basic::BOOL => "b",
+			Basic::Bool => "b",
 
-			Basic::INTEGRAL { signed, size_bytes } => {
+			Basic::Integral { signed, size_bytes } => {
 				if *signed {
 					match size_bytes {
 						8 => "x",
@@ -486,7 +486,7 @@ impl Basic {
 				}
 			}
 
-			Basic::SIZEINT { signed } => {
+			Basic::PtrSizeInt { signed } => {
 				if *signed {
 					"x"
 				} else {
@@ -494,15 +494,15 @@ impl Basic {
 				}
 			}
 
-			Basic::FLOAT { size_bytes } => match size_bytes {
+			Basic::Float { size_bytes } => match size_bytes {
 				8 => "d",
 				4 => "f",
 				_ => unimplemented!(),
 			},
 
-			Basic::CHAR => "c",
-			Basic::VOID => "v",
-			Basic::STR => "cj", // TODO: Figure this out
+			Basic::Char => "c",
+			Basic::Void => "v",
+			Basic::Str => "cj", // TODO: Figure this out
 		}
 	}
 }

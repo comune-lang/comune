@@ -63,13 +63,13 @@ pub struct AlgebraicDef {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Basic {
-	INTEGRAL { signed: bool, size_bytes: u32 },
-	SIZEINT { signed: bool },
-	FLOAT { size_bytes: u32 },
-	CHAR,
-	BOOL,
-	VOID,
-	STR,
+	Integral { signed: bool, size_bytes: u32 },
+	PtrSizeInt { signed: bool },
+	Float { size_bytes: u32 },
+	Char,
+	Bool,
+	Void,
+	Str,
 }
 #[derive(Clone)]
 pub struct TypeRef {
@@ -135,49 +135,49 @@ impl AlgebraicDef {
 impl Basic {
 	pub fn get_basic_type(name: &str) -> Option<Self> {
 		match name {
-			"i64" => Some(Basic::INTEGRAL {
+			"i64" => Some(Basic::Integral {
 				signed: true,
 				size_bytes: 8,
 			}),
-			"i32" | "int" => Some(Basic::INTEGRAL {
+			"i32" | "int" => Some(Basic::Integral {
 				signed: true,
 				size_bytes: 4,
 			}),
-			"i16" => Some(Basic::INTEGRAL {
+			"i16" => Some(Basic::Integral {
 				signed: true,
 				size_bytes: 2,
 			}),
-			"i8" => Some(Basic::INTEGRAL {
+			"i8" => Some(Basic::Integral {
 				signed: true,
 				size_bytes: 1,
 			}),
-			"u64" => Some(Basic::INTEGRAL {
+			"u64" => Some(Basic::Integral {
 				signed: false,
 				size_bytes: 8,
 			}),
-			"u32" | "uint" => Some(Basic::INTEGRAL {
+			"u32" | "uint" => Some(Basic::Integral {
 				signed: false,
 				size_bytes: 4,
 			}),
-			"u16" => Some(Basic::INTEGRAL {
+			"u16" => Some(Basic::Integral {
 				signed: false,
 				size_bytes: 2,
 			}),
-			"u8" => Some(Basic::INTEGRAL {
+			"u8" => Some(Basic::Integral {
 				signed: false,
 				size_bytes: 1,
 			}),
 
-			"isize" => Some(Basic::SIZEINT { signed: false }),
-			"usize" => Some(Basic::SIZEINT { signed: false }),
+			"isize" => Some(Basic::PtrSizeInt { signed: false }),
+			"usize" => Some(Basic::PtrSizeInt { signed: false }),
 
-			"f64" | "double" => Some(Basic::FLOAT { size_bytes: 8 }),
-			"f32" | "float" => Some(Basic::FLOAT { size_bytes: 4 }),
+			"f64" | "double" => Some(Basic::Float { size_bytes: 8 }),
+			"f32" | "float" => Some(Basic::Float { size_bytes: 4 }),
 
-			"char" => Some(Basic::CHAR),
-			"str" => Some(Basic::STR),
-			"bool" => Some(Basic::BOOL),
-			"void" => Some(Basic::VOID),
+			"char" => Some(Basic::Char),
+			"str" => Some(Basic::Str),
+			"bool" => Some(Basic::Bool),
+			"void" => Some(Basic::Void),
 
 			_ => None,
 		}
@@ -185,7 +185,7 @@ impl Basic {
 
 	pub fn as_str(&self) -> &'static str {
 		match self {
-			Basic::INTEGRAL { signed, size_bytes } => match size_bytes {
+			Basic::Integral { signed, size_bytes } => match size_bytes {
 				8 => {
 					if *signed {
 						"i64"
@@ -217,14 +217,14 @@ impl Basic {
 				_ => panic!(),
 			},
 
-			Basic::FLOAT { size_bytes } => {
+			Basic::Float { size_bytes } => {
 				if *size_bytes == 8 {
 					"f64"
 				} else {
 					"f32"
 				}
 			}
-			Basic::SIZEINT { signed } => {
+			Basic::PtrSizeInt { signed } => {
 				if *signed {
 					"isize"
 				} else {
@@ -232,10 +232,10 @@ impl Basic {
 				}
 			}
 
-			Basic::CHAR => "char",
-			Basic::STR => "str",
-			Basic::BOOL => "bool",
-			Basic::VOID => "void",
+			Basic::Char => "char",
+			Basic::Str => "str",
+			Basic::Bool => "bool",
+			Basic::Void => "void",
 		}
 	}
 
@@ -244,11 +244,11 @@ impl Basic {
 	}
 
 	pub fn is_integral(&self) -> bool {
-		matches!(self, Basic::INTEGRAL { .. } | Basic::SIZEINT { .. })
+		matches!(self, Basic::Integral { .. } | Basic::PtrSizeInt { .. })
 	}
 
 	pub fn is_signed(&self) -> bool {
-		if let Basic::INTEGRAL { signed, .. } | Basic::SIZEINT { signed } = self {
+		if let Basic::Integral { signed, .. } | Basic::PtrSizeInt { signed } = self {
 			*signed
 		} else {
 			false
@@ -256,11 +256,11 @@ impl Basic {
 	}
 
 	pub fn is_boolean(&self) -> bool {
-		matches!(self, Basic::BOOL)
+		matches!(self, Basic::Bool)
 	}
 
 	pub fn is_floating_point(&self) -> bool {
-		matches!(self, Basic::FLOAT { .. })
+		matches!(self, Basic::Float { .. })
 	}
 }
 
@@ -292,9 +292,7 @@ impl Type {
 	}
 
 	pub fn castable_to(&self, target: &Type) -> bool {
-		if self == target {
-			true
-		} else if self == &Type::Never {
+		if self == target || self == &Type::Never {
 			true
 		} else if self.is_numeric() {
 			target.is_numeric() || target.is_boolean()

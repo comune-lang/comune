@@ -200,3 +200,9 @@ impl CIRType {
 		}
 	}
 }
+
+impl RValue {
+	pub fn const_bool(value: bool) -> Self {
+		RValue::Atom(CIRType::Basic(Basic::Bool), None, Operand::BoolLit(value))
+	}
+}

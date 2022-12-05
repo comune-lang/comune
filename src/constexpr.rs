@@ -37,15 +37,15 @@ impl ConstEval for Expr {
 				match a.eval_const(scope)? {
 					// Unary operators
 					ConstValue::Integral(i, b) => match op {
-						Operator::UnaryMinus => return Ok(ConstValue::Integral(-i, b)),
-						Operator::UnaryPlus => return Ok(ConstValue::Integral(i, b)),
+						Operator::UnaryMinus => Ok(ConstValue::Integral(-i, b)),
+						Operator::UnaryPlus => Ok(ConstValue::Integral(i, b)),
 						_ => todo!(),
 					},
 
 					ConstValue::Float(f, b) => match op {
-						Operator::UnaryMinus => return Ok(ConstValue::Float(-f, b)),
-						Operator::UnaryPlus => return Ok(ConstValue::Float(f, b)),
-						_ => todo!(),
+						Operator::UnaryMinus => Ok(ConstValue::Float(-f, b)),
+						Operator::UnaryPlus => Ok(ConstValue::Float(f, b)),
+						_ => todo!()
 					},
 
 					ConstValue::Bool(b) => {
@@ -66,7 +66,7 @@ impl ConstEval for Expr {
 						let combined_b = b; // TODO: Actually decide how this is inferred
 
 						if let ConstValue::Integral(i_rhs, _) = rhs {
-							return Ok(match op {
+							Ok(match op {
 								Operator::Add => ConstValue::Integral(i_lhs + i_rhs, combined_b),
 								Operator::Sub => ConstValue::Integral(i_lhs - i_rhs, combined_b),
 								Operator::Mul => ConstValue::Integral(i_lhs * i_rhs, combined_b),
@@ -90,7 +90,7 @@ impl ConstEval for Expr {
 								Operator::NotEq => ConstValue::Bool(i_lhs != i_rhs),
 
 								_ => panic!(),
-							});
+							})
 						} else {
 							panic!()
 						}
@@ -100,7 +100,7 @@ impl ConstEval for Expr {
 						let combined_b = b; // TODO: Actually decide how this is inferred
 
 						if let ConstValue::Float(f_rhs, _) = rhs {
-							return Ok(match op {
+							Ok(match op {
 								Operator::Add => ConstValue::Float(f_lhs + f_rhs, combined_b),
 								Operator::Sub => ConstValue::Float(f_lhs - f_rhs, combined_b),
 								Operator::Mul => ConstValue::Float(f_lhs * f_rhs, combined_b),
@@ -114,7 +114,7 @@ impl ConstEval for Expr {
 								Operator::NotEq => ConstValue::Bool(f_lhs != f_rhs),
 
 								_ => panic!(),
-							});
+							})
 						} else {
 							panic!()
 						}
@@ -122,12 +122,12 @@ impl ConstEval for Expr {
 
 					ConstValue::Bool(b_lhs) => {
 						if let ConstValue::Bool(b_rhs) = rhs {
-							return Ok(match op {
+							Ok(match op {
 								Operator::LogicAnd => ConstValue::Bool(b_lhs && b_rhs),
 								Operator::LogicOr => ConstValue::Bool(b_lhs || b_rhs),
 
 								_ => panic!(),
-							});
+							})
 						} else {
 							panic!()
 						}
@@ -141,8 +141,8 @@ impl ConstEval for Expr {
 impl ConstEval for Atom {
 	fn eval_const(&self, _scope: &FnScope) -> AnalyzeResult<ConstValue> {
 		match self {
-			Atom::IntegerLit(i, b) => Ok(ConstValue::Integral(*i, b.clone())),
-			Atom::FloatLit(f, b) => Ok(ConstValue::Float(*f, b.clone())),
+			Atom::IntegerLit(i, b) => Ok(ConstValue::Integral(*i, *b)),
+			Atom::FloatLit(f, b) => Ok(ConstValue::Float(*f, *b)),
 			Atom::BoolLit(b) => Ok(ConstValue::Bool(*b)),
 
 			_ => todo!(),
