@@ -44,11 +44,11 @@ int main() {
 
 	match who_knows_result {
 		int int_result => {
-			printf("It's an int!\n\0")
+			printf("It's an int!\n\0");
 		}
 
 		float float_result => {
-			printf("It's a float!\n\0")
+			printf("It's a float!\n\0");
 		}
 	}
 
