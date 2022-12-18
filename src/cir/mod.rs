@@ -205,4 +205,11 @@ impl RValue {
 	pub fn const_bool(value: bool) -> Self {
 		RValue::Atom(CIRType::Basic(Basic::Bool), None, Operand::BoolLit(value))
 	}
+
+	pub fn get_type(&self) -> &CIRType {
+		match self {
+			RValue::Atom(ty, _, _) | RValue::Cons(ty, _, _) => ty,
+			RValue::Cast { to, .. } => to,
+		}
+	}
 }

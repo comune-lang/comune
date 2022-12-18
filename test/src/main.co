@@ -38,7 +38,19 @@ struct Vector<T> {
 int main() {
 	printf("This is main()!\n\0");
 
-	printf("This is a vararg & generics test! the magic number is %i\n\0", fib(10));
+	printf("This is a vararg test! the magic number is %i\n\0", fib(10));
+
+	(int | float) who_knows_result = who_knows(21);
+
+	match who_knows_result {
+		int int_result => {
+			printf("It's an int!\n\0")
+		}
+
+		float float_result => {
+			printf("It's a float!\n\0")
+		}
+	}
 
 	Vector<int> my_cool_generic;
 
@@ -65,18 +77,6 @@ int main() {
 	};
 
 	free(my_cool_generic.data as void*);
-
-	(int | float) who_knows_result = who_knows(21);
-
-	match who_knows_result {
-		int int_result => {
-			
-		}
-
-		float float_result => {
-
-		}
-	}
 
 	test.sum()
 }

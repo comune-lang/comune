@@ -344,6 +344,8 @@ pub fn generate_code<'ctx>(
 		return Err(CMNError::new(CMNErrorCode::LLVMError));
 	};
 
+	backend.module.print_to_file(get_module_out_path(state, input_module, None).with_extension("llraw").as_os_str()).unwrap();
+
 	// Optimization passes
 	let mpm = PassManager::<Module>::create(());
 

@@ -88,7 +88,7 @@ impl Display for CIRStmt {
 					writeln!(f, "\t\t{val}:{ty} => bb{branch},")?;
 				}
 
-				write!(f, "\t\telse => bb{else_branch},\n\t}}")
+				writeln!(f, "\t\telse => bb{else_branch},\n\t}}")
 			}
 
 			CIRStmt::Return(expr_opt) => {

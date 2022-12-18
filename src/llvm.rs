@@ -451,7 +451,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 								match b {
 									Basic::Str => {
-										if let CIRType::Pointer(other_p) = &to {
+										if let CIRType::Pointer(other_p) = to {
 											if let CIRType::Basic(Basic::Char) = **other_p {
 												// Cast from `str` to char*
 												let val = self.generate_operand(from, val).unwrap();
@@ -490,7 +490,14 @@ impl<'ctx> LLVMBackend<'ctx> {
 										panic!()
 									}
 
-									Basic::Bool => todo!(),
+									Basic::Bool => {
+										if let CIRType::Basic(Basic::Integral { .. }) = to {
+											let val = self.generate_operand(from, val).unwrap().as_basic_value_enum().into_int_value();
+											Some(self.builder.build_int_cast(val, self.get_llvm_type(to).into_int_type(), "intcast").as_basic_value_enum())
+										} else {
+											panic!()
+										}
+									},
 
 									_ => todo!(),
 								}
