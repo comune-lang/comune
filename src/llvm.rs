@@ -604,6 +604,31 @@ impl<'ctx> LLVMBackend<'ctx> {
 				)
 			}
 
+			Operand::CStringLit(s) => {
+				let val = self.module.add_global(
+					self.context.i8_type().array_type(s.as_bytes_with_nul().len() as u32), 
+					Some(AddressSpace::Const), 
+					".cstr"
+				);
+				val.set_visibility(GlobalVisibility::Hidden);
+				val.set_linkage(Linkage::Private);
+				val.set_unnamed_addr(true);
+				
+				let literal: Vec<_> = s.as_bytes_with_nul().iter().map(|c| self.context.i8_type().const_int(*c as u64, false)).collect();
+
+				val.set_initializer(&self.context.i8_type().const_array(&literal));
+
+				Some(self.builder.build_address_space_cast(
+					self.builder.build_bitcast(
+						val.as_pointer_value(), 
+						self.context.i8_type().ptr_type(AddressSpace::Const), 
+						"cstrcast"
+					).into_pointer_value(),
+					self.context.i8_type().ptr_type(AddressSpace::Generic),
+					"caddrcast"
+				).as_basic_value_enum())
+			}
+
 			Operand::IntegerLit(i) => Some(
 				Self::to_basic_type(self.get_llvm_type(ty))
 					.into_int_type()

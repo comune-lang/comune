@@ -829,6 +829,7 @@ impl Parser {
 			// Parse atom
 			Token::Identifier(_)
 			| Token::StringLiteral(_)
+			| Token::CStringLiteral(_)
 			| Token::NumLiteral(_, _)
 			| Token::BoolLiteral(_)
 			| Token::Keyword(_) => Expr::Atom(
@@ -1099,6 +1100,8 @@ impl Parser {
 			}
 
 			Token::StringLiteral(s) => result = Some(Atom::StringLit(s)),
+			
+			Token::CStringLiteral(s) => result = Some(Atom::CStringLit(s)),
 
 			Token::NumLiteral(s, suffix) => {
 				result = {

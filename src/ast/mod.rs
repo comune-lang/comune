@@ -632,15 +632,17 @@ impl Expr {
 
 					Atom::BoolLit(_) => target.is_boolean(),
 
-					Atom::StringLit(_) => {
+					Atom::CStringLit(_) => {
 						if let Type::Pointer(other_p) = &target {
-							if let Type::Basic(Basic::Char) = **other_p {
+							if **other_p == Type::Basic(Basic::Integral { signed: false, size_bytes: 1 }) {
 								return true;
 							}
 						}
 
 						false
 					}
+
+					Atom::StringLit(_) => target == &Type::Basic(Basic::Str),
 
 					Atom::Identifier(i) => scope.find_symbol(i).unwrap().1 == *target,
 
@@ -821,6 +823,8 @@ impl Atom {
 
 			Atom::BoolLit(_) => Ok(Type::Basic(Basic::Bool)),
 			Atom::StringLit(_) => Ok(Type::Basic(Basic::Str)),
+
+			Atom::CStringLit(_) => Ok(Type::Pointer(Box::new(Type::Basic(Basic::Integral { signed: false, size_bytes: 1 })))),
 
 			Atom::Identifier(name) => {
 				if let Some((id, ty)) = scope.find_symbol(name) {

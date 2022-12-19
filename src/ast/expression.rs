@@ -1,4 +1,4 @@
-use std::{fmt::Display, ptr};
+use std::{fmt::Display, ptr, ffi::CString};
 
 use super::{
 	controlflow::ControlFlow,
@@ -377,6 +377,7 @@ pub enum Atom {
 	FloatLit(f64, Option<Basic>),
 	BoolLit(bool),
 	StringLit(String),
+	CStringLit(CString),
 
 	// Advanced literals
 	ArrayLit(Vec<Expr>),
@@ -402,6 +403,8 @@ impl Display for Atom {
 			Atom::FloatLit(fl, _) => write!(f, "{}", fl),
 
 			Atom::StringLit(s) => write!(f, "\"{}\"", s.escape_default()),
+
+			Atom::CStringLit(s) => write!(f, "{s:#?}"),
 
 			Atom::BoolLit(b) => {
 				if *b {

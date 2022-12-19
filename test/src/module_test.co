@@ -1,5 +1,5 @@
 @no_mangle
-void printf(char* fmt);
+void printf(u8* fmt);
 
 u64 fib(u64 n) {
 	u64[3] store;
@@ -11,7 +11,7 @@ u64 fib(u64 n) {
 		store[2] = store[0] + store[1];
 		store[0] = store[1];
 		store[1] = store[2];
-		printf("Loop!\n\0");
+		printf(c"Loop!\n");
 	};
 	
 	return store[2];

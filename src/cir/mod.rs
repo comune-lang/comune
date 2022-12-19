@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use std::{collections::HashMap, hash::Hash};
+use std::{collections::HashMap, hash::Hash, ffi::CString};
 
 use crate::ast::{
 	expression::Operator,
@@ -83,31 +83,16 @@ pub enum RValue {
 
 // An Operand represents a single element of a CIR expression.
 // This may either be a constant, an undef value, or an lvalue access.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum Operand {
 	FnCall(FuncName, Vec<LValue>, Vec<CIRType>), // Fully-qualified name + args
 	IntegerLit(i128),
 	FloatLit(f64),
 	StringLit(String),
+	CStringLit(CString),
 	BoolLit(bool),
 	LValue(LValue),
 	Undef,
-}
-
-impl Clone for Operand {
-	fn clone(&self) -> Self {
-		match self {
-			Operand::FnCall(id, rval, params) => {
-				Operand::FnCall(id.clone(), rval.clone(), params.clone())
-			}
-			Operand::IntegerLit(lit) => Operand::IntegerLit(*lit),
-			Operand::FloatLit(lit) => Operand::FloatLit(*lit),
-			Operand::StringLit(lit) => Operand::StringLit(lit.clone()),
-			Operand::BoolLit(lit) => Operand::BoolLit(*lit),
-			Operand::LValue(lval) => Operand::LValue(lval.clone()),
-			Operand::Undef => Operand::Undef,
-		}
-	}
 }
 
 // A CIRType represents a non-unique instance of a comune type.

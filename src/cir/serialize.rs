@@ -147,6 +147,9 @@ impl Display for Operand {
 			Operand::StringLit(s) => {
 				write!(f, "\"{}\"", lexer::get_unescaped(s))
 			}
+			Operand::CStringLit(s) => {
+				write!(f, "\"{s:#?}\"")
+			}
 			Operand::BoolLit(b) => write!(f, "{b}"),
 			Operand::LValue(lval) => write!(f, "{lval}"),
 			Operand::Undef => write!(f, "undef"),

@@ -1,5 +1,5 @@
-use std::ffi::OsString;
-use std::fmt::Display;
+use std::ffi::{OsString, CString};
+use std::fmt::{Display, Debug};
 use std::fs::File;
 use std::io::{self, Error, Read};
 use std::path::Path;
@@ -56,6 +56,7 @@ pub enum Token {
 	Identifier(Identifier),
 	MultiIdentifier(Vec<Identifier>), // For `using` paths
 	StringLiteral(String),
+	CStringLiteral(CString),
 	BoolLiteral(bool),
 	Keyword(&'static str),
 	NumLiteral(String, String), // Optional suffix
@@ -95,6 +96,8 @@ impl Display for Token {
 				Token::MultiIdentifier(_x) => String::from("todo"),
 
 				Token::StringLiteral(x) | Token::NumLiteral(x, _) => x.clone(),
+				
+				Token::CStringLiteral(x) => x.to_string_lossy().into_owned(),
 
 				Token::Keyword(x) | Token::Operator(x) => x.to_string(),
 
@@ -299,8 +302,35 @@ impl Lexer {
 			}
 
 			start = self.file_index;
+			
+			if token == 'c' && self.peek_next_char()? == '"' {
+				self.get_next_char()?;
+				// Parse C string literal
+				token = self.get_next_char()?;
 
-			if token.is_alphabetic() || token == '_' {
+				let mut result = String::new();
+				let mut escaped = false;
+
+				while token != '"' {
+					if escaped {
+						result.push(get_escaped_char(token).unwrap());
+						escaped = false;
+					} else if token == '\\' {
+						escaped = true;
+					} else {
+						result.push(token);
+					}
+
+					token = self.get_next_char()?;
+				}
+
+				let result = result.into_bytes();
+
+				// Consume ending quote
+				self.get_next_char()?;
+				
+				result_token = Ok(Token::CStringLiteral(CString::new(result).unwrap()));
+			} else if token.is_alphabetic() || token == '_' {
 				// Identifier
 
 				let mut result = String::from(token);
@@ -498,7 +528,9 @@ impl Lexer {
 
 				// Consume ending quote
 				self.get_next_char()?;
+
 				result_token = Ok(Token::StringLiteral(result));
+
 			} else if self.eof_reached() && token.is_whitespace() {
 				return Ok((start, Token::EOF));
 			} else {

@@ -428,6 +428,12 @@ impl CIRModuleBuilder {
 					Operand::StringLit(s.clone()),
 				)),
 
+				Atom::CStringLit(s) => Some(RValue::Atom(
+					CIRType::Pointer(Box::new(CIRType::Basic(Basic::Integral { signed: false, size_bytes: 1 }))),
+					None,
+					Operand::CStringLit(s.clone()),
+				)),
+
 				Atom::ArrayLit(_a) => todo!(),
 
 				Atom::AlgebraicLit(ty, elems) => {
