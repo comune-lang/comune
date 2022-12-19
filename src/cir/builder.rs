@@ -164,6 +164,8 @@ impl CIRModuleBuilder {
 				types.iter().map(|ty| self.convert_type(ty)).collect(),
 			),
 
+			Type::Never => CIRType::Basic(Basic::Void),
+
 			_ => todo!(),
 		}
 	}
@@ -295,6 +297,48 @@ impl CIRModuleBuilder {
 		}
 	}
 
+	// For a given pattern match, generate the appropriate bindings
+	fn generate_pattern_bindings(&mut self, pattern: &Pattern, value: LValue, value_ty: &CIRType) {
+		match pattern {
+			Pattern::Binding(Some(name), ty) => {
+				let cir_ty = self.convert_type(ty);
+				let idx = self.get_fn().variables.len();
+
+				self.get_fn_mut()
+					.variables
+					.push((cir_ty.clone(), Some(name.clone())));
+
+				self.name_map_stack
+					.last_mut()
+					.unwrap()
+					.insert(name.clone(), idx);
+				
+				let store_place = LValue {
+					local: self.get_fn().variables.len() - 1,
+					projection: vec![]
+				};
+
+				if &cir_ty != value_ty {
+					self.write(CIRStmt::Assignment(
+						(store_place, (0, 0)),
+						(RValue::Cast { to: cir_ty, from: value_ty.clone(), val: Operand::LValue(value) }, (0, 0))
+					));
+				} else {
+					self.write(CIRStmt::Assignment(
+						(store_place, (0, 0)),
+						(RValue::Atom(cir_ty, None, Operand::LValue(value)), (0, 0))
+					));
+				}
+				
+				
+			}
+			
+			Pattern::Binding(None, _) => {},
+
+			_ => todo!(),
+		}
+	}
+
 	fn generate_binding(&mut self, ty: &Type, name: Name, elem: &Option<Box<Expr>>) {
 		let cir_ty = self.convert_type(ty);
 		let idx = self.get_fn().variables.len();
@@ -322,8 +366,15 @@ impl CIRModuleBuilder {
 		}
 	}
 
-	fn generate_block(&mut self, items: &Vec<Stmt>, result: &Option<Box<Expr>>) -> (BlockIndex, Option<RValue>) {
-		let jump_idx = self.append_block();
+	fn generate_block(&mut self, items: &Vec<Stmt>, result: &Option<Box<Expr>>, append_current: bool) -> (BlockIndex, Option<RValue>) {
+		
+		let jump_idx = 
+			if append_current {
+				self.current_block
+			} else {
+				self.append_block()
+			};
+
 		self.name_map_stack.push(HashMap::new());
 
 		for item in items {
@@ -480,7 +531,7 @@ impl CIRModuleBuilder {
 					))
 				}
 
-				Atom::Block { items, result } => self.generate_block(items, result).1,
+				Atom::Block { items, result } => self.generate_block(items, result, false).1,
 
 				Atom::CtrlFlow(ctrl) => match &**ctrl {
 					ControlFlow::Return { expr } => {
@@ -516,7 +567,7 @@ impl CIRModuleBuilder {
 						let cond_ir = self.generate_expr(cond)?;
 						let start_block = self.current_block;
 
-						let (if_idx, block_ir) = self.generate_block(items, result);
+						let (if_idx, block_ir) = self.generate_block(items, result, false);
 
 						if let Some(if_val) = block_ir {
 							if let Some(result) = &result_loc {
@@ -532,7 +583,7 @@ impl CIRModuleBuilder {
 
 						if let Some(Expr::Atom(Atom::Block { items: else_items, result: else_result }, else_meta)) = else_body {
 							
-							let (else_idx, else_ir) = self.generate_block(else_items, else_result);
+							let (else_idx, else_ir) = self.generate_block(else_items, else_result, false);
 
 							if let Some(else_val) = else_ir {
 								if let Some(result) = &result_loc {
@@ -589,7 +640,7 @@ impl CIRModuleBuilder {
 						self.write(CIRStmt::Jump(cond_block));
 
 						// Generate body
-						let (body_idx, result) = self.generate_block(items, result);
+						let (body_idx, result) = self.generate_block(items, result, false);
 						
 						// Only write a terminator if the block returns, aka result.is_some()
 						if result.is_some() {
@@ -666,7 +717,7 @@ impl CIRModuleBuilder {
 						let scrutinee_lval = self.insert_temporary(scrutinee_ty.clone(), scrutinee_ir);
 						let cir_ty = self.convert_type(expr_ty);
 
-						let disc_ty = CIRType::Basic(Basic::Integral { signed: false, size_bytes: 4 });
+						let disc_ty = CIRType::Basic(scrutinee_ty.get_discriminant_type().unwrap());
 						let disc_lval = self.insert_temporary(disc_ty.clone(), RValue::Atom(disc_ty.clone(), None, Operand::IntegerLit(0)));
 
 						let mut branches_ir = vec![];
@@ -695,7 +746,7 @@ impl CIRModuleBuilder {
 							let mult_ir = self.get_as_operand(disc_ty.clone(), RValue::Cons(
 								disc_ty.clone(), 
 								[
-									(disc_ty.clone(), Operand::IntegerLit(i as i128)), 
+									(disc_ty.clone(), Operand::IntegerLit(i as i128 + 1)), 
 									(disc_ty.clone(), cast_ir)
 								], 
 								Operator::Mul
@@ -714,17 +765,22 @@ impl CIRModuleBuilder {
 
 							self.write(add_ir);
 
-							branches_ir.push((disc_ty.clone(), Operand::IntegerLit(i as i128), 0));
+							branches_ir.push((disc_ty.clone(), Operand::IntegerLit(i as i128 + 1), 0));
 						}
 
 						let cont_block = self.append_block();
 
 						// Generate branches
 
-						for (i, (_, branch)) in branches.iter().enumerate() {
+						for (i, (pattern, branch)) in branches.iter().enumerate() {
 							let Expr::Atom(Atom::Block { items, result }, branch_meta) = branch else { panic!() };
+							
+							self.name_map_stack.push(HashMap::new());
+							
+							let binding_idx = self.append_block();
+							self.generate_pattern_bindings(pattern, scrutinee_lval.clone(), &scrutinee_ty);
 
-							let (branch_idx, match_result) = self.generate_block(items, result);
+							let (_, match_result) = self.generate_block(items, result, true);
 
 							if let Some(match_result) = match_result {
 								
@@ -736,7 +792,10 @@ impl CIRModuleBuilder {
 								has_result = true;
 							}
 
-							branches_ir[i].2 = branch_idx;
+							self.name_map_stack.pop();
+							self.current_block = cont_block;
+
+							branches_ir[i].2 = binding_idx;
 						}
 
 						self.current_block = start_block;

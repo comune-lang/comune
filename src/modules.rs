@@ -15,7 +15,7 @@ use crate::{
 		builder::CIRModuleBuilder,
 	},
 	errors::{CMNError, CMNErrorCode, CMNMessage, CMNMessageLog},
-	lexer::Lexer,
+	lexer::{Lexer, self},
 	llvm::{self, LLVMBackend},
 	parser::{ParseResult, Parser},
 	ast::{
@@ -336,10 +336,13 @@ pub fn generate_code<'ctx>(
 	backend.generate_libc_bindings();
 
 	if let Err(e) = backend.module.verify() {
-		println!("an internal compiler error occurred:\n{}", e.to_string());
+		
+		println!("{}\n{}\n", "an internal compiler error occurred:".red().bold(), lexer::get_escaped(e.to_str().unwrap()));
 
 		// Output bogus LLVM here, for debugging purposes
 		backend.module.print_to_file("bogus.ll").unwrap();
+
+		println!("{} ill-formed LLVM IR printed to {}", "note:".bold(), "bogus.ll".bold());
 
 		return Err(CMNError::new(CMNErrorCode::LLVMError));
 	};

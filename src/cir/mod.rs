@@ -199,6 +199,14 @@ impl CIRType {
 			false
 		}
 	}
+
+	pub fn get_discriminant_type(&self) -> Option<Basic> {
+		match self {
+			CIRType::Tuple(TupleKind::Sum, _) => Some(Basic::Integral { signed: false, size_bytes: 4 }),
+			
+			_ => None,
+		}
+	}
 }
 
 impl RValue {

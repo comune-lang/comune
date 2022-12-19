@@ -352,15 +352,15 @@ impl<'ctx> LLVMBackend<'ctx> {
 						let discriminant = self.context.i32_type().const_int(idx as u64, false).as_basic_value_enum();
 						let tmp_alloca = self.builder.build_alloca(store_ty.into_struct_type(), "sumtmp");
 
-						let ptr = self.builder.build_pointer_cast(tmp_alloca, data_ty.ptr_type(AddressSpace::Generic), "variantcast");
-
-						self.builder.build_store(ptr, data_ty.const_named_struct(&[
-							discriminant,
-							val.get_type().const_zero()
-						]));
+						let ptr = self.builder.build_pointer_cast(tmp_alloca, data_ty.ptr_type(AddressSpace::Generic), "sumcast");
 
 						self.builder.build_store(
-							self.builder.build_struct_gep(ptr, 1, "variantstore").unwrap(),
+							self.builder.build_struct_gep(ptr, 0, "discstore").unwrap(), 
+							discriminant
+						);
+
+						self.builder.build_store(
+							self.builder.build_struct_gep(ptr, 1, "sumstore").unwrap(),
 							val,
 						);
 
@@ -377,9 +377,9 @@ impl<'ctx> LLVMBackend<'ctx> {
 										CIRType::Basic(Basic::Bool) => {
 											return Some(
 												self.builder
-													.build_int_compare(
-														IntPredicate::NE,
-														i,
+													.build_select(
+														val.into_int_value(),
+														i.get_type().const_int(1, false),
 														i.get_type().const_zero(),
 														"boolcast",
 													)
@@ -491,9 +491,14 @@ impl<'ctx> LLVMBackend<'ctx> {
 									}
 
 									Basic::Bool => {
-										if let CIRType::Basic(Basic::Integral { .. }) = to {
+										if let CIRType::Basic(Basic::Integral { signed, .. }) = to {
 											let val = self.generate_operand(from, val).unwrap().as_basic_value_enum().into_int_value();
-											Some(self.builder.build_int_cast(val, self.get_llvm_type(to).into_int_type(), "intcast").as_basic_value_enum())
+											Some(self.builder.build_int_cast_sign_flag(
+												val, 
+												self.get_llvm_type(to).into_int_type(), 
+												*signed,
+												"intcast"
+											).as_basic_value_enum())
 										} else {
 											panic!()
 										}
@@ -516,6 +521,23 @@ impl<'ctx> LLVMBackend<'ctx> {
 									)
 									.as_basic_value_enum(),
 							)
+						}
+
+						CIRType::Tuple(TupleKind::Sum, _) => {
+							// Tuple downcast, aka just indexing into the data field
+							let val = self.generate_operand(from, val).unwrap();
+							let tmp = self.builder.build_alloca(val.get_type(), "tmp");
+							self.builder.build_store(tmp, val);
+							let gep = self.builder.build_struct_gep(tmp, 1, "enumget").unwrap();
+							
+
+							let cast = self.builder.build_bitcast(
+								gep,
+								Self::to_basic_type(self.get_llvm_type(to)).ptr_type(AddressSpace::Generic), 
+								"enumcast"
+							).into_pointer_value();
+
+							Some(self.builder.build_load(cast, "tmploadd").as_basic_value_enum())
 						}
 
 						_ => todo!(),

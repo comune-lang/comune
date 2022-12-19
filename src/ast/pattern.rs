@@ -14,4 +14,20 @@ impl Pattern {
 			Pattern::Binding(_, ty) | Pattern::Destructure(_, ty) | Pattern::Or(_, ty) => ty
 		}
 	}
+
+	pub fn get_bindings(&self) -> Vec<(&Option<Name>, &Type)> {
+		match self {
+			Pattern::Binding(name, ty) => vec![(name, ty)],
+			
+			Pattern::Destructure(elems, _) => {
+				let mut result = vec![];
+				for (_, elem_pat) in elems {
+					result.append(&mut elem_pat.get_bindings());
+				}
+				result
+			},
+
+			Pattern::Or(_, _) => todo!()
+		}
+	}
 }

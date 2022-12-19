@@ -155,9 +155,11 @@ impl Display for Operand {
 				write!(f, "call {name}")?;
 
 				if !type_args.is_empty() {
-					write!(f, "<{}", type_args[0])?;
+					let mut args_iter = type_args.iter();
 
-					for arg in type_args {
+					write!(f, "<{}", args_iter.next().unwrap())?;
+
+					for arg in args_iter {
 						write!(f, ", {arg}")?;
 					}
 
@@ -165,9 +167,10 @@ impl Display for Operand {
 				}
 
 				if !args.is_empty() {
-					write!(f, "({}", args[0])?;
+					let mut args_iter = args.iter();
+					write!(f, "({}", args_iter.next().unwrap())?;
 
-					for arg in args {
+					for arg in args_iter {
 						write!(f, ", {arg}")?;
 					}
 

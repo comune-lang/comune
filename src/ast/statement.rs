@@ -32,7 +32,11 @@ impl Stmt {
 					let expr_ty = expr.validate(scope)?;
 
 					if expr_ty != binding_ty {
-						return Err((CMNError::new(CMNErrorCode::AssignTypeMismatch { expr: expr_ty, to: binding_ty }), *tk))
+						if expr_ty.is_subtype_of(&binding_ty) {
+							expr.wrap_in_cast(binding_ty.clone());
+						} else {
+							return Err((CMNError::new(CMNErrorCode::AssignTypeMismatch { expr: expr_ty, to: binding_ty }), *tk))
+						}
 					}
 
 					scope.add_variable(binding_ty, binding_name);

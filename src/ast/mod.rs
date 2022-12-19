@@ -924,12 +924,14 @@ impl Atom {
 			}
 
 			Atom::Block { items, result } => {
+				let mut subscope = FnScope::from_parent(scope);
+
 				for item in items {
-					item.validate(scope)?;
+					item.validate(&mut subscope)?;
 				}
 
 				if let Some(result) = result {
-					result.validate(scope)
+					result.validate(&mut subscope)
 				} else {
 					Ok(Type::Basic(Basic::Void))
 				}
@@ -1058,26 +1060,34 @@ impl Atom {
 						return Ok(Type::Basic(Basic::Void));
 					}
 
-					let mut branch_iter = branches.iter_mut();
-					let mut last_branch_type = branch_iter.next().unwrap().1.validate(scope)?;
-					
+					let mut last_branch_type = None;
 					let scrutinee_type = scrutinee.validate(scope)?;
 
-					for branch in branch_iter {
-						let branch_ty = branch.1.validate(scope)?;
-
-						if branch_ty != last_branch_type {
-							todo!()
+					for branch in branches {
+						let mut subscope = FnScope::from_parent(scope);
+						
+						for binding in branch.0.get_bindings() {
+							if let (Some(name), ty) = binding {
+								subscope.add_variable(ty.clone(), name.clone());
+							}
 						}
 
-						last_branch_type = branch_ty;
+						let branch_ty = branch.1.validate(&mut subscope)?;
+
+						if let Some(last_branch_type) = last_branch_type {
+							if branch_ty != last_branch_type {
+								todo!()
+							}
+						}
+
+						last_branch_type = Some(branch_ty);
 						
 						if !branch.0.get_type().is_subtype_of(&scrutinee_type) {
 							todo!()
 						}
 					}
 
-					Ok(last_branch_type)
+					Ok(last_branch_type.unwrap()) // TODO: This'll panic with an empty match expression
 				},
 			},
 		}
@@ -1093,26 +1103,6 @@ impl Atom {
 	) -> AnalyzeResult<()> {
 		match from {
 			Type::Basic(b) => match b {
-				Basic::Str => {
-					match to {
-						Type::Pointer(to_ptr) => {
-							if let Type::Basic(Basic::Char) = **to_ptr {
-								if let Atom::StringLit(s) = self {
-									if s.ends_with('\0') {
-										s.push('\0');
-										todo!();
-										// TODO: Pass down Parser ref through functions?
-										//lexer::log_msg_at(meta.0, meta.1, CMNMessage::Warning(CMNWarning::CharPtrNoNull));
-									}
-								}
-							}
-						}
-
-						_ => {}
-					}
-					Ok(())
-				}
-
 				_ => Ok(()),
 			},
 
