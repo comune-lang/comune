@@ -681,7 +681,7 @@ impl Expr {
 		let result = match self {
 			Expr::Atom(a, meta) => {
 				a.validate(scope, meta)?;
-				a.get_lvalue_type(scope)?
+				a.get_lvalue_type(scope, &meta.tk)?
 			}
 
 			Expr::Unary(e, Operator::Deref, meta) => {
@@ -1123,16 +1123,16 @@ impl Atom {
 		}
 	}
 
-	pub fn get_lvalue_type<'ctx>(&self, scope: &'ctx FnScope<'ctx>) -> AnalyzeResult<Type> {
+	pub fn get_lvalue_type<'ctx>(&self, scope: &'ctx FnScope<'ctx>, meta: &TokenData) -> AnalyzeResult<Type> {
 		match self {
 			Atom::Identifier(id) => match scope.find_symbol(id) {
 				Some(t) => Ok(t.1),
 				None => Err((
 					CMNError::new(CMNErrorCode::UndeclaredIdentifier(id.to_string())),
-					(0, 0),
+					*meta,
 				)),
 			},
-			_ => Err((CMNError::new(CMNErrorCode::InvalidLValue), (0, 0))),
+			_ => Err((CMNError::new(CMNErrorCode::InvalidLValue), *meta)),
 		}
 	}
 }

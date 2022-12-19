@@ -31,11 +31,6 @@ struct Vector<T> {
 	usize capacity;
 }
 
-struct EnumRaw {
-	i32 discriminant;
-	i32[4] data;
-}
-
 int main() {
 	printf(c"This is main()!\n");
 
@@ -78,6 +73,8 @@ int main() {
 		a: *my_cool_generic.data, 
 		b: 0
 	};
+
+	int extract_test = Test { a: 23, b: 35 }.b;
 
 	free(my_cool_generic.data as void*);
 
