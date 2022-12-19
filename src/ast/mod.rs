@@ -217,7 +217,14 @@ pub fn validate_fn_call(
 		} else {
 			// no parameter type for this argument (possible for varadiac functions)
 			// so just set the type info to the provided argument's type
-			arg.get_node_data_mut().ty.replace(arg_type);
+			arg.get_node_data_mut().ty.replace(arg_type.clone());
+
+			// also if it's a float we promote it to a double because presumably
+			// ken and dennis were high on crack for 30 years straight or smth
+			// https://stackoverflow.com/questions/63144506/printf-doesnt-work-for-floats-in-llvm-ir
+			if arg_type == Type::Basic(Basic::Float { size_bytes: 4 }) {
+				arg.wrap_in_cast(Type::Basic(Basic::Float { size_bytes: 8 }));
+			}
 		}
 	}
 

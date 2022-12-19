@@ -49,13 +49,11 @@ int main() {
 		}
 
 		float float_result => {
-			printf(c"It's a float! %i\n", float_result as int);
+			printf(c"It's a float! %f\n", float_result);
 		}
 	}
 
 	printf(c"who_knows discriminant:%i\n", who_knows);
-
-	//printf("This is a vararg test! the magic number is %i\n\0", fib(10));
 
 	Vector<int> my_cool_generic;
 
