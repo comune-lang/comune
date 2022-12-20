@@ -1,6 +1,9 @@
 use std::fmt::Display;
 
-use crate::{parser::AnalyzeResult, errors::{CMNError, CMNErrorCode}};
+use crate::{
+	errors::{CMNError, CMNErrorCode},
+	parser::AnalyzeResult,
+};
 
 use super::{
 	expression::{Atom, Expr, NodeData},
@@ -35,7 +38,13 @@ impl Stmt {
 						if expr_ty.is_subtype_of(&binding_ty) {
 							expr.wrap_in_cast(binding_ty.clone());
 						} else {
-							return Err((CMNError::new(CMNErrorCode::AssignTypeMismatch { expr: expr_ty, to: binding_ty }), *tk))
+							return Err((
+								CMNError::new(CMNErrorCode::AssignTypeMismatch {
+									expr: expr_ty,
+									to: binding_ty,
+								}),
+								*tk,
+							));
 						}
 					}
 

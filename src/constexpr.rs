@@ -1,10 +1,10 @@
 use crate::{
-	parser::AnalyzeResult,
 	ast::{
 		expression::{Atom, Expr, Operator},
 		types::Basic,
 		FnScope,
 	},
+	parser::AnalyzeResult,
 };
 
 // Constant expression evaluation module. For stuff like array lengths, generics, you get the idea
@@ -45,7 +45,7 @@ impl ConstEval for Expr {
 					ConstValue::Float(f, b) => match op {
 						Operator::UnaryMinus => Ok(ConstValue::Float(-f, b)),
 						Operator::UnaryPlus => Ok(ConstValue::Float(f, b)),
-						_ => todo!()
+						_ => todo!(),
 					},
 
 					ConstValue::Bool(b) => {

@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use super::{expression::Expr, statement::Stmt, pattern::Pattern};
+use super::{expression::Expr, pattern::Pattern, statement::Stmt};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum ControlFlow {
@@ -12,7 +12,7 @@ pub enum ControlFlow {
 
 	Match {
 		scrutinee: Expr,
-		branches: Vec<(Pattern, Expr)>
+		branches: Vec<(Pattern, Expr)>,
 	},
 
 	While {
@@ -86,7 +86,10 @@ impl Display for ControlFlow {
 
 			ControlFlow::Break => todo!(),
 			ControlFlow::Continue => todo!(),
-			ControlFlow::Match { scrutinee, branches } => todo!(),
+			ControlFlow::Match {
+				scrutinee,
+				branches,
+			} => todo!(),
 		}
 	}
 }

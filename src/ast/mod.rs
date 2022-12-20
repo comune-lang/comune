@@ -51,6 +51,7 @@ pub struct FnScope<'ctx> {
 	parent: Option<&'ctx FnScope<'ctx>>,
 	fn_return_type: Type,
 	variables: HashMap<Name, Type>,
+	temps: HashMap<Name, Type>,
 }
 
 impl<'ctx> FnScope<'ctx> {
@@ -61,6 +62,7 @@ impl<'ctx> FnScope<'ctx> {
 			parent: Some(parent),
 			fn_return_type: parent.fn_return_type.clone(),
 			variables: HashMap::new(),
+			temps: HashMap::new(),
 		}
 	}
 
@@ -71,6 +73,7 @@ impl<'ctx> FnScope<'ctx> {
 			parent: None,
 			fn_return_type: return_type,
 			variables: HashMap::new(),
+			temps: HashMap::new(),
 		}
 	}
 
@@ -111,6 +114,12 @@ impl<'ctx> FnScope<'ctx> {
 
 	pub fn add_variable(&mut self, t: Type, n: Name) {
 		self.variables.insert(n, t);
+	}
+
+	pub fn insert_temporary(&mut self, t: Type) -> Name {
+		let key: Name = self.temps.len().to_string().into();
+		self.temps.insert(key.clone(), t);
+		key
 	}
 }
 
@@ -190,8 +199,7 @@ pub fn validate_fn_call(
 	for (i, arg) in args.iter_mut().enumerate() {
 		// add parameter's type info to argument
 		if let Some((param_ty, _)) = params.get(i) {
-			arg
-				.get_node_data_mut()
+			arg.get_node_data_mut()
 				.ty
 				.replace(param_ty.get_concrete_type(type_args));
 		}
@@ -501,13 +509,15 @@ impl Expr {
 				match op {
 					// Special cases for type-asymmetric operators
 					Operator::MemberAccess => {
-						self.validate_lvalue(scope)
+						let lhs_ty = lhs.validate(scope)?;
+
+						Self::validate_member_access(&lhs_ty, lhs, rhs, scope, meta)
 					}
 
 					Operator::Subscr => {
 						let idx_type = Type::Basic(Basic::PtrSizeInt { signed: false });
 
-						let first_t = lhs.validate_lvalue(scope)?;
+						let first_t = lhs.validate(scope)?;
 						let second_t = rhs.validate(scope)?;
 
 						if let Type::Array(ty, _) = &first_t {
@@ -641,7 +651,11 @@ impl Expr {
 
 					Atom::CStringLit(_) => {
 						if let Type::Pointer(other_p) = &target {
-							if **other_p == Type::Basic(Basic::Integral { signed: false, size_bytes: 1 }) {
+							if **other_p
+								== Type::Basic(Basic::Integral {
+									signed: false,
+									size_bytes: 1,
+								}) {
 								return true;
 							}
 						}
@@ -674,125 +688,125 @@ impl Expr {
 		}
 	}
 
-	pub fn validate_lvalue<'ctx>(
-		&mut self,
-		scope: &mut FnScope<'ctx>,
-	) -> AnalyzeResult<Type> {
+	pub fn validate_lvalue<'ctx>(&mut self, scope: &mut FnScope<'ctx>) -> AnalyzeResult<Type> {
 		let result = match self {
 			Expr::Atom(a, meta) => {
 				a.validate(scope, meta)?;
 				a.get_lvalue_type(scope, &meta.tk)?
 			}
 
-			Expr::Unary(e, Operator::Deref, meta) => {
-				match e.validate(scope).unwrap() {
-					Type::Pointer(t) => *t,
+			Expr::Unary(e, Operator::Deref, meta) => match e.validate(scope).unwrap() {
+				Type::Pointer(t) => *t,
 
-					other => return Err((CMNError::new(CMNErrorCode::InvalidDeref(other)), meta.tk)),
-				}
+				other => return Err((CMNError::new(CMNErrorCode::InvalidDeref(other)), meta.tk)),
 			},
 
 			Expr::Cons(_, Operator::Subscr, _) => self.validate(scope)?,
 
 			Expr::Cons([lhs, rhs], Operator::MemberAccess, meta) => {
-				let Type::TypeRef(ItemRef::Resolved(lhs_ref)) = lhs.validate_lvalue(scope)? else {
-					todo!("error reporting")
-				};
-
-				match &mut *lhs_ref.def.upgrade().unwrap().write().unwrap() {
-					// Dot operator is on an algebraic type, so check if it's a member access or method call
-					TypeDef::Algebraic(t) => match &mut **rhs {
-
-						// Member access on algebraic type
-						Expr::Atom(Atom::Identifier(id), _) => {
-							if let Some((_, m)) = t.get_member(id.name(), Some(&lhs_ref.args)) {
-								lhs.get_node_data_mut().ty = Some(Type::TypeRef(ItemRef::Resolved(lhs_ref)));
-
-								rhs.get_node_data_mut().ty = Some(m.clone());
-
-								m
-							} else {
-								panic!()
-							}
-						}
-
-						// Method call on algebraic type
-						Expr::Atom(
-							Atom::FnCall {
-								name,
-								args,
-								type_args,
-								..
-							},
-							_,
-						) => {
-							// jesse. we have to call METHods
-							// TODO: Factor this out into a proper call resolution module
-							if let Some((_, (NamespaceItem::Function(method, _), _, _))) = scope
-								.context
-								.impls
-								.get(&lhs_ref.name)
-								.unwrap_or(&HashMap::new())
-								.iter()
-								.find(|meth| meth.0 == name.name())
-							{
-								// Insert `this` into the arg list
-								args.insert(0, *lhs.clone());
-
-								let method = method.read().unwrap();
-
-								match validate_fn_call(&method, args, type_args, scope, meta.tk) {
-									Ok(res) => {
-										// Method call OK
-										lhs.get_node_data_mut().ty = Some(Type::TypeRef(
-											ItemRef::Resolved(lhs_ref.clone()),
-										));
-
-										let method_name = name.path.pop().unwrap();
-										*name = lhs_ref.name.clone();
-										name.path.push(method_name);
-
-										rhs.get_node_data_mut().ty = Some(method.ret.clone());
-
-										res
-									}
-
-									Err(mut err) => {
-										match err.0.code {
-											// If the parameter count doesn't match, adjust the message for the implicit `self` param
-											CMNErrorCode::ParamCountMismatch {
-												expected,
-												got,
-											} => {
-												err.0.code = CMNErrorCode::ParamCountMismatch {
-													expected: expected - 1,
-													got: got - 1,
-												};
-												return Err(err);
-											}
-
-											_ => return Err(err),
-										}
-									}
-								}
-							} else {
-								panic!()
-							}
-						}
-
-						_ => panic!(),
-					},
-					_ => panic!(),
-				}
+				let lhs_ty = lhs.validate_lvalue(scope)?;
+				Self::validate_member_access(&lhs_ty, lhs, rhs, scope, meta)?
 			}
-			_ => panic!()
+			_ => panic!(),
 		};
-		
+
 		result.validate(scope)?;
 
 		self.get_node_data_mut().ty = Some(result.clone());
 
 		Ok(result)
+	}
+
+	fn validate_member_access(
+		lhs_ty: &Type,
+		lhs: &Expr,
+		rhs: &mut Expr,
+		scope: &mut FnScope,
+		meta: &NodeData,
+	) -> AnalyzeResult<Type> {
+		let Type::TypeRef(ItemRef::Resolved(lhs_ref)) = lhs_ty else {
+			return Err((CMNError::new(CMNErrorCode::InvalidSubscriptLHS { t: lhs_ty.clone() }), meta.tk));
+		};
+
+		match &mut *lhs_ref.def.upgrade().unwrap().write().unwrap() {
+			// Dot operator is on an algebraic type, so check if it's a member access or method call
+			TypeDef::Algebraic(t) => match rhs {
+				// Member access on algebraic type
+				Expr::Atom(Atom::Identifier(id), _) => {
+					if let Some((_, m)) = t.get_member(id.name(), Some(&lhs_ref.args)) {
+						//lhs.get_node_data_mut().ty = Some(Type::TypeRef(ItemRef::Resolved(lhs_ref)));
+
+						rhs.get_node_data_mut().ty = Some(m.clone());
+
+						Ok(m)
+					} else {
+						panic!()
+					}
+				}
+
+				// Method call on algebraic type
+				Expr::Atom(
+					Atom::FnCall {
+						name,
+						args,
+						type_args,
+						..
+					},
+					_,
+				) => {
+					// jesse. we have to call METHods
+					// TODO: Factor this out into a proper call resolution module
+					if let Some((_, (NamespaceItem::Function(method, _), _, _))) = scope
+						.context
+						.impls
+						.get(&lhs_ref.name)
+						.unwrap_or(&HashMap::new())
+						.iter()
+						.find(|meth| meth.0 == name.name())
+					{
+						// Insert `this` into the arg list
+						// TODO: For method calls on literals, this will probably call
+						// the literal's constructor twice. Maybe promote it to a local?
+						args.insert(0, lhs.clone());
+
+						let method = method.read().unwrap();
+
+						match validate_fn_call(&method, args, type_args, scope, meta.tk) {
+							Ok(res) => {
+								// Method call OK
+								let method_name = name.path.pop().unwrap();
+								*name = lhs_ref.name.clone();
+								name.path.push(method_name);
+
+								rhs.get_node_data_mut().ty = Some(method.ret.clone());
+
+								Ok(res)
+							}
+
+							Err(mut err) => {
+								match err.0.code {
+									// If the parameter count doesn't match, adjust the message for the implicit `self` param
+									CMNErrorCode::ParamCountMismatch { expected, got } => {
+										err.0.code = CMNErrorCode::ParamCountMismatch {
+											expected: expected - 1,
+											got: got - 1,
+										};
+										Err(err)
+									}
+
+									_ => Err(err),
+								}
+							}
+						}
+					} else {
+						panic!()
+					}
+				}
+
+				_ => panic!(),
+			},
+			_ => panic!(),
+		}
 	}
 }
 
@@ -831,7 +845,10 @@ impl Atom {
 			Atom::BoolLit(_) => Ok(Type::Basic(Basic::Bool)),
 			Atom::StringLit(_) => Ok(Type::Basic(Basic::Str)),
 
-			Atom::CStringLit(_) => Ok(Type::Pointer(Box::new(Type::Basic(Basic::Integral { signed: false, size_bytes: 1 })))),
+			Atom::CStringLit(_) => Ok(Type::Pointer(Box::new(Type::Basic(Basic::Integral {
+				signed: false,
+				size_bytes: 1,
+			})))),
 
 			Atom::Identifier(name) => {
 				if let Some((id, ty)) = scope.find_symbol(name) {
@@ -1061,12 +1078,14 @@ impl Atom {
 						))
 					}
 				}
-				
 
 				ControlFlow::Break => todo!(),
 				ControlFlow::Continue => todo!(),
-				
-				ControlFlow::Match { scrutinee, branches } => {
+
+				ControlFlow::Match {
+					scrutinee,
+					branches,
+				} => {
 					if branches.is_empty() {
 						return Ok(Type::Basic(Basic::Void));
 					}
@@ -1076,7 +1095,7 @@ impl Atom {
 
 					for branch in branches {
 						let mut subscope = FnScope::from_parent(scope);
-						
+
 						for binding in branch.0.get_bindings() {
 							if let (Some(name), ty) = binding {
 								subscope.add_variable(ty.clone(), name.clone());
@@ -1092,14 +1111,14 @@ impl Atom {
 						}
 
 						last_branch_type = Some(branch_ty);
-						
+
 						if !branch.0.get_type().is_subtype_of(&scrutinee_type) {
 							todo!()
 						}
 					}
 
 					Ok(last_branch_type.unwrap()) // TODO: This'll panic with an empty match expression
-				},
+				}
 			},
 		}
 	}
@@ -1123,7 +1142,11 @@ impl Atom {
 		}
 	}
 
-	pub fn get_lvalue_type<'ctx>(&self, scope: &'ctx FnScope<'ctx>, meta: &TokenData) -> AnalyzeResult<Type> {
+	pub fn get_lvalue_type<'ctx>(
+		&self,
+		scope: &'ctx FnScope<'ctx>,
+		meta: &TokenData,
+	) -> AnalyzeResult<Type> {
 		match self {
 			Atom::Identifier(id) => match scope.find_symbol(id) {
 				Some(t) => Ok(t.1),
@@ -1138,10 +1161,7 @@ impl Atom {
 }
 
 impl Type {
-	pub fn validate<'ctx>(
-		&self,
-		scope: &'ctx FnScope<'ctx>,
-	) -> AnalyzeResult<()> {
+	pub fn validate<'ctx>(&self, scope: &'ctx FnScope<'ctx>) -> AnalyzeResult<()> {
 		match self {
 			Type::Array(_, n) => {
 				// Old fashioned way to make life easier with the RefCell

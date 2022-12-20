@@ -3,8 +3,8 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::{
-	lexer::Token,
 	ast::{get_attribute, namespace::Identifier, types::Basic},
+	lexer::Token,
 };
 
 use super::{
@@ -115,7 +115,7 @@ impl CIRModule {
 							fn_instances,
 						)
 					}
-					
+
 					CIRStmt::Switch(expr, branches, _) => {
 						Self::monoize_rvalue_types(types, expr, param_map, type_instances);
 
@@ -298,7 +298,7 @@ impl CIRModule {
 		}
 	}
 
-	fn monoize_operand(		
+	fn monoize_operand(
 		types: &mut HashMap<String, CIRTypeDef>,
 		val: &mut Operand,
 		ty: &mut CIRType,

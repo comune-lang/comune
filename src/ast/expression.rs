@@ -1,4 +1,4 @@
-use std::{fmt::Display, ptr, ffi::CString};
+use std::{ffi::CString, fmt::Display, ptr};
 
 use super::{
 	controlflow::ControlFlow,

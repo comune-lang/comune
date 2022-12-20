@@ -1,9 +1,9 @@
 // cleanup passes - remove no-ops etc
 use super::CIRPassMut;
 use crate::{
+	ast::TokenData,
 	cir::{CIRFunction, CIRStmt, Operand, RValue},
 	errors::CMNError,
-	ast::TokenData,
 };
 
 pub struct RemoveNoOps;

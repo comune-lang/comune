@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use rayon::prelude::{IntoParallelRefIterator, ParallelIterator};
 
-use crate::{errors::CMNError, parser::AnalyzeResult, ast::TokenData};
+use crate::{ast::TokenData, errors::CMNError, parser::AnalyzeResult};
 
 use super::{BlockIndex, CIRBlock, CIRFunction, CIRModule, CIRStmt, StmtIndex};
 
@@ -156,7 +156,12 @@ impl CIRFunction {
 				for (_, _, branch) in branches {
 					if !processed_jumps.contains(&((j, i), *branch)) {
 						processed_jumps.insert(((j, i), *branch));
-						errors.append(&mut self.walk_block(*branch, state.clone(), f, processed_jumps));
+						errors.append(&mut self.walk_block(
+							*branch,
+							state.clone(),
+							f,
+							processed_jumps,
+						));
 					}
 				}
 			}
@@ -200,7 +205,12 @@ impl CIRFunction {
 				for (_, _, branch) in &branches {
 					if !processed_jumps.contains(&((j, i), *branch)) {
 						processed_jumps.insert(((j, i), *branch));
-						errors.append(&mut self.walk_block_mut(*branch, state.clone(), &f, processed_jumps));
+						errors.append(&mut self.walk_block_mut(
+							*branch,
+							state.clone(),
+							&f,
+							processed_jumps,
+						));
 					}
 				}
 			}

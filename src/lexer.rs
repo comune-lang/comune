@@ -1,5 +1,5 @@
-use std::ffi::{OsString, CString};
-use std::fmt::{Display, Debug};
+use std::ffi::{CString, OsString};
+use std::fmt::{Debug, Display};
 use std::fs::File;
 use std::io::{self, Error, Read};
 use std::path::Path;
@@ -47,7 +47,8 @@ static KEYWORDS: [&'static str; 32] = [
 static OPERATORS: [&str; 42] = [
 	"+", "-", "/", "*", "%", "^", "|", "||", "&", "&&", "=", "==", "/=", "*=", "+=", "-=", "%=",
 	"&=", "|=", "^=", "++", "--", "->", "(", ")", "[", "]", ".", "::", "<", ">", "<=", ">=", "!=",
-	"<<", ">>", ">>=", "<<=", "..", "...", "=>", "as", // yeah `as` is technically an operator lol
+	"<<", ">>", ">>=", "<<=", "..", "...", "=>",
+	"as", // yeah `as` is technically an operator lol
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -96,7 +97,7 @@ impl Display for Token {
 				Token::MultiIdentifier(_x) => String::from("todo"),
 
 				Token::StringLiteral(x) | Token::NumLiteral(x, _) => x.clone(),
-				
+
 				Token::CStringLiteral(x) => x.to_string_lossy().into_owned(),
 
 				Token::Keyword(x) | Token::Operator(x) => x.to_string(),
@@ -302,7 +303,7 @@ impl Lexer {
 			}
 
 			start = self.file_index;
-			
+
 			if token == 'c' && self.peek_next_char()? == '"' {
 				self.get_next_char()?;
 				// Parse C string literal
@@ -328,7 +329,7 @@ impl Lexer {
 
 				// Consume ending quote
 				self.get_next_char()?;
-				
+
 				result_token = Ok(Token::CStringLiteral(CString::new(result).unwrap()));
 			} else if token.is_alphabetic() || token == '_' {
 				// Identifier
@@ -530,7 +531,6 @@ impl Lexer {
 				self.get_next_char()?;
 
 				result_token = Ok(Token::StringLiteral(result));
-
 			} else if self.eof_reached() && token.is_whitespace() {
 				return Ok((start, Token::EOF));
 			} else {

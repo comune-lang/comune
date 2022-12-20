@@ -642,7 +642,9 @@ impl Parser {
 			if let Stmt::Expr(Expr::Atom(Atom::CtrlFlow(ctrl), _)) = &stmt {
 				if matches!(
 					&**ctrl,
-					ControlFlow::For { .. } | ControlFlow::If { .. } | ControlFlow::While { .. } | ControlFlow::Match { .. }
+					ControlFlow::For { .. }
+						| ControlFlow::If { .. } | ControlFlow::While { .. }
+						| ControlFlow::Match { .. }
 				) {
 					semicolon_optional = true;
 				}
@@ -803,12 +805,15 @@ impl Parser {
 				Token::Identifier(id) => {
 					self.get_next()?;
 
-					Ok(Pattern::Binding(Some(id.expect_scopeless()?.clone()), pattern_ty))
+					Ok(Pattern::Binding(
+						Some(id.expect_scopeless()?.clone()),
+						pattern_ty,
+					))
 				}
 
 				Token::Other('{') => todo!(),
 
-				_ => Err(self.err(CMNErrorCode::UnexpectedToken))
+				_ => Err(self.err(CMNErrorCode::UnexpectedToken)),
 			}
 		} else {
 			Err(self.err(CMNErrorCode::UnexpectedToken))
@@ -1100,7 +1105,7 @@ impl Parser {
 			}
 
 			Token::StringLiteral(s) => result = Some(Atom::StringLit(s)),
-			
+
 			Token::CStringLiteral(s) => result = Some(Atom::CStringLit(s)),
 
 			Token::NumLiteral(s, suffix) => {
@@ -1152,10 +1157,10 @@ impl Parser {
 					result = Some(Atom::CtrlFlow(Box::new(ControlFlow::Continue)));
 				}
 
-				"match" => {					
+				"match" => {
 					let scrutinee = self.parse_expression()?;
 					current = self.get_current()?;
-					
+
 					if current != Token::Other('{') {
 						return Err(self.err(CMNErrorCode::UnexpectedToken));
 					}
@@ -1163,7 +1168,7 @@ impl Parser {
 					current = self.get_next()?;
 
 					let mut branches = vec![];
-					
+
 					while current != Token::Other('}') {
 						let branch_pat = self.parse_pattern()?;
 						let branch_block;
@@ -1171,7 +1176,7 @@ impl Parser {
 						if self.get_current()? != Token::Operator("=>") {
 							return Err(self.err(CMNErrorCode::UnexpectedToken));
 						}
-						
+
 						if self.get_next()? == Token::Other('{') {
 							branch_block = self.parse_block()?;
 						} else {
@@ -1195,14 +1200,17 @@ impl Parser {
 
 					self.get_next()?;
 
-					result = Some(Atom::CtrlFlow(Box::new(ControlFlow::Match { scrutinee, branches })));
+					result = Some(Atom::CtrlFlow(Box::new(ControlFlow::Match {
+						scrutinee,
+						branches,
+					})));
 				}
 
 				// Parse if statement
 				"if" => {
 					// Parse condition
 					let cond = self.parse_expression()?;
-					
+
 					// Parse body
 					let body;
 					let mut else_body = None;
@@ -1234,9 +1242,9 @@ impl Parser {
 
 				// Parse while loop
 				"while" => {
-					let	cond = self.parse_expression()?;
+					let cond = self.parse_expression()?;
 					let body = self.parse_block()?;
-					
+
 					result = Some(Atom::CtrlFlow(Box::new(ControlFlow::While { cond, body })));
 				}
 
@@ -1321,14 +1329,15 @@ impl Parser {
 		let mut result = None;
 
 		self.namespace
-			.with_item(typename, &self.current_scope, |item, id| 
+			.with_item(typename, &self.current_scope, |item, id| {
 				if let NamespaceItem::Type(t) = &item.0 {
 					result = Some(Type::TypeRef(ItemRef::Resolved(TypeRef {
 						def: Arc::downgrade(t),
 						name: id.clone(),
 						args: vec![],
 					})))
-				});
+				}
+			});
 
 		result
 	}

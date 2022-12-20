@@ -1,8 +1,8 @@
 use std::fmt::Display;
 
 use crate::{
-	lexer,
 	ast::types::{DataLayout, TupleKind},
+	lexer,
 };
 
 use super::{

@@ -2,9 +2,9 @@
 
 use super::CIRPass;
 use crate::{
+	ast::TokenData,
 	cir::{CIRFunction, CIRStmt},
 	errors::{CMNError, CMNErrorCode},
-	ast::TokenData,
 };
 
 pub struct Verify;
@@ -16,7 +16,10 @@ impl CIRPass for Verify {
 		// Check for empty blocks & blocks without terminators
 		for block in &func.blocks {
 			if let Some(last) = block.last() {
-				if !matches!(last, CIRStmt::Return(_) | CIRStmt::Switch(..) | CIRStmt::Jump(_)) {
+				if !matches!(
+					last,
+					CIRStmt::Return(_) | CIRStmt::Switch(..) | CIRStmt::Jump(_)
+				) {
 					errors.push((
 						CMNError::new(CMNErrorCode::Custom(
 							"cIR block doesn't have a terminator".to_string(),
@@ -37,7 +40,7 @@ impl CIRPass for Verify {
 		// Perform basic typecheck
 		for block in &func.blocks {
 			for stmt in block {
-				match stmt {					
+				match stmt {
 					CIRStmt::Assignment((lval, _), (rval, _)) => {
 						//let lval_ty = &func.variables[lval.local].0;
 						//let rval_ty = rval.get_type();
@@ -50,28 +53,27 @@ impl CIRPass for Verify {
 						//		(0, 0)
 						//	))
 						//}
-					},
-					
+					}
+
 					CIRStmt::Switch(switch, branches, _) => {
 						let switch_ty = switch.get_type();
 
 						for (branch_ty, ..) in branches {
 							if branch_ty != switch_ty {
 								errors.push((
-									CMNError::new(CMNErrorCode::Custom(
-										format!("switch type mismatch in cIR! {branch_ty} != {switch_ty}")
-									)),
-									(0, 0)
+									CMNError::new(CMNErrorCode::Custom(format!(
+										"switch type mismatch in cIR! {branch_ty} != {switch_ty}"
+									))),
+									(0, 0),
 								))
 							}
 						}
-					},
-					
+					}
+
 					_ => {}
 				}
 			}
 		}
-
 
 		errors
 	}

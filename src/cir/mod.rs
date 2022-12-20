@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use std::{collections::HashMap, hash::Hash, ffi::CString};
+use std::{collections::HashMap, ffi::CString, hash::Hash};
 
 use crate::ast::{
 	expression::Operator,
@@ -187,8 +187,11 @@ impl CIRType {
 
 	pub fn get_discriminant_type(&self) -> Option<Basic> {
 		match self {
-			CIRType::Tuple(TupleKind::Sum, _) => Some(Basic::Integral { signed: false, size_bytes: 4 }),
-			
+			CIRType::Tuple(TupleKind::Sum, _) => Some(Basic::Integral {
+				signed: false,
+				size_bytes: 4,
+			}),
+
 			_ => None,
 		}
 	}

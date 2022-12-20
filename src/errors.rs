@@ -17,9 +17,9 @@ use lazy_static::lazy_static;
 
 use super::types::Type;
 use crate::{
+	ast::{expression::Operator, namespace::Identifier, TokenData},
 	cir::analyze::lifeline::LivenessState,
 	parser::Parser,
-	ast::{expression::Operator, namespace::Identifier, TokenData},
 };
 
 lazy_static! {

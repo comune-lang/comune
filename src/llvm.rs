@@ -18,13 +18,13 @@ use inkwell::{
 };
 
 use crate::{
-	cir::{
-		CIRFunction, CIRModule, CIRStmt, CIRType, CIRTypeDef, LValue, Operand, PlaceElem, RValue,
-	},
 	ast::{
 		expression::Operator,
 		namespace::Identifier,
 		types::{Basic, DataLayout, TupleKind},
+	},
+	cir::{
+		CIRFunction, CIRModule, CIRStmt, CIRType, CIRTypeDef, LValue, Operand, PlaceElem, RValue,
 	},
 };
 
@@ -161,7 +161,13 @@ impl<'ctx> LLVMBackend<'ctx> {
 		{
 			self.builder.position_at_end(self.blocks[0]);
 
-			for (idx, param) in self.fn_value_opt.as_ref().unwrap().get_param_iter().enumerate() {
+			for (idx, param) in self
+				.fn_value_opt
+				.as_ref()
+				.unwrap()
+				.get_param_iter()
+				.enumerate()
+			{
 				self.builder.build_store(self.variables[idx], param);
 			}
 		}
@@ -195,11 +201,18 @@ impl<'ctx> LLVMBackend<'ctx> {
 							.as_basic_value_enum()
 							.into_int_value();
 
-						let cases: Vec<_> = branches.iter().map(|(ty, val, branch)| 
-							(self.generate_operand(ty, val).unwrap().into_int_value(), self.blocks[*branch])
-						).collect();
+						let cases: Vec<_> = branches
+							.iter()
+							.map(|(ty, val, branch)| {
+								(
+									self.generate_operand(ty, val).unwrap().into_int_value(),
+									self.blocks[*branch],
+								)
+							})
+							.collect();
 
-						self.builder.build_switch(cond_ir, self.blocks[*else_block], &cases);
+						self.builder
+							.build_switch(cond_ir, self.blocks[*else_block], &cases);
 					}
 
 					CIRStmt::Return(expr) => {
@@ -343,20 +356,30 @@ impl<'ctx> LLVMBackend<'ctx> {
 						let val = self.generate_operand(from, val).unwrap();
 
 						let store_ty = self.get_llvm_type(to);
-						let data_ty = self.context.struct_type(&[
-							self.context.i32_type().as_basic_type_enum(),
-							val.get_type(),
-						], false);
+						let data_ty = self.context.struct_type(
+							&[self.context.i32_type().as_basic_type_enum(), val.get_type()],
+							false,
+						);
 
 						let idx = types.iter().position(|ty| ty == from).unwrap();
-						let discriminant = self.context.i32_type().const_int(idx as u64, false).as_basic_value_enum();
-						let tmp_alloca = self.builder.build_alloca(store_ty.into_struct_type(), "sumtmp");
+						let discriminant = self
+							.context
+							.i32_type()
+							.const_int(idx as u64, false)
+							.as_basic_value_enum();
+						let tmp_alloca = self
+							.builder
+							.build_alloca(store_ty.into_struct_type(), "sumtmp");
 
-						let ptr = self.builder.build_pointer_cast(tmp_alloca, data_ty.ptr_type(AddressSpace::Generic), "sumcast");
+						let ptr = self.builder.build_pointer_cast(
+							tmp_alloca,
+							data_ty.ptr_type(AddressSpace::Generic),
+							"sumcast",
+						);
 
 						self.builder.build_store(
-							self.builder.build_struct_gep(ptr, 0, "discstore").unwrap(), 
-							discriminant
+							self.builder.build_struct_gep(ptr, 0, "discstore").unwrap(),
+							discriminant,
 						);
 
 						self.builder.build_store(
@@ -400,19 +423,23 @@ impl<'ctx> LLVMBackend<'ctx> {
 												if from.is_signed() {
 													return Some(
 														self.builder
-															.build_signed_int_to_float(i, t, "fcast")
+															.build_signed_int_to_float(
+																i, t, "fcast",
+															)
 															.as_basic_value_enum(),
 													);
 												} else {
 													return Some(
 														self.builder
-															.build_unsigned_int_to_float(i, t, "fcast")
+															.build_unsigned_int_to_float(
+																i, t, "fcast",
+															)
 															.as_basic_value_enum(),
 													);
 												}
 											}
 
-											_ => panic!()
+											_ => panic!(),
 										},
 									},
 
@@ -441,10 +468,10 @@ impl<'ctx> LLVMBackend<'ctx> {
 											}
 										}
 
-										_ => panic!()
-									}
+										_ => panic!(),
+									},
 
-									_ => panic!()
+									_ => panic!(),
 								}
 							} else {
 								// Not numeric, match other Basics
@@ -492,17 +519,25 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 									Basic::Bool => {
 										if let CIRType::Basic(Basic::Integral { signed, .. }) = to {
-											let val = self.generate_operand(from, val).unwrap().as_basic_value_enum().into_int_value();
-											Some(self.builder.build_int_cast_sign_flag(
-												val, 
-												self.get_llvm_type(to).into_int_type(), 
-												*signed,
-												"intcast"
-											).as_basic_value_enum())
+											let val = self
+												.generate_operand(from, val)
+												.unwrap()
+												.as_basic_value_enum()
+												.into_int_value();
+											Some(
+												self.builder
+													.build_int_cast_sign_flag(
+														val,
+														self.get_llvm_type(to).into_int_type(),
+														*signed,
+														"intcast",
+													)
+													.as_basic_value_enum(),
+											)
 										} else {
 											panic!()
 										}
-									},
+									}
 
 									_ => todo!(),
 								}
@@ -529,19 +564,26 @@ impl<'ctx> LLVMBackend<'ctx> {
 							let tmp = self.builder.build_alloca(val.get_type(), "tmp");
 							self.builder.build_store(tmp, val);
 							let gep = self.builder.build_struct_gep(tmp, 1, "enumget").unwrap();
-							
 
-							let cast = self.builder.build_bitcast(
-								gep,
-								Self::to_basic_type(self.get_llvm_type(to)).ptr_type(AddressSpace::Generic), 
-								"enumcast"
-							).into_pointer_value();
+							let cast = self
+								.builder
+								.build_bitcast(
+									gep,
+									Self::to_basic_type(self.get_llvm_type(to))
+										.ptr_type(AddressSpace::Generic),
+									"enumcast",
+								)
+								.into_pointer_value();
 
-							Some(self.builder.build_load(cast, "tmploadd").as_basic_value_enum())
+							Some(
+								self.builder
+									.build_load(cast, "tmploadd")
+									.as_basic_value_enum(),
+							)
 						}
 
 						_ => todo!(),
-					}
+					},
 				}
 			}
 		}
@@ -565,8 +607,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 					})
 					.collect();
 
-				self
-					.builder
+				self.builder
 					.build_call(fn_v, &args_mapped, "fncall")
 					.try_as_basic_value()
 					.left()
@@ -606,27 +647,39 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 			Operand::CStringLit(s) => {
 				let val = self.module.add_global(
-					self.context.i8_type().array_type(s.as_bytes_with_nul().len() as u32), 
-					Some(AddressSpace::Const), 
-					".cstr"
+					self.context
+						.i8_type()
+						.array_type(s.as_bytes_with_nul().len() as u32),
+					Some(AddressSpace::Const),
+					".cstr",
 				);
 				val.set_visibility(GlobalVisibility::Hidden);
 				val.set_linkage(Linkage::Private);
 				val.set_unnamed_addr(true);
-				
-				let literal: Vec<_> = s.as_bytes_with_nul().iter().map(|c| self.context.i8_type().const_int(*c as u64, false)).collect();
+
+				let literal: Vec<_> = s
+					.as_bytes_with_nul()
+					.iter()
+					.map(|c| self.context.i8_type().const_int(*c as u64, false))
+					.collect();
 
 				val.set_initializer(&self.context.i8_type().const_array(&literal));
 
-				Some(self.builder.build_address_space_cast(
-					self.builder.build_bitcast(
-						val.as_pointer_value(), 
-						self.context.i8_type().ptr_type(AddressSpace::Const), 
-						"cstrcast"
-					).into_pointer_value(),
-					self.context.i8_type().ptr_type(AddressSpace::Generic),
-					"caddrcast"
-				).as_basic_value_enum())
+				Some(
+					self.builder
+						.build_address_space_cast(
+							self.builder
+								.build_bitcast(
+									val.as_pointer_value(),
+									self.context.i8_type().ptr_type(AddressSpace::Const),
+									"cstrcast",
+								)
+								.into_pointer_value(),
+							self.context.i8_type().ptr_type(AddressSpace::Generic),
+							"caddrcast",
+						)
+						.as_basic_value_enum(),
+				)
 			}
 
 			Operand::IntegerLit(i) => Some(

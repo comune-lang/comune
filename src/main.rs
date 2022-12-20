@@ -1,3 +1,4 @@
+mod ast;
 mod cir;
 mod constexpr;
 mod errors;
@@ -5,11 +6,10 @@ mod lexer;
 mod llvm;
 mod modules;
 mod parser;
-mod ast;
 
+use ast::{namespace::Identifier, types};
 use clap::Parser;
 use colored::Colorize;
-use ast::{namespace::Identifier, types};
 use std::process::Command;
 use std::{
 	ffi::OsString,

@@ -10,18 +10,18 @@ use inkwell::{context::Context, module::Module, passes::PassManager, targets::Fi
 use rayon::prelude::*;
 
 use crate::{
+	ast::{
+		self,
+		namespace::{Identifier, Namespace},
+	},
 	cir::{
 		analyze::{cleanup, lifeline, verify, CIRPassManager},
 		builder::CIRModuleBuilder,
 	},
 	errors::{CMNError, CMNErrorCode, CMNMessage, CMNMessageLog},
-	lexer::{Lexer, self},
+	lexer::{self, Lexer},
 	llvm::{self, LLVMBackend},
 	parser::{ParseResult, Parser},
-	ast::{
-		self,
-		namespace::{Identifier, Namespace},
-	},
 };
 
 pub struct ManagerState {
@@ -336,18 +336,32 @@ pub fn generate_code<'ctx>(
 	backend.generate_libc_bindings();
 
 	if let Err(e) = backend.module.verify() {
-		
-		println!("{}\n{}\n", "an internal compiler error occurred:".red().bold(), lexer::get_escaped(e.to_str().unwrap()));
+		println!(
+			"{}\n{}\n",
+			"an internal compiler error occurred:".red().bold(),
+			lexer::get_escaped(e.to_str().unwrap())
+		);
 
 		// Output bogus LLVM here, for debugging purposes
 		backend.module.print_to_file("bogus.ll").unwrap();
 
-		println!("{} ill-formed LLVM IR printed to {}", "note:".bold(), "bogus.ll".bold());
+		println!(
+			"{} ill-formed LLVM IR printed to {}",
+			"note:".bold(),
+			"bogus.ll".bold()
+		);
 
 		return Err(CMNError::new(CMNErrorCode::LLVMError));
 	};
 
-	backend.module.print_to_file(get_module_out_path(state, input_module, None).with_extension("llraw").as_os_str()).unwrap();
+	backend
+		.module
+		.print_to_file(
+			get_module_out_path(state, input_module, None)
+				.with_extension("llraw")
+				.as_os_str(),
+		)
+		.unwrap();
 
 	// Optimization passes
 	let mpm = PassManager::<Module>::create(());

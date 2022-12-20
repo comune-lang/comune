@@ -4,10 +4,10 @@ use std::collections::HashMap;
 
 use super::CIRPassMut;
 use crate::{
+	ast::{namespace::Identifier, TokenData},
 	cir::{CIRFunction, CIRStmt, CIRType, LValue, Operand, PlaceElem, RValue},
 	errors::{CMNError, CMNErrorCode},
 	parser::AnalyzeResult,
-	ast::{namespace::Identifier, TokenData},
 };
 
 pub struct BorrowCheck;
