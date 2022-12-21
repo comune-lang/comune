@@ -50,6 +50,8 @@ int main() {
 
 	printf(c"who_knows discriminant:%i\n", who_knows);
 
+	printf(c"Temporary->lvalue promotion: %i\n", Test { a: 23, b: 35 }.sum());
+
 	Vector<int> my_cool_generic;
 
 	my_cool_generic.data = malloc(8) as int*;
@@ -73,8 +75,6 @@ int main() {
 		a: *my_cool_generic.data, 
 		b: 0
 	};
-
-	int extract_test = Test { a: 23, b: 35 }.b;
 
 	free(my_cool_generic.data as void*);
 

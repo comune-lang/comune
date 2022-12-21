@@ -216,7 +216,7 @@ impl Namespace {
 			} else {
 				Some(closure(absolute_lookup, &id))
 			}
-		} else if let Some(imported) = self.imported.iter().find(|(item, imported)| {
+		} else if let Some(imported) = self.imported.iter().find(|(item, _imported)| {
 			id.path.len() > item.path.len() && &id.path[0..item.path.len()] == item.path.as_slice()
 		}) {
 			// Found an imported namespace that's a prefix of `id`!

@@ -15,7 +15,7 @@ use crate::{
 
 use self::{
 	controlflow::ControlFlow,
-	expression::{Atom, Expr, NodeData, Operator},
+	expression::{Atom, Expr, NodeData, Operator, OnceAtom},
 	namespace::{Identifier, ItemRef, Name, Namespace, NamespaceASTElem, NamespaceItem},
 	statement::Stmt,
 	types::{AlgebraicDef, FnDef, TupleKind, TypeParamList, TypeRef},
@@ -51,7 +51,6 @@ pub struct FnScope<'ctx> {
 	parent: Option<&'ctx FnScope<'ctx>>,
 	fn_return_type: Type,
 	variables: HashMap<Name, Type>,
-	temps: HashMap<Name, Type>,
 }
 
 impl<'ctx> FnScope<'ctx> {
@@ -62,7 +61,6 @@ impl<'ctx> FnScope<'ctx> {
 			parent: Some(parent),
 			fn_return_type: parent.fn_return_type.clone(),
 			variables: HashMap::new(),
-			temps: HashMap::new(),
 		}
 	}
 
@@ -73,7 +71,6 @@ impl<'ctx> FnScope<'ctx> {
 			parent: None,
 			fn_return_type: return_type,
 			variables: HashMap::new(),
-			temps: HashMap::new(),
 		}
 	}
 
@@ -116,11 +113,6 @@ impl<'ctx> FnScope<'ctx> {
 		self.variables.insert(n, t);
 	}
 
-	pub fn insert_temporary(&mut self, t: Type) -> Name {
-		let key: Name = self.temps.len().to_string().into();
-		self.temps.insert(key.clone(), t);
-		key
-	}
 }
 
 pub fn validate_function(
@@ -510,7 +502,12 @@ impl Expr {
 					// Special cases for type-asymmetric operators
 					Operator::MemberAccess => {
 						let lhs_ty = lhs.validate(scope)?;
-
+						
+						if !lhs.is_lvalue() {
+							// If lhs is an rvalue, wrap it in an Atom::Once 
+							// to prevent it being evaluated multiple times 
+							lhs.wrap_in_once_atom();
+						}
 						Self::validate_member_access(&lhs_ty, lhs, rhs, scope, meta)
 					}
 
@@ -675,11 +672,17 @@ impl Expr {
 						}
 					}
 
-					Atom::Cast(_, cast_t) => *target == *cast_t,
-					Atom::AlgebraicLit(_, _) => todo!(),
+					Atom::Cast(_, cast_t) => target == cast_t,
+					Atom::AlgebraicLit(alg_ty, _) => target == alg_ty,
 					Atom::ArrayLit(_) => todo!(),
 					Atom::Block { .. } => todo!(),
 					Atom::CtrlFlow(_) => todo!(),
+					
+					Atom::Once(once) => if let OnceAtom::Uneval(expr) = &*once.read().unwrap() {
+						expr.coercable_to(from, target, scope)
+					} else {
+						false
+					}
 				},
 
 				Expr::Cons(_, _, _) => from == target,
@@ -717,6 +720,16 @@ impl Expr {
 		Ok(result)
 	}
 
+	fn is_lvalue(&self) -> bool {
+		match self {
+			Expr::Atom(atom, _) => matches!(atom, Atom::Identifier(_) | Atom::Once(_)),
+
+			Expr::Cons([_, _], op, _) => matches!(op, Operator::MemberAccess | Operator::Subscr),
+
+			Expr::Unary(_, op, _) => matches!(op, Operator::Deref),
+		}
+	}
+
 	fn validate_member_access(
 		lhs_ty: &Type,
 		lhs: &Expr,
@@ -728,7 +741,7 @@ impl Expr {
 			return Err((CMNError::new(CMNErrorCode::InvalidSubscriptLHS { t: lhs_ty.clone() }), meta.tk));
 		};
 
-		match &mut *lhs_ref.def.upgrade().unwrap().write().unwrap() {
+		match &*lhs_ref.def.upgrade().unwrap().read().unwrap() {
 			// Dot operator is on an algebraic type, so check if it's a member access or method call
 			TypeDef::Algebraic(t) => match rhs {
 				// Member access on algebraic type
@@ -867,10 +880,6 @@ impl Atom {
 				let expr_t = expr.validate(scope)?;
 
 				if expr_t.castable_to(to) {
-					if let Expr::Atom(a, meta) = &mut **expr {
-						a.check_cast(&expr_t, to, scope, &meta.tk)?;
-					}
-
 					expr.get_node_data_mut().ty.replace(to.clone());
 					Ok(to.clone())
 				} else {
@@ -1120,27 +1129,15 @@ impl Atom {
 					Ok(last_branch_type.unwrap()) // TODO: This'll panic with an empty match expression
 				}
 			},
-		}
-	}
 
-	// Check if we should issue any warnings or errors when casting
-	pub fn check_cast(
-		&mut self,
-		from: &Type,
-		to: &Type,
-		_scope: &FnScope,
-		_meta: &TokenData,
-	) -> AnalyzeResult<()> {
-		match from {
-			Type::Basic(b) => match b {
-				_ => Ok(()),
+			Atom::Once(once) => if let OnceAtom::Uneval(expr) = &mut *once.write().unwrap() {
+				expr.validate(scope)
+			} else {
+				panic!() // i dunno
 			},
-
-			Type::Pointer(_) => Ok(()),
-
-			_ => todo!(),
 		}
 	}
+
 
 	pub fn get_lvalue_type<'ctx>(
 		&self,

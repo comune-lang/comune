@@ -288,7 +288,7 @@ impl CIRModule {
 				Self::monoize_operand(types, lhs, lty, param_map, type_instances);
 				Self::monoize_operand(types, rhs, rty, param_map, type_instances);
 
-				Self::monoize_type(types, ty, &param_map, type_instances);
+				Self::monoize_type(types, ty, param_map, type_instances);
 			}
 
 			RValue::Cast { from, to, val } => {
@@ -337,7 +337,7 @@ impl CIRModule {
 					}
 
 					if !instances[idx].contains_key(param_map) {
-						*idx = Self::instantiate_type_def(types, idx.clone(), &args, instances);
+						*idx = Self::instantiate_type_def(types, idx.clone(), args, instances);
 					}
 				}
 			}
@@ -411,7 +411,7 @@ impl CIRModule {
 				}
 			} else {
 				// Mangle name
-				func.mangled_name = Some(mangle_name(id, &func));
+				func.mangled_name = Some(mangle_name(id, func));
 			}
 		}
 	}
@@ -454,7 +454,7 @@ impl CIRType {
 			CIRType::Basic(b) => String::from(b.mangle()),
 			CIRType::Pointer(p) => String::from("P") + &p.mangle(),
 			CIRType::Reference(r) => String::from("R") + &r.mangle(),
-			CIRType::TypeRef(_, _) => format!("S_"),
+			CIRType::TypeRef(_, _) => String::from("S_"),
 			_ => todo!(),
 		}
 	}

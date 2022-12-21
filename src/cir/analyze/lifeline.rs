@@ -58,7 +58,7 @@ impl LiveVarCheckState {
 	}
 
 	fn get_liveness(&self, lval: &LValue) -> LivenessState {
-		if self.liveness.get(&lval).is_some() {
+		if self.liveness.get(lval).is_some() {
 			// This state has a defined liveness value, so look through its children to check for partial moves
 
 			// Get all keys that are sublocations of this lvalue
@@ -85,7 +85,7 @@ impl LiveVarCheckState {
 				return *state;
 			}
 
-			if lval.projection.len() == 0 {
+			if lval.projection.is_empty() {
 				return LivenessState::Uninit;
 			} else {
 				lval.projection.pop();
@@ -145,7 +145,7 @@ impl LiveVarCheckState {
 			self.set_liveness(lval, LivenessState::Moved);
 			Ok(())
 		} else {
-			return Err((lval.clone(), sub_liveness, token_data));
+			Err((lval.clone(), sub_liveness, token_data))
 		}
 	}
 }
@@ -190,7 +190,7 @@ impl CIRPassMut for BorrowCheck {
 			);
 		}
 
-		let result = func.walk_cfg(liveness, |state, stmt| {
+		func.walk_cfg(liveness, |state, stmt| {
 			convert_invalid_use_error(func, || {
 				match stmt {
 					CIRStmt::Assignment((lval, _), (rval, token_data)) => {
@@ -202,10 +202,8 @@ impl CIRPassMut for BorrowCheck {
 						state.eval_rvalue(rval, *token_data)?;
 					}
 
-					CIRStmt::Return(rval_opt) => {
-						if let Some((rval, token_data)) = rval_opt {
-							state.eval_rvalue(rval, *token_data)?;
-						}
+					CIRStmt::Return(Some((rval, token_data))) => {
+						state.eval_rvalue(rval, *token_data)?;
 					}
 
 					_ => {}
@@ -213,8 +211,6 @@ impl CIRPassMut for BorrowCheck {
 
 				Ok(())
 			})
-		});
-
-		result
+		})
 	}
 }

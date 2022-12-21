@@ -1,4 +1,4 @@
-use std::{ffi::CString, fmt::Display, ptr};
+use std::{ffi::CString, fmt::Display, ptr, sync::{Arc, RwLock}};
 
 use super::{
 	controlflow::ControlFlow,
@@ -286,11 +286,10 @@ pub enum Expr {
 }
 
 impl Expr {
-	pub fn wrap_in_cast(&mut self, to: Type) {
-		if let Expr::Atom(Atom::Cast(_, cast_ty), _) = self {
-			if to == *cast_ty {
-				return;
-			}
+	// Wrap an expression in an Atom::Once, allowing it to be cloned without being evaluated multiple times
+	pub fn wrap_in_once_atom(&mut self) {
+		if let Expr::Atom(Atom::Once(_), _) = self {
+			return;
 		}
 
 		let node_data = self.get_node_data().clone();
@@ -303,6 +302,31 @@ impl Expr {
 			// but if you managed to exhaust all the memory
 			// in your system, you've got bigger problems.
 
+			let new = Expr::Atom(
+				Atom::Once(Arc::new(RwLock::new(OnceAtom::Uneval(tmp)))),
+				NodeData {
+					ty: node_data.ty,
+					tk: node_data.tk,
+				},
+			);
+
+			ptr::write(self, new);
+		}
+	}
+
+	pub fn wrap_in_cast(&mut self, to: Type) {
+		if let Expr::Atom(Atom::Cast(_, cast_ty), _) = self {
+			if to == *cast_ty {
+				return;
+			}
+		}
+
+		let node_data = self.get_node_data().clone();
+
+		// Swap out self behind a &mut
+		unsafe {
+			let tmp = ptr::read(self);
+			
 			let new = Expr::Atom(
 				Atom::Cast(Box::new(tmp), to.clone()),
 				NodeData {
@@ -362,7 +386,7 @@ impl Display for Expr {
 	}
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub enum Atom {
 	// has_result determines whether the result of the last expression is used as the block's result value
 	Block {
@@ -393,6 +417,35 @@ pub enum Atom {
 		type_args: Vec<(Name, Type)>,
 		ret: Option<Type>,
 	},
+
+	Once(Arc<RwLock<OnceAtom>>),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum OnceAtom {
+	Uneval(Expr),
+	Eval(usize), // cIR local index. i know this doesn't technically belong in the AST but cut me a break okay
+}
+
+impl PartialEq for Atom {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Block { items: l_items, result: l_result }, Self::Block { items: r_items, result: r_result }) => l_items == r_items && l_result == r_result,
+            (Self::CtrlFlow(l0), Self::CtrlFlow(r0)) => l0 == r0,
+            (Self::IntegerLit(l0, l1), Self::IntegerLit(r0, r1)) => l0 == r0 && l1 == r1,
+            (Self::FloatLit(l0, l1), Self::FloatLit(r0, r1)) => l0 == r0 && l1 == r1,
+            (Self::BoolLit(l0), Self::BoolLit(r0)) => l0 == r0,
+            (Self::StringLit(l0), Self::StringLit(r0)) => l0 == r0,
+            (Self::CStringLit(l0), Self::CStringLit(r0)) => l0 == r0,
+            (Self::ArrayLit(l0), Self::ArrayLit(r0)) => l0 == r0,
+            (Self::AlgebraicLit(l0, l1), Self::AlgebraicLit(r0, r1)) => l0 == r0 && l1 == r1,
+            (Self::Identifier(l0), Self::Identifier(r0)) => l0 == r0,
+            (Self::Cast(l0, l1), Self::Cast(r0, r1)) => l0 == r0 && l1 == r1,
+            (Self::FnCall { name: l_name, args: l_args, type_args: l_type_args, ret: l_ret }, Self::FnCall { name: r_name, args: r_args, type_args: r_type_args, ret: r_ret }) => l_name == r_name && l_args == r_args && l_type_args == r_type_args && l_ret == r_ret,
+            (Self::Once(l0), Self::Once(r0)) => *l0.read().unwrap() == *r0.read().unwrap(),
+            _ => false,
+        }
+    }
 }
 
 impl Display for Atom {
@@ -451,6 +504,8 @@ impl Display for Atom {
 			Atom::CtrlFlow(_) => todo!(),
 
 			Atom::AlgebraicLit(_, _) => todo!(),
+			
+			Atom::Once(_) => todo!(),
 		}
 	}
 }

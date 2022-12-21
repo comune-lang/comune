@@ -3,7 +3,7 @@ use std::{borrow::BorrowMut, collections::HashMap};
 use crate::{
 	ast::{
 		controlflow::ControlFlow,
-		expression::{Atom, Expr, Operator},
+		expression::{Atom, Expr, Operator, OnceAtom},
 		namespace::{Identifier, ItemRef, Name, Namespace, NamespaceASTElem, NamespaceItem},
 		pattern::Pattern,
 		statement::Stmt,
@@ -877,6 +877,23 @@ impl CIRModuleBuilder {
 
 					_ => panic!("illegal CtrlFlow construction in cIR!"),
 				},
+				
+				Atom::Once(once) => {
+					let cir_ty = self.convert_type(expr_ty);
+
+					if let OnceAtom::Eval(local) = *once.read().unwrap() {
+						return Some(RValue::Atom(cir_ty, None, Operand::LValue(LValue { local, projection: vec![] })));
+					}
+
+					let once_uneval = &mut *once.write().unwrap();
+					let OnceAtom::Uneval(expr) = once_uneval else { panic!() };
+
+					let expr_ir = self.generate_expr(expr)?;
+					let local = self.insert_temporary(cir_ty.clone(), expr_ir);
+					*once_uneval = OnceAtom::Eval(local.local);
+
+					Some(RValue::Atom(cir_ty, None, Operand::LValue(local)))
+				},
 			},
 
 			Expr::Cons([lhs, rhs], op, _) => {
@@ -1008,6 +1025,11 @@ impl CIRModuleBuilder {
 					projection: vec![],
 				}),
 
+				Atom::Once(_) => {
+					let RValue::Atom(_, None, Operand::LValue(lvalue)) = self.generate_expr(expr)? else { panic!() };
+					Some(lvalue)
+				},
+
 				_ => panic!(),
 			},
 
@@ -1131,14 +1153,14 @@ impl CIRModuleBuilder {
 
 	fn get_as_operand(&mut self, ty: CIRType, rval: RValue) -> Operand {
 		if let RValue::Atom(_, None, operand) = rval {
-			return operand;
+			operand
 		} else {
 			Operand::LValue(self.insert_temporary(ty, rval))
 		}
 	}
 
 	fn insert_temporary(&mut self, ty: CIRType, rval: RValue) -> LValue {
-		self.get_fn_mut().variables.push((ty.clone(), None));
+		self.get_fn_mut().variables.push((ty, None));
 
 		let lval = LValue {
 			local: self.get_fn().variables.len() - 1,

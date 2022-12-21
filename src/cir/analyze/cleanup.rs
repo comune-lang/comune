@@ -43,8 +43,5 @@ fn rval_has_side_effects(expr: &RValue) -> bool {
 }
 
 fn op_has_side_effects(expr: &Operand) -> bool {
-	match expr {
-		Operand::FnCall(..) => true,
-		_ => false,
-	}
+	matches!(expr, Operand::FnCall(..))
 }
