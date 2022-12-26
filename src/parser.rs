@@ -800,6 +800,10 @@ impl Parser {
 	fn parse_pattern(&self) -> ParseResult<Pattern> {
 		if self.is_at_type_token(true)? {
 			let pattern_ty = self.parse_type(true)?;
+			
+			let is_ref = self.get_current()? == Token::Operator("&");
+
+			if is_ref { self.get_next()?; }
 
 			match self.get_current()? {
 				Token::Identifier(id) => {
@@ -808,8 +812,8 @@ impl Parser {
 					Ok(Pattern::Binding(Binding {
 						name: Some(id.expect_scopeless()?.clone()),
 						ty: pattern_ty,
-						is_ref: false,
-						is_mut: false,
+						is_ref,
+						is_mut: true,
 					}))
 				}
 
@@ -1526,11 +1530,6 @@ impl Parser {
 									}
 								}
 
-								"&" => {
-									result = Type::Reference(Box::new(result));
-									self.get_next()?;
-								}
-
 								"[" => {
 									self.get_next()?;
 									let const_expr = self.parse_expression()?;
@@ -1569,7 +1568,6 @@ impl Parser {
 								}
 
 								_ => {
-									//
 									return Ok(result);
 								}
 							}

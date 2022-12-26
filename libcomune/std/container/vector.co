@@ -24,7 +24,7 @@ impl Clone for Vector<T: Clone> {
 }
 
 
-impl Clone for Vector<T: Copy + Clone> {
+impl Clone for Vector<T: Copy> {
 	Self clone(ref self) {
 		Self result = Vector<T>::new();
 		result.reserve(size);

@@ -143,8 +143,6 @@ impl CIRModuleBuilder {
 
 			Type::Pointer(pointee) => CIRType::Pointer(Box::new(self.convert_type(pointee))),
 
-			Type::Reference(refee) => CIRType::Reference(Box::new(self.convert_type(refee))),
-
 			Type::Array(arr_ty, size) => {
 				let arr_ty_cir = Box::new(self.convert_type(arr_ty));
 				let mut dimensions = vec![];

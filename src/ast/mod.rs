@@ -262,8 +262,6 @@ pub fn resolve_type(
 	match ty {
 		Type::Pointer(pointee) => resolve_type(pointee, namespace, generics),
 
-		Type::Reference(refee) => resolve_type(refee, namespace, generics),
-
 		Type::Array(pointee, _size) => resolve_type(pointee, namespace, generics),
 
 		Type::TypeRef(ItemRef::Unresolved { name: id, scope }) => {

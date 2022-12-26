@@ -16,7 +16,6 @@ pub type TypeParamList = Vec<(Name, TypeParam)>;
 pub enum Type {
 	Basic(Basic),                                  // Fundamental type
 	Pointer(BoxedType),                            // Pointer-to-<BoxedType>
-	Reference(BoxedType),                          // Reference-to-<BoxedType>
 	Array(BoxedType, Arc<RwLock<Vec<ConstExpr>>>), // N-dimensional array with constant expression for size
 	TypeRef(ItemRef<TypeRef>),                     // Reference to user-defined type
 	TypeParam(usize),                              // Reference to an in-scope type parameter
@@ -269,7 +268,6 @@ impl Type {
 		match self {
 			Type::Basic(b) => Type::Basic(*b),
 			Type::Pointer(ptr) => Type::Pointer(Box::new(ptr.get_concrete_type(type_args))),
-			Type::Reference(refee) => Type::Reference(Box::new(refee.get_concrete_type(type_args))),
 			Type::Array(arr_ty, size) => {
 				Type::Array(Box::new(arr_ty.get_concrete_type(type_args)), size.clone())
 			}
@@ -367,7 +365,6 @@ impl PartialEq for Type {
 		match (self, other) {
 			(Self::Basic(l0), Self::Basic(r0)) => l0 == r0,
 			(Self::Pointer(l0), Self::Pointer(r0)) => l0 == r0,
-			(Self::Reference(l0), Self::Reference(r0)) => l0 == r0,
 			(Self::TypeRef(l0), Self::TypeRef(r0)) => l0 == r0,
 			(Self::TypeParam(l0), Self::TypeParam(r0)) => l0 == r0,
 			(Self::Array(l0, _l1), Self::Array(r0, _r1)) => l0 == r0 && todo!(),
@@ -408,10 +405,6 @@ impl Hash for Type {
 				t.hash(state);
 				"*".hash(state)
 			}
-			Type::Reference(t) => {
-				t.hash(state);
-				"&".hash(state)
-			}
 			Type::Array(t, _s) => {
 				t.hash(state);
 				"+".hash(state)
@@ -442,8 +435,6 @@ impl Display for Type {
 			Type::Basic(t) => write!(f, "{t}"),
 
 			Type::Pointer(t) => write!(f, "{t}*"),
-
-			Type::Reference(t) => write!(f, "{t}&"),
 
 			Type::Array(t, _s) => write!(f, "{}[]", t),
 
@@ -546,7 +537,6 @@ impl std::fmt::Debug for Type {
 		match self {
 			Type::Basic(arg0) => f.debug_tuple("Basic").field(arg0).finish(),
 			Type::Pointer(_) => f.debug_tuple("Pointer").finish(),
-			Type::Reference(_) => f.debug_tuple("Reference").finish(),
 			Type::Array(t, _) => f.debug_tuple("Array").field(t).finish(),
 			Type::TypeRef(ItemRef::Unresolved {
 				name: arg0,
