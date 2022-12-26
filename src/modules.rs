@@ -287,11 +287,28 @@ pub fn generate_code<'ctx>(
 	let module_name = input_module.to_string();
 	let mut cir_module = CIRModuleBuilder::from_ast(mod_state).module;
 
+
+
+	// Note: we currently write the output of a lot of 
+	// intermediate stages to the build directory. This is 
+	// mostly for debugging purposes; when the compiler is
+	// at a more mature stage, most of these writes could be
+	// removed or turned into an opt-in CLI option.
+
+	// Write cIR to file
+	fs::write(
+		get_module_out_path(state, input_module, None).with_extension("cir"),
+		cir_module.to_string(),
+	)
+	.unwrap();
+
 	// Analyze & optimize cIR
 	let mut cir_man = CIRPassManager::new();
 	cir_man.add_pass(verify::Verify);
 	cir_man.add_mut_pass(cleanup::RemoveNoOps);
+	
 	//cir_man.add_mut_pass(borrowck::BorrowCheck);
+	
 	cir_man.add_pass(verify::Verify);
 
 	let cir_errors = cir_man.run_on_module(&mut cir_module);
@@ -312,19 +329,6 @@ pub fn generate_code<'ctx>(
 
 		return Err(CMNError::new(CMNErrorCode::Pack(return_errors)));
 	}
-
-	// Note: we currently write the output of a lot of 
-	// intermediate stages to the build directory. This is 
-	// mostly for debugging purposes; when the compiler is
-	// at a more mature stage, most of these writes could be
-	// removed or turned into an opt-in CLI option.
-
-	// Write cIR to file
-	fs::write(
-		get_module_out_path(state, input_module, None).with_extension("cir"),
-		cir_module.to_string(),
-	)
-	.unwrap();
 
 	let module_mono = cir_module.monoize();
 
