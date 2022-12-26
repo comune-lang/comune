@@ -5,7 +5,7 @@ use crate::{
 		controlflow::ControlFlow,
 		expression::{Atom, Expr, Operator, OnceAtom},
 		namespace::{Identifier, ItemRef, Name, Namespace, NamespaceASTElem, NamespaceItem},
-		pattern::Pattern,
+		pattern::{Pattern, Binding},
 		statement::Stmt,
 		types::{Basic, FnDef, TupleKind, Type, TypeDef, TypeRef},
 		Attribute,
@@ -301,7 +301,7 @@ impl CIRModuleBuilder {
 	// For a given pattern match, generate the appropriate bindings
 	fn generate_pattern_bindings(&mut self, pattern: &Pattern, value: LValue, value_ty: &CIRType) {
 		match pattern {
-			Pattern::Binding(Some(name), ty) => {
+			Pattern::Binding(Binding { name: Some(name), ty, .. }) => {
 				let cir_ty = self.convert_type(ty);
 				let idx = self.get_fn().variables.len();
 
@@ -339,7 +339,7 @@ impl CIRModuleBuilder {
 				}
 			}
 
-			Pattern::Binding(None, _) => {}
+			Pattern::Binding(Binding { name: None, ..}) => {}
 
 			_ => todo!(),
 		}
@@ -1084,7 +1084,7 @@ impl CIRModuleBuilder {
 		value_ty: &CIRType,
 	) -> RValue {
 		match pattern {
-			Pattern::Binding(_, pattern_ty) => {
+			Pattern::Binding(Binding { ty: pattern_ty, .. }) => {
 				let pattern_ty = self.convert_type(pattern_ty);
 
 				if &pattern_ty == value_ty {

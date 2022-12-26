@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
-use crate::ast::pattern::Pattern;
+use crate::ast::pattern::{Pattern, Binding};
 use crate::constexpr::ConstExpr;
 use crate::errors::{CMNError, CMNErrorCode};
 use crate::lexer::{Lexer, Token};
@@ -805,10 +805,12 @@ impl Parser {
 				Token::Identifier(id) => {
 					self.get_next()?;
 
-					Ok(Pattern::Binding(
-						Some(id.expect_scopeless()?.clone()),
-						pattern_ty,
-					))
+					Ok(Pattern::Binding(Binding {
+						name: Some(id.expect_scopeless()?.clone()),
+						ty: pattern_ty,
+						is_ref: false,
+						is_mut: false,
+					}))
 				}
 
 				Token::Other('{') => todo!(),

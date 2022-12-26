@@ -145,6 +145,9 @@ fn main() -> color_eyre::eyre::Result<()> {
 		compile_time.as_millis() as f64 / 1000.0,
 		link_time.as_millis() as f64 / 1000.0
 	);
+	
+	// Block until all output is written
+	let _ = std::io::stdout().lock();
 
 	Ok(())
 }

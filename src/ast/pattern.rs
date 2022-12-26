@@ -1,8 +1,16 @@
 use super::{namespace::Name, types::Type};
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Binding {
+	pub name: Option<Name>,
+	pub ty: Type,
+	pub is_ref: bool,
+	pub is_mut: bool,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Pattern {
-	Binding(Option<Name>, Type), // Binding pattern, matches any value. If None, it's a wildcard
+	Binding(Binding), // Binding pattern, matches any value. If None, it's a wildcard
 	Destructure(Vec<(Option<Name>, Pattern)>, Type), // Destructures an aggregate type into its constituents
 	Or(Vec<Pattern>, Type),                          // Combines two or more patterns
 }
@@ -10,13 +18,13 @@ pub enum Pattern {
 impl Pattern {
 	pub fn get_type(&self) -> &Type {
 		match self {
-			Pattern::Binding(_, ty) | Pattern::Destructure(_, ty) | Pattern::Or(_, ty) => ty,
+			Pattern::Binding(Binding { ty, .. }) | Pattern::Destructure(_, ty) | Pattern::Or(_, ty) => ty,
 		}
 	}
 
-	pub fn get_bindings(&self) -> Vec<(&Option<Name>, &Type)> {
+	pub fn get_bindings(&self) -> Vec<&Binding> {
 		match self {
-			Pattern::Binding(name, ty) => vec![(name, ty)],
+			Pattern::Binding(binding) => vec![binding],
 
 			Pattern::Destructure(elems, _) => {
 				let mut result = vec![];

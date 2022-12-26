@@ -18,7 +18,7 @@ use self::{
 	expression::{Atom, Expr, NodeData, Operator, OnceAtom},
 	namespace::{Identifier, ItemRef, Name, Namespace, NamespaceASTElem, NamespaceItem},
 	statement::Stmt,
-	types::{AlgebraicDef, FnDef, TupleKind, TypeParamList, TypeRef},
+	types::{AlgebraicDef, FnDef, TupleKind, TypeParamList, TypeRef}, pattern::Binding,
 };
 
 pub mod controlflow;
@@ -1106,7 +1106,7 @@ impl Atom {
 						let mut subscope = FnScope::from_parent(scope);
 
 						for binding in branch.0.get_bindings() {
-							if let (Some(name), ty) = binding {
+							if let Binding { name: Some(name), ty, .. } = binding {
 								subscope.add_variable(ty.clone(), name.clone());
 							}
 						}

@@ -116,8 +116,6 @@ pub fn launch_module_compilation(
 		target_machine
 			.write_to_file(&result.module, FileType::Object, &out_path)
 			.unwrap();
-
-		//println!("{:>10} {}", "finished".bold().green(), out_name);
 	});
 
 	Ok(interface)
