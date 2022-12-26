@@ -531,7 +531,11 @@ impl CIRModuleBuilder {
 							let cir_ty = self.convert_type(arg.get_type());
 							let cir_expr = self.generate_expr(arg).unwrap();
 
-							self.insert_temporary(cir_ty, cir_expr)
+							if let RValue::Atom(_, None, Operand::LValue(lval)) = cir_expr {
+								lval
+							} else {
+								self.insert_temporary(cir_ty, cir_expr)
+							}
 						})
 						.collect();
 

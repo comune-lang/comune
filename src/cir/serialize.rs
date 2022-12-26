@@ -148,7 +148,7 @@ impl Display for Operand {
 				write!(f, "\"{}\"", lexer::get_unescaped(s))
 			}
 			Operand::CStringLit(s) => {
-				write!(f, "\"{s:#?}\"")
+				write!(f, "{s:#?}")
 			}
 			Operand::BoolLit(b) => write!(f, "{b}"),
 			Operand::LValue(lval) => write!(f, "{lval}"),

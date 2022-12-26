@@ -1,5 +1,4 @@
 import module_test;
-//import lifetimes;
 
 using module_test::{fib, foo};
 

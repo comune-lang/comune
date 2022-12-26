@@ -14,7 +14,7 @@ use inkwell::{
 		AnyValue, AnyValueEnum, BasicMetadataValueEnum, BasicValue, BasicValueEnum, FunctionValue,
 		PointerValue,
 	},
-	AddressSpace, FloatPredicate, GlobalVisibility, IntPredicate,
+	AddressSpace, FloatPredicate, GlobalVisibility, IntPredicate, debug_info::DebugInfoBuilder,
 };
 
 use crate::{
@@ -50,6 +50,7 @@ pub struct LLVMBackend<'ctx> {
 	pub context: &'ctx Context,
 	pub module: Module<'ctx>,
 	builder: Builder<'ctx>,
+	di_builder: Option<DebugInfoBuilder<'ctx>>,
 	fn_value_opt: Option<FunctionValue<'ctx>>,
 	type_map: HashMap<String, AnyTypeEnum<'ctx>>,
 	fn_map: HashMap<Identifier, String>,
@@ -58,11 +59,47 @@ pub struct LLVMBackend<'ctx> {
 }
 
 impl<'ctx> LLVMBackend<'ctx> {
-	pub fn new(context: &'ctx Context, module_name: &str) -> Self {
+	pub fn new(
+		context: &'ctx Context, 
+		module_name: &str, 
+		source_file: &str,
+		optimized: bool, 
+		debug: bool
+	) -> Self {
+		let module = context.create_module(module_name);
+		let builder = context.create_builder();
+
+		let (di_builder, compile_unit) = if debug {
+			// jesus christ
+
+			let (di_builder, compile_unit) = module.create_debug_info_builder(
+				/* allow_unresolved */ true,
+				/* language */ inkwell::debug_info::DWARFSourceLanguage::CPlusPlus,
+				/* filename */ source_file,
+				/* directory */ ".",
+				/* producer */ "comune-rs",
+				/* is_optimized */ optimized,
+				/* flags */ "",
+				/* runtime_ver */ 0,
+				/* split_name */ "",
+				/* kind */ inkwell::debug_info::DWARFEmissionKind::Full,
+				/* dwo_id */ 0,
+				/* split_debug_inlining */ false,
+				/* debug_info_for_profiling */ false,
+				/* sysroot */ "",
+				/* sdk */ "",
+			);
+
+			(Some(di_builder), Some(compile_unit))
+		} else {
+			(None, None)
+		};
+
 		Self {
 			context,
-			module: context.create_module(module_name),
-			builder: context.create_builder(),
+			module,
+			builder,
+			di_builder,
 			fn_value_opt: None,
 			type_map: HashMap::new(),
 			fn_map: HashMap::new(),
@@ -117,6 +154,10 @@ impl<'ctx> LLVMBackend<'ctx> {
 			if !func.1.is_extern {
 				self.generate_fn(func.1.mangled_name.as_ref().unwrap(), func.1)?;
 			}
+		}
+
+		if let Some(di_builder) = &self.di_builder {
+			di_builder.finalize();
 		}
 
 		Ok(())

@@ -313,6 +313,12 @@ pub fn generate_code<'ctx>(
 		return Err(CMNError::new(CMNErrorCode::Pack(return_errors)));
 	}
 
+	// Note: we currently write the output of a lot of 
+	// intermediate stages to the build directory. This is 
+	// mostly for debugging purposes; when the compiler is
+	// at a more mature stage, most of these writes could be
+	// removed or turned into an opt-in CLI option.
+
 	// Write cIR to file
 	fs::write(
 		get_module_out_path(state, input_module, None).with_extension("cir"),
@@ -322,7 +328,7 @@ pub fn generate_code<'ctx>(
 
 	let module_mono = cir_module.monoize();
 
-	// Write cIR to file
+	// Write monomorphized cIR to file
 	fs::write(
 		get_module_out_path(state, input_module, None).with_extension("cir_mono"),
 		module_mono.to_string(),
@@ -330,7 +336,13 @@ pub fn generate_code<'ctx>(
 	.unwrap();
 
 	// Generate LLVM IR
-	let mut backend = LLVMBackend::new(context, &module_name);
+	let mut backend = LLVMBackend::new(
+		context, 
+		&module_name,
+		get_module_source_path(state, input_module).to_str().unwrap(), // TODO: Handle invalid UTF-8 paths 
+		false, 
+		true
+	);
 
 	backend.compile_module(&module_mono).unwrap();
 	backend.generate_libc_bindings();
