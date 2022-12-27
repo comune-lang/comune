@@ -24,15 +24,22 @@ impl Test {
 	}
 }
 
+trait Hello {
+	void hello(Self self);
+}
+
+impl Hello for Test {
+	void hello(Self self) {
+		printf(c"Hello Test!\n");
+	}
+}
+
 struct Vector<T> {
 	T* data;
 	usize len;
 	usize capacity;
 }
-/*
-Nested block comment test!
-/* test */
-*/
+
 int main() {
 	printf(c"This is main()!\n");
 
@@ -77,6 +84,8 @@ int main() {
 		a: *my_cool_generic.data, 
 		b: 0
 	};
+
+	test.hello();
 
 	free(my_cool_generic.data as void*);
 

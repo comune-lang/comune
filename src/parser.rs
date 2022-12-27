@@ -103,10 +103,8 @@ impl Parser {
 					}
 				}
 
-				NamespaceItem::Type(_) => {}
-
-				NamespaceItem::Alias(_) => {}
-
+				NamespaceItem::Type(_) | NamespaceItem::Alias(_) | NamespaceItem::Trait(_) => {}
+				
 				_ => todo!(),
 			}
 		}
@@ -456,11 +454,19 @@ impl Parser {
 								if let Some(trait_name) = trait_name {
 									let impls = &mut self.namespace.trait_impls;
 
-									if let Some(trait_impls) = impls.get_mut(trait_name) {
-										trait_impls.insert(impl_name, TraitImpl { items: todo!() });
-									} else {
-										todo!()
-									}
+									let trait_impls = match impls.get_mut(trait_name) {
+										Some(trait_impls) => trait_impls,
+										
+										None => {
+											impls.insert(trait_name.clone(), HashMap::new());
+											impls.get_mut(trait_name).unwrap()
+										}
+									};
+
+									trait_impls.insert(impl_name, TraitImpl { 
+										items: functions.into_iter().collect() 
+									});
+
 								} else {
 									let impls = &mut self.namespace.impls;
 

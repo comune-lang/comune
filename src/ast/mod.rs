@@ -18,7 +18,7 @@ use self::{
 	expression::{Atom, Expr, NodeData, Operator, OnceAtom},
 	namespace::{Identifier, ItemRef, Name, Namespace, NamespaceASTElem, NamespaceItem},
 	statement::Stmt,
-	types::{AlgebraicDef, FnDef, TupleKind, TypeParamList, TypeRef}, pattern::Binding,
+	types::{AlgebraicDef, FnDef, TupleKind, TypeParamList, TypeRef}, pattern::Binding, traits::{TraitDef, TraitRef},
 };
 
 pub mod controlflow;
@@ -369,8 +369,8 @@ pub fn resolve_type_def(
 pub fn resolve_namespace_types(namespace: &Namespace) -> ParseResult<()> {
 	// Resolve types
 
-	for child in &namespace.children {
-		match &child.1 .0 {
+	for (child, attributes, _) in namespace.children.values() {
+		match &child {
 			NamespaceItem::Function(func, _) => {
 				let FnDef {
 					ret,
@@ -386,10 +386,40 @@ pub fn resolve_namespace_types(namespace: &Namespace) -> ParseResult<()> {
 			}
 
 			NamespaceItem::Type(t) => {
-				resolve_type_def(&mut t.write().unwrap(), &child.1 .1, namespace, &vec![])?
+				resolve_type_def(&mut t.write().unwrap(), attributes, namespace, &vec![])?
 			}
 
 			NamespaceItem::Alias(_) => {}
+
+			NamespaceItem::Trait(tr) => {
+				let TraitDef {
+					items,
+					supers: _
+				} = &mut *tr.write().unwrap();
+
+				
+				for (item, _attributes, _) in items.values_mut() {
+					match item {
+						NamespaceItem::Function(func, _) => {
+							let FnDef {
+								ret,
+								params,
+								type_params: generics,
+							} = &mut *func.write().unwrap();
+
+							generics.insert(0, ("Self".into(), vec![]));
+			
+							resolve_type(ret, namespace, generics)?;
+			
+							for param in &mut params.params {
+								resolve_type(&mut param.0, namespace, generics)?;
+							}
+						}
+
+						_ => todo!()
+					}
+				}
+			}
 
 			_ => todo!(),
 		};
