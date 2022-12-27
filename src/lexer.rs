@@ -254,11 +254,22 @@ impl Lexer {
 
 	fn skip_multi_line_comment(&mut self) -> io::Result<()> {
 		if let Some(mut token) = self.char_buffer {
+			let mut depth = 1;
+
 			while token == '/' && self.peek_next_char()? == '*' {
 				while !self.eof_reached() {
 					token = self.get_next_char()?;
+				
 					if token == '*' && self.peek_next_char()? == '/' {
-						break;
+						depth -= 1;
+
+						if depth == 0 {
+							break
+						}
+					}
+					
+					if token == '/' && self.peek_next_char()? == '*' {
+						depth += 1;
 					}
 				}
 				self.get_next_char()?;

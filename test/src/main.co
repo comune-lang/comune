@@ -29,7 +29,10 @@ struct Vector<T> {
 	usize len;
 	usize capacity;
 }
-
+/*
+Nested block comment test!
+/* test */
+*/
 int main() {
 	printf(c"This is main()!\n");
 
