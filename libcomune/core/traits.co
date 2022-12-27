@@ -1,0 +1,21 @@
+// comune core library - traits module
+// Traits that represent fundamental properties of types.
+
+@lang(traits, Copy)
+trait Copy {
+	Self copy(&self);
+};
+
+@lang(traits, Drop)
+trait Drop {
+	void drop(&mut self);
+};
+
+@lang(traits, Sized)
+trait Sized {};
+
+@lang(traits, Send)
+trait Send {};
+
+@lang(traits, Sync)
+trait Sync {};
