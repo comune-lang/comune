@@ -11,7 +11,7 @@ use crate::{
 		Attribute,
 	},
 	constexpr::{ConstExpr, ConstValue},
-	modules::ModuleState,
+	driver::ModuleState,
 };
 
 use super::{

@@ -4,12 +4,13 @@ mod constexpr;
 mod errors;
 mod lexer;
 mod llvm;
-mod modules;
+mod driver;
 mod parser;
 
 use ast::{namespace::Identifier, types};
 use clap::Parser;
 use colored::Colorize;
+use std::fmt::Display;
 use std::process::Command;
 use std::{
 	ffi::OsString,
@@ -36,6 +37,12 @@ struct ComuneCLI {
 
 	#[clap(short = 'j', long = "jobs", default_value_t = 0, value_parser)]
 	num_jobs: usize,
+
+	#[clap(long = "out-dir", default_value = "./", value_parser)]
+	output_dir: OsString,
+	
+	#[clap(short = 'e', long = "emit", value_parser)]
+	emit_types: Vec<String>,
 }
 
 fn main() -> color_eyre::eyre::Result<()> {
@@ -54,7 +61,7 @@ fn main() -> color_eyre::eyre::Result<()> {
 		.build_global()
 		.unwrap();
 
-	let manager_state = Arc::new(modules::ManagerState {
+	let manager_state = Arc::new(driver::ManagerState {
 		library_dir: "./lib".into(),
 		working_dir: "./test".into(),
 		import_paths: vec![],
@@ -70,7 +77,7 @@ fn main() -> color_eyre::eyre::Result<()> {
 	let error_sender = errors::spawn_logger(args.backtrace);
 
 	rayon::in_place_scope(|s| {
-		let _ = modules::launch_module_compilation(
+		let _ = driver::launch_module_compilation(
 			manager_state.clone(),
 			Identifier::from_name(args.input_file.clone().to_string_lossy().into(), true),
 			error_sender.clone(),
@@ -97,7 +104,7 @@ fn main() -> color_eyre::eyre::Result<()> {
 
 	// Link into binary
 
-	let mut output_file = modules::get_out_folder(&manager_state);
+	let mut output_file = driver::get_out_folder(&manager_state);
 	output_file.push(args.input_file);
 	output_file.set_extension("");
 
