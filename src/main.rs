@@ -10,7 +10,8 @@ mod parser;
 use ast::{namespace::Identifier, types};
 use clap::Parser;
 use colored::Colorize;
-use std::fmt::Display;
+use std::fs;
+use std::path::PathBuf;
 use std::process::Command;
 use std::{
 	ffi::OsString,
@@ -19,6 +20,8 @@ use std::{
 	time::Instant,
 };
 
+use crate::driver::EmitType;
+
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
 struct ComuneCLI {
@@ -26,8 +29,8 @@ struct ComuneCLI {
 	#[clap(short = 'v', long = "verbose", default_value_t = false, value_parser)]
 	verbose: bool,
 
-	#[clap(value_parser, default_value = "")]
-	input_file: OsString,
+	#[clap(value_parser)]
+	input_files: Vec<OsString>,
 
 	#[clap(long = "emit-llvm", default_value_t = false, value_parser)]
 	emit_llvm: bool,
@@ -40,6 +43,9 @@ struct ComuneCLI {
 
 	#[clap(long = "out-dir", default_value = "./", value_parser)]
 	output_dir: OsString,
+
+	#[clap(short = 'o', long = "output", default_value = "a.out", value_parser)]
+	output_file: OsString,
 	
 	#[clap(short = 'e', long = "emit", value_parser)]
 	emit_types: Vec<String>,
@@ -51,9 +57,23 @@ fn main() -> color_eyre::eyre::Result<()> {
 	let args = ComuneCLI::parse();
 	let build_time = Instant::now();
 
-	if args.input_file.is_empty() {
-		println!("{} no input module", "fatal:".red().bold());
+	if args.input_files.is_empty() {
+		println!("{} no input modules", "fatal:".red().bold());
 		return Ok(());
+	}
+
+	let mut emit_types = vec![];
+	
+	for ty in args.emit_types {
+		emit_types.extend(
+			ty.split(",").map(
+				|arg| EmitType::from_string(arg).expect(&format!("invalid argument to --emit-type: {arg}")
+			)
+		));
+	}
+
+	if emit_types.is_empty() {
+		emit_types = vec![EmitType::Binary];
 	}
 
 	rayon::ThreadPoolBuilder::new()
@@ -62,27 +82,32 @@ fn main() -> color_eyre::eyre::Result<()> {
 		.unwrap();
 
 	let manager_state = Arc::new(driver::ManagerState {
-		library_dir: "./lib".into(),
-		working_dir: "./test".into(),
+		libcomune_dir: "./libcomune".into(),
 		import_paths: vec![],
 		max_threads: args.num_jobs,
 		verbose_output: args.verbose,
 		output_modules: Mutex::new(vec![]),
-		emit_llvm: args.emit_llvm,
+		output_dir: args.output_dir,
+		emit_types,
 		backtrace_on_error: args.backtrace,
 	});
 
 	// Launch multithreaded compilation
 
-	let error_sender = errors::spawn_logger(args.backtrace);
-
+	let error_sender = errors::spawn_logger(args.backtrace);	
 	rayon::in_place_scope(|s| {
-		let _ = driver::launch_module_compilation(
-			manager_state.clone(),
-			Identifier::from_name(args.input_file.clone().to_string_lossy().into(), true),
-			error_sender.clone(),
-			s,
-		);
+		for input_file in &args.input_files {
+			let input_file = fs::canonicalize(input_file).unwrap();
+			let module_name = Identifier::from_name(input_file.file_name().unwrap().to_str().unwrap().into(), true);
+
+			let _ = driver::launch_module_compilation(
+				manager_state.clone(),
+				input_file,
+				module_name,
+				error_sender.clone(),
+				s,
+			);
+		}
 	});
 
 	if errors::ERROR_COUNT.load(Ordering::Acquire) > 0 {
@@ -104,9 +129,8 @@ fn main() -> color_eyre::eyre::Result<()> {
 
 	// Link into binary
 
-	let mut output_file = driver::get_out_folder(&manager_state);
-	output_file.push(args.input_file);
-	output_file.set_extension("");
+	let mut output_file = PathBuf::from(&manager_state.output_dir);
+	output_file.push(args.output_file);
 
 	let build_name = output_file
 		.file_name()
@@ -120,34 +144,54 @@ fn main() -> color_eyre::eyre::Result<()> {
 		build_name.bold()
 	);
 
-	// Link into executable
+	// invoke linker for all EmitTypes that need it
 	// We use clang here because fuck dude i don't know how to use ld manually
-	let mut output = Command::new("clang");
 
-	for module in &*manager_state.output_modules.lock().unwrap() {
-		output.arg(module);
+	for emit_type in &manager_state.emit_types {
+		if let EmitType::Binary | EmitType::DynamicLib | EmitType::StaticLib = emit_type {
+			let mut output = Command::new("clang");
+
+			for module in &*manager_state.output_modules.lock().unwrap() {
+				output.arg(module);
+			}
+
+			output
+				.arg("-nodefaultlibs")
+				.arg("-lc")
+				.arg("-fno-rtti")
+				.arg("-fno-exceptions")
+				.arg("-no-pie");
+
+			match emit_type {
+				EmitType::Binary => {
+					output
+						.arg("-o")
+						.arg(output_file.clone());
+				}
+
+				_ => {}
+			}
+
+			let output_result = output
+				.output()
+				.expect("fatal: failed to invoke linker");
+
+			io::stdout().write_all(&output_result.stdout).unwrap();
+			io::stderr().write_all(&output_result.stderr).unwrap();
+		}
 	}
 
-	let output_result = output
-		.arg("-nodefaultlibs")
-		.arg("-lc")
-		.arg("-fno-rtti")
-		.arg("-fno-exceptions")
-		.arg("-no-pie")
-		.arg("-o")
-		.arg(output_file)
-		.output()
-		.expect("fatal: failed to link executable");
-
-	io::stdout().write_all(&output_result.stdout).unwrap();
-	io::stderr().write_all(&output_result.stderr).unwrap();
+	if !manager_state.emit_types.contains(&EmitType::Object) {
+		for module in &*manager_state.output_modules.lock().unwrap() {
+			fs::remove_file(module).unwrap();
+		}
+	}
 
 	let link_time = build_time.elapsed() - compile_time;
 
 	println!(
-		"{:>10} building {} in {}s (compile: {}s, link: {}s)\n",
+		"{:>10} building in {}s (compile: {}s, link: {}s)\n",
 		"finished".bold().green(),
-		build_name.bold(),
 		build_time.elapsed().as_millis() as f64 / 1000.0,
 		compile_time.as_millis() as f64 / 1000.0,
 		link_time.as_millis() as f64 / 1000.0
