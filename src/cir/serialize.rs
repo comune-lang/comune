@@ -6,7 +6,7 @@ use crate::{
 };
 
 use super::{
-	CIRFunction, CIRModule, CIRStmt, CIRType, CIRTypeDef, LValue, Operand, PlaceElem, RValue,
+	CIRFunction, CIRModule, CIRStmt, CIRType, CIRTypeDef, LValue, Operand, PlaceElem, RValue, CIRFnPrototype,
 };
 
 impl Display for CIRModule {
@@ -15,11 +15,29 @@ impl Display for CIRModule {
 			write!(f, "type {name} {ty}")?;
 		}
 
-		for func in &self.functions {
-			write!(f, "fn {}{}", func.0, func.1)?;
+		for (proto, func) in &self.functions {
+			write!(f, "fn {}{}", proto.name, func)?;
 		}
 
 		Ok(())
+	}
+}
+
+impl Display for CIRFnPrototype {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		write!(f, "{}", self.name)?;
+		
+		if !self.params.is_empty() {
+			let iter = self.params.iter();
+			
+			write!(f, "{}", iter.next().unwrap());
+
+			for param in iter {
+				write!(f, ", {param}")?;
+			}
+		}
+
+		write!(f, ")")
 	}
 }
 

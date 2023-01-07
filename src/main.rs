@@ -32,9 +32,6 @@ struct ComuneCLI {
 	#[clap(value_parser)]
 	input_files: Vec<OsString>,
 
-	#[clap(long = "emit-llvm", default_value_t = false, value_parser)]
-	emit_llvm: bool,
-
 	#[clap(long = "backtrace", default_value_t = false, value_parser)]
 	backtrace: bool,
 
@@ -67,7 +64,7 @@ fn main() -> color_eyre::eyre::Result<()> {
 	for ty in args.emit_types {
 		emit_types.extend(
 			ty.split(",").map(
-				|arg| EmitType::from_string(arg).expect(&format!("invalid argument to --emit-type: {arg}")
+				|arg| EmitType::from_string(arg).expect(&format!("invalid argument to --emit: {arg}")
 			)
 		));
 	}

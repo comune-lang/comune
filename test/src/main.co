@@ -85,7 +85,7 @@ int main() {
 		b: 0
 	};
 
-	//test.hello();
+	test.hello();
 
 	free(my_cool_generic.data as void*);
 

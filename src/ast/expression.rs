@@ -4,7 +4,7 @@ use super::{
 	controlflow::ControlFlow,
 	namespace::{Identifier, Name},
 	statement::Stmt,
-	types::{Basic, Type},
+	types::{Basic, Type, FnDef},
 	TokenData,
 };
 
@@ -415,7 +415,7 @@ pub enum Atom {
 		name: Identifier,
 		args: Vec<Expr>,
 		type_args: Vec<(Name, Type)>,
-		ret: Option<Type>,
+		resolved: Option<Arc<RwLock<FnDef>>>,
 	},
 
 	Once(Arc<RwLock<OnceAtom>>),
@@ -441,7 +441,13 @@ impl PartialEq for Atom {
             (Self::AlgebraicLit(l0, l1), Self::AlgebraicLit(r0, r1)) => l0 == r0 && l1 == r1,
             (Self::Identifier(l0), Self::Identifier(r0)) => l0 == r0,
             (Self::Cast(l0, l1), Self::Cast(r0, r1)) => l0 == r0 && l1 == r1,
-            (Self::FnCall { name: l_name, args: l_args, type_args: l_type_args, ret: l_ret }, Self::FnCall { name: r_name, args: r_args, type_args: r_type_args, ret: r_ret }) => l_name == r_name && l_args == r_args && l_type_args == r_type_args && l_ret == r_ret,
+            (Self::FnCall { name: l_name, args: l_args, type_args: l_type_args, resolved: l_res }, Self::FnCall { name: r_name, args: r_args, type_args: r_type_args, resolved: r_res }) => l_name == r_name && l_args == r_args && l_type_args == r_type_args && {
+				match (l_res, r_res) {
+					(Some(l), Some(r)) => *l.read().unwrap() == *r.read().unwrap(),
+					(None, None) => true,
+					_ => false,
+				}
+			},
             (Self::Once(l0), Self::Once(r0)) => *l0.read().unwrap() == *r0.read().unwrap(),
             _ => false,
         }

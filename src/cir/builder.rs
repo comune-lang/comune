@@ -16,7 +16,7 @@ use crate::{
 
 use super::{
 	BlockIndex, CIRFunction, CIRModule, CIRStmt, CIRType, CIRTypeDef, LValue, Operand, PlaceElem,
-	RValue, TypeName, VarIndex,
+	RValue, TypeName, VarIndex, CIRFnPrototype,
 };
 
 pub struct CIRModuleBuilder {
@@ -54,14 +54,12 @@ impl CIRModuleBuilder {
 
 	fn register_namespace(&mut self, namespace: &Namespace) {
 		for im in &namespace.impls {
-			for elem in im.1 {
-				match &elem.1 .0 {
-					NamespaceItem::Function(func, _) => {
-						let cir_fn = self.generate_prototype(&func.read().unwrap(), vec![]);
+			for (name, (elem, attribs, mangled)) in im.1 {
+				match elem {
+					NamespaceItem::Functions(fns) => for (func, _) in fns {
+						let (proto, cir_fn) = self.generate_prototype(Identifier::from_parent(im.0, name.clone()), &func.read().unwrap(), vec![]);
 
-						self.module
-							.functions
-							.insert(Identifier::from_parent(im.0, elem.0.clone()), cir_fn);
+						self.module.functions.insert(proto, cir_fn);
 					}
 
 					_ => panic!(),
@@ -73,12 +71,12 @@ impl CIRModuleBuilder {
 			self.register_namespace(import.1);
 		}
 
-		for (name, elem) in &namespace.children {
-			match &elem.0 {
-				NamespaceItem::Function(func, _) => {
-					let cir_fn = self.generate_prototype(&func.read().unwrap(), elem.1.clone());
+		for (name, (elem, attribs, mangled)) in &namespace.children {
+			match elem {
+				NamespaceItem::Functions(fns) => for (func, _) in fns {
+					let (proto, cir_fn) = self.generate_prototype(name.clone(), &func.read().unwrap(), attribs.clone());
 
-					self.module.functions.insert(name.clone(), cir_fn);
+					self.module.functions.insert(proto, cir_fn);
 				}
 
 				_ => {}
@@ -88,38 +86,27 @@ impl CIRModuleBuilder {
 
 	fn generate_namespace(&mut self, namespace: &Namespace) {
 		for im in &namespace.impls {
-			for (impl_name, elem) in im.1 {
-				match &elem.0 {
-					NamespaceItem::Function(_, ast) => {
-						let name = Identifier::from_parent(im.0, impl_name.clone());
-						let mut cir_fn = self.module.functions.remove(&name).unwrap();
-
+			for (impl_name, (elem, attribs, mangled)) in im.1 {
+				if let NamespaceItem::Functions(fns) = elem {
+					for (func, ast) in fns {
 						if let NamespaceASTElem::Parsed(ast) = &*ast.borrow() {
-							cir_fn = self.generate_function(cir_fn, ast);
+							let proto = self.get_prototype(Identifier::from_parent(im.0, impl_name.clone()), &*func.read().unwrap());
+							self.generate_function(proto, ast);
 						}
-
-						self.module.functions.insert(name, cir_fn);
 					}
-
-					_ => panic!(),
 				}
 			}
 		}
 
-		for elem in &namespace.children {
-			match &elem.1 .0 {
-				NamespaceItem::Function(_, node) => {
-					let name = elem.0.clone();
-					let mut cir_fn = self.module.functions.remove(&name).unwrap();
+		for (name, (item, attribs, mangled)) in &namespace.children {
+			if let NamespaceItem::Functions(fns) = item {
+				for (func, ast) in fns {
+					let proto = self.get_prototype(name.clone(), &*func.read().unwrap());
 
-					if let NamespaceASTElem::Parsed(ast) = &*node.borrow() {
-						cir_fn = self.generate_function(cir_fn, ast);
+					if let NamespaceASTElem::Parsed(ast) = &*ast.borrow() {
+						self.generate_function(proto, ast);
 					}
-
-					self.module.functions.insert(name, cir_fn);
 				}
-
-				_ => {}
 			}
 		}
 	}
@@ -212,11 +199,25 @@ impl CIRModuleBuilder {
 }
 
 impl CIRModuleBuilder {
-	pub fn generate_prototype(&mut self, func: &FnDef, attributes: Vec<Attribute>) -> CIRFunction {
+	pub fn get_prototype(&self, name: Identifier, func: &FnDef) -> CIRFnPrototype {
+		let ret = self.convert_type(&func.ret);
+		let params = func.params.params.iter().map(|(param, _)| self.convert_type(param)).collect();
+
+		CIRFnPrototype {
+			name,
+			ret,
+			params,
+			type_params: func.type_params.clone(),
+		}
+	}
+
+	pub fn generate_prototype(&mut self, name: Identifier, func: &FnDef, attributes: Vec<Attribute>) -> (CIRFnPrototype, CIRFunction) {
+		let proto = self.get_prototype(name, func);
+
 		self.current_fn = Some(CIRFunction {
 			variables: vec![],
 			blocks: vec![],
-			ret: self.convert_type(&func.ret),
+			ret: proto.ret.clone(),
 			arg_count: func.params.params.len(),
 			type_params: func.type_params.clone(),
 			attributes,
@@ -229,19 +230,20 @@ impl CIRModuleBuilder {
 			if let Some(name) = &param.1 {
 				self.insert_variable(name.clone(), param.0.clone());
 			}
+			
 		}
 
-		self.current_fn.take().unwrap()
+		(proto, self.current_fn.take().unwrap())
 	}
 
-	pub fn generate_function(&mut self, func: CIRFunction, fn_block: &Expr) -> CIRFunction {
-		self.current_fn = Some(func);
+	pub fn generate_function(&mut self, func: CIRFnPrototype, fn_block: &Expr) {
+		self.current_fn = self.module.functions.remove(&func);
 
 		let _ = self.generate_expr(fn_block);
 
 		self.current_fn.borrow_mut().as_mut().unwrap().is_extern = false;
 
-		self.current_fn.take().unwrap()
+		self.module.functions.insert(func, self.current_fn.take().unwrap());
 	}
 
 	// Shorthand
@@ -521,7 +523,7 @@ impl CIRModuleBuilder {
 					name,
 					args,
 					type_args,
-					ret,
+					resolved: Some(resolved),
 				} => {
 					let cir_args = args
 						.iter()
@@ -546,11 +548,13 @@ impl CIRModuleBuilder {
 					name.absolute = true;
 
 					Some(RValue::Atom(
-						self.convert_type(ret.as_ref().unwrap()),
+						self.convert_type(&resolved.read().unwrap().ret),
 						None,
-						Operand::FnCall(name, cir_args, cir_type_args),
+						Operand::FnCall(self.get_prototype(name, &*resolved.read().unwrap()), cir_args, cir_type_args),
 					))
 				}
+
+				Atom::FnCall { resolved: None, .. } => panic!(),
 
 				Atom::Block { items, result } => self.generate_block(items, result, false).1,
 
@@ -934,7 +938,7 @@ impl CIRModuleBuilder {
 									name,
 									args,
 									type_args,
-									..
+									resolved: Some(resolved),
 								},
 								_,
 							) => {
@@ -957,7 +961,7 @@ impl CIRModuleBuilder {
 								Some(RValue::Atom(
 									rhs_ty,
 									None,
-									Operand::FnCall(name.clone(), cir_args, cir_type_args),
+									Operand::FnCall(self.get_prototype(name.clone(), &*resolved.read().unwrap()), cir_args, cir_type_args),
 								))
 							}
 

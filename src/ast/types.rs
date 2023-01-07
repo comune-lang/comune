@@ -1,4 +1,3 @@
-use std::collections::HashSet;
 use std::fmt::Display;
 use std::hash::{Hash, Hasher};
 use std::ptr;
@@ -23,13 +22,13 @@ pub enum Type {
 	Never, // Return type of a function that never returns, coerces to anything
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FnParamList {
 	pub params: Vec<(Type, Option<Name>)>,
 	pub variadic: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FnDef {
 	pub ret: Type,
 	pub params: FnParamList,
@@ -70,7 +69,7 @@ pub enum Basic {
 	Void,
 	Str,
 }
-#[derive(Clone)]
+#[derive(Clone, Debug, Default)]
 pub struct TypeRef {
 	pub def: Weak<RwLock<TypeDef>>,
 	pub name: Identifier,

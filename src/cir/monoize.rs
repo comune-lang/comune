@@ -8,7 +8,7 @@ use crate::{
 };
 
 use super::{
-	CIRFnMap, CIRFunction, CIRModule, CIRStmt, CIRType, CIRTypeDef, FuncName, Operand, RValue,
+	CIRFnMap, CIRFunction, CIRModule, CIRStmt, CIRType, CIRTypeDef, FuncID, Operand, RValue,
 	TypeName,
 };
 
@@ -20,7 +20,7 @@ type TypeSubstitutions = Vec<CIRType>;
 
 // Map from index + parameters to indices of existing instances
 type TypeInstances = HashMap<TypeName, HashMap<TypeSubstitutions, TypeName>>;
-type FuncInstances = HashMap<FuncName, HashMap<TypeSubstitutions, FuncName>>;
+type FuncInstances = HashMap<FuncID, HashMap<TypeSubstitutions, FuncID>>;
 
 impl CIRModule {
 	// monoize() consumes `self` and returns a CIRModule with all generics monomorphized, names mangled, etc.
@@ -214,7 +214,7 @@ impl CIRModule {
 	fn monoize_call(
 		functions_in: &CIRFnMap,
 		functions_out: &mut CIRFnMap,
-		func: &mut FuncName,
+		func: &mut FuncID,
 		types: &mut HashMap<TypeName, CIRTypeDef>,
 		param_map: &TypeSubstitutions,
 		ty_instances: &mut TypeInstances,
@@ -241,7 +241,7 @@ impl CIRModule {
 				fn_instances,
 			);
 
-			let mut insert_name = func.clone();
+			let mut insert_id = func.clone();
 			let mut name_suffix = "<".to_string();
 			let mut param_iter = param_map.iter();
 
@@ -254,15 +254,15 @@ impl CIRModule {
 
 			name_suffix += ">";
 
-			insert_name.path.push(name_suffix.into());
+			insert_id.name.path.push(name_suffix.into());
 
 			fn_instances
 				.get_mut(func)
 				.unwrap()
-				.insert(param_map.clone(), insert_name.clone());
-			functions_out.insert(insert_name.clone(), monoized);
+				.insert(param_map.clone(), insert_id.clone());
+			functions_out.insert(insert_id.clone(), monoized);
 
-			*func = insert_name;
+			*func = insert_id;
 		}
 	}
 
@@ -397,9 +397,9 @@ impl CIRModule {
 		for (id, func) in &mut self.functions {
 			// Check if the function has a `no_mangle` or `export_as` attribute, or if it's `main`. If not, mangle the name
 			if get_attribute(&func.attributes, "no_mangle").is_some()
-				|| (&**id.name() == "main" && !id.is_qualified())
+				|| (&**id.name.name() == "main" && !id.name.is_qualified())
 			{
-				func.mangled_name = Some(id.name().to_string());
+				func.mangled_name = Some(id.name.name().to_string());
 			} else if let Some(export_name) = get_attribute(&func.attributes, "export_as") {
 				// Export with custom symbol name
 				if let Some(first_arg) = export_name.args.get(0) {
@@ -411,7 +411,7 @@ impl CIRModule {
 				}
 			} else {
 				// Mangle name
-				func.mangled_name = Some(mangle_name(id, func));
+				func.mangled_name = Some(mangle_name(&id.name, func));
 			}
 		}
 	}

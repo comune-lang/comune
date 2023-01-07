@@ -20,11 +20,10 @@ use inkwell::{
 use crate::{
 	ast::{
 		expression::Operator,
-		namespace::Identifier,
 		types::{Basic, DataLayout, TupleKind},
 	},
 	cir::{
-		CIRFunction, CIRModule, CIRStmt, CIRType, CIRTypeDef, LValue, Operand, PlaceElem, RValue,
+		CIRFunction, CIRModule, CIRStmt, CIRType, CIRTypeDef, LValue, Operand, PlaceElem, RValue, CIRFnPrototype,
 	},
 };
 
@@ -53,7 +52,7 @@ pub struct LLVMBackend<'ctx> {
 	di_builder: Option<DebugInfoBuilder<'ctx>>,
 	fn_value_opt: Option<FunctionValue<'ctx>>,
 	type_map: HashMap<String, AnyTypeEnum<'ctx>>,
-	fn_map: HashMap<Identifier, String>,
+	fn_map: HashMap<CIRFnPrototype, String>,
 	blocks: Vec<BasicBlock<'ctx>>,
 	variables: Vec<PointerValue<'ctx>>,
 }

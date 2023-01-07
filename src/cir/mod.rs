@@ -15,7 +15,7 @@ pub mod monoize;
 pub mod serialize;
 
 // Bunch of type aliases to make code more readable
-type CIRFnMap = HashMap<FuncName, CIRFunction>;
+type CIRFnMap = HashMap<CIRFnPrototype, CIRFunction>;
 type CIRBlock = Vec<CIRStmt>;
 type BlockIndex = usize;
 type StmtIndex = usize;
@@ -23,7 +23,7 @@ type VarIndex = usize;
 type FieldIndex = usize;
 type TypeName = String;
 type TypeParamIndex = usize;
-type FuncName = Identifier;
+type FuncID = CIRFnPrototype;
 
 // An LValue is an expression that results in a memory location.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -85,7 +85,7 @@ pub enum RValue {
 // This may either be a constant, an undef value, or an lvalue access.
 #[derive(Clone, Debug)]
 pub enum Operand {
-	FnCall(FuncName, Vec<LValue>, Vec<CIRType>), // Fully-qualified name + args
+	FnCall(FuncID, Vec<LValue>, Vec<CIRType>), // Fully-qualified name + args
 	IntegerLit(i128),
 	FloatLit(f64),
 	StringLit(String),
@@ -129,6 +129,14 @@ pub enum CIRStmt {
 	Jump(BlockIndex),
 	Switch(RValue, Vec<(CIRType, Operand, BlockIndex)>, BlockIndex),
 	Return(Option<(RValue, TokenData)>),
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+pub struct CIRFnPrototype {
+	pub name: Identifier,
+	pub ret: CIRType,
+	pub params: Vec<CIRType>,
+	pub type_params: TypeParamList,
 }
 
 #[derive(Clone)]

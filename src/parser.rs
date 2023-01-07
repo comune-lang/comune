@@ -9,7 +9,7 @@ use crate::lexer::{Lexer, Token};
 
 use crate::ast::controlflow::ControlFlow;
 use crate::ast::expression::{Atom, Expr, NodeData, Operator};
-use crate::ast::namespace::{Identifier, ItemRef, Namespace, NamespaceASTElem, NamespaceItem};
+use crate::ast::namespace::{Identifier, ItemRef, Namespace, NamespaceASTElem, NamespaceItem, Name};
 use crate::ast::statement::Stmt;
 use crate::ast::traits::{TraitDef, TraitImpl};
 use crate::ast::types::{
@@ -94,8 +94,9 @@ impl Parser {
 	pub fn generate_ast(&mut self) -> ParseResult<()> {
 		for child in &self.namespace.children {
 			match &child.1 .0 {
-				NamespaceItem::Function(_, ast_elem) => {
-					let mut elem = ast_elem.borrow_mut();
+				NamespaceItem::Functions(fns) => for (func, ast) in fns {
+					let mut elem = ast.borrow_mut();
+
 					if let NamespaceASTElem::Unparsed(idx) = *elem {
 						// Parse function block
 						self.lexer.borrow_mut().seek_token_idx(idx);
@@ -113,8 +114,9 @@ impl Parser {
 			// Generate impl function bodies
 			for method in im.1 {
 				match &method.1 .0 {
-					NamespaceItem::Function(_, elem) => {
-						let mut elem = elem.borrow_mut();
+					NamespaceItem::Functions(fns) => for (func, ast) in fns {
+						let mut elem = ast.borrow_mut();
+
 						if let NamespaceASTElem::Unparsed(idx) = *elem {
 							// Parse method block
 							self.lexer.borrow_mut().seek_token_idx(idx);
@@ -287,67 +289,65 @@ impl Parser {
 						}
 
 						"trait" => {
-							let name_token = self.get_next()?;
+							let Token::Identifier(name) = self.get_next()? else {
+								return Err(self.err(CMNErrorCode::UnexpectedToken));
+							};
 
-							if let Token::Identifier(name) = name_token {
-								let mut this_trait = TraitDef {
-									items: HashMap::new(),
-									supers: vec![],
+							let mut this_trait = TraitDef {
+								items: HashMap::new(),
+								types: HashMap::new(),
+								supers: vec![],
+							};
+
+							let mut next = self.get_next()?;
+
+							if !token_compare(&next, "{") {
+								return Err(self.err(CMNErrorCode::UnexpectedToken));
+							}
+
+							next = self.get_next()?; // Consume brace
+
+							while !token_compare(&next, "}") {
+								let Token::Identifier(_) = next else { 
+									return Err(self.err(CMNErrorCode::UnexpectedToken)) 
 								};
 
-								let mut next = self.get_next()?;
+								let (name, item) = self.parse_namespace_declaration()?;
 
-								if !token_compare(&next, "{") {
-									return Err(self.err(CMNErrorCode::UnexpectedToken));
-								}
-
-								next = self.get_next()?; // Consume brace
-
-								while !token_compare(&next, "}") {
-									match next {
-										Token::Identifier(_) => {
-											let result = self.parse_namespace_declaration()?;
-
-											match &result.1 {
-												NamespaceItem::Function(_, elem) => {
-													if !matches!(
-														&*elem.borrow(),
-														NamespaceASTElem::NoElem
-													) {
-														panic!("default trait method definitions are not (yet) supported")
-													}
-
-													this_trait.items.insert(
-														result.0.into(),
-														(result.1, vec![], None),
-													);
-												}
-
-												_ => todo!(),
-											}
-
-											next = self.get_current()?;
+								match item {
+									NamespaceItem::Functions(fns) => for (func, ast) in fns {
+										if !matches!(&*ast.borrow(), NamespaceASTElem::NoElem) {
+											panic!("default trait method definitions are not yet supported")
 										}
 
-										_ => return Err(self.err(CMNErrorCode::UnexpectedToken)),
+										if let Some(fns) = this_trait.items.get_mut(&name) {
+											fns.push((func, ast));
+										} else {	
+											this_trait.items.insert(name, fns);
+										}
 									}
+
+									_ => todo!(),
 								}
 
-								self.get_next()?; // Consume closing brace
-
-								self.namespace.children.insert(
-									Identifier::from_parent(
-										scope,
-										name.expect_scopeless()?.clone(),
-									),
-									(
-										NamespaceItem::Trait(Arc::new(RwLock::new(this_trait))),
-										current_attributes,
-										None,
-									),
-								);
-								current_attributes = vec![];
+								next = self.get_current()?;
 							}
+
+							self.get_next()?; // Consume closing brace
+
+							self.namespace.children.insert(
+								Identifier::from_parent(
+									scope,
+									name.expect_scopeless()?.clone(),
+								),
+								(
+									NamespaceItem::Trait(Arc::new(RwLock::new(this_trait))),
+									current_attributes,
+									None,
+								),
+							);
+							current_attributes = vec![];
+						
 						}
 
 						"namespace" => {
@@ -433,13 +433,15 @@ impl Parser {
 									self.skip_block()?;
 
 									let current_impl = (
-										NamespaceItem::Function(
-											Arc::new(RwLock::new(FnDef {
-												ret: fn_ret,
-												params: fn_params,
-												type_params: vec![],
-											})),
-											RefCell::new(ast_elem),
+										NamespaceItem::Functions(
+											vec![(
+												Arc::new(RwLock::new(FnDef {
+													ret: fn_ret,
+													params: fn_params,
+													type_params: vec![],
+												})),
+												RefCell::new(ast_elem),
+											)]
 										),
 										current_attributes,
 										None,
@@ -556,7 +558,7 @@ impl Parser {
 					let result = self.parse_namespace_declaration()?;
 
 					match result.1 {
-						NamespaceItem::Function(_, _) => self.namespace.children.insert(
+						NamespaceItem::Functions(_) => self.namespace.children.insert(
 							Identifier::from_parent(scope, result.0.into()),
 							(result.1, current_attributes, None),
 						),
@@ -689,7 +691,7 @@ impl Parser {
 		}
 	}
 
-	fn parse_namespace_declaration(&self) -> ParseResult<(String, NamespaceItem)> {
+	fn parse_namespace_declaration(&self) -> ParseResult<(Name, NamespaceItem)> {
 		let t = self.parse_type(false)?;
 		let item;
 		let mut next = self.get_current()?;
@@ -727,10 +729,10 @@ impl Parser {
 							return Err(self.err(CMNErrorCode::UnexpectedToken));
 						}
 
-						item = NamespaceItem::Function(
+						item = NamespaceItem::Functions(vec![(
 							Arc::new(RwLock::new(t)),
-							RefCell::new(ast_elem),
-						);
+							RefCell::new(ast_elem)
+						)]);
 					}
 
 					"=" => {
@@ -762,7 +764,7 @@ impl Parser {
 
 			// Register declaration to symbol table
 			// TODO: Figure out what to do if the identifier has scopes
-			Ok((id.name().to_string(), item))
+			Ok((id.name().clone(), item))
 		} else {
 			Err(self.err(CMNErrorCode::ExpectedIdentifier))
 		}
@@ -1070,7 +1072,7 @@ impl Parser {
 
 							self.namespace
 								.with_item(&name, &self.current_scope, |item, _| {
-									is_function = matches!(&item.0, NamespaceItem::Function(..));
+									is_function = matches!(&item.0, NamespaceItem::Functions(..));
 								});
 
 							if is_function {
@@ -1110,7 +1112,7 @@ impl Parser {
 							name,
 							args,
 							type_args,
-							ret: None,
+							resolved: None,
 						});
 					}
 				}

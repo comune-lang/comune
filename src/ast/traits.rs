@@ -5,14 +5,14 @@ use std::{
 	sync::{Arc, RwLock, Weak},
 };
 
-use super::namespace::Namespace;
-use super::types::TypeRef;
+use super::namespace::{Namespace, ItemRef, FnOverloadList};
+use super::types::{TypeRef, TypeParam, TypeParamList};
 use super::{
 	namespace::{Identifier, Name, NamespaceEntry},
 	types::Type,
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct TraitRef {
 	pub def: Weak<RwLock<TraitDef>>,
 	pub name: Identifier,
@@ -21,12 +21,14 @@ pub struct TraitRef {
 
 #[derive(Debug)]
 pub struct TraitDef {
-	pub items: HashMap<Name, NamespaceEntry>,
+	pub items: HashMap<Name, FnOverloadList>,
+	pub types: HashMap<Name, TypeParam>,		// Associated types
 	pub supers: Vec<Identifier>,
 }
 
 #[derive(Default, Debug, Clone)]
 pub struct TraitImpl {
+	pub implements: TraitRef,
 	pub items: HashMap<Name, NamespaceEntry>,
 }
 
@@ -54,17 +56,52 @@ impl Hash for TraitRef {
 }
 
 // The result of a trait obligation resolution
-pub enum TraitDeduction<'ctx> {
-	Impl(&'ctx TraitImpl),
+#[derive(Clone, Debug, Default)]
+pub enum TraitDeduction {
+	Impl(Arc<RwLock<TraitImpl>>),
 	Inherent,
+	Opaque,
+
+	#[default]
+	None,
+}
+#[derive(Clone, Debug)]
+pub enum ImplRule {
+	Implements(TraitRef),
+	Equivalent(Type), 		// Equivalence, aka equality with subtyping and aliases permitted
 }
 
-pub fn resolve_trait_obligation<'ctx>(
-	ty: &TypeRef,
-	tr: &TraitRef,
-	root: &'ctx Namespace,
-) -> Option<TraitDeduction<'ctx>> {
-	// trait solver - deduce whether a trait implementation exists and is visible
+#[derive(Clone, Debug, Default)]
+pub struct TraitSolver {
+	rules: HashMap<TraitRef, Vec<(Vec<ImplRule>, Arc<RwLock<TraitImpl>>)>>,
+	answers: HashMap<Type, TraitDeduction>,
+}
 
-	None
+impl TraitSolver {
+	pub fn new() -> Self {
+		Self {
+			rules: HashMap::new(),
+			answers: HashMap::new(),
+		}
+	}
+
+	pub fn register_impl(&mut self, tr: Arc<RwLock<TraitImpl>>) {
+
+	}
+	
+	pub fn resolve_obligation(
+		&mut self,
+		ty: &Type,
+		tr: &TraitRef,
+		type_params: &TypeParamList,
+		root: &Namespace,
+	) -> Option<TraitDeduction> {
+		// trait solver - deduce whether a trait implementation exists and is visible
+		if let Some(answer) = self.answers.get(ty) {
+			return Some(answer.clone())
+		}
+		
+		None
+	}
+
 }

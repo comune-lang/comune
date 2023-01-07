@@ -13,7 +13,7 @@ use crate::{
 
 use super::{
 	expression::Expr,
-	traits::{TraitDef, TraitImpl},
+	traits::{TraitDef, TraitImpl, TraitSolver},
 	types::{FnDef, Type, TypeDef},
 	Attribute,
 };
@@ -86,14 +86,15 @@ pub enum NamespaceASTElem {
 	NoElem,
 }
 
-// refcell hell
+pub type FnOverloadList = Vec<(Arc<RwLock<FnDef>>, RefCell<NamespaceASTElem>)>;
+
 #[derive(Clone, Debug)]
 pub enum NamespaceItem {
 	Type(Arc<RwLock<TypeDef>>),
 	Trait(Arc<RwLock<TraitDef>>),
-	Function(Arc<RwLock<FnDef>>, RefCell<NamespaceASTElem>),
+	// Plural in order to support function overloads
+	Functions(FnOverloadList),
 	Variable(Type, RefCell<NamespaceASTElem>),
-	//Namespace(Box<RefCell<Namespace>>),
 	Alias(Identifier),
 }
 
@@ -107,9 +108,10 @@ pub struct Namespace {
 	pub children: HashMap<Identifier, NamespaceEntry>,
 	pub impls: HashMap<Identifier, HashMap<Name, NamespaceEntry>>, // Impls defined in this namespace
 	pub trait_impls: HashMap<Identifier, HashMap<Identifier, TraitImpl>>,
+	pub trait_solver: TraitSolver,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Hash)]
 pub enum ItemRef<T: Clone> {
 	Unresolved { name: Identifier, scope: Identifier },
 	Resolved(T),
@@ -163,11 +165,33 @@ impl Namespace {
 			imported: HashMap::new(),
 			impls: HashMap::new(),
 			trait_impls: HashMap::new(),
+			trait_solver: TraitSolver::new(),
 		}
 	}
 
 	pub fn get_interface(&self) -> Self {
 		self.clone() // TODO: Actually implement
+	}
+
+	pub fn get_item(&self, id: &Identifier) -> Option<&NamespaceItem> {
+		match self.children.get(id) {
+			Some((NamespaceItem::Alias(alias), ..)) => self.get_item(alias),
+			
+			Some((item, ..)) => Some(item),
+			
+			None => {
+				if let Some(import) = self.imported.get(&Identifier::from_name(id.path[0].clone(), true)) {
+					if id.path.len() > 1 {
+						let mut id_sub = id.clone();
+						id_sub.path.remove(0);
+
+						return import.get_item(&id_sub)
+					}
+				}
+
+				None
+			}
+		}
 	}
 
 	pub fn with_item<Ret>(
@@ -194,7 +218,7 @@ impl Namespace {
 				{
 					let found_item = &self.children[found_path];
 
-					if let NamespaceItem::Alias(alias) = &found_item.0 {
+					if let (NamespaceItem::Alias(alias), ..) = found_item {
 						return self.with_item(alias, scope, closure);
 					} else {
 						return Some(closure(found_item, found_path));
@@ -211,7 +235,7 @@ impl Namespace {
 		if let Some(absolute_lookup) = self.children.get(&id) {
 			// Found a match for the absolute path in this namespace!
 
-			if let NamespaceItem::Alias(alias) = &absolute_lookup.0 {
+			if let (NamespaceItem::Alias(alias), ..) = absolute_lookup {
 				self.with_item(alias, scope, closure)
 			} else {
 				Some(closure(absolute_lookup, &id))
@@ -234,16 +258,18 @@ impl Namespace {
 
 impl Display for Namespace {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		for c in &self.children {
-			match &c.1 .0 {
+		for (name, (item, attribs, mangled)) in &self.children {
+			match item {
 				NamespaceItem::Alias(id) => writeln!(f, "\t[alias] {}", id)?,
-				NamespaceItem::Type(t) => writeln!(f, "\t[type] {}: {}", c.0, t.read().unwrap())?,
-				NamespaceItem::Trait(t) => {
-					writeln!(f, "\t[trait] {}: {:?}", c.0, t.read().unwrap())?
+				NamespaceItem::Type(t) => writeln!(f, "\t[type] {}: {}", name, t.read().unwrap())?,
+				NamespaceItem::Trait(t) => writeln!(f, "\t[trait] {}: {:?}", name, t.read().unwrap())?,
+				
+				NamespaceItem::Functions(fs) => {
+					for (t, _) in fs {
+						writeln!(f, "\t[func] {}: {}", name, t.read().unwrap())?
+					}
 				}
-				NamespaceItem::Function(t, _) => {
-					writeln!(f, "\t[func] {}: {}", c.0, t.read().unwrap())?
-				}
+				
 				NamespaceItem::Variable(_, _) => todo!(),
 			}
 		}
