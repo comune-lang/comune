@@ -106,21 +106,22 @@ pub struct Namespace {
 	pub referenced_modules: HashSet<Identifier>,
 	pub imported: HashMap<Identifier, Namespace>,
 	pub children: HashMap<Identifier, NamespaceEntry>,
-	pub impls: HashMap<Identifier, HashMap<Name, NamespaceEntry>>, // Impls defined in this namespace
+	pub impls: HashMap<Identifier, HashMap<Name, FnOverloadList>>, // Impls defined in this namespace
 	pub trait_impls: HashMap<Identifier, HashMap<Identifier, TraitImpl>>,
 	pub trait_solver: TraitSolver,
 }
 
-#[derive(Clone, Hash)]
+#[derive(Clone)]
 pub enum ItemRef<T: Clone> {
 	Unresolved { name: Identifier, scope: Identifier },
 	Resolved(T),
 }
 
 impl<T: Clone> Eq for ItemRef<T> where T: PartialEq + Eq {}
+
 impl<T: Clone> PartialEq for ItemRef<T>
 where
-	T: PartialEq + Eq,
+	T: PartialEq,
 {
 	fn eq(&self, other: &Self) -> bool {
 		match (self, other) {
@@ -136,6 +137,22 @@ where
 			) => l0 == r0 && l1 == r1,
 			(Self::Resolved(l0), Self::Resolved(r0)) => l0 == r0,
 			_ => false,
+		}
+	}
+}
+
+impl<T: Clone> Hash for ItemRef<T>
+where
+	T: Hash,
+{
+	fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+		match self {
+			Self::Unresolved { name, scope } => {
+				name.hash(state);
+				scope.hash(state);
+			}
+
+			Self::Resolved(t) => t.hash(state),
 		}
 	}
 }

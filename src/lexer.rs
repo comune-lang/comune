@@ -9,7 +9,7 @@ use crate::errors::{CMNMessage, CMNMessageLog};
 
 use crate::ast::namespace::Identifier;
 
-static KEYWORDS: [&'static str; 32] = [
+static KEYWORDS: [&str; 32] = [
 	"if",
 	"use",
 	"else",
@@ -53,7 +53,7 @@ static OPERATORS: [&str; 42] = [
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Token {
-	EOF,
+	Eof,
 	Identifier(Identifier),
 	MultiIdentifier(Vec<Identifier>), // For `using` paths
 	StringLiteral(String),
@@ -79,7 +79,7 @@ impl Token {
 
 			Token::Keyword(x) | Token::Operator(x) => x.len(),
 
-			Token::EOF => 0,
+			Token::Eof => 0,
 
 			_ => 1,
 		}
@@ -111,7 +111,7 @@ impl Display for Token {
 
 				Token::Other(c) => c.to_string(),
 
-				Token::EOF => "[eof]".to_string(),
+				Token::Eof => "[eof]".to_string(),
 			}
 		)
 	}
@@ -146,7 +146,7 @@ impl Lexer {
 
 		// Tabs fuck up the visual error reporting and making it Really Work is a nightmare because Unicode
 		// So here's this hack lol
-		result.file_buffer = result.file_buffer.replace("\t", "    ");
+		result.file_buffer = result.file_buffer.replace('\t', "    ");
 		result.tokenize_file()?;
 
 		Ok(result)
@@ -161,8 +161,8 @@ impl Lexer {
 		self.advance_char()?;
 		loop {
 			match self.parse_next() {
-				Ok((idx, Token::EOF)) => {
-					self.token_buffer.push((idx, Token::EOF));
+				Ok((idx, Token::Eof)) => {
+					self.token_buffer.push((idx, Token::Eof));
 					break;
 				}
 				Ok(tk) => self.token_buffer.push(tk),
@@ -297,7 +297,7 @@ impl Lexer {
 	}
 
 	pub fn parse_next(&mut self) -> io::Result<(usize, Token)> {
-		let mut result_token = Ok(Token::EOF);
+		let mut result_token = Ok(Token::Eof);
 		let mut start = self.file_index;
 
 		if let Some(mut token) = self.char_buffer {
@@ -543,7 +543,7 @@ impl Lexer {
 
 				result_token = Ok(Token::StringLiteral(result));
 			} else if self.eof_reached() && token.is_whitespace() {
-				return Ok((start, Token::EOF));
+				return Ok((start, Token::Eof));
 			} else {
 				result_token = Ok(Token::Other(token));
 				self.get_next_char()?;

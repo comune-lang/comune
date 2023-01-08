@@ -54,15 +54,11 @@ impl CIRModuleBuilder {
 
 	fn register_namespace(&mut self, namespace: &Namespace) {
 		for im in &namespace.impls {
-			for (name, (elem, attribs, mangled)) in im.1 {
-				match elem {
-					NamespaceItem::Functions(fns) => for (func, _) in fns {
-						let (proto, cir_fn) = self.generate_prototype(Identifier::from_parent(im.0, name.clone()), &func.read().unwrap(), vec![]);
+			for (name, fns) in im.1 {
+				for (func, _) in fns {
+					let (proto, cir_fn) = self.generate_prototype(Identifier::from_parent(im.0, name.clone()), &func.read().unwrap(), vec![]);
 
-						self.module.functions.insert(proto, cir_fn);
-					}
-
-					_ => panic!(),
+					self.module.functions.insert(proto, cir_fn);
 				}
 			}
 		}
@@ -71,37 +67,33 @@ impl CIRModuleBuilder {
 			self.register_namespace(import.1);
 		}
 
-		for (name, (elem, attribs, mangled)) in &namespace.children {
-			match elem {
-				NamespaceItem::Functions(fns) => for (func, _) in fns {
+		for (name, (elem, attribs, _)) in &namespace.children {
+			if let NamespaceItem::Functions(fns) = elem {
+				for (func, _) in fns {
 					let (proto, cir_fn) = self.generate_prototype(name.clone(), &func.read().unwrap(), attribs.clone());
 
 					self.module.functions.insert(proto, cir_fn);
 				}
-
-				_ => {}
 			}
 		}
 	}
 
 	fn generate_namespace(&mut self, namespace: &Namespace) {
-		for im in &namespace.impls {
-			for (impl_name, (elem, attribs, mangled)) in im.1 {
-				if let NamespaceItem::Functions(fns) = elem {
-					for (func, ast) in fns {
-						if let NamespaceASTElem::Parsed(ast) = &*ast.borrow() {
-							let proto = self.get_prototype(Identifier::from_parent(im.0, impl_name.clone()), &*func.read().unwrap());
-							self.generate_function(proto, ast);
-						}
+		for (impl_name, im) in &namespace.impls {
+			for (name, fns) in im {
+				for (func, ast) in fns {
+					if let NamespaceASTElem::Parsed(ast) = &*ast.borrow() {
+						let proto = self.get_prototype(Identifier::from_parent(impl_name, name.clone()), &func.read().unwrap());
+						self.generate_function(proto, ast);
 					}
 				}
 			}
 		}
 
-		for (name, (item, attribs, mangled)) in &namespace.children {
+		for (name, (item, ..)) in &namespace.children {
 			if let NamespaceItem::Functions(fns) = item {
 				for (func, ast) in fns {
-					let proto = self.get_prototype(name.clone(), &*func.read().unwrap());
+					let proto = self.get_prototype(name.clone(), &func.read().unwrap());
 
 					if let NamespaceASTElem::Parsed(ast) = &*ast.borrow() {
 						self.generate_function(proto, ast);
@@ -199,7 +191,7 @@ impl CIRModuleBuilder {
 }
 
 impl CIRModuleBuilder {
-	pub fn get_prototype(&self, name: Identifier, func: &FnDef) -> CIRFnPrototype {
+	pub fn get_prototype(&mut self, name: Identifier, func: &FnDef) -> CIRFnPrototype {
 		let ret = self.convert_type(&func.ret);
 		let params = func.params.params.iter().map(|(param, _)| self.convert_type(param)).collect();
 
@@ -550,7 +542,7 @@ impl CIRModuleBuilder {
 					Some(RValue::Atom(
 						self.convert_type(&resolved.read().unwrap().ret),
 						None,
-						Operand::FnCall(self.get_prototype(name, &*resolved.read().unwrap()), cir_args, cir_type_args),
+						Operand::FnCall(self.get_prototype(name, &resolved.read().unwrap()), cir_args, cir_type_args),
 					))
 				}
 
@@ -961,7 +953,7 @@ impl CIRModuleBuilder {
 								Some(RValue::Atom(
 									rhs_ty,
 									None,
-									Operand::FnCall(self.get_prototype(name.clone(), &*resolved.read().unwrap()), cir_args, cir_type_args),
+									Operand::FnCall(self.get_prototype(name.clone(), &resolved.read().unwrap()), cir_args, cir_type_args),
 								))
 							}
 

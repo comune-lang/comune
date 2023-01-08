@@ -63,9 +63,8 @@ fn main() -> color_eyre::eyre::Result<()> {
 	
 	for ty in args.emit_types {
 		emit_types.extend(
-			ty.split(",").map(
-				|arg| EmitType::from_string(arg).expect(&format!("invalid argument to --emit: {arg}")
-			)
+			ty.split(',').map(
+				|arg| EmitType::from_string(arg).unwrap_or_else(|| panic!("invalid argument to --emit: {arg}"))
 		));
 	}
 

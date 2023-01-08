@@ -40,14 +40,12 @@ pub struct Parser {
 
 impl Parser {
 	pub fn new(lexer: Lexer, verbose: bool) -> Parser {
-		let result = Parser {
+		Parser {
 			namespace: Namespace::new(Identifier::new(true)),
 			current_scope: Identifier::new(true),
 			lexer: RefCell::new(lexer),
 			verbose,
-		};
-
-		result
+		}
 	}
 
 	fn err(&self, code: CMNErrorCode) -> CMNError {
@@ -94,7 +92,7 @@ impl Parser {
 	pub fn generate_ast(&mut self) -> ParseResult<()> {
 		for child in &self.namespace.children {
 			match &child.1 .0 {
-				NamespaceItem::Functions(fns) => for (func, ast) in fns {
+				NamespaceItem::Functions(fns) => for (_, ast) in fns {
 					let mut elem = ast.borrow_mut();
 
 					if let NamespaceASTElem::Unparsed(idx) = *elem {
@@ -112,19 +110,15 @@ impl Parser {
 
 		for im in &self.namespace.impls {
 			// Generate impl function bodies
-			for method in im.1 {
-				match &method.1 .0 {
-					NamespaceItem::Functions(fns) => for (func, ast) in fns {
-						let mut elem = ast.borrow_mut();
+			for fns in im.1.values() {
+ 				for (_, ast) in fns {
+					let mut elem = ast.borrow_mut();
 
-						if let NamespaceASTElem::Unparsed(idx) = *elem {
-							// Parse method block
-							self.lexer.borrow_mut().seek_token_idx(idx);
-							*elem = NamespaceASTElem::Parsed(self.parse_block()?)
-						}
+					if let NamespaceASTElem::Unparsed(idx) = *elem {
+						// Parse method block
+						self.lexer.borrow_mut().seek_token_idx(idx);
+						*elem = NamespaceASTElem::Parsed(self.parse_block()?)
 					}
-
-					_ => panic!(),
 				}
 			}
 		}
@@ -136,9 +130,9 @@ impl Parser {
 		let mut current = self.get_current()?;
 		let mut current_attributes = vec![];
 
-		while current != Token::EOF && current != Token::Other('}') {
+		while current != Token::Eof && current != Token::Other('}') {
 			match current {
-				Token::EOF => {
+				Token::Eof => {
 					return Err(self.err(CMNErrorCode::UnexpectedEOF));
 				}
 
@@ -235,7 +229,7 @@ impl Parser {
 										match result.1 {
 											NamespaceItem::Variable(t, _) => {
 												aggregate.members.push((
-													result.0.into(),
+													result.0,
 													t,
 													current_visibility.clone(),
 												))
@@ -319,11 +313,11 @@ impl Parser {
 										if !matches!(&*ast.borrow(), NamespaceASTElem::NoElem) {
 											panic!("default trait method definitions are not yet supported")
 										}
-
+										
 										if let Some(fns) = this_trait.items.get_mut(&name) {
 											fns.push((func, ast));
 										} else {	
-											this_trait.items.insert(name, fns);
+											this_trait.items.insert(name.clone(), vec![(func, ast)]);
 										}
 									}
 
@@ -432,20 +426,16 @@ impl Parser {
 										NamespaceASTElem::Unparsed(self.get_current_token_index());
 									self.skip_block()?;
 
-									let current_impl = (
-										NamespaceItem::Functions(
-											vec![(
-												Arc::new(RwLock::new(FnDef {
-													ret: fn_ret,
-													params: fn_params,
-													type_params: vec![],
-												})),
-												RefCell::new(ast_elem),
-											)]
-										),
-										current_attributes,
-										None,
-									);
+									let current_impl = 
+										vec![(
+											Arc::new(RwLock::new(FnDef {
+												ret: fn_ret,
+												params: fn_params,
+												type_params: vec![],
+											})),
+											RefCell::new(ast_elem),
+										)];
+
 									functions.push((fn_name, current_impl));
 									current_attributes = vec![];
 
@@ -465,8 +455,10 @@ impl Parser {
 										}
 									};
 
-									trait_impls.insert(impl_name, TraitImpl { 
-										items: functions.into_iter().collect() 
+									trait_impls.insert(impl_name.clone(), TraitImpl { 
+										items: functions.into_iter().collect(),
+										implements: ItemRef::Unresolved { name: impl_name, scope: scope.clone() },
+										types: HashMap::new(),
 									});
 
 								} else {
@@ -559,7 +551,7 @@ impl Parser {
 
 					match result.1 {
 						NamespaceItem::Functions(_) => self.namespace.children.insert(
-							Identifier::from_parent(scope, result.0.into()),
+							Identifier::from_parent(scope, result.0),
 							(result.1, current_attributes, None),
 						),
 
@@ -573,7 +565,7 @@ impl Parser {
 			current = self.get_current()?;
 		}
 
-		if current == Token::EOF {
+		if current == Token::Eof {
 			if scope.path.is_empty() {
 				Ok(())
 			} else {
@@ -607,7 +599,7 @@ impl Parser {
 			match current {
 				Token::Other('{') => bracket_depth += 1,
 				Token::Other('}') => bracket_depth -= 1,
-				Token::EOF => break,
+				Token::Eof => break,
 				_ => {}
 			}
 		}

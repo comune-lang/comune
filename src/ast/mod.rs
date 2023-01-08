@@ -277,11 +277,14 @@ pub fn validate_fn_call(
 
 fn resolve_method_call(
 	receiver: &TypeRef, 
-	args: &mut Vec<Expr>, 
-	type_args: &Vec<(Name, Type)>, 
+	lhs: &Expr,
+	fn_call: &mut Atom, 
 	scope: &mut FnScope
-) -> AnalyzeResult<ItemRef<FnDef>> {
-	let mut candidates = vec![];
+) -> AnalyzeResult<Type> {
+	let Atom::FnCall { name, args, type_args, resolved } = fn_call else { panic!() };
+
+	
+
 	/*
 	let impls = &scope.context.impls;
 	let trait_impls = &scope.context.trait_impls;
@@ -331,7 +334,8 @@ fn resolve_method_call(
 	} else {
 		panic!()
 	} */
-	
+
+	Ok(resolved.as_ref().unwrap().read().unwrap().ret.clone())
 }
 
 
@@ -345,15 +349,9 @@ pub fn validate_namespace(namespace: &mut Namespace) -> AnalyzeResult<()> {
 	}
 
 	for im in &namespace.impls {
-		for item in im.1 {
-			match &item.1 .0 {
-				NamespaceItem::Functions(fns) => {
-					for (func, elem) in fns {
-						validate_function(im.0, &func.read().unwrap(), elem, namespace)?
-					}
-				}
-
-				_ => panic!(),
+		for fns in im.1.values() {
+			for (func, elem) in fns {
+				validate_function(im.0, &func.read().unwrap(), elem, namespace)?
 			}
 		}
 	}
@@ -580,38 +578,25 @@ pub fn register_impls(namespace: &mut Namespace) -> ParseResult<()> {
 					if let TypeDef::Algebraic(_) = &mut *t_def.write().unwrap() {
 						let mut this_impl = HashMap::new();
 
-						for (name, (elem, attribs, mangled)) in im.1 {
-							// Match impl item
-							match elem {
-								NamespaceItem::Functions(fns) => {
-									for (func_lock, ast) in fns {
-										// Resolve function types
-										let FnDef {
-											ret,
-											params,
-											type_params,
-										} = &mut *func_lock.write().unwrap();
+						for (name, fns) in im.1 {
+							for (func_lock, _) in fns {
+								// Resolve function types
+								let FnDef {
+									ret,
+									params,
+									type_params,
+								} = &mut *func_lock.write().unwrap();
 
-										resolve_type(ret, namespace, type_params)?;
+								resolve_type(ret, namespace, type_params)?;
 
-										for param in &mut params.params {
-											resolve_type(&mut param.0, namespace, type_params)?;
-										}
-									}
-									
-									this_impl.insert(
-										name.clone(),
-										(
-											NamespaceItem::Functions(fns.clone()),
-											attribs.clone(),
-											None,
-										),
-									);
+								for param in &mut params.params {
+									resolve_type(&mut param.0, namespace, type_params)?;
 								}
-
-								_ => todo!(),
 							}
+							
+							this_impl.insert(name.clone(),fns.clone());
 						}
+
 						impls_remapped.insert(id.clone(), this_impl);
 					}
 				}
@@ -864,25 +849,12 @@ impl Expr {
 				}
 
 				// Method call on algebraic type
-				Expr::Atom(
-					Atom::FnCall {
-						name,
-						args,
-						type_args,
-						..
-					},
-					_,
-				) => {
-					// Wrap lhs in a OnceAtom so it only gets evaluated once
-					lhs.wrap_in_once_atom();
-					args.insert(0, lhs.clone());
-
+				Expr::Atom(Atom::FnCall { .. }, _) => {
 					// jesse. we have to call METHods
-					let ItemRef::Resolved(found_method) = resolve_method_call(lhs_ref, args, type_args, scope)? else { 
-						panic!()
-					};
 
-					Ok(found_method.ret.clone())
+					let Expr::Atom(rhs_atom, ..) = rhs else { panic!() };
+
+					resolve_method_call(lhs_ref, lhs, rhs_atom, scope)
 				}
 
 				_ => panic!(),
@@ -968,9 +940,10 @@ impl Atom {
 				type_args,
 				resolved,
 			} => {
-				if let Ok(func) = validate_fn_call(&name, args, type_args, scope, meta.tk) {
+				if let Ok(func) = validate_fn_call(name, args, type_args, scope, meta.tk) {
+					let ret = func.read().unwrap().ret.clone();
 					*resolved = Some(func);
-					Ok(func.read().unwrap().ret.clone())
+					Ok(ret)
 				} else {
 					todo!()
 				}

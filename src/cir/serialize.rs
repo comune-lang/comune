@@ -28,9 +28,9 @@ impl Display for CIRFnPrototype {
 		write!(f, "{}", self.name)?;
 		
 		if !self.params.is_empty() {
-			let iter = self.params.iter();
+			let mut iter = self.params.iter();
 			
-			write!(f, "{}", iter.next().unwrap());
+			write!(f, "{}", iter.next().unwrap())?;
 
 			for param in iter {
 				write!(f, ", {param}")?;

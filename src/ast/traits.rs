@@ -26,10 +26,11 @@ pub struct TraitDef {
 	pub supers: Vec<Identifier>,
 }
 
-#[derive(Default, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct TraitImpl {
-	pub implements: TraitRef,
-	pub items: HashMap<Name, NamespaceEntry>,
+	pub implements: ItemRef<TraitRef>,
+	pub items: HashMap<Name, FnOverloadList>,
+	pub types: HashMap<Name, Type>,
 }
 
 unsafe impl Sync for TraitRef {}
@@ -73,31 +74,50 @@ pub enum ImplRule {
 
 #[derive(Clone, Debug, Default)]
 pub struct TraitSolver {
-	rules: HashMap<TraitRef, Vec<(Vec<ImplRule>, Arc<RwLock<TraitImpl>>)>>,
-	answers: HashMap<Type, TraitDeduction>,
+	rules: Vec<(Type, Arc<RwLock<TraitImpl>>)>,
+	answer_cache: HashMap<Type, TraitDeduction>,
 }
 
 impl TraitSolver {
 	pub fn new() -> Self {
 		Self {
-			rules: HashMap::new(),
-			answers: HashMap::new(),
+			rules: vec![],
+			answer_cache: HashMap::new(),
 		}
 	}
 
-	pub fn register_impl(&mut self, tr: Arc<RwLock<TraitImpl>>) {
+	pub fn register_impl(&mut self, impl_rule: ImplRule, tr: Arc<RwLock<TraitImpl>>) {
 
 	}
+
+	pub fn type_implements_trait(&self, ty: &Type, tr: &TraitRef, type_params: &TypeParamList) -> bool {
+		match ty {
+			Type::TypeParam(idx) => {
+				let Some((_, param)) = type_params.get(*idx) else { panic!() };
+
+				param.iter().find(|param_trait| {
+					if let ItemRef::Resolved(param_trait) = param_trait {
+						if param_trait == tr {
+							return true
+						}
+					}
+					false
+				}).is_some()
+			}
+
+			_ => todo!()
+		}
+	}
 	
-	pub fn resolve_obligation(
+	pub fn is_impl_applicable(
 		&mut self,
-		ty: &Type,
-		tr: &TraitRef,
+		im: &TraitImpl,
+		ty: Type,
 		type_params: &TypeParamList,
 		root: &Namespace,
 	) -> Option<TraitDeduction> {
-		// trait solver - deduce whether a trait implementation exists and is visible
-		if let Some(answer) = self.answers.get(ty) {
+		// trait solver - for a given impl, test if it applies
+		if let Some(answer) = self.answer_cache.get(&ty) {
 			return Some(answer.clone())
 		}
 		
