@@ -27,10 +27,11 @@ pub struct TraitDef {
 }
 
 #[derive(Debug, Clone)]
-pub struct TraitImpl {
-	pub implements: ItemRef<TraitRef>,
+pub struct Impl {
+	pub implements: Option<ItemRef<TraitRef>>,
 	pub items: HashMap<Name, FnOverloadList>,
 	pub types: HashMap<Name, Type>,
+	pub scope: Identifier,
 }
 
 unsafe impl Sync for TraitRef {}
@@ -59,35 +60,38 @@ impl Hash for TraitRef {
 // The result of a trait obligation resolution
 #[derive(Clone, Debug, Default)]
 pub enum TraitDeduction {
-	Impl(Arc<RwLock<TraitImpl>>),
+	Impl(Arc<RwLock<Impl>>),
 	Inherent,
 	Opaque,
 
 	#[default]
 	None,
 }
-#[derive(Clone, Debug)]
-pub enum ImplRule {
-	Implements(TraitRef),
-	Equivalent(Type), 		// Equivalence, aka equality with subtyping and aliases permitted
-}
 
 #[derive(Clone, Debug, Default)]
 pub struct TraitSolver {
-	rules: Vec<(Type, Arc<RwLock<TraitImpl>>)>,
-	answer_cache: HashMap<Type, TraitDeduction>,
+	impls: Vec<(Type, Arc<RwLock<Impl>>)>,
+	answer_cache: HashMap<Type, HashMap<TraitRef, TraitDeduction>>,
 }
 
 impl TraitSolver {
 	pub fn new() -> Self {
 		Self {
-			rules: vec![],
+			impls: vec![],
 			answer_cache: HashMap::new(),
 		}
 	}
 
-	pub fn register_impl(&mut self, impl_rule: ImplRule, tr: Arc<RwLock<TraitImpl>>) {
+	pub fn get_impls(&self) -> &Vec<(Type, Arc<RwLock<Impl>>)> {
+		&self.impls
+	}
 
+	pub fn register_impl(&mut self, ty: Type, im: Arc<RwLock<Impl>>) {
+		if let Some(cache) = self.answer_cache.get_mut(&ty) {
+			cache.clear();
+		}
+
+		self.impls.push((ty, im));
 	}
 
 	pub fn type_implements_trait(&self, ty: &Type, tr: &TraitRef, type_params: &TypeParamList) -> bool {
@@ -95,14 +99,14 @@ impl TraitSolver {
 			Type::TypeParam(idx) => {
 				let Some((_, param)) = type_params.get(*idx) else { panic!() };
 
-				param.iter().find(|param_trait| {
+				param.iter().any(|param_trait| {
 					if let ItemRef::Resolved(param_trait) = param_trait {
 						if param_trait == tr {
 							return true
 						}
 					}
 					false
-				}).is_some()
+				})
 			}
 
 			_ => todo!()
@@ -111,15 +115,12 @@ impl TraitSolver {
 	
 	pub fn is_impl_applicable(
 		&mut self,
-		im: &TraitImpl,
+		im: &Impl,
 		ty: Type,
 		type_params: &TypeParamList,
 		root: &Namespace,
 	) -> Option<TraitDeduction> {
-		// trait solver - for a given impl, test if it applies
-		if let Some(answer) = self.answer_cache.get(&ty) {
-			return Some(answer.clone())
-		}
+		// for a given impl, test if it applies
 		
 		None
 	}

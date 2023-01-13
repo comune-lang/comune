@@ -53,10 +53,12 @@ impl CIRModuleBuilder {
 	}
 
 	fn register_namespace(&mut self, namespace: &Namespace) {
-		for im in &namespace.impls {
-			for (name, fns) in im.1 {
+		for (im_ty, im) in namespace.trait_solver.get_impls() {
+			let im = im.read().unwrap();
+
+			for (name, fns) in &im.items {
 				for (func, _) in fns {
-					let (proto, cir_fn) = self.generate_prototype(Identifier::from_parent(im.0, name.clone()), &func.read().unwrap(), vec![]);
+					let (proto, cir_fn) = self.generate_prototype(Identifier::from_parent(&im.scope, name.clone()), &func.read().unwrap(), vec![]);
 
 					self.module.functions.insert(proto, cir_fn);
 				}
@@ -79,11 +81,13 @@ impl CIRModuleBuilder {
 	}
 
 	fn generate_namespace(&mut self, namespace: &Namespace) {
-		for (impl_name, im) in &namespace.impls {
-			for (name, fns) in im {
+		for (im_ty, im) in namespace.trait_solver.get_impls() {
+			let im = im.read().unwrap();
+			
+			for (name, fns) in &im.items {
 				for (func, ast) in fns {
 					if let NamespaceASTElem::Parsed(ast) = &*ast.borrow() {
-						let proto = self.get_prototype(Identifier::from_parent(impl_name, name.clone()), &func.read().unwrap());
+						let proto = self.get_prototype(Identifier::from_parent(&im.scope, name.clone()), &func.read().unwrap());
 						self.generate_function(proto, ast);
 					}
 				}

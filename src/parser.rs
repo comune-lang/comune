@@ -11,7 +11,7 @@ use crate::ast::controlflow::ControlFlow;
 use crate::ast::expression::{Atom, Expr, NodeData, Operator};
 use crate::ast::namespace::{Identifier, ItemRef, Namespace, NamespaceASTElem, NamespaceItem, Name};
 use crate::ast::statement::Stmt;
-use crate::ast::traits::{TraitDef, TraitImpl};
+use crate::ast::traits::{TraitDef, Impl, TraitRef};
 use crate::ast::types::{
 	AlgebraicDef, Basic, FnDef, FnParamList, TupleKind, Type, TypeDef, TypeParamList, TypeRef,
 	Visibility,
@@ -66,6 +66,16 @@ impl Parser {
 		}
 	}
 
+	// Consume the current token, returning an error if it doesn't match `expected`
+	fn consume(&self, expected: &Token) -> ParseResult<()> {
+		if &self.get_current()? == expected {
+			self.get_next()?;
+			Ok(())
+		} else {
+			Err(self.err(CMNErrorCode::UnexpectedToken))
+		}
+	}
+
 	fn get_current_start_index(&self) -> usize {
 		self.lexer.borrow().current().unwrap().0
 	}
@@ -108,9 +118,11 @@ impl Parser {
 			}
 		}
 
-		for im in &self.namespace.impls {
+		for (im_ty, im) in self.namespace.trait_solver.get_impls() {
 			// Generate impl function bodies
-			for fns in im.1.values() {
+			let im = im.read().unwrap();
+
+			for (name, fns) in &im.items {
  				for (_, ast) in fns {
 					let mut elem = ast.borrow_mut();
 
@@ -365,122 +377,73 @@ impl Parser {
 						}
 
 						"impl" => {
-							let impl_name_token = self.get_next()?;
-							let impl_name;
+							self.get_next()?;
+
+							// Parse type or trait name, depending on if the next token is "for"
+							let mut impl_ty = self.parse_type(false)?;
 							let mut trait_name = None;
 
-							if let Token::Identifier(id) = &impl_name_token {
-								match self.get_next()? {
-									Token::Other('{') => {
-										// Regular impl
-										impl_name = Identifier::from_parent(
-											scope,
-											id.expect_scopeless()?.clone(),
-										);
-										self.get_next()?;
-									}
+							if self.get_current()? == Token::Keyword("for") {
+								self.get_next()?;
 
-									Token::Keyword("for") => {
-										// Trait impl
-										trait_name = Some(id);
+								// We parsed the trait as a type, so extract it
+								let Type::TypeRef(ItemRef::Unresolved { name, scope }) = impl_ty else {
+									return Err(self.err(CMNErrorCode::ExpectedIdentifier)); // TODO: Proper error
+								};
 
-										if let Token::Identifier(id) = self.get_next()? {
-											impl_name = Identifier::from_parent(
-												scope,
-												id.expect_scopeless()?.clone(),
-											);
-										} else {
-											return Err(self.err(CMNErrorCode::ExpectedIdentifier));
-										}
+								trait_name = Some(ItemRef::<TraitRef>::Unresolved { name, scope });
+								
+								// Then parse the implementing type, for real this time
+								impl_ty = self.parse_type(false)?;
+							}
 
-										if !token_compare(&self.get_next()?, "{") {
-											return Err(self.err(CMNErrorCode::UnexpectedToken));
-										}
+							self.consume(&Token::Other('{'))?;
 
-										self.get_next()?;
-									}
+							let mut current = self.get_current()?;
 
-									_ => return Err(self.err(CMNErrorCode::UnexpectedToken)),
-								}
+							// Parse functions
+							let mut functions = HashMap::new();
 
-								let mut current = self.get_current()?;
+							while current != Token::Other('}') {
+								let ret = self.parse_type(false)?;
 
-								// Parse functions
-								let mut functions = vec![];
-
-								while current != Token::Other('}') {
-									let fn_ret = self.parse_type(false)?;
-
-									let fn_name =
-										if let Token::Identifier(id) = self.get_current()? {
-											id.expect_scopeless()?.clone()
-										} else {
-											return Err(self.err(CMNErrorCode::ExpectedIdentifier));
-										};
-
-									self.get_next()?;
-
-									let fn_params = self.parse_parameter_list()?;
-
-									let ast_elem =
-										NamespaceASTElem::Unparsed(self.get_current_token_index());
-									self.skip_block()?;
-
-									let current_impl = 
-										vec![(
-											Arc::new(RwLock::new(FnDef {
-												ret: fn_ret,
-												params: fn_params,
-												type_params: vec![],
-											})),
-											RefCell::new(ast_elem),
-										)];
-
-									functions.push((fn_name, current_impl));
-									current_attributes = vec![];
-
-									current = self.get_current()?;
-								}
-
-								// Register impl
-								if let Some(trait_name) = trait_name {
-									let impls = &mut self.namespace.trait_impls;
-
-									let trait_impls = match impls.get_mut(trait_name) {
-										Some(trait_impls) => trait_impls,
-										
-										None => {
-											impls.insert(trait_name.clone(), HashMap::new());
-											impls.get_mut(trait_name).unwrap()
-										}
+								let fn_name =
+									if let Token::Identifier(id) = self.get_current()? {
+										id.expect_scopeless()?.clone()
+									} else {
+										return Err(self.err(CMNErrorCode::ExpectedIdentifier));
 									};
 
-									trait_impls.insert(impl_name.clone(), TraitImpl { 
-										items: functions.into_iter().collect(),
-										implements: ItemRef::Unresolved { name: impl_name, scope: scope.clone() },
-										types: HashMap::new(),
-									});
-
-								} else {
-									let impls = &mut self.namespace.impls;
-
-									if let Some(impls) = impls.get_mut(&impl_name) {
-										for (fn_name, current_fn) in functions {
-											impls.insert(fn_name, current_fn);
-										}
-									} else {
-										let mut new_impls = HashMap::new();
-										for (fn_name, current_fn) in functions {
-											new_impls.insert(fn_name, current_fn);
-										}
-										impls.insert(impl_name.clone(), new_impls);
-									}
-								}
-
 								self.get_next()?;
-							} else {
-								return Err(self.err(CMNErrorCode::ExpectedIdentifier));
+
+								let params = self.parse_parameter_list()?;
+
+								let ast = NamespaceASTElem::Unparsed(self.get_current_token_index());
+								self.skip_block()?;
+
+								let current_impl = 
+									vec![(
+										Arc::new(RwLock::new(FnDef { ret, params, type_params: vec![], })),
+										RefCell::new(ast),
+									)];
+
+								functions.insert(fn_name, current_impl);
+								current_attributes = vec![];
+
+								current = self.get_current()?;
 							}
+
+							// Register impl to solver
+							let im = Arc::new(RwLock::new(Impl { 
+								implements: trait_name, 
+								items: functions,
+								types: HashMap::new(),
+								scope: self.current_scope.clone(),
+							}));
+
+							self.namespace.trait_solver.register_impl(impl_ty, im);
+
+							self.consume(&Token::Other('}'))?;
 						}
 
 						"import" => {

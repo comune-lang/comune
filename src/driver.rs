@@ -266,9 +266,6 @@ pub fn resolve_types(state: &Arc<ManagerState>, mod_state: &mut ModuleState) -> 
 	// TODO: Nice error reporting for this
 	ast::check_namespace_cyclical_deps(root)?;
 
-	// Then register impls to their types
-	ast::register_impls(root)?;
-
 	if state.verbose_output {
 		println!("\ntype resolution output:\n\n{}", root);
 	}

@@ -35,11 +35,6 @@ pub struct FnDef {
 	pub type_params: TypeParamList,
 }
 
-//#[derive(Debug, Clone, Hash)]
-//pub enum TupleType {
-//	Product(Vec<Type>),
-//	Sum(Vec<Type>),
-//}
 
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
 pub enum TupleKind {
@@ -281,6 +276,61 @@ impl Type {
 					.map(|ty| ty.get_concrete_type(type_args))
 					.collect(),
 			),
+		}
+	}
+
+	// Check if self fits a generic type, without evaluating trait bounds
+	pub fn fits_generic(&self, generic_ty: &Type) -> bool {
+		if let Type::TypeParam(_) = generic_ty {
+			true
+		} else {
+			match self {
+				
+				Type::Tuple(kind, types) => {
+					let Type::Tuple(gen_kind, gen_types) = generic_ty else {
+						return false;
+					};
+					
+					if gen_kind != kind {
+						return false;
+					}
+
+					if gen_types.len() != types.len() {
+						return false;
+					}
+					
+					for (ty, gen_ty) in types.iter().zip(gen_types.iter()) {
+						if !ty.fits_generic(gen_ty) {
+							return false;
+						}
+					}
+
+					true
+				}
+
+				Type::Pointer(pointee) => {
+					if let Type::Pointer(gen_pointee) = generic_ty {
+						pointee.fits_generic(gen_pointee)
+					} else {
+						false
+					}
+				}
+
+				Type::TypeRef(ItemRef::Resolved(ty_ref)) => {
+					if let Type::TypeRef(ItemRef::Resolved(gen_ref)) = generic_ty {
+						ty_ref == gen_ref
+					} else {
+						false
+					}
+				}
+
+				Type::TypeRef(_) => unreachable!(), // Unresolved TypeRef, REALLY shouldn't happen
+
+				Type::Array(_, _) => todo!(),
+
+				_ => self == generic_ty
+			
+			}
 		}
 	}
 

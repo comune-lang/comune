@@ -1,7 +1,7 @@
 use std::{
 	cell::RefCell,
 	collections::HashMap,
-	sync::{Arc, RwLock},
+	sync::{Arc, RwLock}, cmp::Ordering,
 };
 
 use types::{Basic, Type, TypeDef};
@@ -116,15 +116,12 @@ impl<'ctx> FnScope<'ctx> {
 }
 
 pub fn validate_function(
-	name: &Identifier,
+	scope: Identifier,
 	func: &FnDef,
 	elem: &RefCell<NamespaceASTElem>,
 	namespace: &Namespace,
 ) -> AnalyzeResult<()> {
-	let mut ctx_scope = name.clone();
-	ctx_scope.path.pop();
-
-	let mut scope = FnScope::new(namespace, ctx_scope, func.ret.clone());
+	let mut scope = FnScope::new(namespace, scope, func.ret.clone());
 
 	for param in &func.params.params {
 		scope.add_variable(param.0.clone(), param.1.clone().unwrap())
@@ -168,15 +165,88 @@ pub fn validate_function(
 	Ok(())
 }
 
+
+pub fn is_candidate_viable(call: &Atom, candidate: &Arc<RwLock<FnDef>>) -> bool {
+	let Atom::FnCall { name: _, args, type_args, resolved: None } = call else { panic!() };
+	let func = candidate.read().unwrap();
+	let params = &func.params.params;
+
+	if args.len() < params.len() || (args.len() > params.len() && !func.params.variadic) {
+		return false
+	}
+
+	// TODO: Type arg deduction
+	if type_args.len() != func.type_params.len() {
+		return false
+	}
+
+	for (i, (param, _)) in params.iter().enumerate() {
+		if let Some(arg) = args.get(i) {			
+			if !arg.get_type().castable_to(param) {
+				return false
+			}
+		}
+	}
+
+	true
+}
+
+fn candidate_compare(args: &[Expr], l: &Arc<RwLock<FnDef>>, r: &Arc<RwLock<FnDef>>, scope: &FnScope) -> Ordering {
+	// Rank candidates
+	let l = l.read().unwrap();
+	let r = r.read().unwrap();
+	
+	let mut l_coerces = 0;
+	let mut l_casts = 0;
+	let mut r_coerces = 0;
+	let mut r_casts = 0;
+
+	// TODO: Support type arg substitution
+	for (i, arg) in args.iter().enumerate() {
+		let arg_ty = arg.get_type();
+
+		if let Some((l_ty, _)) = l.params.params.get(i) {
+			if arg_ty != l_ty {
+				if arg.coercable_to(arg_ty, l_ty, scope) {
+					l_coerces += 1
+				} else {
+					l_casts += 1
+				}	 
+			}
+		}
+
+		if let Some((r_ty, _)) = r.params.params.get(i) {
+			if arg_ty != r_ty {
+				if arg.coercable_to(arg_ty, r_ty, scope) {
+					r_coerces += 1
+				} else {
+					r_casts += 1
+				}	 
+			}
+		}
+	}
+
+	if l_casts > r_casts {
+		Ordering::Greater
+	} else if l_casts < r_casts {
+		Ordering::Less
+	} else if l_coerces > r_coerces {
+		Ordering::Greater
+	} else if l_coerces < r_coerces {
+		Ordering::Less
+	} else {
+		Ordering::Equal
+	}
+}
+
+
 pub fn validate_fn_call(
-	name: &Identifier,
-	args: &mut Vec<Expr>,
-	type_args: &Vec<(Name, Type)>,
+	call: &mut Atom,
 	scope: &mut FnScope,
-	meta: TokenData,
-) -> AnalyzeResult<Arc<RwLock<FnDef>>> {
+) -> AnalyzeResult<Type> {
+	let call_comp = call.clone();
 	let mut candidates = vec![];
-	let mut candidates_whittled = vec![];
+	let Atom::FnCall { name, args, type_args, resolved } = call else { panic!() };
 	
 	// Collect function candidates
 	if !name.absolute {
@@ -199,91 +269,107 @@ pub fn validate_fn_call(
 		}
 	}
 
-	// Evaluate candidates
-	for (func_lock, _) in candidates {
-		let func = &*func_lock.read().unwrap();
-		let params = &func.params.params;
-
-		if args.len() < params.len() || (args.len() > params.len() && !func.params.variadic) {
-			continue
-		}
-
-		// Check if arg types match param types
-		for (i, (param_ty, _)) in params.iter().enumerate() {
-			match args[i].validate(scope) {
-				Ok(ty) => if ty != param_ty.get_concrete_type(type_args) { continue }
-
-				Err(_) => continue,
-			}
-		}
-
-		candidates_whittled.push(func_lock);
+	for arg in args.iter_mut() {
+		arg.validate(scope)?;
 	}
 
-	match candidates_whittled.len() {
-		0 => todo!(),
-		1 => {
-			let func = &*candidates_whittled[0].read().unwrap();
-			let params = &func.params.params;
-			
-			for (i, arg) in args.iter_mut().enumerate() {
-				// add parameter's type info to argument
-				if let Some((param_ty, _)) = params.get(i) {
-					arg.get_node_data_mut()
-						.ty
-						.replace(param_ty.get_concrete_type(type_args));
-				}
+	let args_comp = args.clone();
+	let mut candidates: Vec<_> = candidates.into_iter().filter(|(func, _)| is_candidate_viable(&call_comp, func)).collect(); 
 	
-				let arg_type = arg.validate(scope)?;
-	
-				if let Some((param_ty, _)) = params.get(i) {
-					let concrete = param_ty.get_concrete_type(type_args);
-	
-					if !arg.coercable_to(&arg_type, &concrete, scope) {
-						return Err((
-							CMNError::new(CMNErrorCode::InvalidCoercion {
-								from: arg_type,
-								to: concrete,
-							}),
-							args[i].get_node_data().tk,
-						));
-					}
-	
-					if arg_type != concrete {
-						arg.wrap_in_cast(concrete);
-					}
-				} else {
-					// no parameter type for this argument (possible for varadiac functions)
-					// so just set the type info to the provided argument's type
-					arg.get_node_data_mut().ty.replace(arg_type.clone());
-	
-					// also if it's a float we promote it to a double because presumably
-					// ken and dennis were high on crack for 30 years straight or something
-					// https://stackoverflow.com/questions/63144506/printf-doesnt-work-for-floats-in-llvm-ir
-					if arg_type == Type::Basic(Basic::Float { size_bytes: 4 }) {
-						arg.wrap_in_cast(Type::Basic(Basic::Float { size_bytes: 8 }));
-					}
-				}
-			}
+	let selected_candidate = match candidates.len() {
+		0 => todo!(), // No viable candidate
 
-			Ok(candidates_whittled[0].clone())
-		},
+		1 => candidates[0].0.clone(),
 
 		// More than one viable candidate
-		_ => todo!(),
-	}
+		_ => {
+			// Sort candidates by cost
+			candidates.sort_unstable_by(|(l, _), (r, _)| candidate_compare(&args_comp, l, r, scope));
+
+			match candidate_compare(&args_comp, &candidates[0].0, &candidates[1].0, scope) {
+				Ordering::Greater => {
+					candidates[0].0.clone()
+				}
+
+				Ordering::Equal => todo!(), // Ambiguous call
+
+				_ => unreachable!(), // Not possible
+			}
+		}
+	};
+
+	let func = &*selected_candidate.read().unwrap();
+	
+	validate_arg_list(args, &func.params.params, &type_args, scope)?;
+
+	resolved.replace(selected_candidate.clone());
+
+	Ok(func.ret.get_concrete_type(type_args))
 }
 
 
 fn resolve_method_call(
-	receiver: &TypeRef, 
+	receiver: &Type, 
 	lhs: &Expr,
 	fn_call: &mut Atom, 
 	scope: &mut FnScope
 ) -> AnalyzeResult<Type> {
+
+	let call_comp = fn_call.clone();
+
 	let Atom::FnCall { name, args, type_args, resolved } = fn_call else { panic!() };
 
+	args.insert(0, lhs.clone());
 	
+
+	for arg in args.iter_mut() {
+		arg.validate(scope)?;
+	}
+
+
+	// List of method candidates matched to their implementing types
+	let mut candidates = vec![];
+
+	// Go through all the impls in scope and find method candidates
+	for (ty, tr) in scope.context.trait_solver.get_impls() {
+		if let Some(fns) = tr.read().unwrap().items.get(name.expect_scopeless().unwrap()) {
+			if receiver.fits_generic(ty) {
+				for (func, _) in fns {
+					candidates.push((ty.clone(), func.clone()));
+				}	
+			}
+		}
+	}
+
+	let args_comp = args.clone();
+	let mut candidates: Vec<_> = candidates.into_iter().filter(|(_, func)| is_candidate_viable(&call_comp, func)).collect();
+
+	let selected_candidate = match candidates.len() {
+		0 => todo!(), // No viable candidate
+
+		1 => candidates[0].1.clone(),
+
+		// More than one viable candidate
+		_ => {
+			// Sort candidates by cost
+			candidates.sort_unstable_by(|(_, l), (_, r)| candidate_compare(&args_comp, l, r, scope));
+
+			// Compare the top two candidates
+			match candidate_compare(&args_comp, &candidates[0].1, &candidates[1].1, scope) {
+				Ordering::Greater => {
+					candidates[0].1.clone()
+				}
+
+				Ordering::Equal => todo!(), // Ambiguous call
+
+				_ => unreachable!(), // Not possible
+			}
+		}
+	};
+
+	let func = &*selected_candidate.read().unwrap();
+
+	validate_arg_list(args, &func.params.params, &type_args, scope)?;
 
 	/*
 	let impls = &scope.context.impls;
@@ -339,19 +425,68 @@ fn resolve_method_call(
 }
 
 
-pub fn validate_namespace(namespace: &mut Namespace) -> AnalyzeResult<()> {
-	for (id, child) in &namespace.children {
-		if let NamespaceItem::Functions(fns) = &child.0 {
-			for (func, elem) in fns {
-				validate_function(id, &func.read().unwrap(), elem, namespace)?
+fn validate_arg_list(args: &mut Vec<Expr>, params: &[(Type, Option<Name>)], type_args: &Vec<(Name, Type)>, scope: &mut FnScope) -> AnalyzeResult<()> {
+	for (i, arg) in args.iter_mut().enumerate() {
+		// add parameter's type info to argument
+		if let Some((param_ty, _)) = params.get(i) {
+			arg.get_node_data_mut()
+				.ty
+				.replace(param_ty.get_concrete_type(type_args));
+		}
+
+		let arg_type = arg.validate(scope)?;
+
+		if let Some((param_ty, _)) = params.get(i) {
+			let concrete = param_ty.get_concrete_type(type_args);
+
+			if !arg.coercable_to(&arg_type, &concrete, scope) {
+				return Err((
+					CMNError::new(CMNErrorCode::InvalidCoercion {
+						from: arg_type,
+						to: concrete,
+					}),
+					args[i].get_node_data().tk,
+				));
+			}
+
+			if arg_type != concrete {
+				arg.wrap_in_cast(concrete);
+			}
+		} else {
+			// no parameter type for this argument (possible for varadiac functions)
+			// so just set the type info to the provided argument's type
+			arg.get_node_data_mut().ty.replace(arg_type.clone());
+
+			// also if it's a float we promote it to a double because presumably
+			// ken and dennis were high on crack for 30 years straight or something
+			// https://stackoverflow.com/questions/63144506/printf-doesnt-work-for-floats-in-llvm-ir
+			if arg_type == Type::Basic(Basic::Float { size_bytes: 4 }) {
+				arg.wrap_in_cast(Type::Basic(Basic::Float { size_bytes: 8 }));
 			}
 		}
 	}
 
-	for im in &namespace.impls {
-		for fns in im.1.values() {
+	Ok(())
+}
+
+pub fn validate_namespace(namespace: &mut Namespace) -> AnalyzeResult<()> {
+	for (id, child) in &namespace.children {
+		if let NamespaceItem::Functions(fns) = &child.0 {
 			for (func, elem) in fns {
-				validate_function(im.0, &func.read().unwrap(), elem, namespace)?
+				let mut scope = id.clone();
+				scope.path.pop();
+
+				validate_function(scope, &func.read().unwrap(), elem, namespace)?
+			}
+		}
+	}
+
+	for (_, im) in namespace.trait_solver.get_impls() {
+		let im = im.read().unwrap();
+
+		for fns in im.items.values() {
+			for (func, elem) in fns {
+				validate_function(im.scope.clone(), &func.read().unwrap(), elem, namespace)?
 			}
 		}
 	}
@@ -376,10 +511,12 @@ pub fn resolve_type(
 			if let Some(b) = Basic::get_basic_type(id.name()) {
 				if !id.is_qualified() {
 					result = Some(Type::Basic(b));
+				} else {
+					panic!()
 				}
-			} else if !id.is_qualified() && generic_pos.is_some() {
+			} else if let Some(generic_pos) = generic_pos {
 				// Generic type parameter
-				result = Some(Type::TypeParam(generic_pos.unwrap()));
+				result = Some(Type::TypeParam(generic_pos));
 			} else {
 				namespace.with_item(id, scope, |item, id| {
 					if let NamespaceItem::Type(t) = &item.0 {
@@ -562,50 +699,6 @@ pub fn check_namespace_cyclical_deps(namespace: &Namespace) -> ParseResult<()> {
 			check_cyclical_deps(ty, &mut vec![])?
 		}
 	}
-
-	Ok(())
-}
-
-pub fn register_impls(namespace: &mut Namespace) -> ParseResult<()> {
-	let mut impls_remapped = HashMap::new();
-
-	for im in &namespace.impls {
-		// Impls can be defined with relative Identifiers, so we make them all fully-qualified members of the root namespace here
-
-		namespace
-			.with_item(im.0, &Identifier::new(true), |item, id| {
-				if let NamespaceItem::Type(t_def) = &item.0 {
-					if let TypeDef::Algebraic(_) = &mut *t_def.write().unwrap() {
-						let mut this_impl = HashMap::new();
-
-						for (name, fns) in im.1 {
-							for (func_lock, _) in fns {
-								// Resolve function types
-								let FnDef {
-									ret,
-									params,
-									type_params,
-								} = &mut *func_lock.write().unwrap();
-
-								resolve_type(ret, namespace, type_params)?;
-
-								for param in &mut params.params {
-									resolve_type(&mut param.0, namespace, type_params)?;
-								}
-							}
-							
-							this_impl.insert(name.clone(),fns.clone());
-						}
-
-						impls_remapped.insert(id.clone(), this_impl);
-					}
-				}
-				Ok(())
-			})
-			.unwrap()?;
-	}
-
-	namespace.impls = impls_remapped;
 
 	Ok(())
 }
@@ -854,7 +947,7 @@ impl Expr {
 
 					let Expr::Atom(rhs_atom, ..) = rhs else { panic!() };
 
-					resolve_method_call(lhs_ref, lhs, rhs_atom, scope)
+					resolve_method_call(lhs_ty, lhs, rhs_atom, scope)
 				}
 
 				_ => panic!(),
@@ -934,19 +1027,7 @@ impl Atom {
 				}
 			}
 
-			Atom::FnCall {
-				name,
-				args,
-				type_args,
-				resolved,
-			} => {
-				if let Ok(func) = validate_fn_call(name, args, type_args, scope, meta.tk) {
-					let ret = func.read().unwrap().ret.clone();
-					*resolved = Some(func);
-					Ok(ret)
-				} else {
-					todo!()
-				}
+			Atom::FnCall { .. } => validate_fn_call(self, scope),
 				/*
 				scope
 					.context
@@ -979,7 +1060,7 @@ impl Atom {
 						)
 					})?
 				*/
-			}
+			
 
 			Atom::ArrayLit(_) => todo!(),
 
