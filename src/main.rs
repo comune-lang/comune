@@ -1,10 +1,10 @@
 mod ast;
 mod cir;
 mod constexpr;
+mod driver;
 mod errors;
 mod lexer;
 mod llvm;
-mod driver;
 mod parser;
 
 use ast::{namespace::Identifier, types};
@@ -43,7 +43,7 @@ struct ComuneCLI {
 
 	#[clap(short = 'o', long = "output", default_value = "a.out", value_parser)]
 	output_file: OsString,
-	
+
 	#[clap(short = 'e', long = "emit", value_parser)]
 	emit_types: Vec<String>,
 }
@@ -60,12 +60,12 @@ fn main() -> color_eyre::eyre::Result<()> {
 	}
 
 	let mut emit_types = vec![];
-	
+
 	for ty in args.emit_types {
-		emit_types.extend(
-			ty.split(',').map(
-				|arg| EmitType::from_string(arg).unwrap_or_else(|| panic!("invalid argument to --emit: {arg}"))
-		));
+		emit_types.extend(ty.split(',').map(|arg| {
+			EmitType::from_string(arg)
+				.unwrap_or_else(|| panic!("invalid argument to --emit: {arg}"))
+		}));
 	}
 
 	if emit_types.is_empty() {
@@ -90,11 +90,14 @@ fn main() -> color_eyre::eyre::Result<()> {
 
 	// Launch multithreaded compilation
 
-	let error_sender = errors::spawn_logger(args.backtrace);	
+	let error_sender = errors::spawn_logger(args.backtrace);
 	rayon::in_place_scope(|s| {
 		for input_file in &args.input_files {
 			let input_file = fs::canonicalize(input_file).unwrap();
-			let module_name = Identifier::from_name(input_file.file_name().unwrap().to_str().unwrap().into(), true);
+			let module_name = Identifier::from_name(
+				input_file.file_name().unwrap().to_str().unwrap().into(),
+				true,
+			);
 
 			let _ = driver::launch_module_compilation(
 				manager_state.clone(),
@@ -160,17 +163,13 @@ fn main() -> color_eyre::eyre::Result<()> {
 
 			match emit_type {
 				EmitType::Binary => {
-					output
-						.arg("-o")
-						.arg(output_file.clone());
+					output.arg("-o").arg(output_file.clone());
 				}
 
 				_ => {}
 			}
 
-			let output_result = output
-				.output()
-				.expect("fatal: failed to invoke linker");
+			let output_result = output.output().expect("fatal: failed to invoke linker");
 
 			io::stdout().write_all(&output_result.stdout).unwrap();
 			io::stderr().write_all(&output_result.stderr).unwrap();
@@ -192,7 +191,7 @@ fn main() -> color_eyre::eyre::Result<()> {
 		compile_time.as_millis() as f64 / 1000.0,
 		link_time.as_millis() as f64 / 1000.0
 	);
-	
+
 	// Block until all output is written
 	let _ = std::io::stdout().lock();
 

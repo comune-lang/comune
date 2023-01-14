@@ -1,7 +1,8 @@
 use std::{
 	cell::RefCell,
+	cmp::Ordering,
 	collections::HashMap,
-	sync::{Arc, RwLock}, cmp::Ordering,
+	sync::{Arc, RwLock},
 };
 
 use types::{Basic, Type, TypeDef};
@@ -15,10 +16,12 @@ use crate::{
 
 use self::{
 	controlflow::ControlFlow,
-	expression::{Atom, Expr, NodeData, Operator, OnceAtom},
+	expression::{Atom, Expr, NodeData, OnceAtom, Operator},
 	namespace::{Identifier, ItemRef, Name, Namespace, NamespaceASTElem, NamespaceItem},
+	pattern::Binding,
 	statement::Stmt,
-	types::{AlgebraicDef, FnDef, TupleKind, TypeParamList, TypeRef}, pattern::Binding, traits::{TraitDef, TraitRef},
+	traits::{TraitDef, TraitRef},
+	types::{AlgebraicDef, FnDef, TupleKind, TypeParamList, TypeRef},
 };
 
 pub mod controlflow;
@@ -112,7 +115,6 @@ impl<'ctx> FnScope<'ctx> {
 	pub fn add_variable(&mut self, t: Type, n: Name) {
 		self.variables.insert(n, t);
 	}
-
 }
 
 pub fn validate_function(
@@ -140,7 +142,7 @@ pub fn validate_function(
 		if result.is_some() {
 			let expr = *result.take().unwrap();
 			let node_data = expr.get_node_data().clone();
-			
+
 			items.push(Stmt::Expr(Expr::Atom(
 				Atom::CtrlFlow(Box::new(ControlFlow::Return { expr: Some(expr) })),
 				node_data,
@@ -165,15 +167,21 @@ pub fn validate_function(
 			// Add void return for empty function
 			_ => {
 				if scope.fn_return_type != Type::Basic(Basic::Void) {
-					return Err((CMNError::new(CMNErrorCode::ReturnTypeMismatch { 
-						expected: scope.fn_return_type.clone(), 
-						got: Type::Basic(Basic::Void)
-					}), elem_node_data.tk));
-				} 
-			
+					return Err((
+						CMNError::new(CMNErrorCode::ReturnTypeMismatch {
+							expected: scope.fn_return_type.clone(),
+							got: Type::Basic(Basic::Void),
+						}),
+						elem_node_data.tk,
+					));
+				}
+
 				items.push(Stmt::Expr(Expr::Atom(
 					Atom::CtrlFlow(Box::new(ControlFlow::Return { expr: None })),
-					NodeData { ty: Some(Type::Basic(Basic::Void)), tk: elem_node_data.tk },
+					NodeData {
+						ty: Some(Type::Basic(Basic::Void)),
+						tk: elem_node_data.tk,
+					},
 				)))
 			}
 		}
@@ -182,24 +190,30 @@ pub fn validate_function(
 	Ok(())
 }
 
-
-pub fn is_candidate_viable(args: &Vec<Expr>, type_args: &Vec<(Name, Type)>, candidate: &Arc<RwLock<FnDef>>) -> bool {
+pub fn is_candidate_viable(
+	args: &Vec<Expr>,
+	type_args: &Vec<(Name, Type)>,
+	candidate: &Arc<RwLock<FnDef>>,
+) -> bool {
 	let func = candidate.read().unwrap();
 	let params = &func.params.params;
 
 	if args.len() < params.len() || (args.len() > params.len() && !func.params.variadic) {
-		return false
+		return false;
 	}
 
 	// TODO: Type arg deduction
 	if type_args.len() != func.type_params.len() {
-		return false
+		return false;
 	}
 
 	for (i, (param, _)) in params.iter().enumerate() {
-		if let Some(arg) = args.get(i) {			
-			if !arg.get_type().castable_to(&param.get_concrete_type(type_args)) {
-				return false
+		if let Some(arg) = args.get(i) {
+			if !arg
+				.get_type()
+				.castable_to(&param.get_concrete_type(type_args))
+			{
+				return false;
 			}
 		}
 	}
@@ -207,11 +221,16 @@ pub fn is_candidate_viable(args: &Vec<Expr>, type_args: &Vec<(Name, Type)>, cand
 	true
 }
 
-fn candidate_compare(args: &[Expr], l: &Arc<RwLock<FnDef>>, r: &Arc<RwLock<FnDef>>, scope: &FnScope) -> Ordering {
+fn candidate_compare(
+	args: &[Expr],
+	l: &Arc<RwLock<FnDef>>,
+	r: &Arc<RwLock<FnDef>>,
+	scope: &FnScope,
+) -> Ordering {
 	// Rank candidates
 	let l = l.read().unwrap();
 	let r = r.read().unwrap();
-	
+
 	let mut l_coerces = 0;
 	let mut l_casts = 0;
 	let mut r_coerces = 0;
@@ -227,7 +246,7 @@ fn candidate_compare(args: &[Expr], l: &Arc<RwLock<FnDef>>, r: &Arc<RwLock<FnDef
 					l_coerces += 1
 				} else {
 					l_casts += 1
-				}	 
+				}
 			}
 		}
 
@@ -237,7 +256,7 @@ fn candidate_compare(args: &[Expr], l: &Arc<RwLock<FnDef>>, r: &Arc<RwLock<FnDef
 					r_coerces += 1
 				} else {
 					r_casts += 1
-				}	 
+				}
 			}
 		}
 	}
@@ -255,28 +274,24 @@ fn candidate_compare(args: &[Expr], l: &Arc<RwLock<FnDef>>, r: &Arc<RwLock<FnDef
 	}
 }
 
-
-pub fn validate_fn_call(
-	call: &mut Atom,
-	scope: &mut FnScope,
-) -> AnalyzeResult<Type> {
+pub fn validate_fn_call(call: &mut Atom, scope: &mut FnScope) -> AnalyzeResult<Type> {
 	let mut candidates = vec![];
 	let Atom::FnCall { name, args, type_args, resolved } = call else { panic!() };
 
 	if let Some(resolved) = resolved {
 		return Ok(resolved.read().unwrap().ret.clone());
 	}
-	
+
 	// Collect function candidates
 	if !name.absolute {
 		let mut name_unwrap = name.clone();
 
 		name_unwrap.absolute = true;
-		
+
 		for (i, elem) in scope.scope.path.iter().enumerate() {
 			name_unwrap.path.insert(i, elem.clone());
 		}
-		
+
 		loop {
 			if let Some(NamespaceItem::Functions(fns)) = scope.context.get_item(&name_unwrap) {
 				for func in fns {
@@ -285,7 +300,7 @@ pub fn validate_fn_call(
 			}
 
 			if name_unwrap.path.len() == 1 {
-				break
+				break;
 			} else {
 				name_unwrap.path.remove(name_unwrap.path.len() - 2);
 			}
@@ -295,9 +310,12 @@ pub fn validate_fn_call(
 	for arg in args.iter_mut() {
 		arg.validate(scope)?;
 	}
-	
-	let mut candidates: Vec<_> = candidates.into_iter().filter(|(_, (func, _))| is_candidate_viable(args, type_args, func)).collect(); 
-	
+
+	let mut candidates: Vec<_> = candidates
+		.into_iter()
+		.filter(|(_, (func, _))| is_candidate_viable(args, type_args, func))
+		.collect();
+
 	let (selected_name, (selected_candidate, _)) = match candidates.len() {
 		0 => todo!(), // No viable candidate
 
@@ -306,12 +324,11 @@ pub fn validate_fn_call(
 		// More than one viable candidate
 		_ => {
 			// Sort candidates by cost
-			candidates.sort_unstable_by(|(_, (l, _)), (_, (r, _))| candidate_compare(args, l, r, scope));
+			candidates
+				.sort_unstable_by(|(_, (l, _)), (_, (r, _))| candidate_compare(args, l, r, scope));
 
-			match candidate_compare(args, &candidates[0].1.0, &candidates[1].1.0, scope) {
-				Ordering::Greater => {
-					candidates[0].clone()
-				}
+			match candidate_compare(args, &candidates[0].1 .0, &candidates[1].1 .0, scope) {
+				Ordering::Greater => candidates[0].clone(),
 
 				Ordering::Equal => todo!(), // Ambiguous call
 
@@ -321,21 +338,20 @@ pub fn validate_fn_call(
 	};
 
 	let func = &*selected_candidate.read().unwrap();
-	
+
 	validate_arg_list(args, &func.params.params, type_args, scope)?;
 
 	resolved.replace(selected_candidate.clone());
 	*name = selected_name;
-	
+
 	Ok(func.ret.get_concrete_type(type_args))
 }
 
-
 fn resolve_method_call(
-	receiver: &Type, 
+	receiver: &Type,
 	lhs: &Expr,
-	fn_call: &mut Atom, 
-	scope: &mut FnScope
+	fn_call: &mut Atom,
+	scope: &mut FnScope,
 ) -> AnalyzeResult<Type> {
 	let Atom::FnCall { name, args, type_args, resolved } = fn_call else { panic!() };
 
@@ -351,7 +367,6 @@ fn resolve_method_call(
 		arg.validate(scope)?;
 	}
 
-
 	// List of method candidates matched to their implementing types
 	let mut candidates = vec![];
 
@@ -365,13 +380,20 @@ fn resolve_method_call(
 
 			if receiver.fits_generic(ty) {
 				for (func, _) in fns {
-					candidates.push((ty.clone(), Identifier::from_parent(&im.canonical_root, name.clone()), func.clone()));
-				}	
+					candidates.push((
+						ty.clone(),
+						Identifier::from_parent(&im.canonical_root, name.clone()),
+						func.clone(),
+					));
+				}
 			}
 		}
 	}
 
-	let mut candidates: Vec<_> = candidates.into_iter().filter(|(_, _, func)| is_candidate_viable(args, type_args, func)).collect();
+	let mut candidates: Vec<_> = candidates
+		.into_iter()
+		.filter(|(_, _, func)| is_candidate_viable(args, type_args, func))
+		.collect();
 
 	let (_, selected_name, selected_candidate) = match candidates.len() {
 		0 => panic!("no viable method candidate found"), // TODO: Proper error handling
@@ -381,13 +403,12 @@ fn resolve_method_call(
 		// More than one viable candidate
 		_ => {
 			// Sort candidates by cost
-			candidates.sort_unstable_by(|(_, _, l), (_, _, r)| candidate_compare(args, l, r, scope));
+			candidates
+				.sort_unstable_by(|(_, _, l), (_, _, r)| candidate_compare(args, l, r, scope));
 
 			// Compare the top two candidates
 			match candidate_compare(args, &candidates[0].2, &candidates[1].2, scope) {
-				Ordering::Greater => {
-					candidates[0].clone()
-				}
+				Ordering::Greater => candidates[0].clone(),
 
 				Ordering::Equal => todo!(), // Ambiguous call
 
@@ -397,7 +418,7 @@ fn resolve_method_call(
 	};
 
 	let func = &*selected_candidate.read().unwrap();
-		
+
 	validate_arg_list(args, &func.params.params, type_args, scope)?;
 	resolved.replace(selected_candidate.clone());
 	*name = selected_name;
@@ -405,8 +426,12 @@ fn resolve_method_call(
 	Ok(resolved.as_ref().unwrap().read().unwrap().ret.clone())
 }
 
-
-fn validate_arg_list(args: &mut Vec<Expr>, params: &[(Type, Option<Name>)], type_args: &Vec<(Name, Type)>, scope: &mut FnScope) -> AnalyzeResult<()> {
+fn validate_arg_list(
+	args: &mut [Expr],
+	params: &[(Type, Option<Name>)],
+	type_args: &Vec<(Name, Type)>,
+	scope: &mut FnScope,
+) -> AnalyzeResult<()> {
 	for (i, arg) in args.iter_mut().enumerate() {
 		// add parameter's type info to argument
 		if let Some((param_ty, _)) = params.get(i) {
@@ -463,7 +488,12 @@ pub fn validate_namespace(namespace: &mut Namespace) -> AnalyzeResult<()> {
 
 		for fns in im.items.values() {
 			for (func, elem) in fns {
-				validate_function(im.scope.clone(), &mut func.write().unwrap(), elem, namespace)?
+				validate_function(
+					im.scope.clone(),
+					&mut func.write().unwrap(),
+					elem,
+					namespace,
+				)?
 			}
 		}
 	}
@@ -619,7 +649,6 @@ pub fn resolve_namespace_types(namespace: &Namespace) -> ParseResult<()> {
 					types: _,
 				} = &mut *tr.write().unwrap();
 
-				
 				for fns in items.values_mut() {
 					for (func, _) in fns {
 						let FnDef {
@@ -629,14 +658,13 @@ pub fn resolve_namespace_types(namespace: &Namespace) -> ParseResult<()> {
 						} = &mut *func.write().unwrap();
 
 						generics.insert(0, ("Self".into(), vec![]));
-						
+
 						resolve_type(ret, namespace, generics)?;
-						
+
 						for param in &mut params.params {
 							resolve_type(&mut param.0, namespace, generics)?;
 						}
 					}
-				
 				}
 			}
 
@@ -646,8 +674,8 @@ pub fn resolve_namespace_types(namespace: &Namespace) -> ParseResult<()> {
 
 	for (ty, im) in namespace.trait_solver.get_local_impls() {
 		resolve_type(&mut ty.write().unwrap(), namespace, &vec![])?;
-		
-		for (name, fns) in &mut im.write().unwrap().items {
+
+		for fns in im.write().unwrap().items.values_mut() {
 			for (func, _) in fns {
 				let FnDef {
 					ret,
@@ -656,9 +684,9 @@ pub fn resolve_namespace_types(namespace: &Namespace) -> ParseResult<()> {
 				} = &mut *func.write().unwrap();
 
 				generics.insert(0, ("Self".into(), vec![]));
-						
+
 				resolve_type(ret, namespace, generics)?;
-				
+
 				for param in &mut params.params {
 					resolve_type(&mut param.0, namespace, generics)?;
 				}
@@ -716,10 +744,10 @@ impl Expr {
 					// Special cases for type-asymmetric operators
 					Operator::MemberAccess => {
 						let lhs_ty = lhs.validate(scope)?;
-						
+
 						if !lhs.is_lvalue() {
-							// If lhs is an rvalue, wrap it in an Atom::Once 
-							// to prevent it being evaluated multiple times 
+							// If lhs is an rvalue, wrap it in an Atom::Once
+							// to prevent it being evaluated multiple times
 							lhs.wrap_in_once_atom();
 						}
 
@@ -805,10 +833,7 @@ impl Expr {
 					Operator::Deref => match expr_ty {
 						Type::Pointer(t) => Ok(*t),
 
-						_ => Err((
-								CMNError::new(CMNErrorCode::InvalidDeref(expr_ty)),
-								meta.tk,
-							))
+						_ => Err((CMNError::new(CMNErrorCode::InvalidDeref(expr_ty)), meta.tk)),
 					},
 
 					_ => Ok(expr_ty),
@@ -890,11 +915,13 @@ impl Expr {
 					Atom::ArrayLit(_) => todo!(),
 					Atom::Block { .. } => todo!(),
 					Atom::CtrlFlow(_) => todo!(),
-					
-					Atom::Once(once) => if let OnceAtom::Uneval(expr) = &*once.read().unwrap() {
-						expr.coercable_to(from, target, scope)
-					} else {
-						false
+
+					Atom::Once(once) => {
+						if let OnceAtom::Uneval(expr) = &*once.read().unwrap() {
+							expr.coercable_to(from, target, scope)
+						} else {
+							false
+						}
 					}
 				},
 
@@ -946,7 +973,7 @@ impl Expr {
 					let ret = resolve_method_call(lhs_ty, lhs, rhs_atom, scope)?;
 
 					rhs.get_node_data_mut().ty = Some(ret.clone());
-					
+
 					Ok(ret)
 				}
 
@@ -1028,7 +1055,7 @@ impl Atom {
 			}
 
 			Atom::FnCall { .. } => validate_fn_call(self, scope),
-			
+
 			Atom::ArrayLit(_) => todo!(),
 
 			Atom::AlgebraicLit(ty, elems) => {
@@ -1211,7 +1238,12 @@ impl Atom {
 						let mut subscope = FnScope::from_parent(scope);
 
 						for binding in branch.0.get_bindings() {
-							if let Binding { name: Some(name), ty, .. } = binding {
+							if let Binding {
+								name: Some(name),
+								ty,
+								..
+							} = binding
+							{
 								subscope.add_variable(ty.clone(), name.clone());
 							}
 						}
@@ -1235,11 +1267,13 @@ impl Atom {
 				}
 			},
 
-			Atom::Once(once) => if let OnceAtom::Uneval(expr) = &mut *once.write().unwrap() {
-				expr.validate(scope)
-			} else {
-				panic!() // i dunno
-			},
+			Atom::Once(once) => {
+				if let OnceAtom::Uneval(expr) = &mut *once.write().unwrap() {
+					expr.validate(scope)
+				} else {
+					panic!() // i dunno
+				}
+			}
 		}
 	}
 }

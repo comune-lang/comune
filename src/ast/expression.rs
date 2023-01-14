@@ -1,10 +1,15 @@
-use std::{ffi::CString, fmt::Display, ptr, sync::{Arc, RwLock}};
+use std::{
+	ffi::CString,
+	fmt::Display,
+	ptr,
+	sync::{Arc, RwLock},
+};
 
 use super::{
 	controlflow::ControlFlow,
 	namespace::{Identifier, Name},
 	statement::Stmt,
-	types::{Basic, Type, FnDef},
+	types::{Basic, FnDef, Type},
 	TokenData,
 };
 
@@ -326,7 +331,7 @@ impl Expr {
 		// Swap out self behind a &mut
 		unsafe {
 			let tmp = ptr::read(self);
-			
+
 			let new = Expr::Atom(
 				Atom::Cast(Box::new(tmp), to.clone()),
 				NodeData {
@@ -340,7 +345,10 @@ impl Expr {
 	}
 
 	pub fn get_type(&self) -> &Type {
-		self.get_node_data().ty.as_ref().expect("attempting to unwrap an unvalidated Expr's type!")
+		self.get_node_data()
+			.ty
+			.as_ref()
+			.expect("attempting to unwrap an unvalidated Expr's type!")
 	}
 
 	pub fn get_node_data(&self) -> &NodeData {
@@ -428,30 +436,54 @@ pub enum OnceAtom {
 }
 
 impl PartialEq for Atom {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::Block { items: l_items, result: l_result }, Self::Block { items: r_items, result: r_result }) => l_items == r_items && l_result == r_result,
-            (Self::CtrlFlow(l0), Self::CtrlFlow(r0)) => l0 == r0,
-            (Self::IntegerLit(l0, l1), Self::IntegerLit(r0, r1)) => l0 == r0 && l1 == r1,
-            (Self::FloatLit(l0, l1), Self::FloatLit(r0, r1)) => l0 == r0 && l1 == r1,
-            (Self::BoolLit(l0), Self::BoolLit(r0)) => l0 == r0,
-            (Self::StringLit(l0), Self::StringLit(r0)) => l0 == r0,
-            (Self::CStringLit(l0), Self::CStringLit(r0)) => l0 == r0,
-            (Self::ArrayLit(l0), Self::ArrayLit(r0)) => l0 == r0,
-            (Self::AlgebraicLit(l0, l1), Self::AlgebraicLit(r0, r1)) => l0 == r0 && l1 == r1,
-            (Self::Identifier(l0), Self::Identifier(r0)) => l0 == r0,
-            (Self::Cast(l0, l1), Self::Cast(r0, r1)) => l0 == r0 && l1 == r1,
-            (Self::FnCall { name: l_name, args: l_args, type_args: l_type_args, resolved: l_res }, Self::FnCall { name: r_name, args: r_args, type_args: r_type_args, resolved: r_res }) => l_name == r_name && l_args == r_args && l_type_args == r_type_args && {
-				match (l_res, r_res) {
-					(Some(l), Some(r)) => *l.read().unwrap() == *r.read().unwrap(),
-					(None, None) => true,
-					_ => false,
+	fn eq(&self, other: &Self) -> bool {
+		match (self, other) {
+			(
+				Self::Block {
+					items: l_items,
+					result: l_result,
+				},
+				Self::Block {
+					items: r_items,
+					result: r_result,
+				},
+			) => l_items == r_items && l_result == r_result,
+			(Self::CtrlFlow(l0), Self::CtrlFlow(r0)) => l0 == r0,
+			(Self::IntegerLit(l0, l1), Self::IntegerLit(r0, r1)) => l0 == r0 && l1 == r1,
+			(Self::FloatLit(l0, l1), Self::FloatLit(r0, r1)) => l0 == r0 && l1 == r1,
+			(Self::BoolLit(l0), Self::BoolLit(r0)) => l0 == r0,
+			(Self::StringLit(l0), Self::StringLit(r0)) => l0 == r0,
+			(Self::CStringLit(l0), Self::CStringLit(r0)) => l0 == r0,
+			(Self::ArrayLit(l0), Self::ArrayLit(r0)) => l0 == r0,
+			(Self::AlgebraicLit(l0, l1), Self::AlgebraicLit(r0, r1)) => l0 == r0 && l1 == r1,
+			(Self::Identifier(l0), Self::Identifier(r0)) => l0 == r0,
+			(Self::Cast(l0, l1), Self::Cast(r0, r1)) => l0 == r0 && l1 == r1,
+			(
+				Self::FnCall {
+					name: l_name,
+					args: l_args,
+					type_args: l_type_args,
+					resolved: l_res,
+				},
+				Self::FnCall {
+					name: r_name,
+					args: r_args,
+					type_args: r_type_args,
+					resolved: r_res,
+				},
+			) => {
+				l_name == r_name && l_args == r_args && l_type_args == r_type_args && {
+					match (l_res, r_res) {
+						(Some(l), Some(r)) => *l.read().unwrap() == *r.read().unwrap(),
+						(None, None) => true,
+						_ => false,
+					}
 				}
-			},
-            (Self::Once(l0), Self::Once(r0)) => *l0.read().unwrap() == *r0.read().unwrap(),
-            _ => false,
-        }
-    }
+			}
+			(Self::Once(l0), Self::Once(r0)) => *l0.read().unwrap() == *r0.read().unwrap(),
+			_ => false,
+		}
+	}
 }
 
 impl Display for Atom {
@@ -510,7 +542,7 @@ impl Display for Atom {
 			Atom::CtrlFlow(_) => todo!(),
 
 			Atom::AlgebraicLit(_, _) => todo!(),
-			
+
 			Atom::Once(_) => todo!(),
 		}
 	}

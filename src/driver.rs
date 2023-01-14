@@ -61,7 +61,7 @@ impl EmitType {
 			"cir" => Some(EmitType::ComuneIr),
 			"cirmono" => Some(EmitType::ComuneIrMono),
 			"llraw" => Some(EmitType::LLVMIrRaw),
-		    "ll" => Some(EmitType::LLVMIr),
+			"ll" => Some(EmitType::LLVMIr),
 			_ => None,
 		}
 	}
@@ -93,8 +93,13 @@ pub fn launch_module_compilation(
 			let import_path = get_module_source_path(&state, src_path.clone(), &name).unwrap();
 
 			let error_sender = sender_lock.lock().unwrap().clone();
-			let module_interface =
-				launch_module_compilation(state.clone(), import_path, name.clone(), error_sender, s);
+			let module_interface = launch_module_compilation(
+				state.clone(),
+				import_path,
+				name.clone(),
+				error_sender,
+				s,
+			);
 			(name, module_interface.unwrap())
 		})
 		.collect();
@@ -121,7 +126,8 @@ pub fn launch_module_compilation(
 		let context = Context::create();
 		let src_name = src_path.file_name().unwrap().to_str().unwrap();
 
-		let result = match generate_code(&state, &mut mod_state, &context, &src_path, &module_name) {
+		let result = match generate_code(&state, &mut mod_state, &context, &src_path, &module_name)
+		{
 			Ok(res) => res,
 			Err(_) => {
 				error_sender
@@ -143,13 +149,12 @@ pub fn launch_module_compilation(
 			result.module.print_to_file(llvm_out_path).unwrap();
 		}
 
-		if state.emit_types.iter().any(|ty| 
-			matches!(ty, 
-				EmitType::Binary | 
-				EmitType::StaticLib | 
-				EmitType::DynamicLib
+		if state.emit_types.iter().any(|ty| {
+			matches!(
+				ty,
+				EmitType::Binary | EmitType::StaticLib | EmitType::DynamicLib
 			)
-		) {
+		}) {
 			target_machine
 				.write_to_file(&result.module, FileType::Object, &out_path)
 				.unwrap();
@@ -160,7 +165,11 @@ pub fn launch_module_compilation(
 }
 
 // TODO: Add proper module searching support, based on a list of module search dirs, as well as support for .co, .h, .hpp etc
-pub fn get_module_source_path(state: &Arc<ManagerState>, mut current_path: PathBuf, module: &Identifier) -> Option<PathBuf> {
+pub fn get_module_source_path(
+	state: &Arc<ManagerState>,
+	mut current_path: PathBuf,
+	module: &Identifier,
+) -> Option<PathBuf> {
 	current_path.set_file_name(&**module.name());
 
 	let extensions = ["co", "cpp", "c"];
@@ -169,18 +178,18 @@ pub fn get_module_source_path(state: &Arc<ManagerState>, mut current_path: PathB
 		current_path.set_extension(extension);
 
 		if current_path.exists() {
-			return Some(current_path)			
+			return Some(current_path);
 		}
 	}
 
 	for dir in &state.import_paths {
 		let mut current_path = PathBuf::from(dir);
 		current_path.push(&**module.name());
-		
+
 		for extension in extensions {
 			current_path.set_extension(extension);
 			if current_path.exists() {
-				return Some(current_path)			
+				return Some(current_path);
 			}
 		}
 	}
@@ -188,12 +197,9 @@ pub fn get_module_source_path(state: &Arc<ManagerState>, mut current_path: PathB
 	None
 }
 
-pub fn get_module_out_path(
-	state: &Arc<ManagerState>,
-	module: &Identifier,
-) -> PathBuf {
+pub fn get_module_out_path(state: &Arc<ManagerState>, module: &Identifier) -> PathBuf {
 	let mut result = PathBuf::from(&state.output_dir);
-	
+
 	for scope in &module.path {
 		result.push(&**scope);
 	}
@@ -277,7 +283,7 @@ pub fn generate_code<'ctx>(
 	state: &Arc<ManagerState>,
 	mod_state: &mut ModuleState,
 	context: &'ctx Context,
-	src_path: &PathBuf,
+	src_path: &Path,
 	input_module: &Identifier,
 ) -> Result<LLVMBackend<'ctx>, CMNError> {
 	// Generate AST
@@ -321,8 +327,8 @@ pub fn generate_code<'ctx>(
 	let module_name = input_module.to_string();
 	let mut cir_module = CIRModuleBuilder::from_ast(mod_state).module;
 
-	// Note: we currently write the output of a lot of 
-	// intermediate stages to the build directory. This is 
+	// Note: we currently write the output of a lot of
+	// intermediate stages to the build directory. This is
 	// mostly for debugging purposes; when the compiler is
 	// at a more mature stage, most of these writes could be
 	// removed or turned into an opt-in CLI option.
@@ -340,9 +346,9 @@ pub fn generate_code<'ctx>(
 	let mut cir_man = CIRPassManager::new();
 	cir_man.add_pass(verify::Verify);
 	cir_man.add_mut_pass(cleanup::RemoveNoOps);
-	
+
 	//cir_man.add_mut_pass(borrowck::BorrowCheck);
-	
+
 	cir_man.add_pass(verify::Verify);
 
 	let cir_errors = cir_man.run_on_module(&mut cir_module);
@@ -377,11 +383,11 @@ pub fn generate_code<'ctx>(
 
 	// Generate LLVM IR
 	let mut backend = LLVMBackend::new(
-		context, 
+		context,
 		&module_name,
-		src_path.to_str().unwrap(), // TODO: Handle invalid UTF-8 paths 
-		false, 
-		true
+		src_path.to_str().unwrap(), // TODO: Handle invalid UTF-8 paths
+		false,
+		true,
 	);
 
 	backend.compile_module(&module_mono).unwrap();

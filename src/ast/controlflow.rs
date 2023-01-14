@@ -87,8 +87,8 @@ impl Display for ControlFlow {
 			ControlFlow::Break => todo!(),
 			ControlFlow::Continue => todo!(),
 			ControlFlow::Match {
-				scrutinee,
-				branches,
+				scrutinee: _,
+				branches: _,
 			} => todo!(),
 		}
 	}

@@ -285,12 +285,11 @@ impl Type {
 			true
 		} else {
 			match self {
-				
 				Type::Tuple(kind, types) => {
 					let Type::Tuple(gen_kind, gen_types) = generic_ty else {
 						return false;
 					};
-					
+
 					if gen_kind != kind {
 						return false;
 					}
@@ -298,7 +297,7 @@ impl Type {
 					if gen_types.len() != types.len() {
 						return false;
 					}
-					
+
 					for (ty, gen_ty) in types.iter().zip(gen_types.iter()) {
 						if !ty.fits_generic(gen_ty) {
 							return false;
@@ -328,8 +327,7 @@ impl Type {
 
 				Type::Array(_, _) => todo!(),
 
-				_ => self == generic_ty
-			
+				_ => self == generic_ty,
 			}
 		}
 	}
@@ -343,10 +341,8 @@ impl Type {
 			true
 		} else if self.is_numeric() {
 			target.is_numeric() || target.is_boolean()
-		} else if matches!(self, Type::Pointer(_)) && matches!(target, Type::Pointer(_)) {
-			true
 		} else {
-			false
+			matches!(self, Type::Pointer(_)) && matches!(target, Type::Pointer(_))
 		}
 	}
 

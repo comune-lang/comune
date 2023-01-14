@@ -5,7 +5,7 @@ use std::{
 	sync::{Arc, RwLock, Weak},
 };
 
-use super::namespace::{Namespace, ItemRef, FnOverloadList};
+use super::namespace::{FnOverloadList, ItemRef, Namespace};
 use super::types::{TypeParam, TypeParamList};
 use super::{
 	namespace::{Identifier, Name},
@@ -22,7 +22,7 @@ pub struct TraitRef {
 #[derive(Debug)]
 pub struct TraitDef {
 	pub items: HashMap<Name, FnOverloadList>,
-	pub types: HashMap<Name, TypeParam>,		// Associated types
+	pub types: HashMap<Name, TypeParam>, // Associated types
 	pub supers: Vec<Identifier>,
 }
 
@@ -31,8 +31,8 @@ pub struct Impl {
 	pub implements: Option<ItemRef<TraitRef>>,
 	pub items: HashMap<Name, FnOverloadList>,
 	pub types: HashMap<Name, Type>,
-	pub scope: Identifier,						// The scope used for name resolution within the impl
-	pub canonical_root: Identifier,				// The root of the canonical names used by items in this impl
+	pub scope: Identifier, // The scope used for name resolution within the impl
+	pub canonical_root: Identifier, // The root of the canonical names used by items in this impl
 }
 
 unsafe impl Sync for TraitRef {}
@@ -78,14 +78,18 @@ pub struct TraitSolver {
 
 impl Clone for TraitSolver {
 	fn clone(&self) -> Self {
-		let mut result = TraitSolver { 
+		let mut result = TraitSolver {
 			local_impls: vec![],
-			impls: self.impls.clone(), 
-			answer_cache: self.answer_cache.clone() 
+			impls: self.impls.clone(),
+			answer_cache: self.answer_cache.clone(),
 		};
 
 		// Move local_impls into impls
-		result.impls.extend(self.local_impls.iter().map(|(ty, im)| (ty.read().unwrap().clone(), im.clone())));
+		result.impls.extend(
+			self.local_impls
+				.iter()
+				.map(|(ty, im)| (ty.read().unwrap().clone(), im.clone())),
+		);
 
 		result
 	}
@@ -112,7 +116,12 @@ impl TraitSolver {
 		self.local_impls.push((RwLock::new(ty), im));
 	}
 
-	pub fn type_implements_trait(&self, ty: &Type, tr: &TraitRef, type_params: &TypeParamList) -> bool {
+	pub fn type_implements_trait(
+		&self,
+		ty: &Type,
+		tr: &TraitRef,
+		type_params: &TypeParamList,
+	) -> bool {
 		match ty {
 			Type::TypeParam(idx) => {
 				let Some((_, param)) = type_params.get(*idx) else { panic!() };
@@ -120,17 +129,17 @@ impl TraitSolver {
 				param.iter().any(|param_trait| {
 					if let ItemRef::Resolved(param_trait) = param_trait {
 						if param_trait == tr {
-							return true
+							return true;
 						}
 					}
 					false
 				})
 			}
 
-			_ => todo!()
+			_ => todo!(),
 		}
 	}
-	
+
 	pub fn is_impl_applicable(
 		&mut self,
 		im: &Impl,
@@ -139,8 +148,7 @@ impl TraitSolver {
 		root: &Namespace,
 	) -> Option<TraitDeduction> {
 		// for a given impl, test if it applies
-		
+
 		None
 	}
-
 }

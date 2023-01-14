@@ -13,19 +13,17 @@ use crate::{
 
 use super::{
 	expression::Expr,
-	traits::{TraitDef, TraitSolver, TraitRef},
+	traits::{TraitDef, TraitRef, TraitSolver},
 	types::{FnDef, Type, TypeDef},
 	Attribute,
 };
 
-
 // String plays nicer with debuggers
-#[cfg(debug_assertions)]
-pub type Name = String;
+//#[cfg(debug_assertions)]
+//pub type Name = String;
 
-#[cfg(not(debug_assertions))]
+//#[cfg(not(debug_assertions))]
 pub type Name = Arc<str>;
-
 
 #[derive(Default, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Identifier {
@@ -90,23 +88,23 @@ impl Display for Identifier {
 
 			(Some(ty), Some(tr)) => {
 				result.push('<');
-				
+
 				match &**tr {
 					ItemRef::Resolved(tr) => {
 						result.push_str(&format!("{ty} as {}", tr.name));
 					}
-				
+
 					ItemRef::Unresolved { name, .. } => {
 						result.push_str(&format!("{ty} as \"{name}\""));
 					}
 				}
-				
+
 				result.push_str(">::");
 			}
 
 			(None, Some(_)) => todo!(),
 
-			(None, None) => {},
+			(None, None) => {}
 		}
 
 		for scope in &self.path {
@@ -234,16 +232,19 @@ impl Namespace {
 
 		match self.children.get(id) {
 			Some((NamespaceItem::Alias(alias), ..)) => self.get_item(alias),
-			
+
 			Some((item, ..)) => Some(item),
-			
+
 			None => {
-				if let Some(import) = self.imported.get(&Identifier::from_name(id.path[0].clone(), true)) {
+				if let Some(import) = self
+					.imported
+					.get(&Identifier::from_name(id.path[0].clone(), true))
+				{
 					if id.path.len() > 1 {
 						let mut id_sub = id.clone();
 						id_sub.path.remove(0);
 
-						return import.get_item(&id_sub)
+						return import.get_item(&id_sub);
 					}
 				}
 
@@ -316,18 +317,20 @@ impl Namespace {
 
 impl Display for Namespace {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		for (name, (item, attribs, mangled)) in &self.children {
+		for (name, (item, _, _)) in &self.children {
 			match item {
 				NamespaceItem::Alias(id) => writeln!(f, "\t[alias] {}", id)?,
 				NamespaceItem::Type(t) => writeln!(f, "\t[type] {}: {}", name, t.read().unwrap())?,
-				NamespaceItem::Trait(t) => writeln!(f, "\t[trait] {}: {:?}", name, t.read().unwrap())?,
-				
+				NamespaceItem::Trait(t) => {
+					writeln!(f, "\t[trait] {}: {:?}", name, t.read().unwrap())?
+				}
+
 				NamespaceItem::Functions(fs) => {
 					for (t, _) in fs {
 						writeln!(f, "\t[func] {}: {}", name, t.read().unwrap())?
 					}
 				}
-				
+
 				NamespaceItem::Variable(_, _) => todo!(),
 			}
 		}

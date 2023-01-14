@@ -406,7 +406,9 @@ impl CIRModule {
 
 		for (id, func) in &mut self.functions {
 			// Check if the function has a `no_mangle` or `export_as` attribute, or if it's `main`. If not, mangle the name
-			if get_attribute(&func.attributes, "no_mangle").is_some() || (&**id.name.name() == "main" && !id.name.is_qualified()) {
+			if get_attribute(&func.attributes, "no_mangle").is_some()
+				|| (&**id.name.name() == "main" && !id.name.is_qualified())
+			{
 				func.mangled_name = Some(id.name.name().to_string());
 			} else if let Some(export_name) = get_attribute(&func.attributes, "export_as") {
 				// Export with custom symbol name

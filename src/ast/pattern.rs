@@ -18,7 +18,9 @@ pub enum Pattern {
 impl Pattern {
 	pub fn get_type(&self) -> &Type {
 		match self {
-			Pattern::Binding(Binding { ty, .. }) | Pattern::Destructure(_, ty) | Pattern::Or(_, ty) => ty,
+			Pattern::Binding(Binding { ty, .. })
+			| Pattern::Destructure(_, ty)
+			| Pattern::Or(_, ty) => ty,
 		}
 	}
 

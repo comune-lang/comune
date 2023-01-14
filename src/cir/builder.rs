@@ -3,9 +3,9 @@ use std::{borrow::BorrowMut, collections::HashMap};
 use crate::{
 	ast::{
 		controlflow::ControlFlow,
-		expression::{Atom, Expr, Operator, OnceAtom},
+		expression::{Atom, Expr, OnceAtom, Operator},
 		namespace::{Identifier, ItemRef, Name, Namespace, NamespaceASTElem, NamespaceItem},
-		pattern::{Pattern, Binding},
+		pattern::{Binding, Pattern},
 		statement::Stmt,
 		types::{Basic, FnDef, TupleKind, Type, TypeDef, TypeRef},
 		Attribute,
@@ -15,8 +15,8 @@ use crate::{
 };
 
 use super::{
-	BlockIndex, CIRFunction, CIRModule, CIRStmt, CIRType, CIRTypeDef, LValue, Operand, PlaceElem,
-	RValue, TypeName, VarIndex, CIRFnPrototype,
+	BlockIndex, CIRFnPrototype, CIRFunction, CIRModule, CIRStmt, CIRType, CIRTypeDef, LValue,
+	Operand, PlaceElem, RValue, TypeName, VarIndex,
 };
 
 pub struct CIRModuleBuilder {
@@ -53,26 +53,34 @@ impl CIRModuleBuilder {
 	}
 
 	fn register_namespace(&mut self, namespace: &Namespace) {
-		for (im_ty, im) in namespace.trait_solver.get_local_impls() {
+		for (_, im) in namespace.trait_solver.get_local_impls() {
 			let im = im.read().unwrap();
 
 			for (name, fns) in &im.items {
 				for (func, _) in fns {
-					let (proto, cir_fn) = self.generate_prototype(Identifier::from_parent(&im.canonical_root, name.clone()), &func.read().unwrap(), vec![]);
+					let (proto, cir_fn) = self.generate_prototype(
+						Identifier::from_parent(&im.canonical_root, name.clone()),
+						&func.read().unwrap(),
+						vec![],
+					);
 
 					self.module.functions.insert(proto, cir_fn);
 				}
 			}
 		}
 
-		for (name, import) in &namespace.imported {
+		for import in namespace.imported.values() {
 			self.register_namespace(import);
 		}
 
 		for (name, (elem, attribs, _)) in &namespace.children {
 			if let NamespaceItem::Functions(fns) = elem {
 				for (func, _) in fns {
-					let (proto, cir_fn) = self.generate_prototype(name.clone(), &func.read().unwrap(), attribs.clone());
+					let (proto, cir_fn) = self.generate_prototype(
+						name.clone(),
+						&func.read().unwrap(),
+						attribs.clone(),
+					);
 
 					self.module.functions.insert(proto, cir_fn);
 				}
@@ -81,13 +89,16 @@ impl CIRModuleBuilder {
 	}
 
 	fn generate_namespace(&mut self, namespace: &Namespace) {
-		for (im_ty, im) in namespace.trait_solver.get_local_impls() {
+		for (_, im) in namespace.trait_solver.get_local_impls() {
 			let im = im.read().unwrap();
 
 			for (name, fns) in &im.items {
 				for (func, ast) in fns {
 					if let NamespaceASTElem::Parsed(ast) = &*ast.borrow() {
-						let proto = self.get_prototype(Identifier::from_parent(&im.canonical_root, name.clone()), &func.read().unwrap());
+						let proto = self.get_prototype(
+							Identifier::from_parent(&im.canonical_root, name.clone()),
+							&func.read().unwrap(),
+						);
 						self.generate_function(proto, ast);
 					}
 				}
@@ -197,7 +208,12 @@ impl CIRModuleBuilder {
 impl CIRModuleBuilder {
 	pub fn get_prototype(&mut self, name: Identifier, func: &FnDef) -> CIRFnPrototype {
 		let ret = self.convert_type(&func.ret);
-		let params = func.params.params.iter().map(|(param, _)| self.convert_type(param)).collect();
+		let params = func
+			.params
+			.params
+			.iter()
+			.map(|(param, _)| self.convert_type(param))
+			.collect();
 
 		CIRFnPrototype {
 			name,
@@ -207,7 +223,12 @@ impl CIRModuleBuilder {
 		}
 	}
 
-	pub fn generate_prototype(&mut self, name: Identifier, func: &FnDef, attributes: Vec<Attribute>) -> (CIRFnPrototype, CIRFunction) {
+	pub fn generate_prototype(
+		&mut self,
+		name: Identifier,
+		func: &FnDef,
+		attributes: Vec<Attribute>,
+	) -> (CIRFnPrototype, CIRFunction) {
 		let proto = self.get_prototype(name, func);
 
 		self.current_fn = Some(CIRFunction {
@@ -226,7 +247,6 @@ impl CIRModuleBuilder {
 			if let Some(name) = &param.1 {
 				self.insert_variable(name.clone(), param.0.clone());
 			}
-			
 		}
 
 		(proto, self.current_fn.take().unwrap())
@@ -239,7 +259,9 @@ impl CIRModuleBuilder {
 
 		self.current_fn.borrow_mut().as_mut().unwrap().is_extern = false;
 
-		self.module.functions.insert(func, self.current_fn.take().unwrap());
+		self.module
+			.functions
+			.insert(func, self.current_fn.take().unwrap());
 	}
 
 	// Shorthand
@@ -297,7 +319,11 @@ impl CIRModuleBuilder {
 	// For a given pattern match, generate the appropriate bindings
 	fn generate_pattern_bindings(&mut self, pattern: &Pattern, value: LValue, value_ty: &CIRType) {
 		match pattern {
-			Pattern::Binding(Binding { name: Some(name), ty, .. }) => {
+			Pattern::Binding(Binding {
+				name: Some(name),
+				ty,
+				..
+			}) => {
 				let cir_ty = self.convert_type(ty);
 				let idx = self.get_fn().variables.len();
 
@@ -335,7 +361,7 @@ impl CIRModuleBuilder {
 				}
 			}
 
-			Pattern::Binding(Binding { name: None, ..}) => {}
+			Pattern::Binding(Binding { name: None, .. }) => {}
 
 			_ => todo!(),
 		}
@@ -546,7 +572,11 @@ impl CIRModuleBuilder {
 					Some(RValue::Atom(
 						self.convert_type(&resolved.read().unwrap().ret),
 						None,
-						Operand::FnCall(self.get_prototype(name, &resolved.read().unwrap()), cir_args, cir_type_args),
+						Operand::FnCall(
+							self.get_prototype(name, &resolved.read().unwrap()),
+							cir_args,
+							cir_type_args,
+						),
 					))
 				}
 
@@ -879,12 +909,19 @@ impl CIRModuleBuilder {
 
 					_ => panic!("illegal CtrlFlow construction in cIR!"),
 				},
-				
+
 				Atom::Once(once) => {
 					let cir_ty = self.convert_type(expr_ty);
 
 					if let OnceAtom::Eval(local) = *once.read().unwrap() {
-						return Some(RValue::Atom(cir_ty, None, Operand::LValue(LValue { local, projection: vec![] })));
+						return Some(RValue::Atom(
+							cir_ty,
+							None,
+							Operand::LValue(LValue {
+								local,
+								projection: vec![],
+							}),
+						));
 					}
 
 					let once_uneval = &mut *once.write().unwrap();
@@ -895,7 +932,7 @@ impl CIRModuleBuilder {
 					*once_uneval = OnceAtom::Eval(local.local);
 
 					Some(RValue::Atom(cir_ty, None, Operand::LValue(local)))
-				},
+				}
 			},
 
 			Expr::Cons([lhs, rhs], op, _) => {
@@ -957,7 +994,11 @@ impl CIRModuleBuilder {
 								Some(RValue::Atom(
 									rhs_ty,
 									None,
-									Operand::FnCall(self.get_prototype(name.clone(), &resolved.read().unwrap()), cir_args, cir_type_args),
+									Operand::FnCall(
+										self.get_prototype(name.clone(), &resolved.read().unwrap()),
+										cir_args,
+										cir_type_args,
+									),
 								))
 							}
 
@@ -1030,7 +1071,7 @@ impl CIRModuleBuilder {
 				Atom::Once(_) => {
 					let RValue::Atom(_, None, Operand::LValue(lvalue)) = self.generate_expr(expr)? else { panic!() };
 					Some(lvalue)
-				},
+				}
 
 				_ => panic!(),
 			},

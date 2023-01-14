@@ -6,7 +6,8 @@ use crate::{
 };
 
 use super::{
-	CIRFunction, CIRModule, CIRStmt, CIRType, CIRTypeDef, LValue, Operand, PlaceElem, RValue, CIRFnPrototype,
+	CIRFnPrototype, CIRFunction, CIRModule, CIRStmt, CIRType, CIRTypeDef, LValue, Operand,
+	PlaceElem, RValue,
 };
 
 impl Display for CIRModule {
@@ -26,21 +27,21 @@ impl Display for CIRModule {
 impl Display for CIRFnPrototype {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		write!(f, "{}", self.name)?;
-		
+
 		// Print type parameters
 		if !self.type_params.is_empty() {
 			let mut iter = self.type_params.iter();
-			
+
 			write!(f, "<{}", iter.next().unwrap().0)?;
 
 			for (param, traits) in iter {
 				write!(f, ", {param}")?;
-				
+
 				if !traits.is_empty() {
 					let mut traits_iter = traits.iter();
-					
+
 					write!(f, ": {:?}", traits_iter.next().unwrap())?;
-					
+
 					for tr in traits_iter {
 						write!(f, " + {tr:?}")?;
 					}
@@ -55,7 +56,7 @@ impl Display for CIRFnPrototype {
 			write!(f, "()")?;
 		} else {
 			let mut iter = self.params.iter();
-			
+
 			write!(f, "({}", iter.next().unwrap())?;
 
 			for param in iter {

@@ -2,16 +2,18 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
-use crate::ast::pattern::{Pattern, Binding};
+use crate::ast::pattern::{Binding, Pattern};
 use crate::constexpr::ConstExpr;
 use crate::errors::{CMNError, CMNErrorCode};
 use crate::lexer::{Lexer, Token};
 
 use crate::ast::controlflow::ControlFlow;
 use crate::ast::expression::{Atom, Expr, NodeData, Operator};
-use crate::ast::namespace::{Identifier, ItemRef, Namespace, NamespaceASTElem, NamespaceItem, Name};
+use crate::ast::namespace::{
+	Identifier, ItemRef, Name, Namespace, NamespaceASTElem, NamespaceItem,
+};
 use crate::ast::statement::Stmt;
-use crate::ast::traits::{TraitDef, Impl, TraitRef};
+use crate::ast::traits::{Impl, TraitDef, TraitRef};
 use crate::ast::types::{
 	AlgebraicDef, Basic, FnDef, FnParamList, TupleKind, Type, TypeDef, TypeParamList, TypeRef,
 	Visibility,
@@ -102,28 +104,30 @@ impl Parser {
 	pub fn generate_ast(&mut self) -> ParseResult<()> {
 		for child in &self.namespace.children {
 			match &child.1 .0 {
-				NamespaceItem::Functions(fns) => for (_, ast) in fns {
-					let mut elem = ast.borrow_mut();
+				NamespaceItem::Functions(fns) => {
+					for (_, ast) in fns {
+						let mut elem = ast.borrow_mut();
 
-					if let NamespaceASTElem::Unparsed(idx) = *elem {
-						// Parse function block
-						self.lexer.borrow_mut().seek_token_idx(idx);
-						*elem = NamespaceASTElem::Parsed(self.parse_block()?)
+						if let NamespaceASTElem::Unparsed(idx) = *elem {
+							// Parse function block
+							self.lexer.borrow_mut().seek_token_idx(idx);
+							*elem = NamespaceASTElem::Parsed(self.parse_block()?)
+						}
 					}
 				}
 
 				NamespaceItem::Type(_) | NamespaceItem::Alias(_) | NamespaceItem::Trait(_) => {}
-				
+
 				_ => todo!(),
 			}
 		}
 
-		for (im_ty, im) in self.namespace.trait_solver.get_local_impls() {
+		for (_, im) in self.namespace.trait_solver.get_local_impls() {
 			// Generate impl function bodies
 			let im = im.read().unwrap();
 
-			for (name, fns) in &im.items {
- 				for (_, ast) in fns {
+			for fns in im.items.values() {
+				for (_, ast) in fns {
 					let mut elem = ast.borrow_mut();
 
 					if let NamespaceASTElem::Unparsed(idx) = *elem {
@@ -239,13 +243,9 @@ impl Parser {
 										let result = self.parse_namespace_declaration()?;
 
 										match result.1 {
-											NamespaceItem::Variable(t, _) => {
-												aggregate.members.push((
-													result.0,
-													t,
-													current_visibility.clone(),
-												))
-											}
+											NamespaceItem::Variable(t, _) => aggregate
+												.members
+												.push((result.0, t, current_visibility.clone())),
 
 											_ => todo!(),
 										}
@@ -314,22 +314,26 @@ impl Parser {
 							next = self.get_next()?; // Consume brace
 
 							while !token_compare(&next, "}") {
-								let Token::Identifier(_) = next else { 
-									return Err(self.err(CMNErrorCode::UnexpectedToken)) 
+								let Token::Identifier(_) = next else {
+									return Err(self.err(CMNErrorCode::UnexpectedToken))
 								};
 
 								let (name, item) = self.parse_namespace_declaration()?;
 
 								match item {
-									NamespaceItem::Functions(fns) => for (func, ast) in fns {
-										if !matches!(&*ast.borrow(), NamespaceASTElem::NoElem) {
-											panic!("default trait method definitions are not yet supported")
-										}
-										
-										if let Some(fns) = this_trait.items.get_mut(&name) {
-											fns.push((func, ast));
-										} else {	
-											this_trait.items.insert(name.clone(), vec![(func, ast)]);
+									NamespaceItem::Functions(fns) => {
+										for (func, ast) in fns {
+											if !matches!(&*ast.borrow(), NamespaceASTElem::NoElem) {
+												panic!("default trait method definitions are not yet supported")
+											}
+
+											if let Some(fns) = this_trait.items.get_mut(&name) {
+												fns.push((func, ast));
+											} else {
+												this_trait
+													.items
+													.insert(name.clone(), vec![(func, ast)]);
+											}
 										}
 									}
 
@@ -342,10 +346,7 @@ impl Parser {
 							self.get_next()?; // Consume closing brace
 
 							self.namespace.children.insert(
-								Identifier::from_parent(
-									scope,
-									name.expect_scopeless()?.clone(),
-								),
+								Identifier::from_parent(scope, name.expect_scopeless()?.clone()),
 								(
 									NamespaceItem::Trait(Arc::new(RwLock::new(this_trait))),
 									current_attributes,
@@ -353,7 +354,6 @@ impl Parser {
 								),
 							);
 							current_attributes = vec![];
-						
 						}
 
 						"namespace" => {
@@ -367,7 +367,7 @@ impl Parser {
 							self.current_scope
 								.path
 								.push(namespace_name.expect_scopeless()?.clone());
-							
+
 							let scope = self.current_scope.clone();
 							self.parse_namespace(&scope)?;
 							self.current_scope.path.pop();
@@ -391,7 +391,7 @@ impl Parser {
 								};
 
 								trait_name = Some(ItemRef::<TraitRef>::Unresolved { name, scope });
-								
+
 								// Then parse the implementing type, for real this time
 								impl_ty = self.parse_type(false)?;
 							}
@@ -405,44 +405,49 @@ impl Parser {
 							while self.get_current()? != Token::Other('}') {
 								let ret = self.parse_type(false)?;
 
-								let fn_name =
-									if let Token::Identifier(id) = self.get_current()? {
-										id.expect_scopeless()?.clone()
-									} else {
-										return Err(self.err(CMNErrorCode::ExpectedIdentifier));
-									};
+								let fn_name = if let Token::Identifier(id) = self.get_current()? {
+									id.expect_scopeless()?.clone()
+								} else {
+									return Err(self.err(CMNErrorCode::ExpectedIdentifier));
+								};
 
 								self.get_next()?;
 
 								let params = self.parse_parameter_list()?;
 
-								let ast = NamespaceASTElem::Unparsed(self.get_current_token_index());
+								let ast =
+									NamespaceASTElem::Unparsed(self.get_current_token_index());
 
 								self.skip_block()?;
 
-								let current_impl = 
-									vec![(
-										Arc::new(RwLock::new(FnDef { ret, params, type_params: vec![], })),
-										RefCell::new(ast),
-									)];
+								let current_impl = vec![(
+									Arc::new(RwLock::new(FnDef {
+										ret,
+										params,
+										type_params: vec![],
+									})),
+									RefCell::new(ast),
+								)];
 
 								functions.insert(fn_name, current_impl);
 								current_attributes = vec![];
-
 							}
 
 							// Register impl to solver
-							let im = Arc::new(RwLock::new(Impl { 
-								implements: trait_name.clone(), 
+							let im = Arc::new(RwLock::new(Impl {
+								implements: trait_name.clone(),
 								items: functions,
 								types: HashMap::new(),
 								scope: self.current_scope.clone(),
-								
-								canonical_root: Identifier { 
-									qualifier: (Some(Box::new(impl_ty.clone())), trait_name.map(Box::new)), 
-									path: vec![], 
-									absolute: true 
-								}
+
+								canonical_root: Identifier {
+									qualifier: (
+										Some(Box::new(impl_ty.clone())),
+										trait_name.map(Box::new),
+									),
+									path: vec![],
+									absolute: true,
+								},
 							}));
 
 							self.namespace.trait_solver.register_impl(impl_ty, im);
@@ -690,7 +695,7 @@ impl Parser {
 
 						item = NamespaceItem::Functions(vec![(
 							Arc::new(RwLock::new(t)),
-							RefCell::new(ast_elem)
+							RefCell::new(ast_elem),
 						)]);
 					}
 
@@ -767,10 +772,12 @@ impl Parser {
 	fn parse_pattern(&self) -> ParseResult<Pattern> {
 		if self.is_at_type_token(true)? {
 			let pattern_ty = self.parse_type(true)?;
-			
+
 			let is_ref = self.get_current()? == Token::Operator("&");
 
-			if is_ref { self.get_next()?; }
+			if is_ref {
+				self.get_next()?;
+			}
 
 			match self.get_current()? {
 				Token::Identifier(id) => {
@@ -977,7 +984,6 @@ impl Parser {
 						// Parse with algebraic typename
 						TypeDef::Algebraic(_) => {
 							match &next {
-
 								// Parse struct literal
 								Token::Other('{') => {
 									let mut inits = vec![];
@@ -985,7 +991,9 @@ impl Parser {
 									while next != Token::Other('}') {
 										self.get_next()?;
 
-										if let Token::Identifier(member_name) = self.get_current()? {
+										if let Token::Identifier(member_name) =
+											self.get_current()?
+										{
 											self.get_next()?;
 
 											self.consume(&Token::Other(':'))?;

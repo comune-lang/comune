@@ -259,15 +259,15 @@ impl Lexer {
 			while token == '/' && self.peek_next_char()? == '*' {
 				while !self.eof_reached() {
 					token = self.get_next_char()?;
-				
+
 					if token == '*' && self.peek_next_char()? == '/' {
 						depth -= 1;
 
 						if depth == 0 {
-							break
+							break;
 						}
 					}
-					
+
 					if token == '/' && self.peek_next_char()? == '*' {
 						depth += 1;
 					}

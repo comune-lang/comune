@@ -4,6 +4,7 @@ use inkwell::{
 	basic_block::BasicBlock,
 	builder::Builder,
 	context::Context,
+	debug_info::DebugInfoBuilder,
 	module::{Linkage, Module},
 	targets::{InitializationConfig, Target, TargetMachine, TargetTriple},
 	types::{
@@ -14,7 +15,7 @@ use inkwell::{
 		AnyValue, AnyValueEnum, BasicMetadataValueEnum, BasicValue, BasicValueEnum, FunctionValue,
 		PointerValue,
 	},
-	AddressSpace, FloatPredicate, GlobalVisibility, IntPredicate, debug_info::DebugInfoBuilder,
+	AddressSpace, FloatPredicate, GlobalVisibility, IntPredicate,
 };
 
 use crate::{
@@ -23,7 +24,8 @@ use crate::{
 		types::{Basic, DataLayout, TupleKind},
 	},
 	cir::{
-		CIRFunction, CIRModule, CIRStmt, CIRType, CIRTypeDef, LValue, Operand, PlaceElem, RValue, CIRFnPrototype,
+		CIRFnPrototype, CIRFunction, CIRModule, CIRStmt, CIRType, CIRTypeDef, LValue, Operand,
+		PlaceElem, RValue,
 	},
 };
 
@@ -59,11 +61,11 @@ pub struct LLVMBackend<'ctx> {
 
 impl<'ctx> LLVMBackend<'ctx> {
 	pub fn new(
-		context: &'ctx Context, 
-		module_name: &str, 
+		context: &'ctx Context,
+		module_name: &str,
 		source_file: &str,
-		optimized: bool, 
-		debug: bool
+		optimized: bool,
+		debug: bool,
 	) -> Self {
 		let module = context.create_module(module_name);
 		let builder = context.create_builder();
@@ -143,10 +145,8 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 		for (proto, func) in &module.functions {
 			self.register_fn(func.mangled_name.as_ref().unwrap(), func)?;
-			self.fn_map.insert(
-				proto.clone(),
-				func.mangled_name.as_ref().unwrap().clone(),
-			);
+			self.fn_map
+				.insert(proto.clone(), func.mangled_name.as_ref().unwrap().clone());
 		}
 
 		for func in module.functions.values() {
