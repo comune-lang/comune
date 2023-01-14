@@ -140,6 +140,7 @@ pub fn validate_function(
 		if result.is_some() {
 			let expr = *result.take().unwrap();
 			let node_data = expr.get_node_data().clone();
+			
 			items.push(Stmt::Expr(Expr::Atom(
 				Atom::CtrlFlow(Box::new(ControlFlow::Return { expr: Some(expr) })),
 				node_data,

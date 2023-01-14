@@ -16,7 +16,7 @@ impl Display for CIRModule {
 		}
 
 		for (proto, func) in &self.functions {
-			write!(f, "fn {}{}", proto.name, func)?;
+			write!(f, "fn {proto}{func}")?;
 		}
 
 		Ok(())
@@ -25,7 +25,7 @@ impl Display for CIRModule {
 
 impl Display for CIRFnPrototype {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		write!(f, "{} {}", self.ret, self.name)?;
+		write!(f, "{}", self.name)?;
 		
 		// Print type parameters
 		if !self.type_params.is_empty() {
@@ -52,7 +52,7 @@ impl Display for CIRFnPrototype {
 
 		// Print parameters
 		if self.params.is_empty() {
-			write!(f, "()")
+			write!(f, "()")?;
 		} else {
 			let mut iter = self.params.iter();
 			
@@ -62,38 +62,15 @@ impl Display for CIRFnPrototype {
 				write!(f, ", {param}")?;
 			}
 
-			write!(f, ")")
+			write!(f, ")")?;
 		}
+
+		write!(f, " -> {}", self.ret)
 	}
 }
 
 impl Display for CIRFunction {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		if self.arg_count > 0 {
-			write!(
-				f,
-				"({}:{}",
-				self.variables[0].1.as_ref().unwrap_or(&"_".into()),
-				&self.variables[0].0,
-			)?;
-
-			for i in 1..self.arg_count {
-				write!(
-					f,
-					", {}:{}",
-					self.variables[i]
-						.1
-						.as_ref()
-						.unwrap_or(&i.to_string().into()),
-					&self.variables[i].0
-				)?;
-			}
-
-			write!(f, ") -> {}", self.ret)?;
-		} else {
-			write!(f, "() -> {}", self.ret)?;
-		}
-
 		if self.is_extern {
 			writeln!(f, ";\n")
 		} else {
@@ -199,7 +176,7 @@ impl Display for Operand {
 			Operand::Undef => write!(f, "undef"),
 
 			Operand::FnCall(name, args, type_args) => {
-				write!(f, "call {name}")?;
+				write!(f, "call {name} with ")?;
 
 				if !type_args.is_empty() {
 					let mut args_iter = type_args.iter();

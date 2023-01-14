@@ -85,6 +85,30 @@ impl Display for Identifier {
 			result.push('~');
 		}
 
+		match &self.qualifier {
+			(Some(ty), None) => result.push_str(&format!("{ty}::")),
+
+			(Some(ty), Some(tr)) => {
+				result.push('<');
+				
+				match &**tr {
+					ItemRef::Resolved(tr) => {
+						result.push_str(&format!("{ty} as {}", tr.name));
+					}
+				
+					ItemRef::Unresolved { name, .. } => {
+						result.push_str(&format!("{ty} as \"{name}\""));
+					}
+				}
+				
+				result.push_str(">::");
+			}
+
+			(None, Some(_)) => todo!(),
+
+			(None, None) => {},
+		}
+
 		for scope in &self.path {
 			result.push_str(scope);
 			if scope != self.path.last().unwrap() {

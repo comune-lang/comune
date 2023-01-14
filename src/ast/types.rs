@@ -488,7 +488,7 @@ impl Display for Type {
 			Type::Array(t, _s) => write!(f, "{}[]", t),
 
 			Type::TypeRef(ItemRef::Unresolved { name, .. }) => {
-				write!(f, "unresolved type \"{name}\"")
+				write!(f, "\"{name}\"")
 			}
 
 			Type::TypeRef(ItemRef::Resolved(TypeRef { name, args, .. })) => {
