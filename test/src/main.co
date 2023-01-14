@@ -30,7 +30,7 @@ trait Hello {
 
 impl Hello for Test {
 	void hello(Self self) {
-		printf(c"Hello Test!\n");
+		printf(c"Hello Test!\n")
 	}
 }
 
@@ -90,5 +90,4 @@ int main() {
 	free(my_cool_generic.data as void*);
 
 	test.sum()
-	
 }

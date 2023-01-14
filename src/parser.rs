@@ -118,7 +118,7 @@ impl Parser {
 			}
 		}
 
-		for (im_ty, im) in self.namespace.trait_solver.get_impls() {
+		for (im_ty, im) in self.namespace.trait_solver.get_local_impls() {
 			// Generate impl function bodies
 			let im = im.read().unwrap();
 
@@ -357,23 +357,22 @@ impl Parser {
 						}
 
 						"namespace" => {
-							let name_token = self.get_next()?;
-
-							if let Token::Identifier(namespace_name) = name_token {
-								self.get_next()?; // Consume name
-								self.get_next()?; // Consume brace
-
-								self.current_scope
-									.path
-									.push(namespace_name.expect_scopeless()?.clone());
-								let scope = self.current_scope.clone();
-								self.parse_namespace(&scope)?;
-								self.current_scope.path.pop();
-
-								current_attributes = vec![];
-							} else {
+							let Token::Identifier(namespace_name) = self.get_next()? else {
 								return Err(self.err(CMNErrorCode::ExpectedIdentifier));
-							}
+							};
+
+							self.get_next()?; // Consume name
+							self.consume(&Token::Other('{'))?; // Consume brace
+
+							self.current_scope
+								.path
+								.push(namespace_name.expect_scopeless()?.clone());
+							
+							let scope = self.current_scope.clone();
+							self.parse_namespace(&scope)?;
+							self.current_scope.path.pop();
+
+							current_attributes = vec![];
 						}
 
 						"impl" => {
@@ -397,14 +396,13 @@ impl Parser {
 								impl_ty = self.parse_type(false)?;
 							}
 
+							// Consume barce
 							self.consume(&Token::Other('{'))?;
-
-							let mut current = self.get_current()?;
 
 							// Parse functions
 							let mut functions = HashMap::new();
 
-							while current != Token::Other('}') {
+							while self.get_current()? != Token::Other('}') {
 								let ret = self.parse_type(false)?;
 
 								let fn_name =
@@ -419,6 +417,7 @@ impl Parser {
 								let params = self.parse_parameter_list()?;
 
 								let ast = NamespaceASTElem::Unparsed(self.get_current_token_index());
+
 								self.skip_block()?;
 
 								let current_impl = 
@@ -430,7 +429,6 @@ impl Parser {
 								functions.insert(fn_name, current_impl);
 								current_attributes = vec![];
 
-								current = self.get_current()?;
 							}
 
 							// Register impl to solver

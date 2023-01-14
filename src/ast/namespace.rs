@@ -13,12 +13,19 @@ use crate::{
 
 use super::{
 	expression::Expr,
-	traits::{TraitDef, Impl, TraitSolver},
+	traits::{TraitDef, TraitSolver},
 	types::{FnDef, Type, TypeDef},
 	Attribute,
 };
 
+
+// String plays nicer with debuggers
+#[cfg(string_names)]
+pub type Name = String;
+
+#[cfg(not(string_names))]
 pub type Name = Arc<str>;
+
 
 #[derive(Default, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Identifier {
@@ -189,6 +196,8 @@ impl Namespace {
 	}
 
 	pub fn get_item(&self, id: &Identifier) -> Option<&NamespaceItem> {
+		assert!(id.absolute, "argument to get_item should be absolute!");
+
 		match self.children.get(id) {
 			Some((NamespaceItem::Alias(alias), ..)) => self.get_item(alias),
 			

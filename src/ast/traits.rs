@@ -1,4 +1,5 @@
 use std::hash::{Hash, Hasher};
+use std::sync::WaitTimeoutResult;
 use std::{
 	collections::HashMap,
 	ptr,
@@ -68,22 +69,39 @@ pub enum TraitDeduction {
 	None,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Debug, Default)]
 pub struct TraitSolver {
 	impls: Vec<(Type, Arc<RwLock<Impl>>)>,
+	local_impls: Vec<(RwLock<Type>, Arc<RwLock<Impl>>)>,
 	answer_cache: HashMap<Type, HashMap<TraitRef, TraitDeduction>>,
+}
+
+impl Clone for TraitSolver {
+	fn clone(&self) -> Self {
+		let mut result = TraitSolver { 
+			local_impls: vec![],
+			impls: self.impls.clone(), 
+			answer_cache: self.answer_cache.clone() 
+		};
+
+		// Move local_impls into impls
+		result.impls.extend(self.local_impls.iter().map(|(ty, im)| (ty.read().unwrap().clone(), im.clone())));
+
+		result
+	}
 }
 
 impl TraitSolver {
 	pub fn new() -> Self {
 		Self {
 			impls: vec![],
+			local_impls: vec![],
 			answer_cache: HashMap::new(),
 		}
 	}
 
-	pub fn get_impls(&self) -> &Vec<(Type, Arc<RwLock<Impl>>)> {
-		&self.impls
+	pub fn get_local_impls(&self) -> &Vec<(RwLock<Type>, Arc<RwLock<Impl>>)> {
+		&self.local_impls
 	}
 
 	pub fn register_impl(&mut self, ty: Type, im: Arc<RwLock<Impl>>) {
@@ -91,7 +109,7 @@ impl TraitSolver {
 			cache.clear();
 		}
 
-		self.impls.push((ty, im));
+		self.local_impls.push((RwLock::new(ty), im));
 	}
 
 	pub fn type_implements_trait(&self, ty: &Type, tr: &TraitRef, type_params: &TypeParamList) -> bool {

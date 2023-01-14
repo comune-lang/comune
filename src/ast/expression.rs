@@ -340,7 +340,7 @@ impl Expr {
 	}
 
 	pub fn get_type(&self) -> &Type {
-		self.get_node_data().ty.as_ref().unwrap()
+		self.get_node_data().ty.as_ref().expect("attempting to unwrap an unvalidated Expr's type!")
 	}
 
 	pub fn get_node_data(&self) -> &NodeData {

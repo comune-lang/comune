@@ -16,3 +16,4 @@ lazy_static = "1.4.0"
 llvm12 = ["inkwell/llvm12-0"]
 llvm13 = ["inkwell/llvm13-0"]
 llvm14 = ["inkwell/llvm14-0"]
+string_names = []

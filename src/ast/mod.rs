@@ -117,14 +117,15 @@ impl<'ctx> FnScope<'ctx> {
 
 pub fn validate_function(
 	scope: Identifier,
-	func: &FnDef,
+	func: &mut FnDef,
 	elem: &RefCell<NamespaceASTElem>,
 	namespace: &Namespace,
 ) -> AnalyzeResult<()> {
 	let mut scope = FnScope::new(namespace, scope, func.ret.clone());
 
-	for param in &func.params.params {
-		scope.add_variable(param.0.clone(), param.1.clone().unwrap())
+	for (param, name) in &mut func.params.params {
+		param.validate(&scope);
+		scope.add_variable(param.clone(), name.clone().unwrap())
 	}
 
 	if let NamespaceASTElem::Parsed(elem) = &mut *elem.borrow_mut() {
@@ -166,8 +167,7 @@ pub fn validate_function(
 }
 
 
-pub fn is_candidate_viable(call: &Atom, candidate: &Arc<RwLock<FnDef>>) -> bool {
-	let Atom::FnCall { name: _, args, type_args, resolved: None } = call else { panic!() };
+pub fn is_candidate_viable(args: &Vec<Expr>, type_args: &Vec<(Name, Type)>, candidate: &Arc<RwLock<FnDef>>) -> bool {
 	let func = candidate.read().unwrap();
 	let params = &func.params.params;
 
@@ -182,7 +182,7 @@ pub fn is_candidate_viable(call: &Atom, candidate: &Arc<RwLock<FnDef>>) -> bool 
 
 	for (i, (param, _)) in params.iter().enumerate() {
 		if let Some(arg) = args.get(i) {			
-			if !arg.get_type().castable_to(param) {
+			if !arg.get_type().castable_to(&param.get_concrete_type(type_args)) {
 				return false
 			}
 		}
@@ -244,13 +244,18 @@ pub fn validate_fn_call(
 	call: &mut Atom,
 	scope: &mut FnScope,
 ) -> AnalyzeResult<Type> {
-	let call_comp = call.clone();
 	let mut candidates = vec![];
 	let Atom::FnCall { name, args, type_args, resolved } = call else { panic!() };
+
+	if let Some(resolved) = resolved {
+		return Ok(resolved.read().unwrap().ret.clone());
+	}
 	
 	// Collect function candidates
 	if !name.absolute {
 		let mut name_unwrap = name.clone();
+
+		name_unwrap.absolute = true;
 		
 		for (i, elem) in scope.scope.path.iter().enumerate() {
 			name_unwrap.path.insert(i, elem.clone());
@@ -272,9 +277,8 @@ pub fn validate_fn_call(
 	for arg in args.iter_mut() {
 		arg.validate(scope)?;
 	}
-
-	let args_comp = args.clone();
-	let mut candidates: Vec<_> = candidates.into_iter().filter(|(func, _)| is_candidate_viable(&call_comp, func)).collect(); 
+	
+	let mut candidates: Vec<_> = candidates.into_iter().filter(|(func, _)| is_candidate_viable(args, type_args, func)).collect(); 
 	
 	let selected_candidate = match candidates.len() {
 		0 => todo!(), // No viable candidate
@@ -284,9 +288,9 @@ pub fn validate_fn_call(
 		// More than one viable candidate
 		_ => {
 			// Sort candidates by cost
-			candidates.sort_unstable_by(|(l, _), (r, _)| candidate_compare(&args_comp, l, r, scope));
+			candidates.sort_unstable_by(|(l, _), (r, _)| candidate_compare(args, l, r, scope));
 
-			match candidate_compare(&args_comp, &candidates[0].0, &candidates[1].0, scope) {
+			match candidate_compare(args, &candidates[0].0, &candidates[1].0, scope) {
 				Ordering::Greater => {
 					candidates[0].0.clone()
 				}
@@ -300,7 +304,7 @@ pub fn validate_fn_call(
 
 	let func = &*selected_candidate.read().unwrap();
 	
-	validate_arg_list(args, &func.params.params, &type_args, scope)?;
+	validate_arg_list(args, &func.params.params, type_args, scope)?;
 
 	resolved.replace(selected_candidate.clone());
 
@@ -314,13 +318,15 @@ fn resolve_method_call(
 	fn_call: &mut Atom, 
 	scope: &mut FnScope
 ) -> AnalyzeResult<Type> {
-
-	let call_comp = fn_call.clone();
-
 	let Atom::FnCall { name, args, type_args, resolved } = fn_call else { panic!() };
 
+	// Already validated
+	if let Some(resolved) = resolved {
+		return Ok(resolved.read().unwrap().ret.clone());
+	}
+
 	args.insert(0, lhs.clone());
-	
+	type_args.insert(0, ("Self".into(), receiver.clone()));
 
 	for arg in args.iter_mut() {
 		arg.validate(scope)?;
@@ -331,8 +337,10 @@ fn resolve_method_call(
 	let mut candidates = vec![];
 
 	// Go through all the impls in scope and find method candidates
-	for (ty, tr) in scope.context.trait_solver.get_impls() {
+	for (ty, tr) in scope.context.trait_solver.get_local_impls() {
 		if let Some(fns) = tr.read().unwrap().items.get(name.expect_scopeless().unwrap()) {
+			let ty = &*ty.read().unwrap();
+
 			if receiver.fits_generic(ty) {
 				for (func, _) in fns {
 					candidates.push((ty.clone(), func.clone()));
@@ -341,21 +349,20 @@ fn resolve_method_call(
 		}
 	}
 
-	let args_comp = args.clone();
-	let mut candidates: Vec<_> = candidates.into_iter().filter(|(_, func)| is_candidate_viable(&call_comp, func)).collect();
+	let mut candidates: Vec<_> = candidates.into_iter().filter(|(_, func)| is_candidate_viable(args, type_args, func)).collect();
 
 	let selected_candidate = match candidates.len() {
-		0 => todo!(), // No viable candidate
+		0 => panic!("no viable method candidate found"), // TODO: Proper error handling
 
 		1 => candidates[0].1.clone(),
 
 		// More than one viable candidate
 		_ => {
 			// Sort candidates by cost
-			candidates.sort_unstable_by(|(_, l), (_, r)| candidate_compare(&args_comp, l, r, scope));
+			candidates.sort_unstable_by(|(_, l), (_, r)| candidate_compare(args, l, r, scope));
 
 			// Compare the top two candidates
-			match candidate_compare(&args_comp, &candidates[0].1, &candidates[1].1, scope) {
+			match candidate_compare(args, &candidates[0].1, &candidates[1].1, scope) {
 				Ordering::Greater => {
 					candidates[0].1.clone()
 				}
@@ -368,58 +375,9 @@ fn resolve_method_call(
 	};
 
 	let func = &*selected_candidate.read().unwrap();
-
-	validate_arg_list(args, &func.params.params, &type_args, scope)?;
-
-	/*
-	let impls = &scope.context.impls;
-	let trait_impls = &scope.context.trait_impls;
-	
-	if let Some((_, (NamespaceItem::Functions(method, _), _, _))) = scope
-		.context
-		.impls
-		.get(&receiver.name)
-		.unwrap_or(&HashMap::new())
-		.iter()
-		.find(|meth| meth.0 == name.name())
-	{
-		// Insert `this` into the arg list
-		// TODO: For method calls on literals, this will probably call
-		// the literal's constructor twice. Maybe promote it to a local?
-		args.insert(0, lhs.clone());
-
-		let method = method.read().unwrap();
-
-		match validate_fn_call(&method, args, type_args, scope, meta.tk) {
-			Ok(res) => {
-				// Method call OK
-				let method_name = name.path.pop().unwrap();
-				*name = lhs_ref.name.clone();
-				name.path.push(method_name);
-
-				rhs.get_node_data_mut().ty = Some(method.ret.clone());
-
-				Ok(res)
-			}
-
-			Err(mut err) => {
-				match err.0.code {
-					// If the parameter count doesn't match, adjust the message for the implicit `self` param
-					CMNErrorCode::ParamCountMismatch { expected, got } => {
-						err.0.code = CMNErrorCode::ParamCountMismatch {
-							expected: expected - 1,
-							got: got - 1,
-						};
-						Err(err)
-					}
-
-					_ => Err(err),
-				}
-			}
-		}
-	} else {
-		panic!()
-	} */
+		
+	validate_arg_list(args, &func.params.params, type_args, scope)?;
+	resolved.replace(selected_candidate.clone());
 
 	Ok(resolved.as_ref().unwrap().read().unwrap().ret.clone())
 }
@@ -429,33 +387,29 @@ fn validate_arg_list(args: &mut Vec<Expr>, params: &[(Type, Option<Name>)], type
 	for (i, arg) in args.iter_mut().enumerate() {
 		// add parameter's type info to argument
 		if let Some((param_ty, _)) = params.get(i) {
-			arg.get_node_data_mut()
-				.ty
-				.replace(param_ty.get_concrete_type(type_args));
-		}
+			let param_concrete = param_ty.get_concrete_type(type_args);
 
-		let arg_type = arg.validate(scope)?;
+			arg.get_node_data_mut().ty.replace(param_concrete.clone());
 
-		if let Some((param_ty, _)) = params.get(i) {
-			let concrete = param_ty.get_concrete_type(type_args);
+			let arg_type = arg.validate(scope)?;
 
-			if !arg.coercable_to(&arg_type, &concrete, scope) {
+			if !arg.coercable_to(&arg_type, &param_concrete, scope) {
 				return Err((
 					CMNError::new(CMNErrorCode::InvalidCoercion {
 						from: arg_type,
-						to: concrete,
+						to: param_concrete,
 					}),
 					args[i].get_node_data().tk,
 				));
 			}
 
-			if arg_type != concrete {
-				arg.wrap_in_cast(concrete);
+			if arg_type != param_concrete {
+				arg.wrap_in_cast(param_concrete);
 			}
 		} else {
 			// no parameter type for this argument (possible for varadiac functions)
-			// so just set the type info to the provided argument's type
-			arg.get_node_data_mut().ty.replace(arg_type.clone());
+			// so just validate it on its own
+			let arg_type = arg.validate(scope)?;
 
 			// also if it's a float we promote it to a double because presumably
 			// ken and dennis were high on crack for 30 years straight or something
@@ -476,17 +430,17 @@ pub fn validate_namespace(namespace: &mut Namespace) -> AnalyzeResult<()> {
 				let mut scope = id.clone();
 				scope.path.pop();
 
-				validate_function(scope, &func.read().unwrap(), elem, namespace)?
+				validate_function(scope, &mut func.write().unwrap(), elem, namespace)?
 			}
 		}
 	}
 
-	for (_, im) in namespace.trait_solver.get_impls() {
+	for (_, im) in namespace.trait_solver.get_local_impls() {
 		let im = im.read().unwrap();
 
 		for fns in im.items.values() {
 			for (func, elem) in fns {
-				validate_function(im.scope.clone(), &func.read().unwrap(), elem, namespace)?
+				validate_function(im.scope.clone(), &mut func.write().unwrap(), elem, namespace)?
 			}
 		}
 	}
@@ -667,6 +621,28 @@ pub fn resolve_namespace_types(namespace: &Namespace) -> ParseResult<()> {
 		};
 	}
 
+	for (ty, im) in namespace.trait_solver.get_local_impls() {
+		resolve_type(&mut ty.write().unwrap(), namespace, &vec![])?;
+		
+		for (name, fns) in &mut im.write().unwrap().items {
+			for (func, _) in fns {
+				let FnDef {
+					ret,
+					params,
+					type_params: generics,
+				} = &mut *func.write().unwrap();
+
+				generics.insert(0, ("Self".into(), vec![]));
+						
+				resolve_type(ret, namespace, generics)?;
+				
+				for param in &mut params.params {
+					resolve_type(&mut param.0, namespace, generics)?;
+				}
+			}
+		}
+	}
+
 	Ok(())
 }
 
@@ -723,6 +699,7 @@ impl Expr {
 							// to prevent it being evaluated multiple times 
 							lhs.wrap_in_once_atom();
 						}
+
 						Self::validate_member_access(&lhs_ty, lhs, rhs, scope, meta)
 					}
 
@@ -748,10 +725,10 @@ impl Expr {
 
 							Ok(*ty.clone())
 						} else {
-							return Err((
+							Err((
 								CMNError::new(CMNErrorCode::InvalidSubscriptLHS { t: first_t }),
 								meta.tk,
-							));
+							))
 						}
 					}
 
@@ -805,12 +782,10 @@ impl Expr {
 					Operator::Deref => match expr_ty {
 						Type::Pointer(t) => Ok(*t),
 
-						_ => {
-							return Err((
+						_ => Err((
 								CMNError::new(CMNErrorCode::InvalidDeref(expr_ty)),
 								meta.tk,
 							))
-						}
 					},
 
 					_ => Ok(expr_ty),
@@ -942,12 +917,14 @@ impl Expr {
 				}
 
 				// Method call on algebraic type
+				// jesse. we have to call METHods
 				Expr::Atom(Atom::FnCall { .. }, _) => {
-					// jesse. we have to call METHods
-
 					let Expr::Atom(rhs_atom, ..) = rhs else { panic!() };
+					let ret = resolve_method_call(lhs_ty, lhs, rhs_atom, scope)?;
 
-					resolve_method_call(lhs_ty, lhs, rhs_atom, scope)
+					rhs.get_node_data_mut().ty = Some(ret.clone());
+					
+					Ok(ret)
 				}
 
 				_ => panic!(),

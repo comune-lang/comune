@@ -53,7 +53,7 @@ impl CIRModuleBuilder {
 	}
 
 	fn register_namespace(&mut self, namespace: &Namespace) {
-		for (im_ty, im) in namespace.trait_solver.get_impls() {
+		for (im_ty, im) in namespace.trait_solver.get_local_impls() {
 			let im = im.read().unwrap();
 
 			for (name, fns) in &im.items {
@@ -81,7 +81,7 @@ impl CIRModuleBuilder {
 	}
 
 	fn generate_namespace(&mut self, namespace: &Namespace) {
-		for (im_ty, im) in namespace.trait_solver.get_impls() {
+		for (im_ty, im) in namespace.trait_solver.get_local_impls() {
 			let im = im.read().unwrap();
 			
 			for (name, fns) in &im.items {
