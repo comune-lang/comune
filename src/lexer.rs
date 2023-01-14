@@ -377,6 +377,7 @@ impl Lexer {
 					// Result is not a keyword or an operator, so parse an Identifier
 					// This is a mess i sure hope it works
 					let mut ids = vec![Identifier {
+						qualifier: (None, None),
 						path: vec![result.into()],
 						absolute: false,
 					}];

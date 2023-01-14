@@ -263,7 +263,9 @@ pub fn validate_fn_call(
 		
 		loop {
 			if let Some(NamespaceItem::Functions(fns)) = scope.context.get_item(&name_unwrap) {
-				candidates.extend(fns);
+				for func in fns {
+					candidates.push((name_unwrap.clone(), func));
+				}
 			}
 
 			if name_unwrap.path.len() == 1 {
@@ -278,21 +280,21 @@ pub fn validate_fn_call(
 		arg.validate(scope)?;
 	}
 	
-	let mut candidates: Vec<_> = candidates.into_iter().filter(|(func, _)| is_candidate_viable(args, type_args, func)).collect(); 
+	let mut candidates: Vec<_> = candidates.into_iter().filter(|(_, (func, _))| is_candidate_viable(args, type_args, func)).collect(); 
 	
-	let selected_candidate = match candidates.len() {
+	let (selected_name, (selected_candidate, _)) = match candidates.len() {
 		0 => todo!(), // No viable candidate
 
-		1 => candidates[0].0.clone(),
+		1 => candidates[0].clone(),
 
 		// More than one viable candidate
 		_ => {
 			// Sort candidates by cost
-			candidates.sort_unstable_by(|(l, _), (r, _)| candidate_compare(args, l, r, scope));
+			candidates.sort_unstable_by(|(_, (l, _)), (_, (r, _))| candidate_compare(args, l, r, scope));
 
-			match candidate_compare(args, &candidates[0].0, &candidates[1].0, scope) {
+			match candidate_compare(args, &candidates[0].1.0, &candidates[1].1.0, scope) {
 				Ordering::Greater => {
-					candidates[0].0.clone()
+					candidates[0].clone()
 				}
 
 				Ordering::Equal => todo!(), // Ambiguous call
@@ -307,7 +309,8 @@ pub fn validate_fn_call(
 	validate_arg_list(args, &func.params.params, type_args, scope)?;
 
 	resolved.replace(selected_candidate.clone());
-
+	*name = selected_name;
+	
 	Ok(func.ret.get_concrete_type(type_args))
 }
 
@@ -337,34 +340,37 @@ fn resolve_method_call(
 	let mut candidates = vec![];
 
 	// Go through all the impls in scope and find method candidates
-	for (ty, tr) in scope.context.trait_solver.get_local_impls() {
-		if let Some(fns) = tr.read().unwrap().items.get(name.expect_scopeless().unwrap()) {
+	for (ty, im) in scope.context.trait_solver.get_local_impls() {
+		let im = im.read().unwrap();
+		let name = name.expect_scopeless().unwrap();
+
+		if let Some(fns) = im.items.get(name) {
 			let ty = &*ty.read().unwrap();
 
 			if receiver.fits_generic(ty) {
 				for (func, _) in fns {
-					candidates.push((ty.clone(), func.clone()));
+					candidates.push((ty.clone(), Identifier::from_parent(&im.canonical_root, name.clone()), func.clone()));
 				}	
 			}
 		}
 	}
 
-	let mut candidates: Vec<_> = candidates.into_iter().filter(|(_, func)| is_candidate_viable(args, type_args, func)).collect();
+	let mut candidates: Vec<_> = candidates.into_iter().filter(|(_, _, func)| is_candidate_viable(args, type_args, func)).collect();
 
-	let selected_candidate = match candidates.len() {
+	let (_, selected_name, selected_candidate) = match candidates.len() {
 		0 => panic!("no viable method candidate found"), // TODO: Proper error handling
 
-		1 => candidates[0].1.clone(),
+		1 => candidates[0].clone(),
 
 		// More than one viable candidate
 		_ => {
 			// Sort candidates by cost
-			candidates.sort_unstable_by(|(_, l), (_, r)| candidate_compare(args, l, r, scope));
+			candidates.sort_unstable_by(|(_, _, l), (_, _, r)| candidate_compare(args, l, r, scope));
 
 			// Compare the top two candidates
-			match candidate_compare(args, &candidates[0].1, &candidates[1].1, scope) {
+			match candidate_compare(args, &candidates[0].2, &candidates[1].2, scope) {
 				Ordering::Greater => {
-					candidates[0].1.clone()
+					candidates[0].clone()
 				}
 
 				Ordering::Equal => todo!(), // Ambiguous call
@@ -378,6 +384,7 @@ fn resolve_method_call(
 		
 	validate_arg_list(args, &func.params.params, type_args, scope)?;
 	resolved.replace(selected_candidate.clone());
+	*name = selected_name;
 
 	Ok(resolved.as_ref().unwrap().read().unwrap().ret.clone())
 }
@@ -1005,40 +1012,7 @@ impl Atom {
 			}
 
 			Atom::FnCall { .. } => validate_fn_call(self, scope),
-				/*
-				scope
-					.context
-					.with_item(name, &scope.scope.clone(), |(item, attribs, mangled), _| {
-						if let NamespaceItem::Functions(fns) = item {
-							
-							for (func, _) in fns {
-								let func = func.read().unwrap();
-								
-								if let Ok(func) = validate_fn_call(&func, args, type_args, scope, meta.tk) {
-									*resolved = Some(func);
-
-									return Ok(func.read().unwrap().ret.clone());
-								}
-							}
-							
-							panic!("couldn't find a valid overload candidate!")
-						} else {
-							// Trying to call a non-function
-							Err((
-								CMNError::new(CMNErrorCode::NotCallable(name.to_string())),
-								meta.tk,
-							))
-						}
-					})
-					.ok_or_else(|| {
-						(
-							CMNError::new(CMNErrorCode::UndeclaredIdentifier(name.to_string())),
-							meta.tk,
-						)
-					})?
-				*/
 			
-
 			Atom::ArrayLit(_) => todo!(),
 
 			Atom::AlgebraicLit(ty, elems) => {

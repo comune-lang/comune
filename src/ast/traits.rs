@@ -1,5 +1,4 @@
 use std::hash::{Hash, Hasher};
-use std::sync::WaitTimeoutResult;
 use std::{
 	collections::HashMap,
 	ptr,
@@ -7,9 +6,9 @@ use std::{
 };
 
 use super::namespace::{Namespace, ItemRef, FnOverloadList};
-use super::types::{TypeRef, TypeParam, TypeParamList};
+use super::types::{TypeParam, TypeParamList};
 use super::{
-	namespace::{Identifier, Name, NamespaceEntry},
+	namespace::{Identifier, Name},
 	types::Type,
 };
 
@@ -32,7 +31,8 @@ pub struct Impl {
 	pub implements: Option<ItemRef<TraitRef>>,
 	pub items: HashMap<Name, FnOverloadList>,
 	pub types: HashMap<Name, Type>,
-	pub scope: Identifier,
+	pub scope: Identifier,						// The scope used for name resolution within the impl
+	pub canonical_root: Identifier,				// The root of the canonical names used by items in this impl
 }
 
 unsafe impl Sync for TraitRef {}

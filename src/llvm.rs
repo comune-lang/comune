@@ -141,17 +141,17 @@ impl<'ctx> LLVMBackend<'ctx> {
 			}
 		}
 
-		for func in &module.functions {
-			self.register_fn(func.1.mangled_name.as_ref().unwrap(), func.1)?;
+		for (proto, func) in &module.functions {
+			self.register_fn(func.mangled_name.as_ref().unwrap(), func)?;
 			self.fn_map.insert(
-				func.0.clone(),
-				func.1.mangled_name.as_ref().unwrap().clone(),
+				proto.clone(),
+				func.mangled_name.as_ref().unwrap().clone(),
 			);
 		}
 
-		for func in &module.functions {
-			if !func.1.is_extern {
-				self.generate_fn(func.1.mangled_name.as_ref().unwrap(), func.1)?;
+		for func in module.functions.values() {
+			if !func.is_extern {
+				self.generate_fn(func.mangled_name.as_ref().unwrap(), func)?;
 			}
 		}
 
@@ -257,8 +257,11 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 					CIRStmt::Return(expr) => {
 						if let Some((expr, _)) = expr {
-							self.builder
-								.build_return(Some(&self.generate_rvalue(expr).unwrap()));
+							if let Some(result) = self.generate_rvalue(expr) {
+								self.builder.build_return(Some(&result));
+							} else {
+								self.builder.build_return(None);
+							}
 						} else {
 							self.builder.build_return(None);
 						}
@@ -631,8 +634,8 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 	fn generate_operand(&self, ty: &CIRType, expr: &Operand) -> Option<BasicValueEnum<'ctx>> {
 		match expr {
-			Operand::FnCall(name, args, _) => {
-				let mangled = &self.fn_map[name];
+			Operand::FnCall(proto, args, _) => {
+				let mangled = &self.fn_map[proto];
 
 				let fn_v = self.module.get_function(mangled).unwrap();
 

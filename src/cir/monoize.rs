@@ -110,7 +110,7 @@ impl CIRModule {
 							functions_out,
 							expr,
 							types,
-							param_map,
+							&vec![],
 							type_instances,
 							fn_instances,
 						)
@@ -231,10 +231,20 @@ impl CIRModule {
 		if fn_instances[func].contains_key(param_map) {
 			*func = fn_instances[func][param_map].clone();
 		} else {
+			let Some(fn_in) = functions_in.get(func) else {
+				let mut fail_str = format!("failed to find CIRFnPrototype {func} in functions_in map! items:\n");
+				
+				for item in functions_in.keys() {
+					fail_str.push_str(&format!("\t{item}\n"));
+				}
+
+				panic!("{fail_str}")
+			};
+
 			let monoized = Self::monoize_function(
 				functions_in,
 				functions_out,
-				&functions_in[func],
+				fn_in,
 				types,
 				param_map,
 				ty_instances,
@@ -396,9 +406,7 @@ impl CIRModule {
 
 		for (id, func) in &mut self.functions {
 			// Check if the function has a `no_mangle` or `export_as` attribute, or if it's `main`. If not, mangle the name
-			if get_attribute(&func.attributes, "no_mangle").is_some()
-				|| (&**id.name.name() == "main" && !id.name.is_qualified())
-			{
+			if get_attribute(&func.attributes, "no_mangle").is_some() || (&**id.name.name() == "main" && !id.name.is_qualified()) {
 				func.mangled_name = Some(id.name.name().to_string());
 			} else if let Some(export_name) = get_attribute(&func.attributes, "export_as") {
 				// Export with custom symbol name

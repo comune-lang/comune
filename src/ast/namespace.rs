@@ -13,29 +13,34 @@ use crate::{
 
 use super::{
 	expression::Expr,
-	traits::{TraitDef, TraitSolver},
+	traits::{TraitDef, TraitSolver, TraitRef},
 	types::{FnDef, Type, TypeDef},
 	Attribute,
 };
 
 
 // String plays nicer with debuggers
-#[cfg(string_names)]
+#[cfg(debug_assertions)]
 pub type Name = String;
 
-#[cfg(not(string_names))]
+#[cfg(not(debug_assertions))]
 pub type Name = Arc<str>;
 
 
 #[derive(Default, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Identifier {
+	pub qualifier: (Option<Box<Type>>, Option<Box<ItemRef<TraitRef>>>),
 	pub path: Vec<Name>,
 	pub absolute: bool,
 }
 
+unsafe impl Send for Identifier {} // Because of the fuckin RefCells deep in the TraitRef
+unsafe impl Sync for Identifier {}
+
 impl Identifier {
 	pub fn new(absolute: bool) -> Self {
 		Identifier {
+			qualifier: (None, None),
 			path: vec![],
 			absolute,
 		}
@@ -43,6 +48,7 @@ impl Identifier {
 
 	pub fn from_name(name: Name, absolute: bool) -> Self {
 		Identifier {
+			qualifier: (None, None),
 			path: vec![name],
 			absolute,
 		}
@@ -74,6 +80,10 @@ impl Identifier {
 impl Display for Identifier {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		let mut result = String::new();
+
+		if !self.absolute {
+			result.push('~');
+		}
 
 		for scope in &self.path {
 			result.push_str(scope);

@@ -35,12 +35,12 @@ pub struct FnDef {
 	pub type_params: TypeParamList,
 }
 
-
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
 pub enum TupleKind {
 	Product,
 	Sum,
 }
+
 // The internal representation of algebraic types, like structs, enums, and (shocker) struct enums
 //
 // Algebraics (strums?) can contain member variables, inner type aliases, variants (aka subtype definitions), etc...

@@ -433,10 +433,16 @@ impl Parser {
 
 							// Register impl to solver
 							let im = Arc::new(RwLock::new(Impl { 
-								implements: trait_name, 
+								implements: trait_name.clone(), 
 								items: functions,
 								types: HashMap::new(),
 								scope: self.current_scope.clone(),
+								
+								canonical_root: Identifier { 
+									qualifier: (Some(Box::new(impl_ty.clone())), trait_name.map(Box::new)), 
+									path: vec![], 
+									absolute: true 
+								}
 							}));
 
 							self.namespace.trait_solver.register_impl(impl_ty, im);

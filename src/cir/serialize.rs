@@ -25,19 +25,45 @@ impl Display for CIRModule {
 
 impl Display for CIRFnPrototype {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		write!(f, "{}", self.name)?;
+		write!(f, "{} {}", self.ret, self.name)?;
 		
-		if !self.params.is_empty() {
+		// Print type parameters
+		if !self.type_params.is_empty() {
+			let mut iter = self.type_params.iter();
+			
+			write!(f, "<{}", iter.next().unwrap().0)?;
+
+			for (param, traits) in iter {
+				write!(f, ", {param}")?;
+				
+				if !traits.is_empty() {
+					let mut traits_iter = traits.iter();
+					
+					write!(f, ": {:?}", traits_iter.next().unwrap())?;
+					
+					for tr in traits_iter {
+						write!(f, " + {tr:?}")?;
+					}
+				}
+			}
+
+			write!(f, ">")?;
+		}
+
+		// Print parameters
+		if self.params.is_empty() {
+			write!(f, "()")
+		} else {
 			let mut iter = self.params.iter();
 			
-			write!(f, "{}", iter.next().unwrap())?;
+			write!(f, "({}", iter.next().unwrap())?;
 
 			for param in iter {
 				write!(f, ", {param}")?;
 			}
-		}
 
-		write!(f, ")")
+			write!(f, ")")
+		}
 	}
 }
 

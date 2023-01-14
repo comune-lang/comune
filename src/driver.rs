@@ -321,8 +321,6 @@ pub fn generate_code<'ctx>(
 	let module_name = input_module.to_string();
 	let mut cir_module = CIRModuleBuilder::from_ast(mod_state).module;
 
-
-
 	// Note: we currently write the output of a lot of 
 	// intermediate stages to the build directory. This is 
 	// mostly for debugging purposes; when the compiler is
