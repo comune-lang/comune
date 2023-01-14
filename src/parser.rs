@@ -977,17 +977,18 @@ impl Parser {
 						// Parse with algebraic typename
 						TypeDef::Algebraic(_) => {
 							match &next {
+
+								// Parse struct literal
 								Token::Other('{') => {
-									// Parse initializers
 									let mut inits = vec![];
 
 									while next != Token::Other('}') {
-										if let Token::Identifier(member_name) = self.get_next()? {
-											if self.get_next()? != Token::Other(':') {
-												return Err(self.err(CMNErrorCode::UnexpectedToken));
-											}
+										self.get_next()?;
 
+										if let Token::Identifier(member_name) = self.get_current()? {
 											self.get_next()?;
+
+											self.consume(&Token::Other(':'))?;
 
 											let expr = self.parse_expression()?;
 
@@ -995,14 +996,14 @@ impl Parser {
 												Some(member_name.expect_scopeless()?.clone()),
 												expr,
 											));
-										} else {
+										} else if self.get_current()? != Token::Other('}') {
 											return Err(self.err(CMNErrorCode::UnexpectedToken));
 										}
 
 										next = self.get_current()?;
 									}
 
-									self.get_next()?;
+									self.consume(&Token::Other('}'))?;
 
 									result = Some(Atom::AlgebraicLit(
 										Type::TypeRef(ItemRef::Resolved(found)),

@@ -3,13 +3,13 @@ import module_test;
 using module_test::{fib, foo};
 
 @no_mangle
-void printf(u8* fmt, ...);
-
-@no_mangle
 void* malloc(usize size);
 
 @no_mangle
 void free(void* ptr);
+
+@no_mangle
+void printf(u8* fmt, ...);
 
 @layout(packed)
 struct Test {
@@ -30,9 +30,18 @@ trait Hello {
 
 impl Hello for Test {
 	void hello(Self self) {
-		printf(c"Hello Test!\n")
+		printf(c"Hello Test!\n");
+		return;
 	}
 }
+
+void impl_test() {
+	Test test = Test { a: 413, b: 612, };
+	test.hello();
+	printf(c"The sum of a and b is %i!\n", test.sum());
+	return;
+}
+
 
 struct Vector<T> {
 	T* data;
@@ -41,6 +50,8 @@ struct Vector<T> {
 }
 
 int main() {
+	impl_test();
+
 	printf(c"This is main()!\n");
 
 	(int | float) who_knows = 322.f;
@@ -76,18 +87,7 @@ int main() {
 	// This fucks with lifeline's liveness check - something to do with sublocation tracking
 	i32 generic_get = *my_cool_generic.data;
 	*my_cool_generic.data = 69;
-
-	// Borrowck stuff
-	Test test;
-
-	test = Test { 
-		a: *my_cool_generic.data, 
-		b: 0
-	};
-
-	test.hello();
-
 	free(my_cool_generic.data as void*);
 
-	test.sum()
+	return 0;
 }

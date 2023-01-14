@@ -124,11 +124,13 @@ pub fn validate_function(
 	let mut scope = FnScope::new(namespace, scope, func.ret.clone());
 
 	for (param, name) in &mut func.params.params {
-		param.validate(&scope);
+		param.validate(&scope)?;
 		scope.add_variable(param.clone(), name.clone().unwrap())
 	}
 
 	if let NamespaceASTElem::Parsed(elem) = &mut *elem.borrow_mut() {
+		let elem_node_data = elem.get_node_data().clone();
+
 		// Validate function block & get return type, make sure it matches the signature
 		elem.validate(&mut scope)?;
 
@@ -159,7 +161,20 @@ pub fn validate_function(
 				}
 			}
 
-			_ => todo!(),
+			// Add void return for empty function
+			_ => {
+				if scope.fn_return_type != Type::Basic(Basic::Void) {
+					return Err((CMNError::new(CMNErrorCode::ReturnTypeMismatch { 
+						expected: scope.fn_return_type.clone(), 
+						got: Type::Basic(Basic::Void)
+					}), elem_node_data.tk));
+				} 
+			
+				items.push(Stmt::Expr(Expr::Atom(
+					Atom::CtrlFlow(Box::new(ControlFlow::Return { expr: None })),
+					NodeData { ty: Some(Type::Basic(Basic::Void)), tk: elem_node_data.tk },
+				)))
+			}
 		}
 	}
 
