@@ -8,8 +8,10 @@ void* malloc(usize size);
 @no_mangle
 void free(void* ptr);
 
+using ascii = u8;
+
 @no_mangle
-void printf(u8* fmt, ...);
+void printf(ascii* fmt, ...);
 
 @layout(packed)
 struct Test {

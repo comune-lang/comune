@@ -14,16 +14,13 @@ use crate::{
 use super::{
 	expression::Expr,
 	traits::{TraitDef, TraitRef, TraitSolver},
-	types::{FnDef, Type, TypeDef},
+	types::{FnDef, Type, TypeDef, Basic, TypeRef},
 	Attribute,
 };
 
 // String plays nicer with debuggers
-//#[cfg(debug_assertions)]
-//pub type Name = String;
-
-//#[cfg(not(debug_assertions))]
-pub type Name = Arc<str>;
+pub type Name = String;
+//pub type Name = Arc<str>;
 
 #[derive(Default, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Identifier {
@@ -253,6 +250,61 @@ impl Namespace {
 		}
 	}
 
+	pub fn resolve_type(&self, id: &Identifier, scope: &Identifier, type_args: &Vec<(Name, Type)>) -> Option<Type> {
+		if !id.is_qualified() && type_args.is_empty() {
+			if let Some(basic) = Basic::get_basic_type(id.name()) {
+				return Some(Type::Basic(basic))
+			}
+		}
+
+		let mut found = None;
+
+		if !id.absolute {
+			let mut scope_unwind = scope.clone();
+			
+			loop {
+				let mut scope_combined = scope_unwind.clone();
+				scope_combined.path.append(&mut id.clone().path);
+
+				if let Some((item, ..)) = self.children.get(&scope_combined) {
+					found = Some((scope_combined, item));
+					break
+				}
+
+				scope_unwind.path.pop();
+			
+				if scope_unwind.path.is_empty() {
+					break
+				}
+			}
+
+		} else if let Some((item, ..)) = self.children.get(id) {
+			found = Some((id.clone(), item));
+		}
+		
+
+		match found {
+			Some((id, NamespaceItem::Type(ty))) => Some(Type::TypeRef(ItemRef::Resolved(TypeRef {
+				def: Arc::downgrade(ty),
+				name: id,
+				args: vec![],
+			}))),
+
+			Some((_, NamespaceItem::Alias(alias))) => self.resolve_type(alias, &Identifier::new(true), type_args),
+			
+			_ => {
+				if let Some(imported) = self.imported.get(&Identifier::from_name(id.path[0].clone(), true)) {
+					let mut id_sub = id.clone();
+					id_sub.path.remove(0);
+
+					imported.resolve_type(&id_sub, &Identifier::new(true), type_args)
+				} else {
+					None
+				}
+			},
+		}
+	}
+
 	pub fn with_item<Ret>(
 		&self,
 		id: &Identifier,
@@ -264,25 +316,21 @@ impl Namespace {
 
 			// We "unwind" the scope, iterating through parent scopes and looking for a match
 			while !scope_unwind.path.is_empty() {
-				let mut scope_lookup_path = scope_unwind.clone();
+				let mut scope_combined = scope_unwind.clone();
+				scope_combined.path.append(&mut id.clone().path);
 
-				scope_lookup_path.path.append(&mut id.clone().path);
-
-				scope_unwind.path.pop();
-
-				if let Some(found_path) = self
-					.children
-					.keys()
-					.find(|item| item.path == scope_lookup_path.path)
-				{
-					let found_item = &self.children[found_path];
-
+				if let Some(found_item) = self.children.get(&scope_combined) {
 					if let (NamespaceItem::Alias(alias), ..) = found_item {
 						return self.with_item(alias, scope, closure);
 					} else {
-						return Some(closure(found_item, found_path));
+						return Some(closure(found_item, &scope_combined));
+					}
+				} else if scope_unwind.path.len() == 1 {
+					if let Some(basic) = Basic::get_basic_type(scope_unwind.name()) {
+						todo!()
 					}
 				}
+				scope_unwind.path.remove(scope_unwind.path.len() - 2);
 			}
 
 			// Didn't find it, fall back to absolute lookup below

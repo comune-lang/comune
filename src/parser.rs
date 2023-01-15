@@ -1302,26 +1302,7 @@ impl Parser {
 	}
 
 	fn find_type(&self, typename: &Identifier) -> Option<Type> {
-		if !typename.is_qualified() {
-			if let Some(basic) = Basic::get_basic_type(typename.name()) {
-				return Some(Type::Basic(basic));
-			}
-		}
-
-		let mut result = None;
-
-		self.namespace
-			.with_item(typename, &self.current_scope, |item, id| {
-				if let NamespaceItem::Type(t) = &item.0 {
-					result = Some(Type::TypeRef(ItemRef::Resolved(TypeRef {
-						def: Arc::downgrade(t),
-						name: id.clone(),
-						args: vec![],
-					})))
-				}
-			});
-
-		result
+		self.namespace.resolve_type(typename, &self.current_scope, &vec![])
 	}
 
 	// Returns true if the current token is the start of a Type.
@@ -1337,21 +1318,7 @@ impl Parser {
 		match current {
 			Token::Identifier(typename) => {
 				if resolve_idents {
-					let mut found = false;
-
-					if Basic::get_basic_type(typename.name()).is_some() && !typename.is_qualified()
-					{
-						found = true;
-					} else {
-						self.namespace
-							.with_item(&typename, &self.current_scope, |item, _| {
-								if let NamespaceItem::Type(_) = &item.0 {
-									found = true;
-								}
-							});
-					}
-
-					Ok(found)
+					Ok(self.namespace.resolve_type(&typename, &self.current_scope, &vec![]).is_some())
 				} else {
 					Ok(true)
 				}
@@ -1456,33 +1423,9 @@ impl Parser {
 					// Typename
 
 					if immediate_resolve {
-						let mut found = false;
-
-						if !typename.is_qualified() {
-							if let Some(b) = Basic::get_basic_type(typename.name()) {
-								result = Type::Basic(b);
-								found = true;
-							} else if &**typename.name() == "never" {
-								result = Type::Never;
-								found = true;
-							}
-						}
-
-						if !found {
-							self.namespace
-								.with_item(&typename, &self.current_scope, |item, id| {
-									if let NamespaceItem::Type(t) = &item.0 {
-										result = Type::TypeRef(ItemRef::Resolved(TypeRef {
-											def: Arc::downgrade(t),
-											name: id.clone(),
-											args: vec![],
-										}));
-										found = true;
-									}
-								});
-						}
-
-						if !found {
+						if let Some(ty) = self.namespace.resolve_type(&typename, &self.current_scope, &vec![]) {
+							result = ty;
+						} else {
 							return Err(
 								self.err(CMNErrorCode::UnresolvedTypename(typename.to_string()))
 							);

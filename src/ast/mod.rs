@@ -512,28 +512,14 @@ pub fn resolve_type(
 		Type::Array(pointee, _size) => resolve_type(pointee, namespace, generics),
 
 		Type::TypeRef(ItemRef::Unresolved { name: id, scope }) => {
-			let mut result = None;
+			let result;
 			let generic_pos = generics.iter().position(|(name, _)| name == id.name());
 
-			if let Some(b) = Basic::get_basic_type(id.name()) {
-				if !id.is_qualified() {
-					result = Some(Type::Basic(b));
-				} else {
-					panic!()
-				}
-			} else if let Some(generic_pos) = generic_pos {
+			if let Some(generic_pos) = generic_pos {
 				// Generic type parameter
 				result = Some(Type::TypeParam(generic_pos));
 			} else {
-				namespace.with_item(id, scope, |item, id| {
-					if let NamespaceItem::Type(t) = &item.0 {
-						result = Some(Type::TypeRef(ItemRef::Resolved(TypeRef {
-							def: Arc::downgrade(t),
-							name: id.clone(),
-							args: vec![],
-						})));
-					}
-				});
+				result = namespace.resolve_type(id, scope, &vec![]);
 			}
 
 			if let Some(result) = result {
