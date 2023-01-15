@@ -149,41 +149,44 @@ pub fn validate_function(
 			)));
 		}
 
-		match items.last() {
-			Some(Stmt::Decl(_, Some(expr), _) | Stmt::Expr(expr)) => {
-				let expr_ty = expr.get_type();
+		let mut has_return = false;
 
-				if !expr_ty.castable_to(&scope.fn_return_type) {
-					return Err((
-						CMNError::new(CMNErrorCode::ReturnTypeMismatch {
-							expected: scope.fn_return_type,
-							got: expr_ty.clone(),
-						}),
-						elem.get_node_data().tk,
-					));
-				}
+		if let Some(Stmt::Decl(_, Some(expr), _) | Stmt::Expr(expr)) = items.last() {
+			let expr_ty = expr.get_type();
+
+			if !expr_ty.castable_to(&scope.fn_return_type) {
+				return Err((
+					CMNError::new(CMNErrorCode::ReturnTypeMismatch {
+						expected: scope.fn_return_type,
+						got: expr_ty.clone(),
+					}),
+					elem.get_node_data().tk,
+				));
 			}
 
-			// Add void return for empty function
-			_ => {
-				if scope.fn_return_type != Type::Basic(Basic::Void) {
-					return Err((
-						CMNError::new(CMNErrorCode::ReturnTypeMismatch {
-							expected: scope.fn_return_type.clone(),
-							got: Type::Basic(Basic::Void),
-						}),
-						elem_node_data.tk,
-					));
-				}
-
-				items.push(Stmt::Expr(Expr::Atom(
-					Atom::CtrlFlow(Box::new(ControlFlow::Return { expr: None })),
-					NodeData {
-						ty: Some(Type::Basic(Basic::Void)),
-						tk: elem_node_data.tk,
-					},
-				)))
+			if let Expr::Atom(Atom::CtrlFlow(ctrl), _) = expr {
+				has_return = matches!(&**ctrl, ControlFlow::Return { .. })
 			}
+		}
+
+		if !has_return {
+			if scope.fn_return_type != Type::Basic(Basic::Void) {
+				return Err((
+					CMNError::new(CMNErrorCode::ReturnTypeMismatch {
+						expected: scope.fn_return_type.clone(),
+						got: Type::Basic(Basic::Void),
+					}),
+					elem_node_data.tk,
+				));
+			}
+
+			items.push(Stmt::Expr(Expr::Atom(
+				Atom::CtrlFlow(Box::new(ControlFlow::Return { expr: None })),
+				NodeData {
+					ty: Some(Type::Basic(Basic::Void)),
+					tk: elem_node_data.tk,
+				},
+			)))
 		}
 	}
 

@@ -33,7 +33,6 @@ trait Hello {
 impl Hello for Test {
 	void hello(Self self) {
 		printf(c"Hello Test!\n");
-		return;
 	}
 }
 
@@ -41,7 +40,6 @@ void impl_test() {
 	Test test = Test { a: 413, b: 612, };
 	test.hello();
 	printf(c"The sum of a and b is %i!\n", test.sum());
-	return;
 }
 
 
