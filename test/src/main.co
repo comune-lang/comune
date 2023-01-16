@@ -59,7 +59,7 @@ int main() {
 	printf(c"It's a float! %f\n", 32.f);
 	
 	match who_knows {
-		int& int_result => {
+		int int_result => {
 			printf(c"It's an int: %i\n", int_result);
 		}
 

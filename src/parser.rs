@@ -1392,27 +1392,12 @@ impl Parser {
 	}
 
 	fn parse_type(&self, immediate_resolve: bool) -> ParseResult<Type> {
-		let mut result = Type::TypeRef(ItemRef::Unresolved {
-			name: Identifier::new(false),
-			scope: self.current_scope.clone(),
-		});
+		let mut result;
 
 		if self.is_at_type_token(immediate_resolve)? {
-			let mut current = self.get_current()?;
 			let typename;
 
-			// TODO: Actually do something with these
-			while let Token::Keyword(kw) = current {
-				match kw {
-					"const" => {}
-					"mut" => {}
-					"ref" => {}
-					_ => return Err(self.err(CMNErrorCode::UnexpectedKeyword)),
-				}
-				current = self.get_next()?;
-			}
-
-			match current {
+			match self.get_current()? {
 				Token::Operator("(") => {
 					let (kind, types) = self.parse_tuple_type(immediate_resolve)?;
 					Ok(Type::Tuple(kind, types))
@@ -1442,6 +1427,7 @@ impl Parser {
 					match next {
 						Token::Operator(op) => {
 							match op {
+								// Parse as pointer type
 								"*" => {
 									while token_compare(&next, "*") {
 										result = Type::Pointer(Box::new(result));
@@ -1449,6 +1435,7 @@ impl Parser {
 									}
 								}
 
+								// Parse as array type
 								"[" => {
 									self.get_next()?;
 									let const_expr = self.parse_expression()?;
@@ -1465,6 +1452,29 @@ impl Parser {
 									self.get_next()?;
 								}
 
+								// Parse as function type
+								"(" => {
+									self.get_next()?;
+									
+									let ret = Box::new(result);
+									let mut args = vec![];
+
+									while self.get_current()? != Token::Operator(")") {
+										args.push(self.parse_type(immediate_resolve)?);
+
+										match self.get_current()? {
+											Token::Other(',') => self.get_next()?,
+
+											Token::Operator(")") => break,
+											
+											_ => return Err(self.err(CMNErrorCode::UnexpectedToken)),
+										};
+									}
+
+									result = Type::Function(ret, vec![]);
+								}
+
+								// Parse type arguments
 								"<" => {
 									if let Type::TypeRef(ItemRef::Resolved(TypeRef {
 										def,
@@ -1608,7 +1618,7 @@ impl Parser {
 						}
 					}
 
-					result.push((name, traits));
+					result.push((name, traits, None));
 
 					match &current {
 						Token::Operator(">") => continue,

@@ -325,11 +325,8 @@ impl Namespace {
 					} else {
 						return Some(closure(found_item, &scope_combined));
 					}
-				} else if scope_unwind.path.len() == 1 {
-					if let Some(basic) = Basic::get_basic_type(scope_unwind.name()) {
-						todo!()
-					}
 				}
+				
 				scope_unwind.path.remove(scope_unwind.path.len() - 2);
 			}
 

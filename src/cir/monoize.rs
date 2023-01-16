@@ -233,7 +233,7 @@ impl CIRModule {
 		} else {
 			let Some(fn_in) = functions_in.get(func) else {
 				let mut fail_str = format!("failed to find CIRFnPrototype {func} in functions_in map! items:\n");
-				
+
 				for item in functions_in.keys() {
 					fail_str.push_str(&format!("\t{item}\n"));
 				}
@@ -252,6 +252,11 @@ impl CIRModule {
 			);
 
 			let mut insert_id = func.clone();
+			
+			for (i, type_arg) in param_map.iter().enumerate() {
+				insert_id.type_params[i].2 = Some(type_arg.clone())
+			}
+			/*
 			let mut name_suffix = "<".to_string();
 			let mut param_iter = param_map.iter();
 
@@ -265,6 +270,7 @@ impl CIRModule {
 			name_suffix += ">";
 
 			insert_id.name.path.push(name_suffix.into());
+			*/
 
 			fn_instances
 				.get_mut(func)

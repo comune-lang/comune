@@ -5,7 +5,7 @@ use std::{collections::HashMap, ffi::CString, hash::Hash};
 use crate::ast::{
 	expression::Operator,
 	namespace::{Identifier, Name},
-	types::{Basic, DataLayout, TupleKind, TypeParamList},
+	types::{Basic, DataLayout, TupleKind, TypeParam},
 	Attribute, TokenData,
 };
 
@@ -24,6 +24,9 @@ type FieldIndex = usize;
 type TypeName = String;
 type TypeParamIndex = usize;
 type FuncID = CIRFnPrototype;
+
+pub type CIRTypeParamList = Vec<(Name, TypeParam, Option<CIRType>)>;
+
 
 // An LValue is an expression that results in a memory location.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -116,7 +119,7 @@ pub enum CIRTypeDef {
 		layout: DataLayout,
 		members_map: HashMap<Name, usize>,
 		variants_map: HashMap<Name, usize>,
-		type_params: TypeParamList,
+		type_params: CIRTypeParamList,
 	},
 
 	Class {},
@@ -136,7 +139,7 @@ pub struct CIRFnPrototype {
 	pub name: Identifier,
 	pub ret: CIRType,
 	pub params: Vec<CIRType>,
-	pub type_params: TypeParamList,
+	pub type_params: CIRTypeParamList,
 }
 
 #[derive(Clone)]
@@ -147,7 +150,7 @@ pub struct CIRFunction {
 	pub blocks: Vec<CIRBlock>,
 	pub ret: CIRType,
 	pub arg_count: usize,
-	pub type_params: TypeParamList,
+	pub type_params: CIRTypeParamList,
 	pub attributes: Vec<Attribute>,
 	pub is_extern: bool,
 	pub is_variadic: bool,

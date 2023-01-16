@@ -9,7 +9,7 @@ use crate::constexpr::ConstExpr;
 
 pub type BoxedType = Box<Type>;
 pub type TypeParam = Vec<ItemRef<TraitRef>>; // Generic type parameter, with trait bounds
-pub type TypeParamList = Vec<(Name, TypeParam)>;
+pub type TypeParamList = Vec<(Name, TypeParam, Option<Type>)>;
 
 #[derive(Clone)]
 pub enum Type {
@@ -19,6 +19,7 @@ pub enum Type {
 	TypeRef(ItemRef<TypeRef>),                     // Reference to user-defined type
 	TypeParam(usize),                              // Reference to an in-scope type parameter
 	Tuple(TupleKind, Vec<Type>),                   // Sum/product tuple
+	Function(Box<Type>, Vec<Type>),				   // Type of a function signature
 	Never, // Return type of a function that never returns, coerces to anything
 }
 
@@ -70,6 +71,9 @@ pub struct TypeRef {
 	pub name: Identifier,
 	pub args: Vec<(Name, Type)>,
 }
+
+unsafe impl Send for TypeRef {}
+unsafe impl Sync for TypeRef {}
 
 #[derive(Debug)]
 pub enum TypeDef {
@@ -268,7 +272,6 @@ impl Type {
 			Type::TypeRef(ty) => Type::TypeRef(ty.clone()),
 			Type::TypeParam(param) => type_args[*param].1.clone(),
 			Type::Never => Type::Never,
-
 			Type::Tuple(kind, types) => Type::Tuple(
 				*kind,
 				types
@@ -276,6 +279,11 @@ impl Type {
 					.map(|ty| ty.get_concrete_type(type_args))
 					.collect(),
 			),
+			
+			Type::Function(ret, args) => Type::Function(
+				Box::new(ret.get_concrete_type(type_args)), 
+				args.iter().map(|arg| arg.get_concrete_type(type_args)).collect()
+			)
 		}
 	}
 
@@ -470,6 +478,11 @@ impl Hash for Type {
 				kind.hash(state);
 				types.hash(state)
 			}
+			
+			Type::Function(ret, args) => {
+				ret.hash(state);
+				args.hash(state)
+			},
 		}
 	}
 }
@@ -526,6 +539,23 @@ impl Display for Type {
 					write!(f, ")")
 				}
 			}
+			Type::Function(ret, args) => {
+				write!(f, "{ret}")?;
+
+				if !args.is_empty() {
+					let mut iter = args.iter();
+
+					write!(f, "({}", iter.next().unwrap())?;
+					
+					for arg in iter {
+						write!(f, ", {arg}")?;
+					}
+					
+					write!(f, ")")
+				} else {
+					write!(f, "()")
+				}
+			},
 		}
 	}
 }
@@ -593,6 +623,7 @@ impl std::fmt::Debug for Type {
 			Type::TypeParam(arg0) => f.debug_tuple("TypeParam").field(arg0).finish(),
 			Type::Never => f.debug_tuple("Never").finish(),
 			Type::Tuple(kind, types) => f.debug_tuple("Tuple").field(kind).field(types).finish(),
+			Type::Function(ret, args) => f.debug_tuple("Function").field(ret).field(args).finish(),
 		}
 	}
 }

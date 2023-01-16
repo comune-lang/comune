@@ -7,7 +7,7 @@ use crate::{
 		namespace::{Identifier, ItemRef, Name, Namespace, NamespaceASTElem, NamespaceItem},
 		pattern::{Binding, Pattern},
 		statement::Stmt,
-		types::{Basic, FnDef, TupleKind, Type, TypeDef, TypeRef},
+		types::{Basic, FnDef, TupleKind, Type, TypeDef, TypeRef, TypeParamList},
 		Attribute,
 	},
 	constexpr::{ConstExpr, ConstValue},
@@ -16,7 +16,7 @@ use crate::{
 
 use super::{
 	BlockIndex, CIRFnPrototype, CIRFunction, CIRModule, CIRStmt, CIRType, CIRTypeDef, LValue,
-	Operand, PlaceElem, RValue, TypeName, VarIndex,
+	Operand, PlaceElem, RValue, TypeName, VarIndex, CIRTypeParamList,
 };
 
 pub struct CIRModuleBuilder {
@@ -163,6 +163,12 @@ impl CIRModuleBuilder {
 		}
 	}
 
+	fn convert_type_param_list(&mut self, list: TypeParamList) -> CIRTypeParamList {
+		list.into_iter().map(|(name, traits, concrete)| 
+			(name, traits, concrete.as_ref().and_then(|ty| Some(self.convert_type(ty))))
+		).collect()
+	}
+
 	fn convert_type_def(&mut self, ty: &TypeRef) -> String {
 		let TypeRef { def, name, .. } = ty;
 
@@ -190,7 +196,7 @@ impl CIRModuleBuilder {
 							layout: alg.layout,
 							members_map,
 							variants_map: HashMap::new(),
-							type_params: alg.params.clone(),
+							type_params: self.convert_type_param_list(alg.params.clone()),
 						},
 					)
 				}
@@ -219,7 +225,7 @@ impl CIRModuleBuilder {
 			name,
 			ret,
 			params,
-			type_params: func.type_params.clone(),
+			type_params: self.convert_type_param_list(func.type_params.clone()),
 		}
 	}
 
@@ -236,7 +242,7 @@ impl CIRModuleBuilder {
 			blocks: vec![],
 			ret: proto.ret.clone(),
 			arg_count: func.params.params.len(),
-			type_params: func.type_params.clone(),
+			type_params: self.convert_type_param_list(func.type_params.clone()),
 			attributes,
 			is_extern: true,
 			is_variadic: func.params.variadic,

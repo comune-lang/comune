@@ -34,7 +34,7 @@ impl Display for CIRFnPrototype {
 
 			write!(f, "<{}", iter.next().unwrap().0)?;
 
-			for (param, traits) in iter {
+			for (param, traits, ty) in iter {
 				write!(f, ", {param}")?;
 
 				if !traits.is_empty() {
@@ -44,6 +44,10 @@ impl Display for CIRFnPrototype {
 
 					for tr in traits_iter {
 						write!(f, " + {tr:?}")?;
+					}
+
+					if let Some(ty) = ty {
+						write!(f, " = {ty}")?;
 					}
 				}
 			}
@@ -255,7 +259,7 @@ impl Display for CIRTypeDef {
 			} => {
 				writeln!(f, "layout({layout}) {{")?;
 
-				for (param, _) in type_params {
+				for (param, ..) in type_params {
 					writeln!(f, "\tparam {param:?}")?;
 				}
 

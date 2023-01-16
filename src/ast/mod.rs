@@ -20,7 +20,7 @@ use self::{
 	namespace::{Identifier, ItemRef, Name, Namespace, NamespaceASTElem, NamespaceItem},
 	pattern::Binding,
 	statement::Stmt,
-	traits::{TraitDef, TraitRef},
+	traits::TraitDef,
 	types::{AlgebraicDef, FnDef, TupleKind, TypeParamList, TypeRef},
 };
 
@@ -516,7 +516,7 @@ pub fn resolve_type(
 
 		Type::TypeRef(ItemRef::Unresolved { name: id, scope }) => {
 			let result;
-			let generic_pos = generics.iter().position(|(name, _)| name == id.name());
+			let generic_pos = generics.iter().position(|(name, ..)| name == id.name());
 
 			if let Some(generic_pos) = generic_pos {
 				// Generic type parameter
@@ -544,6 +544,16 @@ pub fn resolve_type(
 		}
 
 		Type::TypeRef { .. } | Type::Basic(_) | Type::TypeParam(_) | Type::Never => Ok(()),
+		
+		Type::Function(ret, args) => {
+			resolve_type(ret, namespace, generics)?;
+
+			for arg in args {
+				resolve_type(arg, namespace, generics)?;
+			}
+
+			Ok(())
+		},
 	}
 }
 
@@ -646,7 +656,7 @@ pub fn resolve_namespace_types(namespace: &Namespace) -> ParseResult<()> {
 							type_params: generics,
 						} = &mut *func.write().unwrap();
 
-						generics.insert(0, ("Self".into(), vec![]));
+						generics.insert(0, ("Self".into(), vec![], None));
 
 						resolve_type(ret, namespace, generics)?;
 
@@ -672,7 +682,7 @@ pub fn resolve_namespace_types(namespace: &Namespace) -> ParseResult<()> {
 					type_params: generics,
 				} = &mut *func.write().unwrap();
 
-				generics.insert(0, ("Self".into(), vec![]));
+				generics.insert(0, ("Self".into(), vec![], None));
 
 				resolve_type(ret, namespace, generics)?;
 

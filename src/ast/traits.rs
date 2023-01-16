@@ -35,6 +35,7 @@ pub struct Impl {
 	pub canonical_root: Identifier, // The root of the canonical names used by items in this impl
 }
 
+unsafe impl Send for TraitRef {}
 unsafe impl Sync for TraitRef {}
 
 impl PartialEq for TraitRef {
@@ -124,7 +125,13 @@ impl TraitSolver {
 	) -> bool {
 		match ty {
 			Type::TypeParam(idx) => {
-				let Some((_, param)) = type_params.get(*idx) else { panic!() };
+				let Some((_, param, concrete)) = type_params.get(*idx) else { panic!() };
+
+				if let Some(concrete) = concrete {
+					if self.type_implements_trait(concrete, tr, type_params) {
+						return true;
+					}
+				}
 
 				param.iter().any(|param_trait| {
 					if let ItemRef::Resolved(param_trait) = param_trait {
