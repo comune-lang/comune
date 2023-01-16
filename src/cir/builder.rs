@@ -7,7 +7,7 @@ use crate::{
 		namespace::{Identifier, ItemRef, Name, Namespace, NamespaceASTElem, NamespaceItem},
 		pattern::{Binding, Pattern},
 		statement::Stmt,
-		types::{Basic, FnDef, TupleKind, Type, TypeDef, TypeRef, TypeParamList},
+		types::{Basic, FnDef, TupleKind, Type, TypeDef, TypeParamList, TypeRef},
 		Attribute,
 	},
 	constexpr::{ConstExpr, ConstValue},
@@ -15,8 +15,8 @@ use crate::{
 };
 
 use super::{
-	BlockIndex, CIRFnPrototype, CIRFunction, CIRModule, CIRStmt, CIRType, CIRTypeDef, LValue,
-	Operand, PlaceElem, RValue, TypeName, VarIndex, CIRTypeParamList,
+	BlockIndex, CIRFnPrototype, CIRFunction, CIRModule, CIRStmt, CIRType, CIRTypeDef,
+	CIRTypeParamList, LValue, Operand, PlaceElem, RValue, TypeName, VarIndex,
 };
 
 pub struct CIRModuleBuilder {
@@ -164,9 +164,15 @@ impl CIRModuleBuilder {
 	}
 
 	fn convert_type_param_list(&mut self, list: TypeParamList) -> CIRTypeParamList {
-		list.into_iter().map(|(name, traits, concrete)| 
-			(name, traits, concrete.as_ref().and_then(|ty| Some(self.convert_type(ty))))
-		).collect()
+		list.into_iter()
+			.map(|(name, traits, concrete)| {
+				(
+					name,
+					traits,
+					concrete.as_ref().map(|ty| self.convert_type(ty)),
+				)
+			})
+			.collect()
 	}
 
 	fn convert_type_def(&mut self, ty: &TypeRef) -> String {

@@ -27,7 +27,6 @@ type FuncID = CIRFnPrototype;
 
 pub type CIRTypeParamList = Vec<(Name, TypeParam, Option<CIRType>)>;
 
-
 // An LValue is an expression that results in a memory location.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct LValue {

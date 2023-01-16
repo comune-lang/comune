@@ -252,7 +252,7 @@ impl CIRModule {
 			);
 
 			let mut insert_id = func.clone();
-			
+
 			for (i, type_arg) in param_map.iter().enumerate() {
 				insert_id.type_params[i].2 = Some(type_arg.clone())
 			}

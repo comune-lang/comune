@@ -544,7 +544,7 @@ pub fn resolve_type(
 		}
 
 		Type::TypeRef { .. } | Type::Basic(_) | Type::TypeParam(_) | Type::Never => Ok(()),
-		
+
 		Type::Function(ret, args) => {
 			resolve_type(ret, namespace, generics)?;
 
@@ -553,7 +553,7 @@ pub fn resolve_type(
 			}
 
 			Ok(())
-		},
+		}
 	}
 }
 

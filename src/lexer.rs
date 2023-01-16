@@ -7,7 +7,7 @@ use std::sync::mpsc::Sender;
 
 use crate::errors::{CMNMessage, CMNMessageLog};
 
-use crate::ast::namespace::{Identifier, Name};
+use crate::ast::namespace::Name;
 
 static KEYWORDS: [&str; 32] = [
 	"if",
@@ -86,25 +86,25 @@ impl Display for Token {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match self {
 			Token::Name(x) => write!(f, "{x}"),
-			
+
 			Token::StringLiteral(x) | Token::NumLiteral(x, _) => write!(f, "{x}"),
 
 			Token::CStringLiteral(x) => write!(f, "{x:?}"),
 
 			Token::Keyword(x) | Token::Operator(x) => write!(f, "{x}"),
 
-			Token::BoolLiteral(b) =>
+			Token::BoolLiteral(b) => {
 				if *b {
 					write!(f, "true")
 				} else {
 					write!(f, "false")
-				},
+				}
+			}
 
 			Token::Other(c) => write!(f, "{c}"),
 
 			Token::Eof => write!(f, "eof"),
 		}
-	
 	}
 }
 
@@ -281,10 +281,6 @@ impl Lexer {
 			self.file_index = current.0;
 		}
 		self.current()
-	}
-
-	pub fn peek_next(&self) -> Option<&(usize, Token)> {
-		self.token_buffer.get(self.token_index + 1)
 	}
 
 	pub fn parse_next(&mut self) -> io::Result<(usize, Token)> {

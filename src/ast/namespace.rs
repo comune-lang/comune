@@ -14,13 +14,13 @@ use crate::{
 use super::{
 	expression::Expr,
 	traits::{TraitDef, TraitRef, TraitSolver},
-	types::{FnDef, Type, TypeDef, Basic, TypeRef},
+	types::{Basic, FnDef, Type, TypeDef, TypeRef},
 	Attribute,
 };
 
 // String plays nicer with debuggers
-pub type Name = String;
-//pub type Name = Arc<str>;
+//pub type Name = String;
+pub type Name = Arc<str>;
 
 #[derive(Default, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Identifier {
@@ -250,10 +250,15 @@ impl Namespace {
 		}
 	}
 
-	pub fn resolve_type(&self, id: &Identifier, scope: &Identifier, type_args: &Vec<(Name, Type)>) -> Option<Type> {
+	pub fn resolve_type(
+		&self,
+		id: &Identifier,
+		scope: &Identifier,
+		type_args: &Vec<(Name, Type)>,
+	) -> Option<Type> {
 		if !id.is_qualified() && type_args.is_empty() {
 			if let Some(basic) = Basic::get_basic_type(id.name()) {
-				return Some(Type::Basic(basic))
+				return Some(Type::Basic(basic));
 			}
 		}
 
@@ -261,39 +266,44 @@ impl Namespace {
 
 		if !id.absolute {
 			let mut scope_unwind = scope.clone();
-			
+
 			loop {
 				let mut scope_combined = scope_unwind.clone();
 				scope_combined.path.append(&mut id.clone().path);
 
 				if let Some((item, ..)) = self.children.get(&scope_combined) {
 					found = Some((scope_combined, item));
-					break
+					break;
 				}
 
 				scope_unwind.path.pop();
-			
+
 				if scope_unwind.path.is_empty() {
-					break
+					break;
 				}
 			}
-
 		} else if let Some((item, ..)) = self.children.get(id) {
 			found = Some((id.clone(), item));
 		}
-		
 
 		match found {
-			Some((id, NamespaceItem::Type(ty))) => Some(Type::TypeRef(ItemRef::Resolved(TypeRef {
-				def: Arc::downgrade(ty),
-				name: id,
-				args: vec![],
-			}))),
+			Some((id, NamespaceItem::Type(ty))) => {
+				Some(Type::TypeRef(ItemRef::Resolved(TypeRef {
+					def: Arc::downgrade(ty),
+					name: id,
+					args: vec![],
+				})))
+			}
 
-			Some((_, NamespaceItem::Alias(alias))) => self.resolve_type(alias, &Identifier::new(true), type_args),
-			
+			Some((_, NamespaceItem::Alias(alias))) => {
+				self.resolve_type(alias, &Identifier::new(true), type_args)
+			}
+
 			_ => {
-				if let Some(imported) = self.imported.get(&Identifier::from_name(id.path[0].clone(), true)) {
+				if let Some(imported) = self
+					.imported
+					.get(&Identifier::from_name(id.path[0].clone(), true))
+				{
 					let mut id_sub = id.clone();
 					id_sub.path.remove(0);
 
@@ -301,7 +311,7 @@ impl Namespace {
 				} else {
 					None
 				}
-			},
+			}
 		}
 	}
 

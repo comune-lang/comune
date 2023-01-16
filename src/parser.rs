@@ -359,9 +359,7 @@ impl Parser {
 							self.get_next()?; // Consume name
 							self.consume(&Token::Other('{'))?; // Consume brace
 
-							self.current_scope
-								.path
-								.push(namespace_name);
+							self.current_scope.path.push(namespace_name);
 
 							let scope = self.current_scope.clone();
 							self.parse_namespace(&scope)?;
@@ -451,9 +449,11 @@ impl Parser {
 						"import" => {
 							// Register import statement
 							self.get_next()?;
-							
+
 							if self.is_at_identifier_token()? {
-								self.namespace.referenced_modules.insert(self.parse_identifier()?);
+								self.namespace
+									.referenced_modules
+									.insert(self.parse_identifier()?);
 								self.check_semicolon()?;
 							} else {
 								return Err(self.err(CMNErrorCode::ExpectedIdentifier));
@@ -484,10 +484,12 @@ impl Parser {
 									let name = names.remove(0);
 
 									self.namespace.children.insert(
-										Identifier::from_parent(scope, name.path.last().unwrap().clone()),
+										Identifier::from_parent(
+											scope,
+											name.path.last().unwrap().clone(),
+										),
 										(NamespaceItem::Alias(name), vec![], None),
 									);
-									
 
 									self.check_semicolon()?;
 								}
@@ -671,9 +673,9 @@ impl Parser {
 					};
 
 					// Past the parameter list, check if we're at a function body or not
-					
+
 					let ast_elem;
-					
+
 					match self.get_current()? {
 						Token::Other('{') => {
 							ast_elem = NamespaceASTElem::Unparsed(self.get_current_token_index());
@@ -750,7 +752,6 @@ impl Parser {
 			);
 
 			Ok(stmt_result)
-		
 		} else {
 			// This isn't a declaration, so parse an expression
 
@@ -802,67 +803,66 @@ impl Parser {
 
 		// Get initial part of expression, could be an Atom or the operator of a unary Cons
 		let mut lhs = if self.is_at_identifier_token()? {
-				Expr::Atom(
+			Expr::Atom(
+				self.parse_atom()?,
+				NodeData {
+					ty: None,
+					tk: (begin_lhs, self.get_current_start_index() - begin_lhs),
+				},
+			)
+		} else {
+			match current {
+				// Parse atom
+				Token::StringLiteral(_)
+				| Token::CStringLiteral(_)
+				| Token::NumLiteral(_, _)
+				| Token::BoolLiteral(_)
+				| Token::Keyword(_) => Expr::Atom(
 					self.parse_atom()?,
 					NodeData {
 						ty: None,
 						tk: (begin_lhs, self.get_current_start_index() - begin_lhs),
 					},
-				)
-			} else { 
-				match current {
-					// Parse atom
-					Token::StringLiteral(_)
-					| Token::CStringLiteral(_)
-					| Token::NumLiteral(_, _)
-					| Token::BoolLiteral(_)
-					| Token::Keyword(_) => Expr::Atom(
-						self.parse_atom()?,
-						NodeData {
-							ty: None,
-							tk: (begin_lhs, self.get_current_start_index() - begin_lhs),
-						},
-					),
+				),
 
-					// Handle unary prefix operators
-					Token::Operator(tk) => {
-						let Some(op) = Operator::get_operator(tk, false) else {
+				// Handle unary prefix operators
+				Token::Operator(tk) => {
+					let Some(op) = Operator::get_operator(tk, false) else {
 							return Err(self.err(CMNErrorCode::UnexpectedToken))
 						};
 
-						self.get_next()?;
+					self.get_next()?;
 
-						if let Operator::Call = op {
-							// Special case; parse sub-expression
-							let sub = self.parse_expression_bp(0)?;
+					if let Operator::Call = op {
+						// Special case; parse sub-expression
+						let sub = self.parse_expression_bp(0)?;
 
-							current = self.get_current()?;
+						current = self.get_current()?;
 
-							if let Token::Operator(op) = current {
-								if op != ")" {
-									return Err(self.err(CMNErrorCode::UnexpectedToken));
-								}
-								self.get_next()?;
-								sub
-							} else {
+						if let Token::Operator(op) = current {
+							if op != ")" {
 								return Err(self.err(CMNErrorCode::UnexpectedToken));
 							}
+							self.get_next()?;
+							sub
 						} else {
-							let rhs = self.parse_expression_bp(op.get_binding_power())?;
-
-							let end_index = self.get_current_start_index();
-
-							let tk = (begin_lhs, end_index - begin_lhs);
-							Expr::Unary(Box::new(rhs), op, NodeData { ty: None, tk })
+							return Err(self.err(CMNErrorCode::UnexpectedToken));
 						}
-					}
-					
+					} else {
+						let rhs = self.parse_expression_bp(op.get_binding_power())?;
 
-					_ => {
-						return Err(self.err(CMNErrorCode::UnexpectedToken));
+						let end_index = self.get_current_start_index();
+
+						let tk = (begin_lhs, end_index - begin_lhs);
+						Expr::Unary(Box::new(rhs), op, NodeData { ty: None, tk })
 					}
 				}
-			};
+
+				_ => {
+					return Err(self.err(CMNErrorCode::UnexpectedToken));
+				}
+			}
+		};
 
 		// Parse RHS
 		loop {
@@ -972,7 +972,7 @@ impl Parser {
 	fn parse_atom(&self) -> ParseResult<Atom> {
 		let mut result = None;
 		let mut current = self.get_current()?;
-		
+
 		if self.is_at_identifier_token()? {
 			let id = self.parse_identifier()?;
 			let mut next = self.get_current()?;
@@ -983,7 +983,7 @@ impl Parser {
 					TypeDef::Algebraic(_) => {
 						if let Token::Other('{') = &next {
 							// Parse struct literal
-						
+
 							let mut inits = vec![];
 
 							while next != Token::Other('}') {
@@ -996,7 +996,7 @@ impl Parser {
 
 									let expr = self.parse_expression()?;
 
-									inits.push((Some(member_name), expr,));
+									inits.push((Some(member_name), expr));
 								} else if self.get_current()? != Token::Other('}') {
 									return Err(self.err(CMNErrorCode::UnexpectedToken));
 								}
@@ -1011,7 +1011,7 @@ impl Parser {
 								inits,
 							));
 						} else {
-							return Err(self.err(CMNErrorCode::UnexpectedToken))
+							return Err(self.err(CMNErrorCode::UnexpectedToken));
 						}
 					}
 
@@ -1085,7 +1085,6 @@ impl Parser {
 				Token::CStringLiteral(s) => result = Some(Atom::CStringLit(s)),
 
 				Token::NumLiteral(s, suffix) => {
-				
 					let mut suffix_b = Basic::get_basic_type(suffix.as_str());
 
 					if suffix_b.is_none() && !suffix.is_empty() {
@@ -1112,7 +1111,8 @@ impl Parser {
 					// Parse return statement
 					"return" => {
 						if next == Token::Other(';') || next == Token::Other('}') {
-							result = Some(Atom::CtrlFlow(Box::new(ControlFlow::Return { expr: None })));
+							result =
+								Some(Atom::CtrlFlow(Box::new(ControlFlow::Return { expr: None })));
 						} else {
 							result = Some(Atom::CtrlFlow(Box::new(ControlFlow::Return {
 								expr: Some(self.parse_expression()?),
@@ -1286,7 +1286,7 @@ impl Parser {
 
 					// Invalid keyword at start of statement
 					_ => return Err(self.err(CMNErrorCode::UnexpectedKeyword)),
-				}
+				},
 
 				_ => return Err(self.err(CMNErrorCode::UnexpectedToken)),
 			};
@@ -1296,7 +1296,8 @@ impl Parser {
 	}
 
 	fn find_type(&self, typename: &Identifier) -> Option<Type> {
-		self.namespace.resolve_type(typename, &self.current_scope, &vec![])
+		self.namespace
+			.resolve_type(typename, &self.current_scope, &vec![])
 	}
 
 	// Returns true if the current token is the start of a Type.
@@ -1314,10 +1315,13 @@ impl Parser {
 		if self.is_at_identifier_token()? {
 			if resolve_idents {
 				let typename = self.parse_identifier()?;
-				
+
 				self.lexer.borrow_mut().seek_token_idx(current_idx);
 
-				Ok(self.namespace.resolve_type(&typename, &self.current_scope, &vec![]).is_some())
+				Ok(self
+					.namespace
+					.resolve_type(&typename, &self.current_scope, &vec![])
+					.is_some())
 			} else {
 				self.lexer.borrow_mut().seek_token_idx(current_idx);
 
@@ -1331,35 +1335,36 @@ impl Parser {
 	}
 
 	fn is_at_identifier_token(&self) -> ParseResult<bool> {
-		Ok(matches!(self.get_current()?, Token::Name(_) | Token::Operator("::" | "<")))
+		Ok(matches!(
+			self.get_current()?,
+			Token::Name(_) | Token::Operator("::" | "<")
+		))
 	}
 
 	fn parse_identifier(&self) -> ParseResult<Identifier> {
 		if !self.is_at_identifier_token()? {
-			return Err(self.err(CMNErrorCode::ExpectedIdentifier))
+			return Err(self.err(CMNErrorCode::ExpectedIdentifier));
 		}
 
 		let absolute;
 		let qualifier;
-		
+
 		if self.get_current()? == Token::Operator("::") {
 			self.get_next()?;
 
 			absolute = true;
 			qualifier = (None, None);
-
 		} else if self.get_current()? == Token::Operator("<") {
 			self.get_next()?;
-			
+
 			let ty = self.parse_type(true)?;
 
 			let tr = match self.get_current()? {
-
 				Token::Operator("as") => {
 					self.get_next()?;
-					Some(Box::new(ItemRef::Unresolved { 
-						name: self.parse_identifier()?, 
-						scope: self.current_scope.clone() 
+					Some(Box::new(ItemRef::Unresolved {
+						name: self.parse_identifier()?,
+						scope: self.current_scope.clone(),
 					}))
 				}
 
@@ -1376,7 +1381,7 @@ impl Parser {
 			absolute = false;
 			qualifier = (None, None);
 		}
-		
+
 		let mut path = vec![];
 
 		loop {
@@ -1389,14 +1394,14 @@ impl Parser {
 			if self.get_next()? == Token::Operator("::") {
 				self.get_next()?;
 			} else {
-				break
+				break;
 			}
 		}
 
-		Ok(Identifier { 
-			qualifier, 
-			path, 
-			absolute 
+		Ok(Identifier {
+			qualifier,
+			path,
+			absolute,
 		})
 	}
 
@@ -1417,11 +1422,11 @@ impl Parser {
 
 	fn parse_multi_identifier_component(&self, absolute: bool) -> ParseResult<Vec<Identifier>> {
 		let mut result = vec![];
-		
+
 		let mut current = Identifier {
 			qualifier: (None, None),
 			absolute,
-			path: vec![]
+			path: vec![],
 		};
 
 		loop {
@@ -1434,20 +1439,20 @@ impl Parser {
 				Token::Other('{') => {
 					self.get_next()?;
 					let mut paths = vec![];
-					
+
 					while self.get_current()? != Token::Other('}') {
 						let mut sub_paths = self.parse_multi_identifier_component(absolute)?;
-						
+
 						for sub_path in &mut sub_paths {
 							let mut sub_path_prefix = current.path.clone();
-							
+
 							sub_path_prefix.append(&mut sub_path.path);
-							
+
 							sub_path.path = sub_path_prefix
 						}
-						
+
 						paths.append(&mut sub_paths);
-						
+
 						if self.get_current()? == Token::Other(',') {
 							self.get_next()?;
 						}
@@ -1539,23 +1544,24 @@ impl Parser {
 		let mut result;
 
 		if !self.is_at_type_token(immediate_resolve)? {
-			return Err(self.err(CMNErrorCode::ExpectedIdentifier))
+			return Err(self.err(CMNErrorCode::ExpectedIdentifier));
 		}
 
 		if self.get_current()? == Token::Operator("(") {
 			let (kind, types) = self.parse_tuple_type(immediate_resolve)?;
-			
+
 			Ok(Type::Tuple(kind, types))
 		} else if self.is_at_identifier_token()? {
 			let typename = self.parse_identifier()?;
 
 			if immediate_resolve {
-				if let Some(ty) = self.namespace.resolve_type(&typename, &self.current_scope, &vec![]) {
+				if let Some(ty) =
+					self.namespace
+						.resolve_type(&typename, &self.current_scope, &vec![])
+				{
 					result = ty;
 				} else {
-					return Err(
-						self.err(CMNErrorCode::UnresolvedTypename(typename.to_string()))
-					);
+					return Err(self.err(CMNErrorCode::UnresolvedTypename(typename.to_string())));
 				}
 			} else {
 				result = Type::TypeRef(ItemRef::Unresolved {
@@ -1578,7 +1584,7 @@ impl Parser {
 
 				Token::Operator("[") => {
 					// Array type
-					
+
 					self.get_next()?;
 
 					let const_expr = self.parse_expression()?;
@@ -1595,7 +1601,7 @@ impl Parser {
 					// Function type
 
 					self.get_next()?;
-					
+
 					let ret = Box::new(result);
 					let mut args = vec![];
 
@@ -1606,7 +1612,7 @@ impl Parser {
 							Token::Other(',') => self.get_next()?,
 
 							Token::Operator(")") => break,
-							
+
 							_ => return Err(self.err(CMNErrorCode::UnexpectedToken)),
 						};
 					}
@@ -1618,7 +1624,7 @@ impl Parser {
 
 				Token::Operator("<") => {
 					// Type parameters
-					
+
 					let Type::TypeRef(ItemRef::Resolved(TypeRef {
 						def,
 						args,
@@ -1626,7 +1632,7 @@ impl Parser {
 					})) = &mut result else {
 						panic!("can't apply type parameters to this type of Type!") // TODO: Real error handling
 					};
-					
+
 					let def = def.upgrade().unwrap();
 					let TypeDef::Algebraic(agg) = &*def.read().unwrap() else { panic!() };
 
@@ -1636,7 +1642,6 @@ impl Parser {
 						let name = agg.params[i].0.clone(); // TODO: Real error handling
 						args.push((name, type_arg.clone()));
 					}
-				
 				}
 
 				_ => {}

@@ -19,7 +19,7 @@ pub enum Type {
 	TypeRef(ItemRef<TypeRef>),                     // Reference to user-defined type
 	TypeParam(usize),                              // Reference to an in-scope type parameter
 	Tuple(TupleKind, Vec<Type>),                   // Sum/product tuple
-	Function(Box<Type>, Vec<Type>),				   // Type of a function signature
+	Function(Box<Type>, Vec<Type>),                // Type of a function signature
 	Never, // Return type of a function that never returns, coerces to anything
 }
 
@@ -279,11 +279,13 @@ impl Type {
 					.map(|ty| ty.get_concrete_type(type_args))
 					.collect(),
 			),
-			
+
 			Type::Function(ret, args) => Type::Function(
-				Box::new(ret.get_concrete_type(type_args)), 
-				args.iter().map(|arg| arg.get_concrete_type(type_args)).collect()
-			)
+				Box::new(ret.get_concrete_type(type_args)),
+				args.iter()
+					.map(|arg| arg.get_concrete_type(type_args))
+					.collect(),
+			),
 		}
 	}
 
@@ -478,11 +480,11 @@ impl Hash for Type {
 				kind.hash(state);
 				types.hash(state)
 			}
-			
+
 			Type::Function(ret, args) => {
 				ret.hash(state);
 				args.hash(state)
-			},
+			}
 		}
 	}
 }
@@ -546,16 +548,16 @@ impl Display for Type {
 					let mut iter = args.iter();
 
 					write!(f, "({}", iter.next().unwrap())?;
-					
+
 					for arg in iter {
 						write!(f, ", {arg}")?;
 					}
-					
+
 					write!(f, ")")
 				} else {
 					write!(f, "()")
 				}
-			},
+			}
 		}
 	}
 }
