@@ -326,7 +326,7 @@ impl Namespace {
 						return Some(closure(found_item, &scope_combined));
 					}
 				}
-				
+
 				scope_unwind.path.remove(scope_unwind.path.len() - 2);
 			}
 

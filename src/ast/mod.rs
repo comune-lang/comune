@@ -588,8 +588,8 @@ pub fn resolve_algebraic_def(
 			}));
 		}
 
-		if let Token::Identifier(layout_name) = &layout.args[0][0] {
-			agg.layout = match &**layout_name.expect_scopeless()? {
+		if let Token::Name(layout_name) = &layout.args[0][0] {
+			agg.layout = match &**layout_name {
 				"declared" => types::DataLayout::Declared,
 				"optimized" => types::DataLayout::Optimized,
 				"packed" => types::DataLayout::Packed,

@@ -7,7 +7,7 @@ use std::sync::mpsc::Sender;
 
 use crate::errors::{CMNMessage, CMNMessageLog};
 
-use crate::ast::namespace::Identifier;
+use crate::ast::namespace::{Identifier, Name};
 
 static KEYWORDS: [&str; 32] = [
 	"if",
@@ -54,8 +54,7 @@ static OPERATORS: [&str; 42] = [
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Token {
 	Eof,
-	Identifier(Identifier),
-	MultiIdentifier(Vec<Identifier>), // For `using` paths
+	Name(Name),
 	StringLiteral(String),
 	CStringLiteral(CString),
 	BoolLiteral(bool),
@@ -68,10 +67,7 @@ pub enum Token {
 impl Token {
 	pub fn len(&self) -> usize {
 		match self {
-			Token::Identifier(x) => x.to_string().len(),
-
-			// TODO: Actually implement these
-			Token::MultiIdentifier(x) => x[0].to_string().len(),
+			Token::Name(x) => x.len(),
 
 			Token::NumLiteral(x, _) => x.len(),
 
@@ -88,32 +84,27 @@ impl Token {
 
 impl Display for Token {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		write!(
-			f,
-			"{}",
-			match self {
-				Token::Identifier(x) => x.to_string(),
+		match self {
+			Token::Name(x) => write!(f, "{x}"),
+			
+			Token::StringLiteral(x) | Token::NumLiteral(x, _) => write!(f, "{x}"),
 
-				Token::MultiIdentifier(_x) => String::from("todo"),
+			Token::CStringLiteral(x) => write!(f, "{x:?}"),
 
-				Token::StringLiteral(x) | Token::NumLiteral(x, _) => x.clone(),
+			Token::Keyword(x) | Token::Operator(x) => write!(f, "{x}"),
 
-				Token::CStringLiteral(x) => x.to_string_lossy().into_owned(),
+			Token::BoolLiteral(b) =>
+				if *b {
+					write!(f, "true")
+				} else {
+					write!(f, "false")
+				},
 
-				Token::Keyword(x) | Token::Operator(x) => x.to_string(),
+			Token::Other(c) => write!(f, "{c}"),
 
-				Token::BoolLiteral(b) =>
-					if *b {
-						"true".to_string()
-					} else {
-						"false".to_string()
-					},
-
-				Token::Other(c) => c.to_string(),
-
-				Token::Eof => "[eof]".to_string(),
-			}
-		)
+			Token::Eof => write!(f, "eof"),
+		}
+	
 	}
 }
 
@@ -374,80 +365,7 @@ impl Lexer {
 							.unwrap(),
 					));
 				} else {
-					// Result is not a keyword or an operator, so parse an Identifier
-					// This is a mess i sure hope it works
-					let mut ids = vec![Identifier {
-						qualifier: (None, None),
-						path: vec![result.into()],
-						absolute: false,
-					}];
-
-					// Gather scope members
-					while self.char_buffer.unwrap() == ':' && self.peek_next_char()? == ':' {
-						self.advance_char()?;
-						// Get next part of identifier
-						let mut current = self.get_next_char()?;
-
-						if current.is_alphabetic() {
-							let mut scope = String::from(current);
-							current = self.get_next_char()?;
-
-							while current.is_alphanumeric() {
-								scope.push(current);
-								current = self.get_next_char()?;
-							}
-
-							if KEYWORDS.contains(&scope.as_str()) {
-								todo!(); // TODO: Return appropriate error
-							}
-
-							ids[0].path.push(scope.into());
-						} else if current == '{' {
-							let prefix = ids.pop().unwrap().path;
-
-							self.get_next_char()?;
-
-							loop {
-								let sub_id = self.parse_next()?;
-
-								if let (_, Token::Identifier(mut sub_id)) = sub_id {
-									let mut sub_path = sub_id.path;
-									sub_id.path = prefix.clone();
-									sub_id.path.append(&mut sub_path);
-
-									ids.push(sub_id);
-
-									current = self.char_buffer.unwrap();
-								} else if let (_, Token::MultiIdentifier(sub_ids)) = sub_id {
-									for mut sub_id in sub_ids {
-										let mut sub_path = sub_id.path;
-										sub_id.path = prefix.clone();
-										sub_id.path.append(&mut sub_path);
-										ids.push(sub_id);
-									}
-
-									current = self.char_buffer.unwrap();
-								} else {
-									panic!();
-								}
-
-								if current == ',' {
-									self.get_next_char()?;
-									continue;
-								} else if current == '}' {
-									self.get_next_char()?;
-									break;
-								} else {
-									panic!();
-								}
-							}
-						}
-					}
-					if ids.len() == 1 {
-						result_token = Ok(Token::Identifier(ids.remove(0)));
-					} else {
-						result_token = Ok(Token::MultiIdentifier(ids));
-					}
+					result_token = Ok(Token::Name(result.into()))
 				}
 			} else if token.is_numeric() {
 				// Numeric literal

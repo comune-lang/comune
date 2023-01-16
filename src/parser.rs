@@ -148,10 +148,6 @@ impl Parser {
 
 		while current != Token::Eof && current != Token::Other('}') {
 			match current {
-				Token::Eof => {
-					return Err(self.err(CMNErrorCode::UnexpectedEOF));
-				}
-
 				Token::Other(';') => {
 					self.get_next()?;
 				}
@@ -167,7 +163,7 @@ impl Parser {
 					match keyword {
 						"enum" => {
 							let mut aggregate = AlgebraicDef::new();
-							let Token::Identifier(name) = self.get_next()? else { return Err(self.err(CMNErrorCode::ExpectedIdentifier)) };
+							let Token::Name(name) = self.get_next()? else { return Err(self.err(CMNErrorCode::ExpectedIdentifier)) };
 
 							let mut next = self.get_next()?;
 
@@ -183,8 +179,7 @@ impl Parser {
 							next = self.get_next()?; // Consume brace
 
 							while !token_compare(&next, "}") {
-								let Token::Identifier(variant_name) = next else { return Err(self.err(CMNErrorCode::UnexpectedToken)) };
-								let variant_name = variant_name.expect_scopeless()?.clone();
+								let Token::Name(variant_name) = next else { return Err(self.err(CMNErrorCode::UnexpectedToken)) };
 
 								self.get_next()?;
 
@@ -207,7 +202,7 @@ impl Parser {
 							let aggregate = TypeDef::Algebraic(aggregate);
 
 							self.namespace.children.insert(
-								Identifier::from_parent(scope, name.expect_scopeless()?.clone()),
+								Identifier::from_parent(scope, name),
 								(
 									NamespaceItem::Type(Arc::new(RwLock::new(aggregate))),
 									current_attributes,
@@ -222,7 +217,7 @@ impl Parser {
 							// Register algebraic type
 							let mut current_visibility = Visibility::Public;
 							let mut aggregate = AlgebraicDef::new();
-							let Token::Identifier(name) = self.get_next()? else { return Err(self.err(CMNErrorCode::ExpectedIdentifier)) };
+							let Token::Name(name) = self.get_next()? else { return Err(self.err(CMNErrorCode::ExpectedIdentifier)) };
 
 							let mut next = self.get_next()?;
 
@@ -239,7 +234,7 @@ impl Parser {
 
 							while !token_compare(&next, "}") {
 								match next {
-									Token::Identifier(_) => {
+									Token::Name(_) => {
 										let result = self.parse_namespace_declaration()?;
 
 										match result.1 {
@@ -283,7 +278,7 @@ impl Parser {
 							let aggregate = TypeDef::Algebraic(aggregate);
 
 							self.namespace.children.insert(
-								Identifier::from_parent(scope, name.expect_scopeless()?.clone()),
+								Identifier::from_parent(scope, name),
 								(
 									NamespaceItem::Type(Arc::new(RwLock::new(aggregate))),
 									current_attributes,
@@ -295,7 +290,7 @@ impl Parser {
 						}
 
 						"trait" => {
-							let Token::Identifier(name) = self.get_next()? else {
+							let Token::Name(name) = self.get_next()? else {
 								return Err(self.err(CMNErrorCode::UnexpectedToken));
 							};
 
@@ -314,7 +309,7 @@ impl Parser {
 							next = self.get_next()?; // Consume brace
 
 							while !token_compare(&next, "}") {
-								let Token::Identifier(_) = next else {
+								let Token::Name(_) = next else {
 									return Err(self.err(CMNErrorCode::UnexpectedToken))
 								};
 
@@ -346,7 +341,7 @@ impl Parser {
 							self.get_next()?; // Consume closing brace
 
 							self.namespace.children.insert(
-								Identifier::from_parent(scope, name.expect_scopeless()?.clone()),
+								Identifier::from_parent(scope, name),
 								(
 									NamespaceItem::Trait(Arc::new(RwLock::new(this_trait))),
 									current_attributes,
@@ -357,7 +352,7 @@ impl Parser {
 						}
 
 						"namespace" => {
-							let Token::Identifier(namespace_name) = self.get_next()? else {
+							let Token::Name(namespace_name) = self.get_next()? else {
 								return Err(self.err(CMNErrorCode::ExpectedIdentifier));
 							};
 
@@ -366,7 +361,7 @@ impl Parser {
 
 							self.current_scope
 								.path
-								.push(namespace_name.expect_scopeless()?.clone());
+								.push(namespace_name);
 
 							let scope = self.current_scope.clone();
 							self.parse_namespace(&scope)?;
@@ -405,9 +400,7 @@ impl Parser {
 							while self.get_current()? != Token::Other('}') {
 								let ret = self.parse_type(false)?;
 
-								let fn_name = if let Token::Identifier(id) = self.get_current()? {
-									id.expect_scopeless()?.clone()
-								} else {
+								let Token::Name(fn_name) = self.get_current()? else {
 									return Err(self.err(CMNErrorCode::ExpectedIdentifier));
 								};
 
@@ -457,9 +450,10 @@ impl Parser {
 
 						"import" => {
 							// Register import statement
-							if let Token::Identifier(name) = self.get_next()? {
-								self.namespace.referenced_modules.insert(name);
-								self.get_next()?;
+							self.get_next()?;
+							
+							if self.is_at_identifier_token()? {
+								self.namespace.referenced_modules.insert(self.parse_identifier()?);
 								self.check_semicolon()?;
 							} else {
 								return Err(self.err(CMNErrorCode::ExpectedIdentifier));
@@ -467,47 +461,44 @@ impl Parser {
 						}
 
 						"using" => {
-							match self.get_next()? {
-								Token::Identifier(name) => {
-									if token_compare(&self.get_next()?, "=") {
-										// Found a '=' token, so fetch the name to alias
-										if let Token::Identifier(aliased) = self.get_next()? {
-											self.namespace.children.insert(
-												Identifier::from_parent(
-													scope,
-													name.expect_scopeless()?.clone(),
-												),
-												(NamespaceItem::Alias(aliased), vec![], None),
-											);
+							self.get_next()?;
 
-											self.get_next()?;
-											self.check_semicolon()?;
-										} else {
-											return Err(self.err(CMNErrorCode::ExpectedIdentifier));
-										}
-									} else {
-										// No '=' token, just bring the name into scope
-										self.namespace.children.insert(
-											Identifier::from_parent(scope, name.name().clone()),
-											(NamespaceItem::Alias(name), vec![], None),
-										);
+							let mut names = self.parse_multi_identifier()?;
 
-										self.check_semicolon()?;
-									}
-								}
-
-								Token::MultiIdentifier(names) => {
-									for name in names {
-										self.namespace.children.insert(
-											Identifier::from_parent(scope, name.name().clone()),
-											(NamespaceItem::Alias(name), vec![], None),
-										);
-									}
+							if names.len() == 1 {
+								if self.get_current()? == Token::Operator("=") {
+									// Found a '=' token, so fetch the name to alias
 									self.get_next()?;
+
+									let name = names[0].expect_scopeless()?.clone();
+									let aliased = self.parse_identifier()?;
+
+									self.namespace.children.insert(
+										Identifier::from_parent(scope, name),
+										(NamespaceItem::Alias(aliased), vec![], None),
+									);
+
+									self.check_semicolon()?;
+								} else {
+									// No '=' token, just bring the name into scope
+									let name = names.remove(0);
+
+									self.namespace.children.insert(
+										Identifier::from_parent(scope, name.path.last().unwrap().clone()),
+										(NamespaceItem::Alias(name), vec![], None),
+									);
+									
+
 									self.check_semicolon()?;
 								}
-
-								_ => return Err(self.err(CMNErrorCode::UnexpectedToken)),
+							} else {
+								for name in names {
+									self.namespace.children.insert(
+										Identifier::from_parent(scope, name.name().clone()),
+										(NamespaceItem::Alias(name), vec![], None),
+									);
+								}
+								self.check_semicolon()?;
 							}
 						}
 
@@ -658,80 +649,79 @@ impl Parser {
 	fn parse_namespace_declaration(&self) -> ParseResult<(Name, NamespaceItem)> {
 		let t = self.parse_type(false)?;
 		let item;
-		let mut next = self.get_current()?;
 
-		if let Token::Identifier(id) = next {
-			next = self.get_next()?;
+		let Token::Name(name) = self.get_current()? else {
+			return Err(self.err(CMNErrorCode::ExpectedIdentifier))
+		};
 
-			if let Token::Operator(op) = next {
-				match op {
-					// Function declaration
-					"<" | "(" => {
-						let mut type_params = vec![];
+		if let Token::Operator(op) = self.get_next()? {
+			match op {
+				// Function declaration
+				"<" | "(" => {
+					let mut type_params = vec![];
 
-						if op == "<" {
-							type_params = self.parse_type_parameter_list()?;
-						}
+					if op == "<" {
+						type_params = self.parse_type_parameter_list()?;
+					}
 
-						let t = FnDef {
-							ret: t,
-							params: self.parse_parameter_list()?,
-							type_params,
-						};
+					let t = FnDef {
+						ret: t,
+						params: self.parse_parameter_list()?,
+						type_params,
+					};
 
-						// Past the parameter list, check if we're at a function body or not
-						let current = self.get_current()?;
-						let ast_elem;
-
-						if current == Token::Other('{') {
+					// Past the parameter list, check if we're at a function body or not
+					
+					let ast_elem;
+					
+					match self.get_current()? {
+						Token::Other('{') => {
 							ast_elem = NamespaceASTElem::Unparsed(self.get_current_token_index());
 							self.skip_block()?;
-						} else if current == Token::Other(';') {
-							ast_elem = NamespaceASTElem::NoElem;
-							self.get_next()?;
-						} else {
-							return Err(self.err(CMNErrorCode::UnexpectedToken));
 						}
 
-						item = NamespaceItem::Functions(vec![(
-							Arc::new(RwLock::new(t)),
-							RefCell::new(ast_elem),
-						)]);
+						Token::Other(';') => {
+							ast_elem = NamespaceASTElem::NoElem;
+							self.get_next()?;
+						}
+
+						_ => return Err(self.err(CMNErrorCode::UnexpectedToken)),
 					}
 
-					"=" => {
-						self.get_next()?;
-						// TODO: Skip expression
-
-						//ast_elem = match self.parse_expression()?.node {
-						//	ASTNode::Expression(expr) => Some(
-						//		ASTElem {
-						//			node: ASTNode::Expression(RefCell::new(expr.into_inner())),
-						//			type_info: RefCell::new(None),
-						//			token_data: (0, 0) // TODO: Add
-						//		}),
-						//	_ => panic!(), // TODO: Error handling
-						//};
-
-						self.check_semicolon()?;
-						todo!();
-					}
-
-					_ => {
-						return Err(self.err(CMNErrorCode::UnexpectedToken));
-					}
+					item = NamespaceItem::Functions(vec![(
+						Arc::new(RwLock::new(t)),
+						RefCell::new(ast_elem),
+					)]);
 				}
-			} else {
-				item = NamespaceItem::Variable(t, RefCell::new(NamespaceASTElem::NoElem));
-				self.check_semicolon()?;
-			}
 
-			// Register declaration to symbol table
-			// TODO: Figure out what to do if the identifier has scopes
-			Ok((id.name().clone(), item))
+				"=" => {
+					self.get_next()?;
+					// TODO: Skip expression
+
+					//ast_elem = match self.parse_expression()?.node {
+					//	ASTNode::Expression(expr) => Some(
+					//		ASTElem {
+					//			node: ASTNode::Expression(RefCell::new(expr.into_inner())),
+					//			type_info: RefCell::new(None),
+					//			token_data: (0, 0) // TODO: Add
+					//		}),
+					//	_ => panic!(), // TODO: Error handling
+					//};
+
+					self.check_semicolon()?;
+					todo!();
+				}
+
+				_ => {
+					return Err(self.err(CMNErrorCode::UnexpectedToken));
+				}
+			}
 		} else {
-			Err(self.err(CMNErrorCode::ExpectedIdentifier))
+			item = NamespaceItem::Variable(t, RefCell::new(NamespaceASTElem::NoElem));
+			self.check_semicolon()?;
 		}
+
+		Ok((name, item))
 	}
 
 	fn parse_statement(&self) -> ParseResult<Stmt> {
@@ -742,24 +732,25 @@ impl Parser {
 
 			let ty = self.parse_type(true)?;
 
-			if let Token::Identifier(name) = self.get_current()? {
-				let mut expr = None;
+			let Token::Name(name) = self.get_current()? else {
+				return Err(self.err(CMNErrorCode::ExpectedIdentifier))
+			};
 
-				if token_compare(&self.get_next()?, "=") {
-					self.get_next()?;
-					expr = Some(self.parse_expression()?);
-				}
+			let mut expr = None;
 
-				let stmt_result = Stmt::Decl(
-					vec![(ty, name.expect_scopeless()?.clone())],
-					expr,
-					(begin, self.get_current_start_index() - begin),
-				);
-
-				Ok(stmt_result)
-			} else {
-				Err(self.err(CMNErrorCode::ExpectedIdentifier))
+			if token_compare(&self.get_next()?, "=") {
+				self.get_next()?;
+				expr = Some(self.parse_expression()?);
 			}
+
+			let stmt_result = Stmt::Decl(
+				vec![(ty, name)],
+				expr,
+				(begin, self.get_current_start_index() - begin),
+			);
+
+			Ok(stmt_result)
+		
 		} else {
 			// This isn't a declaration, so parse an expression
 
@@ -780,11 +771,11 @@ impl Parser {
 			}
 
 			match self.get_current()? {
-				Token::Identifier(id) => {
+				Token::Name(id) => {
 					self.get_next()?;
 
 					Ok(Pattern::Binding(Binding {
-						name: Some(id.expect_scopeless()?.clone()),
+						name: Some(id),
 						ty: pattern_ty,
 						is_ref,
 						is_mut: true,
@@ -810,25 +801,35 @@ impl Parser {
 		let begin_lhs = self.get_current_start_index();
 
 		// Get initial part of expression, could be an Atom or the operator of a unary Cons
-		let mut lhs = match current {
-			// Parse atom
-			Token::Identifier(_)
-			| Token::StringLiteral(_)
-			| Token::CStringLiteral(_)
-			| Token::NumLiteral(_, _)
-			| Token::BoolLiteral(_)
-			| Token::Keyword(_) => Expr::Atom(
-				self.parse_atom()?,
-				NodeData {
-					ty: None,
-					tk: (begin_lhs, self.get_current_start_index() - begin_lhs),
-				},
-			),
+		let mut lhs = if self.is_at_identifier_token()? {
+				Expr::Atom(
+					self.parse_atom()?,
+					NodeData {
+						ty: None,
+						tk: (begin_lhs, self.get_current_start_index() - begin_lhs),
+					},
+				)
+			} else { 
+				match current {
+					// Parse atom
+					Token::StringLiteral(_)
+					| Token::CStringLiteral(_)
+					| Token::NumLiteral(_, _)
+					| Token::BoolLiteral(_)
+					| Token::Keyword(_) => Expr::Atom(
+						self.parse_atom()?,
+						NodeData {
+							ty: None,
+							tk: (begin_lhs, self.get_current_start_index() - begin_lhs),
+						},
+					),
 
-			// Handle unary prefix operators
-			Token::Operator(tk) => {
-				match Operator::get_operator(tk, false) {
-					Some(op) => {
+					// Handle unary prefix operators
+					Token::Operator(tk) => {
+						let Some(op) = Operator::get_operator(tk, false) else {
+							return Err(self.err(CMNErrorCode::UnexpectedToken))
+						};
+
 						self.get_next()?;
 
 						if let Operator::Call = op {
@@ -855,15 +856,13 @@ impl Parser {
 							Expr::Unary(Box::new(rhs), op, NodeData { ty: None, tk })
 						}
 					}
+					
 
-					None => return Err(self.err(CMNErrorCode::UnexpectedToken)),
+					_ => {
+						return Err(self.err(CMNErrorCode::UnexpectedToken));
+					}
 				}
-			}
-
-			_ => {
-				return Err(self.err(CMNErrorCode::UnexpectedToken));
-			}
-		};
+			};
 
 		// Parse RHS
 		loop {
@@ -971,127 +970,122 @@ impl Parser {
 	}
 
 	fn parse_atom(&self) -> ParseResult<Atom> {
-		let mut result;
+		let mut result = None;
 		let mut current = self.get_current()?;
-		let mut next = self.get_next()?;
+		
+		if self.is_at_identifier_token()? {
+			let id = self.parse_identifier()?;
+			let mut next = self.get_current()?;
 
-		match current {
-			Token::Identifier(name) => {
-				result = None;
+			if let Some(Type::TypeRef(ItemRef::Resolved(found))) = self.find_type(&id) {
+				match &*found.def.upgrade().unwrap().read().unwrap() {
+					// Parse with algebraic typename
+					TypeDef::Algebraic(_) => {
+						if let Token::Other('{') = &next {
+							// Parse struct literal
+						
+							let mut inits = vec![];
 
-				if let Some(Type::TypeRef(ItemRef::Resolved(found))) = self.find_type(&name) {
-					match &*found.def.upgrade().unwrap().read().unwrap() {
-						// Parse with algebraic typename
-						TypeDef::Algebraic(_) => {
-							match &next {
-								// Parse struct literal
-								Token::Other('{') => {
-									let mut inits = vec![];
+							while next != Token::Other('}') {
+								self.get_next()?;
 
-									while next != Token::Other('}') {
-										self.get_next()?;
-
-										if let Token::Identifier(member_name) =
-											self.get_current()?
-										{
-											self.get_next()?;
-
-											self.consume(&Token::Other(':'))?;
-
-											let expr = self.parse_expression()?;
-
-											inits.push((
-												Some(member_name.expect_scopeless()?.clone()),
-												expr,
-											));
-										} else if self.get_current()? != Token::Other('}') {
-											return Err(self.err(CMNErrorCode::UnexpectedToken));
-										}
-
-										next = self.get_current()?;
-									}
-
-									self.consume(&Token::Other('}'))?;
-
-									result = Some(Atom::AlgebraicLit(
-										Type::TypeRef(ItemRef::Resolved(found)),
-										inits,
-									));
-								}
-
-								_ => return Err(self.err(CMNErrorCode::UnexpectedToken)),
-							}
-						}
-
-						TypeDef::Class => todo!(),
-					}
-				}
-
-				if result.is_none() {
-					// Variable or function name
-					result = Some(Atom::Identifier(name.clone()));
-
-					if let Token::Operator("(" | "<") = next {
-						let mut type_args = vec![];
-
-						// TODO: Disambiguate between fn call and comparison. Perform function resolution here?
-						if next == Token::Operator("<") {
-							let mut is_function = false;
-
-							self.namespace
-								.with_item(&name, &self.current_scope, |item, _| {
-									is_function = matches!(&item.0, NamespaceItem::Functions(..));
-								});
-
-							if is_function {
-								type_args = self
-									.parse_type_argument_list()?
-									.into_iter()
-									.map(|item| ("".into(), item))
-									.collect();
-							} else {
-								// Not a function, return as plain Identifier early
-								return Ok(result.unwrap());
-							}
-						}
-
-						// Function call
-						let mut args = vec![];
-						next = self.get_next()?;
-
-						if next != Token::Operator(")") {
-							loop {
-								args.push(self.parse_expression()?);
-
-								current = self.get_current()?;
-
-								if let Token::Other(',') = current {
+								if let Token::Name(member_name) = self.get_current()? {
 									self.get_next()?;
-								} else if current == Token::Operator(")") {
-									break;
-								} else {
+
+									self.consume(&Token::Other(':'))?;
+
+									let expr = self.parse_expression()?;
+
+									inits.push((Some(member_name), expr,));
+								} else if self.get_current()? != Token::Other('}') {
 									return Err(self.err(CMNErrorCode::UnexpectedToken));
 								}
-							}
-						}
-						self.get_next()?;
 
-						result = Some(Atom::FnCall {
-							name,
-							args,
-							type_args,
-							resolved: None,
-						});
+								next = self.get_current()?;
+							}
+
+							self.consume(&Token::Other('}'))?;
+
+							result = Some(Atom::AlgebraicLit(
+								Type::TypeRef(ItemRef::Resolved(found)),
+								inits,
+							));
+						} else {
+							return Err(self.err(CMNErrorCode::UnexpectedToken))
+						}
 					}
+
+					TypeDef::Class => todo!(),
 				}
 			}
 
-			Token::StringLiteral(s) => result = Some(Atom::StringLit(s)),
+			if result.is_none() {
+				// Variable or function name
+				result = Some(Atom::Identifier(id.clone()));
 
-			Token::CStringLiteral(s) => result = Some(Atom::CStringLit(s)),
+				if let Token::Operator("(" | "<") = next {
+					let mut type_args = vec![];
 
-			Token::NumLiteral(s, suffix) => {
-				result = {
+					// TODO: Disambiguate between fn call and comparison. Perform function resolution here?
+					if next == Token::Operator("<") {
+						let mut is_function = false;
+
+						self.namespace
+							.with_item(&id, &self.current_scope, |item, _| {
+								is_function = matches!(&item.0, NamespaceItem::Functions(..));
+							});
+
+						if is_function {
+							type_args = self
+								.parse_type_argument_list()?
+								.into_iter()
+								.map(|item| ("".into(), item))
+								.collect();
+						} else {
+							// Not a function, return as plain Identifier early
+							return Ok(result.unwrap());
+						}
+					}
+
+					// Function call
+					let mut args = vec![];
+					next = self.get_next()?;
+
+					if next != Token::Operator(")") {
+						loop {
+							args.push(self.parse_expression()?);
+
+							current = self.get_current()?;
+
+							if let Token::Other(',') = current {
+								self.get_next()?;
+							} else if current == Token::Operator(")") {
+								break;
+							} else {
+								return Err(self.err(CMNErrorCode::UnexpectedToken));
+							}
+						}
+					}
+					self.get_next()?;
+
+					result = Some(Atom::FnCall {
+						name: id,
+						args,
+						type_args,
+						resolved: None,
+					});
+				}
+			}
+		} else {
+			let next = self.get_next()?;
+
+			match current {
+				Token::StringLiteral(s) => result = Some(Atom::StringLit(s)),
+
+				Token::CStringLiteral(s) => result = Some(Atom::CStringLit(s)),
+
+				Token::NumLiteral(s, suffix) => {
+				
 					let mut suffix_b = Basic::get_basic_type(suffix.as_str());
 
 					if suffix_b.is_none() && !suffix.is_empty() {
@@ -1109,194 +1103,194 @@ impl Parser {
 						Atom::IntegerLit(s.parse::<i128>().unwrap(), suffix_b)
 					};
 
-					Some(atom)
-				}
-			}
-
-			Token::BoolLiteral(b) => result = Some(Atom::BoolLit(b)),
-
-			Token::Keyword(keyword) => match keyword {
-				// Parse return statement
-				"return" => {
-					if next == Token::Other(';') || next == Token::Other('}') {
-						result = Some(Atom::CtrlFlow(Box::new(ControlFlow::Return { expr: None })));
-					} else {
-						result = Some(Atom::CtrlFlow(Box::new(ControlFlow::Return {
-							expr: Some(self.parse_expression()?),
-						})));
-					}
+					result = Some(atom);
 				}
 
-				"break" => {
-					// TODO: Labeled break and continue
+				Token::BoolLiteral(b) => result = Some(Atom::BoolLit(b)),
 
-					result = Some(Atom::CtrlFlow(Box::new(ControlFlow::Break)));
-				}
-
-				"continue" => {
-					// TODO: Labeled break and continue
-
-					result = Some(Atom::CtrlFlow(Box::new(ControlFlow::Continue)));
-				}
-
-				"match" => {
-					let scrutinee = self.parse_expression()?;
-					current = self.get_current()?;
-
-					if current != Token::Other('{') {
-						return Err(self.err(CMNErrorCode::UnexpectedToken));
+				Token::Keyword(keyword) => match keyword {
+					// Parse return statement
+					"return" => {
+						if next == Token::Other(';') || next == Token::Other('}') {
+							result = Some(Atom::CtrlFlow(Box::new(ControlFlow::Return { expr: None })));
+						} else {
+							result = Some(Atom::CtrlFlow(Box::new(ControlFlow::Return {
+								expr: Some(self.parse_expression()?),
+							})));
+						}
 					}
 
-					current = self.get_next()?;
+					"break" => {
+						// TODO: Labeled break and continue
 
-					let mut branches = vec![];
+						result = Some(Atom::CtrlFlow(Box::new(ControlFlow::Break)));
+					}
 
-					while current != Token::Other('}') {
-						let branch_pat = self.parse_pattern()?;
-						let branch_block;
+					"continue" => {
+						// TODO: Labeled break and continue
 
-						if self.get_current()? != Token::Operator("=>") {
+						result = Some(Atom::CtrlFlow(Box::new(ControlFlow::Continue)));
+					}
+
+					"match" => {
+						let scrutinee = self.parse_expression()?;
+						current = self.get_current()?;
+
+						if current != Token::Other('{') {
 							return Err(self.err(CMNErrorCode::UnexpectedToken));
 						}
 
-						if self.get_next()? == Token::Other('{') {
-							branch_block = self.parse_block()?;
-						} else {
-							branch_block = self.parse_expression()?;
+						current = self.get_next()?;
 
-							// After a bare expression, a comma is required
-							if self.get_current()? != Token::Other(',') {
+						let mut branches = vec![];
+
+						while current != Token::Other('}') {
+							let branch_pat = self.parse_pattern()?;
+							let branch_block;
+
+							if self.get_current()? != Token::Operator("=>") {
 								return Err(self.err(CMNErrorCode::UnexpectedToken));
 							}
 
-							self.get_next()?;
+							if self.get_next()? == Token::Other('{') {
+								branch_block = self.parse_block()?;
+							} else {
+								branch_block = self.parse_expression()?;
+
+								// After a bare expression, a comma is required
+								if self.get_current()? != Token::Other(',') {
+									return Err(self.err(CMNErrorCode::UnexpectedToken));
+								}
+
+								self.get_next()?;
+							}
+
+							while self.get_current()? == Token::Other(',') {
+								self.get_next()?;
+							}
+
+							current = self.get_current()?;
+							branches.push((branch_pat, branch_block));
 						}
 
-						while self.get_current()? == Token::Other(',') {
-							self.get_next()?;
-						}
-
-						current = self.get_current()?;
-						branches.push((branch_pat, branch_block));
-					}
-
-					self.get_next()?;
-
-					result = Some(Atom::CtrlFlow(Box::new(ControlFlow::Match {
-						scrutinee,
-						branches,
-					})));
-				}
-
-				// Parse if statement
-				"if" => {
-					// Parse condition
-					let cond = self.parse_expression()?;
-
-					// Parse body
-					let body;
-					let mut else_body = None;
-
-					if token_compare(&self.get_current()?, "{") {
-						body = self.parse_block()?;
-					} else {
-						return Err(self.err(CMNErrorCode::UnexpectedToken));
-					}
-
-					if token_compare(&self.get_current()?, "else") {
 						self.get_next()?;
 
+						result = Some(Atom::CtrlFlow(Box::new(ControlFlow::Match {
+							scrutinee,
+							branches,
+						})));
+					}
+
+					// Parse if statement
+					"if" => {
+						// Parse condition
+						let cond = self.parse_expression()?;
+
+						// Parse body
+						let body;
+						let mut else_body = None;
+
 						if token_compare(&self.get_current()?, "{") {
-							else_body = Some(self.parse_block()?);
+							body = self.parse_block()?;
 						} else {
 							return Err(self.err(CMNErrorCode::UnexpectedToken));
 						}
+
+						if token_compare(&self.get_current()?, "else") {
+							self.get_next()?;
+
+							if token_compare(&self.get_current()?, "{") {
+								else_body = Some(self.parse_block()?);
+							} else {
+								return Err(self.err(CMNErrorCode::UnexpectedToken));
+							}
+						}
+
+						result = Some(Atom::CtrlFlow(Box::new(ControlFlow::If {
+							cond,
+							body,
+
+							// TODO: Add proper metadata to this
+							else_body,
+						})));
 					}
 
-					result = Some(Atom::CtrlFlow(Box::new(ControlFlow::If {
-						cond,
-						body,
+					// Parse while loop
+					"while" => {
+						let cond = self.parse_expression()?;
+						let body = self.parse_block()?;
 
-						// TODO: Add proper metadata to this
-						else_body,
-					})));
+						result = Some(Atom::CtrlFlow(Box::new(ControlFlow::While { cond, body })));
+					}
+
+					// Parse for loop
+					"for" => {
+						// Check opening brace
+						if token_compare(&next, "(") {
+							current = self.get_next()?;
+						} else {
+							return Err(self.err(CMNErrorCode::UnexpectedToken));
+						}
+
+						let mut init = None;
+						let mut cond = None;
+						let mut iter = None;
+
+						if token_compare(&current, ";") {
+							// No init statement, skip
+							current = self.get_next()?;
+						} else {
+							init = Some(self.parse_statement()?); // TODO: Restrict to declaration?
+							self.check_semicolon()?;
+							current = self.get_current()?;
+						}
+
+						if token_compare(&current, ";") {
+							// No iter expression, skip
+							current = self.get_next()?;
+						} else {
+							cond = Some(self.parse_expression()?);
+							self.check_semicolon()?;
+							current = self.get_current()?;
+						}
+
+						if token_compare(&current, ";") {
+							// No cond expression, skip
+							current = self.get_next()?;
+						} else if !token_compare(&current, ")") {
+							iter = Some(self.parse_expression()?);
+							current = self.get_current()?;
+						}
+
+						// Check closing brace
+						if token_compare(&current, ")") {
+							current = self.get_next()?;
+						} else {
+							return Err(self.err(CMNErrorCode::UnexpectedToken));
+						}
+
+						// Parse body
+						let body = if token_compare(&current, "{") {
+							self.parse_block()?
+						} else {
+							self.parse_statement()?.wrap_in_block()
+						};
+
+						result = Some(Atom::CtrlFlow(Box::new(ControlFlow::For {
+							init,
+							cond,
+							iter,
+							body,
+						})));
+					}
+
+					// Invalid keyword at start of statement
+					_ => return Err(self.err(CMNErrorCode::UnexpectedKeyword)),
 				}
 
-				// Parse while loop
-				"while" => {
-					let cond = self.parse_expression()?;
-					let body = self.parse_block()?;
-
-					result = Some(Atom::CtrlFlow(Box::new(ControlFlow::While { cond, body })));
-				}
-
-				// Parse for loop
-				"for" => {
-					// Check opening brace
-					if token_compare(&next, "(") {
-						current = self.get_next()?;
-					} else {
-						return Err(self.err(CMNErrorCode::UnexpectedToken));
-					}
-
-					let mut init = None;
-					let mut cond = None;
-					let mut iter = None;
-
-					if token_compare(&current, ";") {
-						// No init statement, skip
-						current = self.get_next()?;
-					} else {
-						init = Some(self.parse_statement()?); // TODO: Restrict to declaration?
-						self.check_semicolon()?;
-						current = self.get_current()?;
-					}
-
-					if token_compare(&current, ";") {
-						// No iter expression, skip
-						current = self.get_next()?;
-					} else {
-						cond = Some(self.parse_expression()?);
-						self.check_semicolon()?;
-						current = self.get_current()?;
-					}
-
-					if token_compare(&current, ";") {
-						// No cond expression, skip
-						current = self.get_next()?;
-					} else if !token_compare(&current, ")") {
-						iter = Some(self.parse_expression()?);
-						current = self.get_current()?;
-					}
-
-					// Check closing brace
-					if token_compare(&current, ")") {
-						current = self.get_next()?;
-					} else {
-						return Err(self.err(CMNErrorCode::UnexpectedToken));
-					}
-
-					// Parse body
-					let body = if token_compare(&current, "{") {
-						self.parse_block()?
-					} else {
-						self.parse_statement()?.wrap_in_block()
-					};
-
-					result = Some(Atom::CtrlFlow(Box::new(ControlFlow::For {
-						init,
-						cond,
-						iter,
-						body,
-					})));
-				}
-
-				// Invalid keyword at start of statement
-				_ => return Err(self.err(CMNErrorCode::UnexpectedKeyword)),
-			},
-
-			_ => return Err(self.err(CMNErrorCode::UnexpectedToken)),
-		};
+				_ => return Err(self.err(CMNErrorCode::UnexpectedToken)),
+			};
+		}
 
 		Ok(result.unwrap())
 	}
@@ -1310,24 +1304,173 @@ impl Parser {
 	fn is_at_type_token(&self, resolve_idents: bool) -> ParseResult<bool> {
 		let mut current = self.get_current()?;
 
+		let current_idx = self.get_current_token_index();
+
 		if current == Token::Operator("(") {
 			// This might be the start of a tuple OR expression, so we gotta peek ahead whoops
-			current = self.lexer.borrow().peek_next().unwrap().1.clone();
+			self.get_next()?;
 		}
 
-		match current {
-			Token::Identifier(typename) => {
-				if resolve_idents {
-					Ok(self.namespace.resolve_type(&typename, &self.current_scope, &vec![]).is_some())
-				} else {
-					Ok(true)
+		if self.is_at_identifier_token()? {
+			if resolve_idents {
+				let typename = self.parse_identifier()?;
+				
+				self.lexer.borrow_mut().seek_token_idx(current_idx);
+
+				Ok(self.namespace.resolve_type(&typename, &self.current_scope, &vec![]).is_some())
+			} else {
+				self.lexer.borrow_mut().seek_token_idx(current_idx);
+
+				Ok(true)
+			}
+		} else if let Token::Keyword(kw) = current {
+			Ok(matches!(kw, "mut" | "const" | "ref"))
+		} else {
+			Ok(false)
+		}
+	}
+
+	fn is_at_identifier_token(&self) -> ParseResult<bool> {
+		Ok(matches!(self.get_current()?, Token::Name(_) | Token::Operator("::" | "<")))
+	}
+
+	fn parse_identifier(&self) -> ParseResult<Identifier> {
+		if !self.is_at_identifier_token()? {
+			return Err(self.err(CMNErrorCode::ExpectedIdentifier))
+		}
+
+		let absolute;
+		let qualifier;
+		
+		if self.get_current()? == Token::Operator("::") {
+			self.get_next()?;
+
+			absolute = true;
+			qualifier = (None, None);
+
+		} else if self.get_current()? == Token::Operator("<") {
+			self.get_next()?;
+			
+			let ty = self.parse_type(true)?;
+
+			let tr = match self.get_current()? {
+
+				Token::Operator("as") => {
+					self.get_next()?;
+					Some(Box::new(ItemRef::Unresolved { 
+						name: self.parse_identifier()?, 
+						scope: self.current_scope.clone() 
+					}))
 				}
+
+				Token::Operator(">") => None,
+
+				_ => return Err(self.err(CMNErrorCode::UnexpectedToken)),
+			};
+
+			self.consume(&Token::Operator(">"))?;
+
+			absolute = true;
+			qualifier = (Some(Box::new(ty)), tr);
+		} else {
+			absolute = false;
+			qualifier = (None, None);
+		}
+		
+		let mut path = vec![];
+
+		loop {
+			let Token::Name(name) = self.get_current()? else {
+				return Err(self.err(CMNErrorCode::UnexpectedToken));
+			};
+
+			path.push(name);
+
+			if self.get_next()? == Token::Operator("::") {
+				self.get_next()?;
+			} else {
+				break
+			}
+		}
+
+		Ok(Identifier { 
+			qualifier, 
+			path, 
+			absolute 
+		})
+	}
+
+	fn parse_multi_identifier(&self) -> ParseResult<Vec<Identifier>> {
+		if !self.is_at_identifier_token()? {
+			return Err(self.err(CMNErrorCode::ExpectedIdentifier));
+		}
+
+		let absolute = if self.get_current()? == Token::Operator("::") {
+			self.get_next()?;
+			true
+		} else {
+			false
+		};
+
+		self.parse_multi_identifier_component(absolute)
+	}
+
+	fn parse_multi_identifier_component(&self, absolute: bool) -> ParseResult<Vec<Identifier>> {
+		let mut result = vec![];
+		
+		let mut current = Identifier {
+			qualifier: (None, None),
+			absolute,
+			path: vec![]
+		};
+
+		loop {
+			match self.get_current()? {
+				Token::Name(name) => {
+					self.get_next()?;
+					current.path.push(name)
+				}
+
+				Token::Other('{') => {
+					self.get_next()?;
+					let mut paths = vec![];
+					
+					while self.get_current()? != Token::Other('}') {
+						let mut sub_paths = self.parse_multi_identifier_component(absolute)?;
+						
+						for sub_path in &mut sub_paths {
+							let mut sub_path_prefix = current.path.clone();
+							
+							sub_path_prefix.append(&mut sub_path.path);
+							
+							sub_path.path = sub_path_prefix
+						}
+						
+						paths.append(&mut sub_paths);
+						
+						if self.get_current()? == Token::Other(',') {
+							self.get_next()?;
+						}
+					}
+
+					self.consume(&Token::Other('}'))?;
+				}
+
+				_ => return Err(self.err(CMNErrorCode::UnexpectedToken)),
 			}
 
-			Token::Keyword(kw) => Ok(matches!(kw, "mut" | "const" | "ref")),
-
-			_ => Ok(false),
+			if self.get_current()? == Token::Operator("::") {
+				self.get_next()?;
+			} else {
+				break;
+			}
 		}
+
+		if result.is_empty() {
+			result.push(current);
+		}
+
+		Ok(result)
 	}
 
 	fn parse_parameter_list(&self) -> ParseResult<FnParamList> {
@@ -1347,8 +1490,9 @@ impl Parser {
 
 			// Check for param name
 			let mut current = self.get_current()?;
-			if let Token::Identifier(id) = current {
-				param.1 = Some(id.expect_scopeless()?.clone());
+
+			if let Token::Name(name) = current {
+				param.1 = Some(name);
 				self.get_next()?;
 			}
 
@@ -1394,125 +1538,113 @@ impl Parser {
 	fn parse_type(&self, immediate_resolve: bool) -> ParseResult<Type> {
 		let mut result;
 
-		if self.is_at_type_token(immediate_resolve)? {
-			let typename;
+		if !self.is_at_type_token(immediate_resolve)? {
+			return Err(self.err(CMNErrorCode::ExpectedIdentifier))
+		}
 
-			match self.get_current()? {
-				Token::Operator("(") => {
-					let (kind, types) = self.parse_tuple_type(immediate_resolve)?;
-					Ok(Type::Tuple(kind, types))
+		if self.get_current()? == Token::Operator("(") {
+			let (kind, types) = self.parse_tuple_type(immediate_resolve)?;
+			
+			Ok(Type::Tuple(kind, types))
+		} else if self.is_at_identifier_token()? {
+			let typename = self.parse_identifier()?;
+
+			if immediate_resolve {
+				if let Some(ty) = self.namespace.resolve_type(&typename, &self.current_scope, &vec![]) {
+					result = ty;
+				} else {
+					return Err(
+						self.err(CMNErrorCode::UnresolvedTypename(typename.to_string()))
+					);
 				}
-
-				Token::Identifier(id) => {
-					typename = id;
-					// Typename
-
-					if immediate_resolve {
-						if let Some(ty) = self.namespace.resolve_type(&typename, &self.current_scope, &vec![]) {
-							result = ty;
-						} else {
-							return Err(
-								self.err(CMNErrorCode::UnresolvedTypename(typename.to_string()))
-							);
-						}
-					} else {
-						result = Type::TypeRef(ItemRef::Unresolved {
-							name: typename,
-							scope: self.current_scope.clone(),
-						});
-					}
-
-					let mut next = self.get_next()?;
-
-					match next {
-						Token::Operator(op) => {
-							match op {
-								// Parse as pointer type
-								"*" => {
-									while token_compare(&next, "*") {
-										result = Type::Pointer(Box::new(result));
-										next = self.get_next()?;
-									}
-								}
-
-								// Parse as array type
-								"[" => {
-									self.get_next()?;
-									let const_expr = self.parse_expression()?;
-
-									if self.get_current()? != Token::Operator("]") {
-										return Err(self.err(CMNErrorCode::UnexpectedToken));
-									}
-
-									result = Type::Array(
-										Box::new(result),
-										Arc::new(RwLock::new(vec![ConstExpr::Expr(const_expr)])),
-									);
-
-									self.get_next()?;
-								}
-
-								// Parse as function type
-								"(" => {
-									self.get_next()?;
-									
-									let ret = Box::new(result);
-									let mut args = vec![];
-
-									while self.get_current()? != Token::Operator(")") {
-										args.push(self.parse_type(immediate_resolve)?);
-
-										match self.get_current()? {
-											Token::Other(',') => self.get_next()?,
-
-											Token::Operator(")") => break,
-											
-											_ => return Err(self.err(CMNErrorCode::UnexpectedToken)),
-										};
-									}
-
-									result = Type::Function(ret, vec![]);
-								}
-
-								// Parse type arguments
-								"<" => {
-									if let Type::TypeRef(ItemRef::Resolved(TypeRef {
-										def,
-										args,
-										..
-									})) = &mut result
-									{
-										let def = def.upgrade().unwrap();
-										let TypeDef::Algebraic(agg) = &*def.read().unwrap() else { panic!() };
-
-										let type_args = self.parse_type_argument_list()?;
-
-										for (i, type_arg) in type_args.iter().enumerate() {
-											let name = agg.params[i].0.clone(); // TODO: Real error handling
-											args.push((name, type_arg.clone()));
-										}
-									} else {
-										panic!("can't apply type parameters to this type of Type!") // TODO: Real error handling
-									}
-								}
-
-								_ => {
-									return Ok(result);
-								}
-							}
-						}
-						_ => {
-							return Ok(result);
-						}
-					}
-
-					Ok(result)
-				}
-
-				_ => Err(self.err(CMNErrorCode::UnexpectedToken)),
+			} else {
+				result = Type::TypeRef(ItemRef::Unresolved {
+					name: typename,
+					scope: self.current_scope.clone(),
+				});
 			}
+
+			let mut next = self.get_current()?;
+
+			match next {
+				Token::Operator("*") => {
+					// Pointer type
+
+					while token_compare(&next, "*") {
+						result = Type::Pointer(Box::new(result));
+						next = self.get_next()?;
+					}
+				}
+
+				Token::Operator("[") => {
+					// Array type
+					
+					self.get_next()?;
+
+					let const_expr = self.parse_expression()?;
+
+					self.consume(&Token::Operator("]"))?;
+
+					result = Type::Array(
+						Box::new(result),
+						Arc::new(RwLock::new(vec![ConstExpr::Expr(const_expr)])),
+					);
+				}
+
+				Token::Operator("(") => {
+					// Function type
+
+					self.get_next()?;
+					
+					let ret = Box::new(result);
+					let mut args = vec![];
+
+					while self.get_current()? != Token::Operator(")") {
+						args.push(self.parse_type(immediate_resolve)?);
+
+						match self.get_current()? {
+							Token::Other(',') => self.get_next()?,
+
+							Token::Operator(")") => break,
+							
+							_ => return Err(self.err(CMNErrorCode::UnexpectedToken)),
+						};
+					}
+
+					self.get_next()?;
+
+					result = Type::Function(ret, vec![]);
+				}
+
+				Token::Operator("<") => {
+					// Type parameters
+					
+					let Type::TypeRef(ItemRef::Resolved(TypeRef {
+						def,
+						args,
+						..
+					})) = &mut result else {
+						panic!("can't apply type parameters to this type of Type!") // TODO: Real error handling
+					};
+					
+					let def = def.upgrade().unwrap();
+					let TypeDef::Algebraic(agg) = &*def.read().unwrap() else { panic!() };
+
+					let type_args = self.parse_type_argument_list()?;
+
+					for (i, type_arg) in type_args.iter().enumerate() {
+						let name = agg.params[i].0.clone(); // TODO: Real error handling
+						args.push((name, type_arg.clone()));
+					}
+				
+				}
+
+				_ => {}
+			}
+
+			Ok(result)
 		} else {
-			Err(self.err(CMNErrorCode::ExpectedIdentifier))
+			Err(self.err(CMNErrorCode::UnexpectedToken))
 		}
 	}
 
@@ -1524,9 +1656,9 @@ impl Parser {
 		let name = self.get_next()?;
 		let mut result;
 
-		if let Token::Identifier(name) = name {
+		if let Token::Name(name) = name {
 			result = Attribute {
-				name: name.expect_scopeless()?.to_string(),
+				name: name.to_string(),
 				args: vec![],
 			};
 		} else {
@@ -1589,9 +1721,8 @@ impl Parser {
 		let mut current = self.get_next()?;
 
 		loop {
-			match &current {
-				Token::Identifier(name) => {
-					let name = name.expect_scopeless()?.clone();
+			match current {
+				Token::Name(name) => {
 					let mut traits = vec![];
 
 					current = self.get_next()?;
@@ -1600,7 +1731,9 @@ impl Parser {
 						current = self.get_next()?;
 
 						// Collect trait bounds
-						while let Token::Identifier(tr) = current {
+						while self.is_at_identifier_token()? {
+							let tr = self.parse_identifier()?;
+
 							traits.push(ItemRef::Unresolved {
 								name: tr,
 								scope: self.current_scope.clone(),
@@ -1677,11 +1810,11 @@ impl Parser {
 			return Err(self.err(CMNErrorCode::UnexpectedToken));
 		}
 
-		let mut next = self.get_next()?;
+		self.get_next()?;
 
 		let mut kind = None;
 
-		while next != Token::Operator(")") {
+		loop {
 			types.push(self.parse_type(immediate_resolve)?);
 
 			match self.get_current()? {
@@ -1703,18 +1836,17 @@ impl Parser {
 					kind = Some(TupleKind::Sum);
 				}
 
-				Token::Operator(")") => {
-					self.get_next()?;
-					break;
-				}
+				Token::Operator(")") => break,
 
 				_ => {
 					return Err(self.err(CMNErrorCode::UnexpectedToken));
 				}
 			}
 
-			next = self.get_next()?;
+			self.get_next()?;
 		}
+
+		self.get_next()?;
 
 		match kind {
 			Some(kind) => Ok((kind, types)),
