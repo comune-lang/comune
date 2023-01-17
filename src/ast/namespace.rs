@@ -19,8 +19,8 @@ use super::{
 };
 
 // String plays nicer with debuggers
-//pub type Name = String;
-pub type Name = Arc<str>;
+pub type Name = String;
+//pub type Name = Arc<str>;
 
 #[derive(Default, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Identifier {

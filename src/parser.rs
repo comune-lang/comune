@@ -512,13 +512,21 @@ impl Parser {
 
 				_ => {
 					// Parse declaration/definition
-					let result = self.parse_namespace_declaration()?;
+					let (name, mut result) = self.parse_namespace_declaration()?;
+					
+					let id = Identifier::from_parent(scope, name);
 
-					match result.1 {
-						NamespaceItem::Functions(_) => self.namespace.children.insert(
-							Identifier::from_parent(scope, result.0),
-							(result.1, current_attributes, None),
-						),
+					match &mut result {
+						NamespaceItem::Functions(fns) => {
+							if let Some((NamespaceItem::Functions(existing), ..)) = self.namespace.children.get_mut(&id) {
+								existing.append(fns);
+							} else {
+								self.namespace.children.insert(
+									id,
+									(result, current_attributes, None),
+								);
+							}
+						}
 
 						_ => todo!(),
 					};
@@ -1026,7 +1034,6 @@ impl Parser {
 				if let Token::Operator("(" | "<") = next {
 					let mut type_args = vec![];
 
-					// TODO: Disambiguate between fn call and comparison. Perform function resolution here?
 					if next == Token::Operator("<") {
 						let mut is_function = false;
 
@@ -1303,7 +1310,7 @@ impl Parser {
 	// Returns true if the current token is the start of a Type.
 	// In ambiguous contexts (i.e. function blocks), `resolve_idents` enables basic name resolution
 	fn is_at_type_token(&self, resolve_idents: bool) -> ParseResult<bool> {
-		let mut current = self.get_current()?;
+		let current = self.get_current()?;
 
 		let current_idx = self.get_current_token_index();
 

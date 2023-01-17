@@ -331,7 +331,7 @@ pub fn validate_fn_call(call: &mut Atom, scope: &mut FnScope) -> AnalyzeResult<T
 				.sort_unstable_by(|(_, (l, _)), (_, (r, _))| candidate_compare(args, l, r, scope));
 
 			match candidate_compare(args, &candidates[0].1 .0, &candidates[1].1 .0, scope) {
-				Ordering::Greater => candidates[0].clone(),
+				Ordering::Less => candidates[0].clone(),
 
 				Ordering::Equal => todo!(), // Ambiguous call
 
