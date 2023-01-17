@@ -62,15 +62,27 @@ int main() {
 
 	overload_test(12 as i32);
 
-	(int | float) who_knows = 322.f;
-		
+	(i64 | float) who_knows = 322.f;
+	
 	match who_knows {
-		int int_result => {
+		i64 int_result => {
 			printf(c"It's an int! %i\n", int_result);
 		}
 
 		float float_result => {
 			printf(c"It's a float! %f\n", float_result);
+		}
+	};
+
+	(i64 | i32) int_test = 32 as i32;
+
+	match int_test {
+		i32 a => {
+			printf(c"It's an i32! %i\n", a);
+		}
+
+		i64 b => {
+			printf(c"It's an i64! %i\n", b);
 		}
 	}
 

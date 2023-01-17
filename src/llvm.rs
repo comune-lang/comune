@@ -397,13 +397,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 				match to {
 					CIRType::Tuple(TupleKind::Sum, types) => {
 						let val = self.generate_operand(from, val).unwrap();
-
 						let store_ty = self.get_llvm_type(to);
-						let data_ty = self.context.struct_type(
-							&[self.context.i32_type().as_basic_type_enum(), val.get_type()],
-							false,
-						);
-
 						let idx = types.iter().position(|ty| ty == from).unwrap();
 						
 						let discriminant = self
@@ -415,22 +409,19 @@ impl<'ctx> LLVMBackend<'ctx> {
 						let tmp_alloca = self
 							.builder
 							.build_alloca(store_ty.into_struct_type(), "sumtmp");
-
-						let ptr = self.builder.build_pointer_cast(
-							tmp_alloca,
-							data_ty.ptr_type(AddressSpace::Generic),
-							"sumcast",
-						);
-
+						
 						self.builder.build_store(
-							self.builder.build_struct_gep(ptr, 0, "discstore").unwrap(),
+							self.builder.build_struct_gep(tmp_alloca, 0, "discstore").unwrap(),
 							discriminant,
 						);
 
-						self.builder.build_store(
-							self.builder.build_struct_gep(ptr, 1, "sumstore").unwrap(),
-							val,
+						let ptr = self.builder.build_pointer_cast(
+							self.builder.build_struct_gep(tmp_alloca, 1, "sumgep").unwrap(), 
+							val.get_type().ptr_type(AddressSpace::Generic), 
+							"sumcast"
 						);
+
+						self.builder.build_store(ptr, val);
 
 						return Some(self.builder.build_load(tmp_alloca, "sumload"));
 					}
@@ -607,22 +598,24 @@ impl<'ctx> LLVMBackend<'ctx> {
 							// Tuple downcast, aka just indexing into the data field
 							let val = self.generate_operand(from, val).unwrap();
 							let tmp = self.builder.build_alloca(val.get_type(), "tmp");
-							self.builder.build_store(tmp, val);
-							let gep = self.builder.build_struct_gep(tmp, 1, "enumget").unwrap();
 
+							self.builder.build_store(tmp, val);
+							
+							let gep = self.builder.build_struct_gep(tmp, 1, "sumget").unwrap();
+							
 							let cast = self
 								.builder
 								.build_bitcast(
 									gep,
 									Self::to_basic_type(self.get_llvm_type(to))
 										.ptr_type(AddressSpace::Generic),
-									"enumcast",
+									"sumcast",
 								)
 								.into_pointer_value();
 
 							Some(
 								self.builder
-									.build_load(cast, "tmploadd")
+									.build_load(cast, "tmpload")
 									.as_basic_value_enum(),
 							)
 						}
