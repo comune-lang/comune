@@ -49,11 +49,11 @@ struct Vector<T> {
 	usize capacity;
 }
 
-void overload_test(int a) {
+void overload_test(i32 a) {
 	printf(c"Integer overload called!\n");
 }
 
-void overload_test(float a) {
+void overload_test(i64 a) {
 	printf(c"Float overload called!\n");
 }
 
@@ -64,12 +64,10 @@ int main() {
 	overload_test(12.0f);
 
 	(int | float) who_knows = 322.f;
-	
-	printf(c"It's a float! %f\n", 32.f);
-	
+		
 	match who_knows {
 		int int_result => {
-			printf(c"It's an int: %i\n", int_result);
+			printf(c"It's an int! %i\n", int_result);
 		}
 
 		float float_result => {

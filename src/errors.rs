@@ -1,5 +1,6 @@
 use colored::Colorize;
 use std::io::Write;
+use std::sync::RwLock;
 use std::{
 	ffi::OsString,
 	fmt::Display,
@@ -16,6 +17,7 @@ use backtrace::Backtrace;
 use lazy_static::lazy_static;
 
 use super::types::Type;
+use crate::ast::types::FnDef;
 use crate::{
 	ast::{expression::Operator, namespace::Identifier, TokenData},
 	cir::analyze::lifeline::LivenessState,
@@ -111,6 +113,9 @@ pub enum CMNErrorCode {
 	ParamCountMismatch {
 		expected: usize,
 		got: usize,
+	},
+	AmbiguousCall {
+		options: Vec<Arc<RwLock<FnDef>>>,
 	},
 	NotCallable(String),
 	InvalidDeref(Type),
@@ -217,6 +222,10 @@ impl Display for CMNErrorCode {
 						LivenessState::Dropped => "dropped",
 					}
 				)
+			}
+
+			CMNErrorCode::AmbiguousCall { .. } => {
+				write!(f, "ambiguous call")
 			}
 
 			CMNErrorCode::Pack(vec) => write!(f, "encountered {} errors", vec.len()),

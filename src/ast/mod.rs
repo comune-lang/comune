@@ -277,7 +277,7 @@ fn candidate_compare(
 	}
 }
 
-pub fn validate_fn_call(call: &mut Atom, scope: &mut FnScope) -> AnalyzeResult<Type> {
+pub fn validate_fn_call(call: &mut Atom, scope: &mut FnScope, node_data: &NodeData) -> AnalyzeResult<Type> {
 	let mut candidates = vec![];
 	let Atom::FnCall { name, args, type_args, resolved } = call else { panic!() };
 
@@ -333,9 +333,16 @@ pub fn validate_fn_call(call: &mut Atom, scope: &mut FnScope) -> AnalyzeResult<T
 			match candidate_compare(args, &candidates[0].1 .0, &candidates[1].1 .0, scope) {
 				Ordering::Less => candidates[0].clone(),
 
-				Ordering::Equal => todo!(), // Ambiguous call
+				Ordering::Equal => {
+					return Err((CMNError::new(CMNErrorCode::AmbiguousCall {
+						options: vec![
+							candidates[0].1.0.clone(),
+							candidates[1].1.0.clone(),
+						]
+					}), node_data.tk))
+				}, // Ambiguous call
 
-				_ => unreachable!(), // Not possible
+				_ => unreachable!(), // Not possible, just sorted it
 			}
 		}
 	};
@@ -411,9 +418,16 @@ fn resolve_method_call(
 
 			// Compare the top two candidates
 			match candidate_compare(args, &candidates[0].2, &candidates[1].2, scope) {
-				Ordering::Greater => candidates[0].clone(),
+				Ordering::Less => candidates[0].clone(),
 
-				Ordering::Equal => todo!(), // Ambiguous call
+				Ordering::Equal => {
+					return Err((CMNError::new(CMNErrorCode::AmbiguousCall {
+						options: vec![
+							candidates[0].2.clone(),
+							candidates[1].2.clone(),
+						]
+					}), lhs.get_node_data().tk))
+				}, // Ambiguous call
 
 				_ => unreachable!(), // Not possible
 			}
@@ -1053,7 +1067,7 @@ impl Atom {
 				}
 			}
 
-			Atom::FnCall { .. } => validate_fn_call(self, scope),
+			Atom::FnCall { .. } => validate_fn_call(self, scope, meta),
 
 			Atom::ArrayLit(_) => todo!(),
 
