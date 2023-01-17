@@ -20,7 +20,7 @@ use self::{
 	namespace::{Identifier, ItemRef, Name, Namespace, NamespaceASTElem, NamespaceItem},
 	pattern::Binding,
 	statement::Stmt,
-	traits::TraitDef,
+	traits::{TraitDef, TraitRef},
 	types::{AlgebraicDef, FnDef, TupleKind, TypeParamList, TypeRef},
 };
 
@@ -687,6 +687,31 @@ pub fn resolve_namespace_types(namespace: &Namespace) -> ParseResult<()> {
 
 	for (ty, im) in namespace.trait_solver.get_local_impls() {
 		resolve_type(&mut ty.write().unwrap(), namespace, &vec![])?;
+		
+		// Resolve item references in canonical root
+
+		let resolved_trait = if let Some(ItemRef::Unresolved { name, scope }) = &im.read().unwrap().implements {
+			namespace.with_item(&name, &scope, |(item, ..), name| {
+				match item {
+					NamespaceItem::Trait(tr) => {
+						Box::new(ItemRef::Resolved(TraitRef {
+							def: Arc::downgrade(tr),
+							name: name.clone(),
+							args: vec![],
+						}))
+					}
+
+					_ => panic!()
+				}
+			})
+		} else {
+			None
+		};
+		
+		im.write().unwrap().canonical_root.qualifier = (
+			Some(Box::new(ty.read().unwrap().clone())),
+			resolved_trait
+		);
 
 		for fns in im.write().unwrap().items.values_mut() {
 			for (func, _) in fns {

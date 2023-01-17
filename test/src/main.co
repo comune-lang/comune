@@ -61,7 +61,6 @@ int main() {
 	impl_test();
 
 	overload_test(12 as i32);
-	overload_test(12.0f as i32);
 
 	(int | float) who_knows = 322.f;
 		

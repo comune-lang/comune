@@ -114,9 +114,7 @@ pub enum CMNErrorCode {
 		expected: usize,
 		got: usize,
 	},
-	AmbiguousCall {
-		options: Vec<Arc<RwLock<FnDef>>>,
-	},
+	AmbiguousCall,
 	NotCallable(String),
 	InvalidDeref(Type),
 	InfiniteSizeType,
@@ -224,7 +222,7 @@ impl Display for CMNErrorCode {
 				)
 			}
 
-			CMNErrorCode::AmbiguousCall { .. } => {
+			CMNErrorCode::AmbiguousCall => {
 				write!(f, "ambiguous call")
 			}
 
