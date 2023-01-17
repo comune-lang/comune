@@ -405,11 +405,13 @@ impl<'ctx> LLVMBackend<'ctx> {
 						);
 
 						let idx = types.iter().position(|ty| ty == from).unwrap();
+						
 						let discriminant = self
 							.context
 							.i32_type()
 							.const_int(idx as u64, false)
 							.as_basic_value_enum();
+
 						let tmp_alloca = self
 							.builder
 							.build_alloca(store_ty.into_struct_type(), "sumtmp");
@@ -942,7 +944,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 									discriminant.as_basic_type_enum(),
 									self.context
 										.i8_type()
-										.array_type(biggest_variant as u32)
+										.vec_type(biggest_variant as u32)
 										.as_basic_type_enum(),
 								],
 								false,
