@@ -50,18 +50,18 @@ struct Vector<T> {
 }
 
 void overload_test(i32 a) {
-	printf(c"Integer overload called!\n");
+	printf(c"i32 overload called!\n");
 }
 
 void overload_test(i64 a) {
-	printf(c"Float overload called!\n");
+	printf(c"i64 overload called!\n");
 }
 
 int main() {
 	impl_test();
 
-	overload_test(12);
-	overload_test(12.0f);
+	overload_test(12 as i32);
+	overload_test(12.0f as i32);
 
 	(int | float) who_knows = 322.f;
 		

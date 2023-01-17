@@ -334,12 +334,12 @@ pub fn validate_fn_call(call: &mut Atom, scope: &mut FnScope, node_data: &NodeDa
 				Ordering::Less => candidates[0].clone(),
 
 				Ordering::Equal => {
-					return Err((CMNError::new(CMNErrorCode::AmbiguousCall {
+					return Err((CMNError::new(CMNErrorCode::AmbiguousCall /*{
 						options: vec![
 							candidates[0].1.0.clone(),
 							candidates[1].1.0.clone(),
 						]
-					}), node_data.tk))
+					}*/), node_data.tk))
 				}, // Ambiguous call
 
 				_ => unreachable!(), // Not possible, just sorted it
@@ -421,12 +421,12 @@ fn resolve_method_call(
 				Ordering::Less => candidates[0].clone(),
 
 				Ordering::Equal => {
-					return Err((CMNError::new(CMNErrorCode::AmbiguousCall {
+					return Err((CMNError::new(CMNErrorCode::AmbiguousCall /*{
 						options: vec![
 							candidates[0].2.clone(),
 							candidates[1].2.clone(),
 						]
-					}), lhs.get_node_data().tk))
+					}*/), lhs.get_node_data().tk))
 				}, // Ambiguous call
 
 				_ => unreachable!(), // Not possible
