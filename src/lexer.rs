@@ -11,15 +11,15 @@ use crate::ast::namespace::Name;
 
 static KEYWORDS: [&str; 32] = [
 	"if",
-	"use",
 	"else",
-	"var",
+	"use",
+	"auto",
 	"class",
 	"struct",
 	"public",
 	"private",
 	"protected",
-	"namespace",
+	"module",
 	"static",
 	"const",
 	"mut",
