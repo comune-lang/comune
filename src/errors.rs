@@ -1,6 +1,5 @@
 use colored::Colorize;
 use std::io::Write;
-use std::sync::RwLock;
 use std::{
 	ffi::OsString,
 	fmt::Display,
@@ -17,7 +16,6 @@ use backtrace::Backtrace;
 use lazy_static::lazy_static;
 
 use super::types::Type;
-use crate::ast::types::FnDef;
 use crate::{
 	ast::{expression::Operator, namespace::Identifier, TokenData},
 	cir::analyze::lifeline::LivenessState,

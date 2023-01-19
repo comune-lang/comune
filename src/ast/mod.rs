@@ -16,7 +16,7 @@ use crate::{
 
 use self::{
 	controlflow::ControlFlow,
-	expression::{Atom, Expr, NodeData, OnceAtom, Operator},
+	expression::{Atom, Expr, NodeData, OnceAtom, Operator, FnRef},
 	namespace::{Identifier, ItemRef, Name, Namespace, NamespaceASTElem, NamespaceItem},
 	pattern::Binding,
 	statement::Stmt,
@@ -77,7 +77,7 @@ impl<'ctx> FnScope<'ctx> {
 		}
 	}
 
-	pub fn find_symbol(&self, id: &Identifier) -> Option<(Identifier, Type)> {
+	pub fn find_symbol(&self, id: &Identifier, search_namespace: bool) -> Option<(Identifier, Type)> {
 		let mut result = None;
 
 		if !id.is_qualified() {
@@ -87,7 +87,7 @@ impl<'ctx> FnScope<'ctx> {
 			if self.variables.contains_key(id.name()) {
 				local_lookup = Some((id.clone(), self.variables.get(id.name()).cloned().unwrap()));
 			} else if let Some(parent) = self.parent {
-				local_lookup = parent.find_symbol(id);
+				local_lookup = parent.find_symbol(id, search_namespace);
 			} else {
 				local_lookup = None;
 			}
@@ -97,7 +97,7 @@ impl<'ctx> FnScope<'ctx> {
 			}
 		}
 
-		if result.is_none() {
+		if result.is_none() && search_namespace {
 			// Look for it in the namespace tree
 			self.context.with_item(id, &self.scope, |item, id| {
 				if let NamespaceItem::Functions(fns) = &item.0 {
@@ -281,8 +281,21 @@ pub fn validate_fn_call(call: &mut Atom, scope: &mut FnScope, node_data: &NodeDa
 	let mut candidates = vec![];
 	let Atom::FnCall { name, args, type_args, resolved } = call else { panic!() };
 
-	if let Some(resolved) = resolved {
+	if let FnRef::Direct(resolved) = resolved {
 		return Ok(resolved.read().unwrap().ret.clone());
+	}
+
+	if let FnRef::Indirect(_, Type::Function(ret, _)) = resolved {
+		return Ok(*ret.clone());
+	}
+
+
+	if let Some((local_name, local_ty)) = scope.find_symbol(name, false) {
+		// Local function pointer
+		if let Type::Function(ty_ret, ty_args) = local_ty {
+			*resolved = FnRef::Indirect(local_name, Type::Function(ty_ret.clone(), ty_args));
+			return Ok(*ty_ret);
+		}
 	}
 
 	// Collect function candidates
@@ -334,12 +347,7 @@ pub fn validate_fn_call(call: &mut Atom, scope: &mut FnScope, node_data: &NodeDa
 				Ordering::Less => candidates[0].clone(),
 
 				Ordering::Equal => {
-					return Err((CMNError::new(CMNErrorCode::AmbiguousCall /*{
-						options: vec![
-							candidates[0].1.0.clone(),
-							candidates[1].1.0.clone(),
-						]
-					}*/), node_data.tk))
+					return Err((CMNError::new(CMNErrorCode::AmbiguousCall), node_data.tk))
 				}, // Ambiguous call
 
 				_ => unreachable!(), // Not possible, just sorted it
@@ -351,7 +359,7 @@ pub fn validate_fn_call(call: &mut Atom, scope: &mut FnScope, node_data: &NodeDa
 
 	validate_arg_list(args, &func.params.params, type_args, scope)?;
 
-	resolved.replace(selected_candidate.clone());
+	*resolved = FnRef::Direct(selected_candidate.clone());
 	*name = selected_name;
 
 	Ok(func.ret.get_concrete_type(type_args))
@@ -366,8 +374,12 @@ fn resolve_method_call(
 	let Atom::FnCall { name, args, type_args, resolved } = fn_call else { panic!() };
 
 	// Already validated
-	if let Some(resolved) = resolved {
+	if let FnRef::Direct(resolved) = resolved {
 		return Ok(resolved.read().unwrap().ret.clone());
+	}
+
+	if let FnRef::Indirect(_, Type::Function(ret, _)) = resolved {
+		return Ok(*ret.clone());
 	}
 
 	args.insert(0, lhs.clone());
@@ -421,12 +433,7 @@ fn resolve_method_call(
 				Ordering::Less => candidates[0].clone(),
 
 				Ordering::Equal => {
-					return Err((CMNError::new(CMNErrorCode::AmbiguousCall /*{
-						options: vec![
-							candidates[0].2.clone(),
-							candidates[1].2.clone(),
-						]
-					}*/), lhs.get_node_data().tk))
+					return Err((CMNError::new(CMNErrorCode::AmbiguousCall), lhs.get_node_data().tk))
 				}, // Ambiguous call
 
 				_ => unreachable!(), // Not possible
@@ -437,10 +444,11 @@ fn resolve_method_call(
 	let func = &*selected_candidate.read().unwrap();
 
 	validate_arg_list(args, &func.params.params, type_args, scope)?;
-	resolved.replace(selected_candidate.clone());
+
+	*resolved = FnRef::Direct(selected_candidate.clone());
 	*name = selected_name;
 
-	Ok(resolved.as_ref().unwrap().read().unwrap().ret.clone())
+	Ok(func.ret.clone())
 }
 
 fn validate_arg_list(
@@ -528,7 +536,7 @@ pub fn resolve_type(
 
 		Type::Array(pointee, _size) => resolve_type(pointee, namespace, generics),
 
-		Type::TypeRef(ItemRef::Unresolved { name: id, scope }) => {
+		Type::TypeRef(ItemRef::Unresolved { name: id, scope, type_args }) => {
 			let result;
 			let generic_pos = generics.iter().position(|(name, ..)| name == id.name());
 
@@ -539,8 +547,12 @@ pub fn resolve_type(
 				result = namespace.resolve_type(id, scope, &vec![]);
 			}
 
-			if let Some(result) = result {
-				*ty = result;
+			if let Some(Type::TypeRef(ItemRef::Resolved(TypeRef { def, name, mut args }))) = result {
+				args.append(type_args);
+				*ty = Type::TypeRef(ItemRef::Resolved(TypeRef { def, name, args }));
+				Ok(())
+			} else if let Some(resolved) = result {
+				*ty = resolved;
 				Ok(())
 			} else {
 				Err(CMNError::new(CMNErrorCode::UnresolvedTypename(
@@ -690,14 +702,14 @@ pub fn resolve_namespace_types(namespace: &Namespace) -> ParseResult<()> {
 		
 		// Resolve item references in canonical root
 
-		let resolved_trait = if let Some(ItemRef::Unresolved { name, scope }) = &im.read().unwrap().implements {
+		let resolved_trait = if let Some(ItemRef::Unresolved { name, scope, type_args }) = &im.read().unwrap().implements {
 			namespace.with_item(&name, &scope, |(item, ..), name| {
 				match item {
 					NamespaceItem::Trait(tr) => {
 						Box::new(ItemRef::Resolved(TraitRef {
 							def: Arc::downgrade(tr),
 							name: name.clone(),
-							args: vec![],
+							args: type_args.clone(),
 						}))
 					}
 
@@ -938,11 +950,13 @@ impl Expr {
 
 					Atom::StringLit(_) => target == &Type::Basic(Basic::Str),
 
-					Atom::Identifier(i) => scope.find_symbol(i).unwrap().1 == *target,
+					Atom::Identifier(i) => scope.find_symbol(i, true).unwrap().1 == *target,
 
 					Atom::FnCall { resolved, .. } => {
-						if let Some(resolved) = resolved {
+						if let FnRef::Direct(resolved) = resolved {
 							resolved.read().unwrap().ret == *target
+						} else if let FnRef::Indirect(_, Type::Function(ret, _)) = resolved {
+							&**ret == target
 						} else {
 							false
 						}
@@ -1063,7 +1077,7 @@ impl Atom {
 			})))),
 
 			Atom::Identifier(name) => {
-				if let Some((id, ty)) = scope.find_symbol(name) {
+				if let Some((id, ty)) = scope.find_symbol(name, true) {
 					// Replace name with fully-qualified ID
 					*name = id;
 					Ok(ty)

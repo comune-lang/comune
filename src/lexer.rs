@@ -19,7 +19,7 @@ static KEYWORDS: [&str; 32] = [
 	"public",
 	"private",
 	"protected",
-	"module",
+	"namespace",
 	"static",
 	"const",
 	"mut",

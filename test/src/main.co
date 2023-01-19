@@ -19,6 +19,12 @@ struct Test {
 	int b;
 }
 
+struct Vector<T> {
+	T* data;
+	usize len;
+	usize capacity;
+}
+
 impl Test {
 	int sum(Test self) {
 		printf(c"This is a method call!\n");
@@ -42,12 +48,9 @@ void impl_test() {
 	printf(c"The sum of a and b is %i!\n", test.sum());
 }
 
-
-struct Vector<T> {
-	T* data;
-	usize len;
-	usize capacity;
-}
+//void fn_pointer_test(void(int) callback) {
+//	callback(12);
+//}
 
 void overload_test(i32 a) {
 	printf(c"i32 overload called!\n");
@@ -55,6 +58,14 @@ void overload_test(i32 a) {
 
 void overload_test(i64 a) {
 	printf(c"i64 overload called!\n");
+}
+
+Vector<i32> generic_ret() {
+	return Vector<i32> {
+		data: malloc(4) as i32*,
+		len: 1,
+		capacity: 1,
+	};
 }
 
 int main() {
@@ -84,7 +95,7 @@ int main() {
 		i64 b => {
 			printf(c"It's an i64! %i\n", b);
 		}
-	}
+	};
 
 	printf(c"who_knows discriminant:%i\n", who_knows);
 
@@ -92,7 +103,7 @@ int main() {
 
 	Vector<int> my_cool_generic;
 
-	my_cool_generic.data = malloc(8) as int*;
+	my_cool_generic.data = malloc(4) as int*;
 	
 	*my_cool_generic.data = if true {
 		printf(c"True!\n");

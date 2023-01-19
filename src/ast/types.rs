@@ -465,9 +465,10 @@ impl Hash for Type {
 				"+".hash(state)
 			}
 
-			Type::TypeRef(ItemRef::Unresolved { name, scope }) => {
+			Type::TypeRef(ItemRef::Unresolved { name, scope, type_args }) => {
 				name.hash(state);
-				scope.hash(state)
+				scope.hash(state);
+				type_args.hash(state);
 			}
 
 			Type::TypeRef(ItemRef::Resolved(ty)) => ty.hash(state),
@@ -618,7 +619,8 @@ impl std::fmt::Debug for Type {
 			Type::TypeRef(ItemRef::Unresolved {
 				name: arg0,
 				scope: arg1,
-			}) => f.debug_tuple("Unresolved").field(arg0).field(arg1).finish(),
+				type_args: arg2,
+			}) => f.debug_tuple("Unresolved").field(arg0).field(arg1).field(arg2).finish(),
 			Type::TypeRef(ItemRef::Resolved(TypeRef { def: arg0, .. })) => {
 				f.debug_tuple("TypeRef").field(arg0).finish()
 			}

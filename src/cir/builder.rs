@@ -3,7 +3,7 @@ use std::{borrow::BorrowMut, collections::HashMap};
 use crate::{
 	ast::{
 		controlflow::ControlFlow,
-		expression::{Atom, Expr, OnceAtom, Operator},
+		expression::{Atom, Expr, OnceAtom, Operator, FnRef},
 		namespace::{Identifier, ItemRef, Name, Namespace, NamespaceASTElem, NamespaceItem},
 		pattern::{Binding, Pattern},
 		statement::Stmt,
@@ -557,7 +557,7 @@ impl CIRModuleBuilder {
 					name,
 					args,
 					type_args,
-					resolved: Some(resolved),
+					resolved: FnRef::Direct(resolved),
 				} => {
 					let cir_args = args
 						.iter()
@@ -592,7 +592,9 @@ impl CIRModuleBuilder {
 					))
 				}
 
-				Atom::FnCall { resolved: None, .. } => panic!(),
+				Atom::FnCall { resolved: FnRef::Indirect(..), .. } => todo!(),
+
+				Atom::FnCall { resolved: FnRef::None, .. } => panic!(),
 
 				Atom::Block { items, result } => self.generate_block(items, result, false).1,
 
@@ -983,7 +985,7 @@ impl CIRModuleBuilder {
 									name,
 									args,
 									type_args,
-									resolved: Some(resolved),
+									resolved: FnRef::Direct(resolved),
 								},
 								_,
 							) => {

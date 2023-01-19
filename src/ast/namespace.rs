@@ -151,7 +151,7 @@ pub struct Namespace {
 
 #[derive(Clone)]
 pub enum ItemRef<T: Clone> {
-	Unresolved { name: Identifier, scope: Identifier },
+	Unresolved { name: Identifier, scope: Identifier, type_args: Vec<(Name, Type)> },
 	Resolved(T),
 }
 
@@ -167,12 +167,14 @@ where
 				Self::Unresolved {
 					name: l0,
 					scope: l1,
+					type_args: l2,
 				},
 				Self::Unresolved {
 					name: r0,
 					scope: r1,
+					type_args: r2,
 				},
-			) => l0 == r0 && l1 == r1,
+			) => l0 == r0 && l1 == r1 && l2 == r2,
 			(Self::Resolved(l0), Self::Resolved(r0)) => l0 == r0,
 			_ => false,
 		}
@@ -185,9 +187,10 @@ where
 {
 	fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
 		match self {
-			Self::Unresolved { name, scope } => {
+			Self::Unresolved { name, scope, type_args } => {
 				name.hash(state);
 				scope.hash(state);
+				type_args.hash(state);
 			}
 
 			Self::Resolved(t) => t.hash(state),
@@ -204,7 +207,8 @@ where
 			Self::Unresolved {
 				name: arg0,
 				scope: arg1,
-			} => f.debug_tuple("Unresolved").field(arg0).field(arg1).finish(),
+				type_args: arg2,
+			} => f.debug_tuple("Unresolved").field(arg0).field(arg1).field(arg2).finish(),
 			Self::Resolved(arg0) => f.debug_tuple("Resolved").field(arg0).finish(),
 		}
 	}

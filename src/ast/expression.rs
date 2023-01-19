@@ -423,10 +423,17 @@ pub enum Atom {
 		name: Identifier,
 		args: Vec<Expr>,
 		type_args: Vec<(Name, Type)>,
-		resolved: Option<Arc<RwLock<FnDef>>>,
+		resolved: FnRef,
 	},
 
 	Once(Arc<RwLock<OnceAtom>>),
+}
+
+#[derive(Clone, Debug)]
+pub enum FnRef {
+	None,
+	Direct(Arc<RwLock<FnDef>>),
+	Indirect(Identifier, Type),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -474,8 +481,9 @@ impl PartialEq for Atom {
 			) => {
 				l_name == r_name && l_args == r_args && l_type_args == r_type_args && {
 					match (l_res, r_res) {
-						(Some(l), Some(r)) => *l.read().unwrap() == *r.read().unwrap(),
-						(None, None) => true,
+						(FnRef::Direct(l), FnRef::Direct(r)) => *l.read().unwrap() == *r.read().unwrap(),
+						(FnRef::Indirect(l0, l1), FnRef::Indirect(r0, r1)) => l0 == r0 && l1 == r1,
+						(FnRef::None, FnRef::None) => true,
 						_ => false,
 					}
 				}

@@ -8,7 +8,7 @@ use crate::errors::{CMNError, CMNErrorCode};
 use crate::lexer::{Lexer, Token};
 
 use crate::ast::controlflow::ControlFlow;
-use crate::ast::expression::{Atom, Expr, NodeData, Operator};
+use crate::ast::expression::{Atom, Expr, NodeData, Operator, FnRef};
 use crate::ast::namespace::{
 	Identifier, ItemRef, Name, Namespace, NamespaceASTElem, NamespaceItem,
 };
@@ -379,11 +379,11 @@ impl Parser {
 								self.get_next()?;
 
 								// We parsed the trait as a type, so extract it
-								let Type::TypeRef(ItemRef::Unresolved { name, scope }) = impl_ty else {
+								let Type::TypeRef(ItemRef::Unresolved { name, scope, type_args }) = impl_ty else {
 									return Err(self.err(CMNErrorCode::ExpectedIdentifier)); // TODO: Proper error
 								};
 
-								trait_name = Some(ItemRef::<TraitRef>::Unresolved { name, scope });
+								trait_name = Some(ItemRef::<TraitRef>::Unresolved { name, scope, type_args });
 
 								// Then parse the implementing type, for real this time
 								impl_ty = self.parse_type(false)?;
@@ -983,18 +983,22 @@ impl Parser {
 
 		if self.is_at_identifier_token()? {
 			let id = self.parse_identifier()?;
-			let mut next = self.get_current()?;
 
-			if let Some(Type::TypeRef(ItemRef::Resolved(found))) = self.find_type(&id) {
+			if let Some(Type::TypeRef(ItemRef::Resolved(mut found))) = self.find_type(&id) {
 				match &*found.def.upgrade().unwrap().read().unwrap() {
 					// Parse with algebraic typename
 					TypeDef::Algebraic(_) => {
-						if let Token::Other('{') = &next {
+
+						if let Token::Operator("<") = self.get_current()? {
+							found.args = self.parse_type_argument_list()?.into_iter().map(|arg| ("".into(), arg)).collect();
+						}
+						
+						if let Token::Other('{') = self.get_current()? {
 							// Parse struct literal
 
 							let mut inits = vec![];
 
-							while next != Token::Other('}') {
+							while self.get_current()? != Token::Other('}') {
 								self.get_next()?;
 
 								if let Token::Name(member_name) = self.get_current()? {
@@ -1008,8 +1012,6 @@ impl Parser {
 								} else if self.get_current()? != Token::Other('}') {
 									return Err(self.err(CMNErrorCode::UnexpectedToken));
 								}
-
-								next = self.get_current()?;
 							}
 
 							self.consume(&Token::Other('}'))?;
@@ -1031,10 +1033,10 @@ impl Parser {
 				// Variable or function name
 				result = Some(Atom::Identifier(id.clone()));
 
-				if let Token::Operator("(" | "<") = next {
+				if let Token::Operator("(" | "<") = self.get_current()? {
 					let mut type_args = vec![];
 
-					if next == Token::Operator("<") {
+					if self.get_current()? == Token::Operator("<") {
 						let mut is_function = false;
 
 						self.namespace
@@ -1056,9 +1058,8 @@ impl Parser {
 
 					// Function call
 					let mut args = vec![];
-					next = self.get_next()?;
 
-					if next != Token::Operator(")") {
+					if self.get_next()? != Token::Operator(")") {
 						loop {
 							args.push(self.parse_expression()?);
 
@@ -1079,7 +1080,7 @@ impl Parser {
 						name: id,
 						args,
 						type_args,
-						resolved: None,
+						resolved: FnRef::None,
 					});
 				}
 			}
@@ -1372,6 +1373,7 @@ impl Parser {
 					Some(Box::new(ItemRef::Unresolved {
 						name: self.parse_identifier()?,
 						scope: self.current_scope.clone(),
+						type_args: vec![],
 					}))
 				}
 
@@ -1574,6 +1576,7 @@ impl Parser {
 				result = Type::TypeRef(ItemRef::Unresolved {
 					name: typename,
 					scope: self.current_scope.clone(),
+					type_args: vec![],
 				});
 			}
 
@@ -1632,23 +1635,32 @@ impl Parser {
 				Token::Operator("<") => {
 					// Type parameters
 
-					let Type::TypeRef(ItemRef::Resolved(TypeRef {
+					if let Type::TypeRef(ItemRef::Resolved(TypeRef {
 						def,
 						args,
 						..
-					})) = &mut result else {
+					})) = &mut result {
+						let def = def.upgrade().unwrap();
+						let TypeDef::Algebraic(agg) = &*def.read().unwrap() else { panic!() };
+
+						let type_args = self.parse_type_argument_list()?;
+
+						for (i, type_arg) in type_args.into_iter().enumerate() {
+							let name = agg.params[i].0.clone();
+							args.push((name, type_arg));
+						}
+					} else if let Type::TypeRef(ItemRef::Unresolved { type_args: args, .. }) = &mut result {
+						let type_args = self.parse_type_argument_list()?;
+
+						for type_arg in type_args.into_iter() {
+							args.push(("".into(), type_arg));
+						}
+
+					} else {
 						panic!("can't apply type parameters to this type of Type!") // TODO: Real error handling
-					};
-
-					let def = def.upgrade().unwrap();
-					let TypeDef::Algebraic(agg) = &*def.read().unwrap() else { panic!() };
-
-					let type_args = self.parse_type_argument_list()?;
-
-					for (i, type_arg) in type_args.iter().enumerate() {
-						let name = agg.params[i].0.clone(); // TODO: Real error handling
-						args.push((name, type_arg.clone()));
 					}
+
+					
 				}
 
 				_ => {}
@@ -1749,6 +1761,7 @@ impl Parser {
 							traits.push(ItemRef::Unresolved {
 								name: tr,
 								scope: self.current_scope.clone(),
+								type_args: vec![],
 							});
 
 							current = self.get_next()?;
