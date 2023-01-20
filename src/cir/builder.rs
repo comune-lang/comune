@@ -296,8 +296,9 @@ impl CIRModuleBuilder {
 	fn generate_stmt(&mut self, stmt: &Stmt) {
 		match stmt {
 			Stmt::Expr(expr) => {
-				let Some(expr_ir) = self.generate_expr(expr) else { return };
-				self.write(CIRStmt::Expression(expr_ir, expr.get_node_data().tk));
+				// As of the CIRStmt::FnCall refactor, RValues have no side effects, 
+				// so we can discard the result of this expression
+				let _ = self.generate_expr(expr);
 			}
 
 			Stmt::Decl(bindings, expr, tk) => {
@@ -599,8 +600,6 @@ impl CIRModuleBuilder {
 									(if_val, body_meta.tk),
 								));
 								has_result = true;
-							} else {
-								self.write(CIRStmt::Expression(if_val, body_meta.tk));
 							}
 						}
 
@@ -623,8 +622,6 @@ impl CIRModuleBuilder {
 										(else_val, else_meta.tk),
 									));
 									has_result = true;
-								} else {
-									self.write(CIRStmt::Expression(else_val, else_meta.tk));
 								}
 							}
 							let cont_block = self.append_block();
@@ -706,16 +703,14 @@ impl CIRModuleBuilder {
 						let body_block = self.append_block();
 
 						// Generate body
-						let body_ir = self.generate_expr(body)?;
-						self.write(CIRStmt::Expression(body_ir, (0, 0)));
+						self.generate_expr(body)?;
 
 						// Add iter statement to body
 						if let Some(iter) = iter {
-							let iter_ir = self.generate_expr(iter)?;
-							self.write(CIRStmt::Expression(iter_ir, (0, 0)));
+							self.generate_expr(iter)?;
 						}
-						let body_write_block = self.current_block;
 
+						let body_write_block = self.current_block;
 						let loop_block = self.append_block();
 
 						self.current_block = body_write_block;
