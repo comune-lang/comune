@@ -3,7 +3,7 @@ use std::{borrow::BorrowMut, collections::HashMap};
 use crate::{
 	ast::{
 		controlflow::ControlFlow,
-		expression::{Atom, Expr, OnceAtom, Operator, FnRef},
+		expression::{Atom, Expr, FnRef, OnceAtom, Operator},
 		namespace::{Identifier, ItemRef, Name, Namespace, NamespaceASTElem, NamespaceItem},
 		pattern::{Binding, Pattern},
 		statement::Stmt,
@@ -124,11 +124,7 @@ impl CIRModuleBuilder {
 
 			Type::TypeRef(ItemRef::Resolved(ty)) => {
 				let idx = self.convert_type_def(ty);
-				let args_cir = ty
-					.args
-					.iter()
-					.map(|ty| self.convert_type(ty))
-					.collect();
+				let args_cir = ty.args.iter().map(|ty| self.convert_type(ty)).collect();
 
 				CIRType::TypeRef(idx, args_cir)
 			}
@@ -257,7 +253,7 @@ impl CIRModuleBuilder {
 
 		for param in &func.params.params {
 			if let Some(name) = &param.1 {
-				self.insert_variable(name.clone(), param.0.clone());
+				self.insert_variable(Some(name.clone()), param.0.clone());
 			}
 		}
 
@@ -266,6 +262,8 @@ impl CIRModuleBuilder {
 
 	pub fn generate_function(&mut self, func: CIRFnPrototype, fn_block: &Expr) {
 		self.current_fn = self.module.functions.remove(&func);
+
+		self.append_block();
 
 		let _ = self.generate_expr(fn_block);
 
@@ -309,7 +307,7 @@ impl CIRModuleBuilder {
 
 				let (ty, name) = &bindings[0];
 
-				let var = self.insert_variable(name.clone(), ty.clone());
+				let var = self.insert_variable(Some(name.clone()), ty.clone());
 				let idx = var.local;
 
 				if let Some(expr) = expr {
@@ -553,50 +551,9 @@ impl CIRModuleBuilder {
 					})
 				}
 
-				Atom::FnCall {
-					name,
-					args,
-					type_args,
-					resolved: FnRef::Direct(resolved),
-				} => {
-					let cir_args = args
-						.iter()
-						.map(|arg| {
-							let cir_ty = self.convert_type(arg.get_type());
-							let cir_expr = self.generate_expr(arg).unwrap();
+				call @ Atom::FnCall { .. } => self.generate_fn_call(call),
 
-							if let RValue::Atom(_, None, Operand::LValue(lval)) = cir_expr {
-								lval
-							} else {
-								self.insert_temporary(cir_ty, cir_expr)
-							}
-						})
-						.collect();
-
-					let cir_type_args = type_args
-						.iter()
-						.map(|arg| self.convert_type(arg))
-						.collect();
-
-					let mut name = name.clone();
-					name.absolute = true;
-
-					Some(RValue::Atom(
-						self.convert_type(&resolved.read().unwrap().ret),
-						None,
-						Operand::FnCall(
-							self.get_prototype(name, &resolved.read().unwrap()),
-							cir_args,
-							cir_type_args,
-						),
-					))
-				}
-
-				Atom::FnCall { resolved: FnRef::Indirect(..), .. } => todo!(),
-
-				Atom::FnCall { resolved: FnRef::None, .. } => panic!(),
-
-				Atom::Block { items, result } => self.generate_block(items, result, false).1,
+				Atom::Block { items, result } => self.generate_block(items, result, true).1,
 
 				Atom::CtrlFlow(ctrl) => match &**ctrl {
 					ControlFlow::Return { expr } => {
@@ -633,6 +590,7 @@ impl CIRModuleBuilder {
 						let start_block = self.current_block;
 
 						let (if_idx, block_ir) = self.generate_block(items, result, false);
+						let if_write_idx = self.current_block;
 
 						if let Some(if_val) = block_ir {
 							if let Some(result) = &result_loc {
@@ -656,6 +614,7 @@ impl CIRModuleBuilder {
 						{
 							let (else_idx, else_ir) =
 								self.generate_block(else_items, else_result, false);
+							let else_write_idx = self.current_block;
 
 							if let Some(else_val) = else_ir {
 								if let Some(result) = &result_loc {
@@ -674,8 +633,9 @@ impl CIRModuleBuilder {
 
 							self.generate_branch(cond_ir, if_idx, else_idx);
 
-							self.get_fn_mut().blocks[if_idx].push(CIRStmt::Jump(cont_block));
-							self.get_fn_mut().blocks[else_idx].push(CIRStmt::Jump(cont_block));
+							self.get_fn_mut().blocks[if_write_idx].push(CIRStmt::Jump(cont_block));
+							self.get_fn_mut().blocks[else_write_idx]
+								.push(CIRStmt::Jump(cont_block));
 							self.current_block = cont_block;
 						} else {
 							let cont_block = self.append_block();
@@ -683,7 +643,7 @@ impl CIRModuleBuilder {
 							self.current_block = start_block;
 							self.generate_branch(cond_ir, if_idx, cont_block);
 
-							self.get_fn_mut().blocks[if_idx].push(CIRStmt::Jump(cont_block));
+							self.get_fn_mut().blocks[if_write_idx].push(CIRStmt::Jump(cont_block));
 							self.current_block = cont_block;
 						}
 
@@ -706,6 +666,7 @@ impl CIRModuleBuilder {
 						let cond_block = self.append_block();
 
 						let cond_ir = self.generate_expr(cond)?;
+						let cond_write_block = self.current_block;
 
 						// Write jump-to-cond statement to start block
 						self.current_block = start_block;
@@ -714,7 +675,7 @@ impl CIRModuleBuilder {
 						// Generate body
 						let (body_idx, result) = self.generate_block(items, result, false);
 
-						// Only write a terminator if the block returns, aka result.is_some()
+						// Only write a terminator if the block returns
 						if result.is_some() {
 							// Write jump-to-cond statement to body block
 							self.write(CIRStmt::Jump(cond_block));
@@ -722,7 +683,7 @@ impl CIRModuleBuilder {
 
 						let next_block = self.append_block();
 
-						self.current_block = cond_block;
+						self.current_block = cond_write_block;
 						self.generate_branch(cond_ir, body_idx, next_block);
 
 						self.current_block = next_block;
@@ -736,34 +697,35 @@ impl CIRModuleBuilder {
 						iter,
 						body,
 					} => {
-						let start_block = self.current_block;
-
 						// Write init to start block
 						if let Some(init) = init {
 							self.generate_stmt(init);
 						}
 
-						let loop_block = self.append_block();
+						let start_block = self.current_block;
+						let body_block = self.append_block();
 
 						// Generate body
 						let body_ir = self.generate_expr(body)?;
 						self.write(CIRStmt::Expression(body_ir, (0, 0)));
-
-						let body_block = self.current_block;
 
 						// Add iter statement to body
 						if let Some(iter) = iter {
 							let iter_ir = self.generate_expr(iter)?;
 							self.write(CIRStmt::Expression(iter_ir, (0, 0)));
 						}
+						let body_write_block = self.current_block;
 
-						self.current_block = body_block;
+						let loop_block = self.append_block();
+
+						self.current_block = body_write_block;
 						self.write(CIRStmt::Jump(loop_block));
 
 						self.current_block = start_block;
 						self.write(CIRStmt::Jump(loop_block));
 
 						let next_block = self.append_block();
+
 						self.current_block = loop_block;
 
 						if let Some(cond) = cond {
@@ -980,40 +942,8 @@ impl CIRModuleBuilder {
 				} else {
 					match op {
 						Operator::MemberAccess => match &**rhs {
-							Expr::Atom(
-								Atom::FnCall {
-									name,
-									args,
-									type_args,
-									resolved: FnRef::Direct(resolved),
-								},
-								_,
-							) => {
-								let rhs_ty = self.convert_type(rhs.get_type());
-
-								let mut cir_args = vec![];
-								cir_args.reserve(args.len());
-
-								for arg in args {
-									let cir_ty = self.convert_type(arg.get_type());
-									let cir_expr = self.generate_expr(arg)?;
-									cir_args.push(self.insert_temporary(cir_ty, cir_expr))
-								}
-
-								let cir_type_args = type_args
-									.iter()
-									.map(|arg| self.convert_type(arg))
-									.collect();
-
-								Some(RValue::Atom(
-									rhs_ty,
-									None,
-									Operand::FnCall(
-										self.get_prototype(name.clone(), &resolved.read().unwrap()),
-										cir_args,
-										cir_type_args,
-									),
-								))
+							Expr::Atom(call @ Atom::FnCall { .. }, _) => {
+								self.generate_fn_call(call)
 							}
 
 							Expr::Atom(Atom::Identifier(_), _) => {
@@ -1071,6 +1001,73 @@ impl CIRModuleBuilder {
 
 				Some(RValue::Atom(cir_ty, Some(op.clone()), temp))
 			}
+		}
+	}
+
+	fn generate_fn_call(&mut self, call: &Atom) -> Option<RValue> {
+		let Atom::FnCall {
+			name,
+			args,
+			type_args,
+			resolved: FnRef::Direct(resolved),
+		} = call else { panic!() };
+
+		let cir_args: Vec<_> = args
+			.iter()
+			.map_while(|arg| {
+				let cir_ty = self.convert_type(arg.get_type());
+				let cir_expr = self.generate_expr(arg)?;
+
+				if let RValue::Atom(_, None, Operand::LValue(lval)) = cir_expr {
+					Some(lval)
+				} else {
+					Some(self.insert_temporary(cir_ty, cir_expr))
+				}
+			})
+			.collect();
+
+		// One of the expressions does not return, so stop building the call here
+		if cir_args.len() < args.len() {
+			return None;
+		}
+
+		let cir_type_args = type_args.iter().map(|arg| self.convert_type(arg)).collect();
+
+		let ret = &resolved.read().unwrap().ret;
+		let mut name = name.clone();
+		name.absolute = true;
+
+		let current_block = self.current_block;
+		let next = self.append_block();
+		self.current_block = current_block;
+
+		let result = if ret == &Type::Basic(Basic::Void) {
+			None
+		} else {
+			Some(self.insert_variable(None, ret.clone()))
+		};
+
+		let id = self.get_prototype(name, &resolved.read().unwrap());
+
+		self.write(CIRStmt::FnCall {
+			id,
+			args: cir_args,
+			type_args: cir_type_args,
+			result: result.clone(),
+			next,
+			except: None,
+		});
+
+		self.current_block = next;
+
+		if let Some(result) = result {
+			Some(RValue::Atom(
+				self.convert_type(&ret),
+				None,
+				Operand::LValue(result),
+			))
+		} else {
+			Some(Self::get_void_rvalue())
 		}
 	}
 
@@ -1193,15 +1190,19 @@ impl CIRModuleBuilder {
 		None
 	}
 
-	fn insert_variable(&mut self, name: Name, ty: Type) -> LValue {
+	fn insert_variable(&mut self, name: Option<Name>, ty: Type) -> LValue {
 		let cir_ty = self.convert_type(&ty);
 		let idx = self.get_fn().variables.len();
 
-		self.get_fn_mut()
-			.variables
-			.push((cir_ty, Some(name.clone())));
+		if let Some(name) = &name {
+			self.name_map_stack
+				.last_mut()
+				.unwrap()
+				.insert(name.clone(), idx);
+		}
 
-		self.name_map_stack.last_mut().unwrap().insert(name, idx);
+		self.get_fn_mut().variables.push((cir_ty, name));
+
 		LValue {
 			local: idx,
 			projection: vec![],

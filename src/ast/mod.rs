@@ -16,7 +16,7 @@ use crate::{
 
 use self::{
 	controlflow::ControlFlow,
-	expression::{Atom, Expr, NodeData, OnceAtom, Operator, FnRef},
+	expression::{Atom, Expr, FnRef, NodeData, OnceAtom, Operator},
 	namespace::{Identifier, ItemRef, Name, Namespace, NamespaceASTElem, NamespaceItem},
 	pattern::Binding,
 	statement::Stmt,
@@ -77,7 +77,11 @@ impl<'ctx> FnScope<'ctx> {
 		}
 	}
 
-	pub fn find_symbol(&self, id: &Identifier, search_namespace: bool) -> Option<(Identifier, Type)> {
+	pub fn find_symbol(
+		&self,
+		id: &Identifier,
+		search_namespace: bool,
+	) -> Option<(Identifier, Type)> {
 		let mut result = None;
 
 		if !id.is_qualified() {
@@ -277,7 +281,11 @@ fn candidate_compare(
 	}
 }
 
-pub fn validate_fn_call(call: &mut Atom, scope: &mut FnScope, node_data: &NodeData) -> AnalyzeResult<Type> {
+pub fn validate_fn_call(
+	call: &mut Atom,
+	scope: &mut FnScope,
+	node_data: &NodeData,
+) -> AnalyzeResult<Type> {
 	let mut candidates = vec![];
 	let Atom::FnCall { name, args, type_args, resolved } = call else { panic!() };
 
@@ -288,7 +296,6 @@ pub fn validate_fn_call(call: &mut Atom, scope: &mut FnScope, node_data: &NodeDa
 	if let FnRef::Indirect(_, Type::Function(ret, _)) = resolved {
 		return Ok(*ret.clone());
 	}
-
 
 	if let Some((local_name, local_ty)) = scope.find_symbol(name, false) {
 		// Local function pointer
@@ -348,7 +355,7 @@ pub fn validate_fn_call(call: &mut Atom, scope: &mut FnScope, node_data: &NodeDa
 
 				Ordering::Equal => {
 					return Err((CMNError::new(CMNErrorCode::AmbiguousCall), node_data.tk))
-				}, // Ambiguous call
+				} // Ambiguous call
 
 				_ => unreachable!(), // Not possible, just sorted it
 			}
@@ -433,8 +440,11 @@ fn resolve_method_call(
 				Ordering::Less => candidates[0].clone(),
 
 				Ordering::Equal => {
-					return Err((CMNError::new(CMNErrorCode::AmbiguousCall), lhs.get_node_data().tk))
-				}, // Ambiguous call
+					return Err((
+						CMNError::new(CMNErrorCode::AmbiguousCall),
+						lhs.get_node_data().tk,
+					))
+				} // Ambiguous call
 
 				_ => unreachable!(), // Not possible
 			}
@@ -536,7 +546,11 @@ pub fn resolve_type(
 
 		Type::Array(pointee, _size) => resolve_type(pointee, namespace, generics),
 
-		Type::TypeRef(ItemRef::Unresolved { name: id, scope, type_args }) => {
+		Type::TypeRef(ItemRef::Unresolved {
+			name: id,
+			scope,
+			type_args,
+		}) => {
 			let result;
 			let generic_pos = generics.iter().position(|(name, ..)| name == id.name());
 
@@ -547,7 +561,12 @@ pub fn resolve_type(
 				result = namespace.resolve_type(id, scope, &vec![]);
 			}
 
-			if let Some(Type::TypeRef(ItemRef::Resolved(TypeRef { def, name, mut args }))) = result {
+			if let Some(Type::TypeRef(ItemRef::Resolved(TypeRef {
+				def,
+				name,
+				mut args,
+			}))) = result
+			{
 				args.append(type_args);
 				*ty = Type::TypeRef(ItemRef::Resolved(TypeRef { def, name, args }));
 				Ok(())
@@ -699,31 +718,30 @@ pub fn resolve_namespace_types(namespace: &Namespace) -> ParseResult<()> {
 
 	for (ty, im) in namespace.trait_solver.get_local_impls() {
 		resolve_type(&mut ty.write().unwrap(), namespace, &vec![])?;
-		
+
 		// Resolve item references in canonical root
 
-		let resolved_trait = if let Some(ItemRef::Unresolved { name, scope, type_args }) = &im.read().unwrap().implements {
-			namespace.with_item(&name, &scope, |(item, ..), name| {
-				match item {
-					NamespaceItem::Trait(tr) => {
-						Box::new(ItemRef::Resolved(TraitRef {
-							def: Arc::downgrade(tr),
-							name: name.clone(),
-							args: type_args.clone(),
-						}))
-					}
+		let resolved_trait = if let Some(ItemRef::Unresolved {
+			name,
+			scope,
+			type_args,
+		}) = &im.read().unwrap().implements
+		{
+			namespace.with_item(&name, &scope, |(item, ..), name| match item {
+				NamespaceItem::Trait(tr) => Box::new(ItemRef::Resolved(TraitRef {
+					def: Arc::downgrade(tr),
+					name: name.clone(),
+					args: type_args.clone(),
+				})),
 
-					_ => panic!()
-				}
+				_ => panic!(),
 			})
 		} else {
 			None
 		};
-		
-		im.write().unwrap().canonical_root.qualifier = (
-			Some(Box::new(ty.read().unwrap().clone())),
-			resolved_trait
-		);
+
+		im.write().unwrap().canonical_root.qualifier =
+			(Some(Box::new(ty.read().unwrap().clone())), resolved_trait);
 
 		for fns in im.write().unwrap().items.values_mut() {
 			for (func, _) in fns {

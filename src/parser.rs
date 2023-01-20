@@ -8,7 +8,7 @@ use crate::errors::{CMNError, CMNErrorCode};
 use crate::lexer::{Lexer, Token};
 
 use crate::ast::controlflow::ControlFlow;
-use crate::ast::expression::{Atom, Expr, NodeData, Operator, FnRef};
+use crate::ast::expression::{Atom, Expr, FnRef, NodeData, Operator};
 use crate::ast::namespace::{
 	Identifier, ItemRef, Name, Namespace, NamespaceASTElem, NamespaceItem,
 };
@@ -383,7 +383,11 @@ impl Parser {
 									return Err(self.err(CMNErrorCode::ExpectedIdentifier)); // TODO: Proper error
 								};
 
-								trait_name = Some(ItemRef::<TraitRef>::Unresolved { name, scope, type_args });
+								trait_name = Some(ItemRef::<TraitRef>::Unresolved {
+									name,
+									scope,
+									type_args,
+								});
 
 								// Then parse the implementing type, for real this time
 								impl_ty = self.parse_type(false)?;
@@ -513,18 +517,19 @@ impl Parser {
 				_ => {
 					// Parse declaration/definition
 					let (name, mut result) = self.parse_namespace_declaration()?;
-					
+
 					let id = Identifier::from_parent(scope, name);
 
 					match &mut result {
 						NamespaceItem::Functions(fns) => {
-							if let Some((NamespaceItem::Functions(existing), ..)) = self.namespace.children.get_mut(&id) {
+							if let Some((NamespaceItem::Functions(existing), ..)) =
+								self.namespace.children.get_mut(&id)
+							{
 								existing.append(fns);
 							} else {
-								self.namespace.children.insert(
-									id,
-									(result, current_attributes, None),
-								);
+								self.namespace
+									.children
+									.insert(id, (result, current_attributes, None));
 							}
 						}
 
@@ -988,11 +993,10 @@ impl Parser {
 				match &*found.def.upgrade().unwrap().read().unwrap() {
 					// Parse with algebraic typename
 					TypeDef::Algebraic(_) => {
-
 						if let Token::Operator("<") = self.get_current()? {
 							found.args = self.parse_type_argument_list()?;
 						}
-						
+
 						if let Token::Other('{') = self.get_current()? {
 							// Parse struct literal
 
@@ -1631,13 +1635,17 @@ impl Parser {
 				Token::Operator("<") => {
 					// Type parameters
 
-					if let Type::TypeRef(ItemRef::Resolved(TypeRef { args, .. }) | ItemRef::Unresolved { type_args: args, .. }) = &mut result {
+					if let Type::TypeRef(
+						ItemRef::Resolved(TypeRef { args, .. })
+						| ItemRef::Unresolved {
+							type_args: args, ..
+						},
+					) = &mut result
+					{
 						*args = self.parse_type_argument_list()?;
 					} else {
 						panic!("can't apply type parameters to this type of Type!") // TODO: Real error handling
 					}
-
-					
 				}
 
 				_ => {}

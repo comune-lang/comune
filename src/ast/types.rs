@@ -108,11 +108,7 @@ impl AlgebraicDef {
 		}
 	}
 
-	pub fn get_member(
-		&self,
-		name: &Name,
-		type_args: Option<&Vec<Type>>,
-	) -> Option<(usize, Type)> {
+	pub fn get_member(&self, name: &Name, type_args: Option<&Vec<Type>>) -> Option<(usize, Type)> {
 		let mut index = 0;
 
 		for (member_name, ty, _) in &self.members {
@@ -464,7 +460,11 @@ impl Hash for Type {
 				"+".hash(state)
 			}
 
-			Type::TypeRef(ItemRef::Unresolved { name, scope, type_args }) => {
+			Type::TypeRef(ItemRef::Unresolved {
+				name,
+				scope,
+				type_args,
+			}) => {
 				name.hash(state);
 				scope.hash(state);
 				type_args.hash(state);
@@ -498,7 +498,9 @@ impl Display for Type {
 
 			Type::Array(t, _s) => write!(f, "{}[]", t),
 
-			Type::TypeRef(ItemRef::Unresolved { name, type_args, .. }) => {
+			Type::TypeRef(ItemRef::Unresolved {
+				name, type_args, ..
+			}) => {
 				write!(f, "\"{name}\"")?;
 
 				if !type_args.is_empty() {
@@ -634,7 +636,12 @@ impl std::fmt::Debug for Type {
 				name: arg0,
 				scope: arg1,
 				type_args: arg2,
-			}) => f.debug_tuple("Unresolved").field(arg0).field(arg1).field(arg2).finish(),
+			}) => f
+				.debug_tuple("Unresolved")
+				.field(arg0)
+				.field(arg1)
+				.field(arg2)
+				.finish(),
 			Type::TypeRef(ItemRef::Resolved(TypeRef { def: arg0, .. })) => {
 				f.debug_tuple("TypeRef").field(arg0).finish()
 			}

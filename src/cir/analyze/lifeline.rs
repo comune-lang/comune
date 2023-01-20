@@ -120,12 +120,6 @@ impl LiveVarCheckState {
 		match op {
 			Operand::LValue(lval) => self.eval_lvalue(_ty, lval, token_data)?,
 
-			Operand::FnCall(_, args, ..) => {
-				for arg in args {
-					self.eval_lvalue(_ty, arg, token_data)?;
-				}
-			}
-
 			_ => {}
 		}
 		Ok(())

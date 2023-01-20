@@ -77,11 +77,11 @@ int main() {
 	
 	match who_knows {
 		i64 int_result => {
-			printf(c"It's an int! %i\n", int_result);
+			printf(c"It's an int! %i\n", int_result)
 		}
 
 		float float_result => {
-			printf(c"It's a float! %f\n", float_result);
+			printf(c"It's a float! %f\n", float_result)
 		}
 	};
 
@@ -89,11 +89,11 @@ int main() {
 
 	match int_test {
 		i32 a => {
-			printf(c"It's an i32! %i\n", a);
+			printf(c"It's an i32! %i\n", a)
 		}
 
 		i64 b => {
-			printf(c"It's an i64! %i\n", b);
+			printf(c"It's an i64! %i\n", b)
 		}
 	};
 

@@ -266,6 +266,67 @@ impl<'ctx> LLVMBackend<'ctx> {
 							self.builder.build_return(None);
 						}
 					}
+
+					CIRStmt::FnCall {
+						id,
+						args,
+						type_args,
+						result,
+						next,
+						except,
+					} => {
+						let mangled = &self.fn_map[id];
+						let fn_v = self.module.get_function(mangled).unwrap();
+
+						assert!(
+							type_args.is_empty(),
+							"encountered un-monoized type argument in LLVM codegen!"
+						);
+
+						let callsite;
+
+						if let Some(except) = except {
+							let args_mapped: Vec<_> = args
+								.iter()
+								.map(|x| {
+									self.builder
+										.build_load(self.generate_lvalue(x), "argld")
+										.as_basic_value_enum()
+								})
+								.collect();
+
+							callsite = self.builder.build_invoke(
+								fn_v,
+								&args_mapped,
+								self.blocks[*next],
+								self.blocks[*except],
+								"invoke",
+							)
+						} else {
+							let args_mapped: Vec<_> = args
+								.iter()
+								.map(|x| {
+									Self::to_basic_metadata_value(
+										self.builder
+											.build_load(self.generate_lvalue(x), "argld")
+											.as_any_value_enum(),
+									)
+								})
+								.collect();
+
+							callsite = self.builder.build_call(fn_v, &args_mapped, "call");
+							self.builder.build_unconditional_branch(self.blocks[*next]);
+						}
+						if let Some(result) = result {
+							self.builder.position_at_end(self.blocks[*next]);
+
+							self.builder.build_store(
+								self.generate_lvalue(result),
+								callsite.try_as_basic_value().unwrap_left(),
+							);
+						} else {
+						}
+					}
 				}
 			}
 		}
@@ -399,7 +460,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 						let val = self.generate_operand(from, val).unwrap();
 						let store_ty = self.get_llvm_type(to);
 						let idx = types.iter().position(|ty| ty == from).unwrap();
-						
+
 						let discriminant = self
 							.context
 							.i32_type()
@@ -409,16 +470,20 @@ impl<'ctx> LLVMBackend<'ctx> {
 						let tmp_alloca = self
 							.builder
 							.build_alloca(store_ty.into_struct_type(), "sumtmp");
-						
+
 						self.builder.build_store(
-							self.builder.build_struct_gep(tmp_alloca, 0, "discstore").unwrap(),
+							self.builder
+								.build_struct_gep(tmp_alloca, 0, "discstore")
+								.unwrap(),
 							discriminant,
 						);
 
 						let ptr = self.builder.build_pointer_cast(
-							self.builder.build_struct_gep(tmp_alloca, 1, "sumgep").unwrap(), 
-							val.get_type().ptr_type(AddressSpace::Generic), 
-							"sumcast"
+							self.builder
+								.build_struct_gep(tmp_alloca, 1, "sumgep")
+								.unwrap(),
+							val.get_type().ptr_type(AddressSpace::Generic),
+							"sumcast",
 						);
 
 						self.builder.build_store(ptr, val);
@@ -600,9 +665,9 @@ impl<'ctx> LLVMBackend<'ctx> {
 							let tmp = self.builder.build_alloca(val.get_type(), "tmp");
 
 							self.builder.build_store(tmp, val);
-							
+
 							let gep = self.builder.build_struct_gep(tmp, 1, "sumget").unwrap();
-							
+
 							let cast = self
 								.builder
 								.build_bitcast(
@@ -629,28 +694,6 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 	fn generate_operand(&self, ty: &CIRType, expr: &Operand) -> Option<BasicValueEnum<'ctx>> {
 		match expr {
-			Operand::FnCall(proto, args, _) => {
-				let mangled = &self.fn_map[proto];
-
-				let fn_v = self.module.get_function(mangled).unwrap();
-
-				let args_mapped: Vec<_> = args
-					.iter()
-					.map(|x| {
-						Self::to_basic_metadata_value(
-							self.builder
-								.build_load(self.generate_lvalue(x), "argld")
-								.as_any_value_enum(),
-						)
-					})
-					.collect();
-
-				self.builder
-					.build_call(fn_v, &args_mapped, "fncall")
-					.try_as_basic_value()
-					.left()
-			}
-
 			Operand::StringLit(s) => {
 				let len = s.as_bytes().len().try_into().unwrap();
 				let string_t = self.context.i8_type().array_type(len);

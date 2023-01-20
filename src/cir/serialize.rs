@@ -124,6 +124,53 @@ impl Display for CIRStmt {
 					writeln!(f, "ret;")
 				}
 			}
+			CIRStmt::FnCall {
+				id,
+				args,
+				type_args,
+				result,
+				next,
+				except,
+			} => {
+				if let Some(result) = result {
+					write!(f, "{result} = ")?;
+				}
+
+				write!(f, "call {id} with")?;
+
+				if !type_args.is_empty() {
+					let mut args_iter = type_args.iter();
+
+					write!(f, "<{}", args_iter.next().unwrap())?;
+
+					for arg in args_iter {
+						write!(f, ", {arg}")?;
+					}
+
+					write!(f, ">")?;
+				}
+
+				if !args.is_empty() {
+					let mut args_iter = args.iter();
+					write!(f, "({}", args_iter.next().unwrap())?;
+
+					for arg in args_iter {
+						write!(f, ", {arg}")?;
+					}
+
+					write!(f, ")")?;
+				} else {
+					write!(f, "()")?;
+				}
+
+				write!(f, " => [bb{next}")?;
+
+				if let Some(except) = except {
+					write!(f, ", bb{except}];\n")
+				} else {
+					write!(f, "];\n")
+				}
+			}
 		}
 	}
 }
@@ -179,35 +226,6 @@ impl Display for Operand {
 			Operand::BoolLit(b) => write!(f, "{b}"),
 			Operand::LValue(lval) => write!(f, "{lval}"),
 			Operand::Undef => write!(f, "undef"),
-
-			Operand::FnCall(name, args, type_args) => {
-				write!(f, "call {name} with ")?;
-
-				if !type_args.is_empty() {
-					let mut args_iter = type_args.iter();
-
-					write!(f, "<{}", args_iter.next().unwrap())?;
-
-					for arg in args_iter {
-						write!(f, ", {arg}")?;
-					}
-
-					write!(f, ">")?;
-				}
-
-				if !args.is_empty() {
-					let mut args_iter = args.iter();
-					write!(f, "({}", args_iter.next().unwrap())?;
-
-					for arg in args_iter {
-						write!(f, ", {arg}")?;
-					}
-
-					write!(f, ")")
-				} else {
-					write!(f, "()")
-				}
-			}
 		}
 	}
 }

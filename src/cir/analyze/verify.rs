@@ -18,7 +18,9 @@ impl CIRPass for Verify {
 			if let Some(last) = block.last() {
 				if !matches!(
 					last,
-					CIRStmt::Return(_) | CIRStmt::Switch(..) | CIRStmt::Jump(_)
+					CIRStmt::Return(_)
+						| CIRStmt::Switch(..) | CIRStmt::Jump(_)
+						| CIRStmt::FnCall { .. }
 				) {
 					errors.push((
 						CMNError::new(CMNErrorCode::Custom(

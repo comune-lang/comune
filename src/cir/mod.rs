@@ -85,9 +85,9 @@ pub enum RValue {
 
 // An Operand represents a single element of a CIR expression.
 // This may either be a constant, an undef value, or an lvalue access.
+// Crucially, operands do not have side effects. Yes, past Ash, I'm talking to you.
 #[derive(Clone, Debug)]
 pub enum Operand {
-	FnCall(FuncID, Vec<LValue>, Vec<CIRType>), // Fully-qualified name + args
 	IntegerLit(i128),
 	FloatLit(f64),
 	StringLit(String),
@@ -131,6 +131,14 @@ pub enum CIRStmt {
 	Jump(BlockIndex),
 	Switch(RValue, Vec<(CIRType, Operand, BlockIndex)>, BlockIndex),
 	Return(Option<(RValue, TokenData)>),
+	FnCall {
+		id: FuncID,
+		args: Vec<LValue>,
+		type_args: Vec<CIRType>,
+		result: Option<LValue>,
+		next: BlockIndex,
+		except: Option<BlockIndex>,
+	},
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]

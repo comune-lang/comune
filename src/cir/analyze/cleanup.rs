@@ -2,7 +2,7 @@
 use super::CIRPassMut;
 use crate::{
 	ast::TokenData,
-	cir::{CIRFunction, CIRStmt, Operand, RValue},
+	cir::{CIRFunction, CIRStmt},
 	errors::CMNError,
 };
 
@@ -16,10 +16,8 @@ impl CIRPassMut for RemoveNoOps {
 			let mut offset = 0;
 			for j in 0..func.blocks[i].len() {
 				if let CIRStmt::Expression(expr, _) = &func.blocks[i][j] {
-					if !rval_has_side_effects(expr) {
-						indices.push((i, j - offset));
-						offset += 1;
-					}
+					indices.push((i, j - offset));
+					offset += 1;
 				}
 			}
 		}
@@ -30,18 +28,4 @@ impl CIRPassMut for RemoveNoOps {
 
 		vec![]
 	}
-}
-
-fn rval_has_side_effects(expr: &RValue) -> bool {
-	match expr {
-		RValue::Atom(_, _, op) => op_has_side_effects(op),
-		RValue::Cons(_, [(_, lhs), (_, rhs)], _) => {
-			op_has_side_effects(lhs) || op_has_side_effects(rhs)
-		}
-		RValue::Cast { val, .. } => op_has_side_effects(val),
-	}
-}
-
-fn op_has_side_effects(expr: &Operand) -> bool {
-	matches!(expr, Operand::FnCall(..))
 }

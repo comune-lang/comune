@@ -8,8 +8,7 @@ use crate::{
 };
 
 use super::{
-	CIRFnMap, CIRFunction, CIRModule, CIRStmt, CIRType, CIRTypeDef, FuncID, Operand, RValue,
-	TypeName,
+	CIRFnMap, CIRFunction, CIRModule, CIRStmt, CIRType, CIRTypeDef, FuncID, RValue, TypeName,
 };
 
 // A set of requested Generic monomorphizations, with a Vec of type arguments
@@ -82,16 +81,16 @@ impl CIRModule {
 		func: &CIRFunction,
 		types: &mut HashMap<TypeName, CIRTypeDef>,
 		param_map: &TypeSubstitutions,
-		type_instances: &mut TypeInstances,
+		ty_instances: &mut TypeInstances,
 		fn_instances: &mut FuncInstances,
 	) -> CIRFunction {
 		let mut func = func.clone();
 
 		for (var, _) in &mut func.variables {
-			Self::monoize_type(types, var, param_map, type_instances);
+			Self::monoize_type(types, var, param_map, ty_instances);
 		}
 
-		Self::monoize_type(types, &mut func.ret, param_map, type_instances);
+		Self::monoize_type(types, &mut func.ret, param_map, ty_instances);
 
 		for block in &mut func.blocks {
 			for stmt in block {
@@ -103,25 +102,29 @@ impl CIRModule {
 					CIRStmt::Expression(expr, _)
 					| CIRStmt::Assignment(_, (expr, _))
 					| CIRStmt::Return(Some((expr, _))) => {
-						Self::monoize_rvalue_types(types, expr, param_map, type_instances);
-
-						Self::monoize_fn_calls(
-							functions_in,
-							functions_out,
-							expr,
-							types,
-							&vec![],
-							type_instances,
-							fn_instances,
-						)
+						Self::monoize_rvalue_types(types, expr, param_map, ty_instances);
 					}
 
 					CIRStmt::Switch(expr, branches, _) => {
-						Self::monoize_rvalue_types(types, expr, param_map, type_instances);
+						Self::monoize_rvalue_types(types, expr, param_map, ty_instances);
 
-						for (ty, val, _) in branches {
-							Self::monoize_operand(types, val, ty, param_map, type_instances)
+						for (ty, ..) in branches {
+							Self::monoize_type(types, ty, param_map, ty_instances)
 						}
+					}
+
+					CIRStmt::FnCall { id, type_args, .. } => {
+						Self::monoize_call(
+							functions_in,
+							functions_out,
+							id,
+							types,
+							&type_args,
+							ty_instances,
+							fn_instances,
+						);
+
+						type_args.clear();
 					}
 
 					_ => {}
@@ -130,85 +133,6 @@ impl CIRModule {
 		}
 
 		func
-	}
-
-	fn monoize_fn_calls(
-		functions_in: &CIRFnMap,
-		functions_out: &mut CIRFnMap,
-		rval: &mut RValue,
-		types: &mut HashMap<TypeName, CIRTypeDef>,
-		param_map: &TypeSubstitutions,
-		ty_instances: &mut TypeInstances,
-		fn_instances: &mut FuncInstances,
-	) {
-		match rval {
-			RValue::Atom(_, _, Operand::FnCall(name, _, type_args)) => {
-				let mut param_map = param_map.clone();
-				param_map.append(type_args);
-
-				Self::monoize_call(
-					functions_in,
-					functions_out,
-					name,
-					types,
-					&param_map,
-					ty_instances,
-					fn_instances,
-				)
-			}
-
-			RValue::Cons(_, [(_, lhs), (_, rhs)], _) => {
-				if let Operand::FnCall(name, _, type_args) = lhs {
-					let mut param_map = param_map.clone();
-					param_map.append(type_args);
-
-					Self::monoize_call(
-						functions_in,
-						functions_out,
-						name,
-						types,
-						&param_map,
-						ty_instances,
-						fn_instances,
-					)
-				}
-
-				if let Operand::FnCall(name, _, type_args) = rhs {
-					let mut param_map = param_map.clone();
-					param_map.append(type_args);
-
-					Self::monoize_call(
-						functions_in,
-						functions_out,
-						name,
-						types,
-						&param_map,
-						ty_instances,
-						fn_instances,
-					)
-				}
-			}
-
-			RValue::Cast {
-				val: Operand::FnCall(name, _, type_args),
-				..
-			} => {
-				let mut param_map = param_map.clone();
-				param_map.append(type_args);
-
-				Self::monoize_call(
-					functions_in,
-					functions_out,
-					name,
-					types,
-					&param_map,
-					ty_instances,
-					fn_instances,
-				)
-			}
-
-			_ => {}
-		}
 	}
 
 	fn monoize_call(
@@ -256,21 +180,6 @@ impl CIRModule {
 			for (i, type_arg) in param_map.iter().enumerate() {
 				insert_id.type_params[i].2 = Some(type_arg.clone())
 			}
-			/*
-			let mut name_suffix = "<".to_string();
-			let mut param_iter = param_map.iter();
-
-			name_suffix.push_str(&param_iter.next().unwrap().to_string());
-
-			for param in param_iter {
-				name_suffix.push_str(", ");
-				name_suffix.push_str(&param.to_string());
-			}
-
-			name_suffix += ">";
-
-			insert_id.name.path.push(name_suffix.into());
-			*/
 
 			fn_instances
 				.get_mut(func)
@@ -289,45 +198,21 @@ impl CIRModule {
 		type_instances: &mut TypeInstances,
 	) {
 		match rval {
-			RValue::Atom(ty, _, val) => {
-				if let Operand::FnCall(_, _, type_args) = val {
-					let mut param_map = param_map.clone();
-					param_map.append(&mut type_args.clone());
-
-					Self::monoize_type(types, ty, &param_map, type_instances);
-				} else {
-					Self::monoize_type(types, ty, param_map, type_instances);
-				}
+			RValue::Atom(ty, ..) => {
+				Self::monoize_type(types, ty, param_map, type_instances);
 			}
 
-			RValue::Cons(ty, [(lty, lhs), (rty, rhs)], _) => {
-				Self::monoize_operand(types, lhs, lty, param_map, type_instances);
-				Self::monoize_operand(types, rhs, rty, param_map, type_instances);
+			RValue::Cons(ty, [(lty, _), (rty, _)], _) => {
+				Self::monoize_type(types, lty, param_map, type_instances);
+				Self::monoize_type(types, rty, param_map, type_instances);
 
 				Self::monoize_type(types, ty, param_map, type_instances);
 			}
 
-			RValue::Cast { from, to, val } => {
-				Self::monoize_operand(types, val, from, param_map, type_instances);
+			RValue::Cast { from, to, .. } => {
+				Self::monoize_type(types, from, param_map, type_instances);
 				Self::monoize_type(types, to, param_map, type_instances);
 			}
-		}
-	}
-
-	fn monoize_operand(
-		types: &mut HashMap<String, CIRTypeDef>,
-		val: &mut Operand,
-		ty: &mut CIRType,
-		param_map: &TypeSubstitutions,
-		type_instances: &mut TypeInstances,
-	) {
-		if let Operand::FnCall(_, _, type_args) = val {
-			let mut param_map = param_map.clone();
-			param_map.append(&mut type_args.clone());
-
-			Self::monoize_type(types, ty, &param_map, type_instances);
-		} else {
-			Self::monoize_type(types, ty, param_map, type_instances);
 		}
 	}
 
