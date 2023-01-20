@@ -127,7 +127,7 @@ impl CIRModuleBuilder {
 				let args_cir = ty
 					.args
 					.iter()
-					.map(|(_, ty)| self.convert_type(ty))
+					.map(|ty| self.convert_type(ty))
 					.collect();
 
 				CIRType::TypeRef(idx, args_cir)
@@ -575,7 +575,7 @@ impl CIRModuleBuilder {
 
 					let cir_type_args = type_args
 						.iter()
-						.map(|arg| self.convert_type(&arg.1))
+						.map(|arg| self.convert_type(arg))
 						.collect();
 
 					let mut name = name.clone();
@@ -1002,7 +1002,7 @@ impl CIRModuleBuilder {
 
 								let cir_type_args = type_args
 									.iter()
-									.map(|arg| self.convert_type(&arg.1))
+									.map(|arg| self.convert_type(arg))
 									.collect();
 
 								Some(RValue::Atom(

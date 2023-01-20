@@ -990,7 +990,7 @@ impl Parser {
 					TypeDef::Algebraic(_) => {
 
 						if let Token::Operator("<") = self.get_current()? {
-							found.args = self.parse_type_argument_list()?.into_iter().map(|arg| ("".into(), arg)).collect();
+							found.args = self.parse_type_argument_list()?;
 						}
 						
 						if let Token::Other('{') = self.get_current()? {
@@ -1045,11 +1045,7 @@ impl Parser {
 							});
 
 						if is_function {
-							type_args = self
-								.parse_type_argument_list()?
-								.into_iter()
-								.map(|item| ("".into(), item))
-								.collect();
+							type_args = self.parse_type_argument_list()?
 						} else {
 							// Not a function, return as plain Identifier early
 							return Ok(result.unwrap());
@@ -1635,27 +1631,8 @@ impl Parser {
 				Token::Operator("<") => {
 					// Type parameters
 
-					if let Type::TypeRef(ItemRef::Resolved(TypeRef {
-						def,
-						args,
-						..
-					})) = &mut result {
-						let def = def.upgrade().unwrap();
-						let TypeDef::Algebraic(agg) = &*def.read().unwrap() else { panic!() };
-
-						let type_args = self.parse_type_argument_list()?;
-
-						for (i, type_arg) in type_args.into_iter().enumerate() {
-							let name = agg.params[i].0.clone();
-							args.push((name, type_arg));
-						}
-					} else if let Type::TypeRef(ItemRef::Unresolved { type_args: args, .. }) = &mut result {
-						let type_args = self.parse_type_argument_list()?;
-
-						for type_arg in type_args.into_iter() {
-							args.push(("".into(), type_arg));
-						}
-
+					if let Type::TypeRef(ItemRef::Resolved(TypeRef { args, .. }) | ItemRef::Unresolved { type_args: args, .. }) = &mut result {
+						*args = self.parse_type_argument_list()?;
 					} else {
 						panic!("can't apply type parameters to this type of Type!") // TODO: Real error handling
 					}

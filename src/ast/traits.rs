@@ -16,7 +16,7 @@ use super::{
 pub struct TraitRef {
 	pub def: Weak<RwLock<TraitDef>>,
 	pub name: Identifier,
-	pub args: Vec<(Name, Type)>,
+	pub args: Vec<Type>,
 }
 
 #[derive(Debug)]
@@ -52,8 +52,7 @@ impl Hash for TraitRef {
 	fn hash<H: Hasher>(&self, state: &mut H) {
 		ptr::hash(self.def.upgrade().unwrap().as_ref(), state);
 
-		for (name, arg) in &self.args {
-			name.hash(state);
+		for arg in &self.args {
 			arg.hash(state);
 		}
 	}

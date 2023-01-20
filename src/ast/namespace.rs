@@ -151,7 +151,7 @@ pub struct Namespace {
 
 #[derive(Clone)]
 pub enum ItemRef<T: Clone> {
-	Unresolved { name: Identifier, scope: Identifier, type_args: Vec<(Name, Type)> },
+	Unresolved { name: Identifier, scope: Identifier, type_args: Vec<Type> },
 	Resolved(T),
 }
 

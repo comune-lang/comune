@@ -195,7 +195,7 @@ pub fn validate_function(
 
 pub fn is_candidate_viable(
 	args: &Vec<Expr>,
-	type_args: &Vec<(Name, Type)>,
+	type_args: &Vec<Type>,
 	candidate: &Arc<RwLock<FnDef>>,
 ) -> bool {
 	let func = candidate.read().unwrap();
@@ -383,7 +383,7 @@ fn resolve_method_call(
 	}
 
 	args.insert(0, lhs.clone());
-	type_args.insert(0, ("Self".into(), receiver.clone()));
+	type_args.insert(0, receiver.clone());
 
 	for arg in args.iter_mut() {
 		arg.validate(scope)?;
@@ -454,7 +454,7 @@ fn resolve_method_call(
 fn validate_arg_list(
 	args: &mut [Expr],
 	params: &[(Type, Option<Name>)],
-	type_args: &Vec<(Name, Type)>,
+	type_args: &Vec<Type>,
 	scope: &mut FnScope,
 ) -> AnalyzeResult<()> {
 	for (i, arg) in args.iter_mut().enumerate() {

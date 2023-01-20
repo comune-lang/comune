@@ -422,7 +422,7 @@ pub enum Atom {
 	FnCall {
 		name: Identifier,
 		args: Vec<Expr>,
-		type_args: Vec<(Name, Type)>,
+		type_args: Vec<Type>,
 		resolved: FnRef,
 	},
 

@@ -69,7 +69,7 @@ pub enum Basic {
 pub struct TypeRef {
 	pub def: Weak<RwLock<TypeDef>>,
 	pub name: Identifier,
-	pub args: Vec<(Name, Type)>,
+	pub args: Vec<Type>,
 }
 
 unsafe impl Send for TypeRef {}
@@ -111,7 +111,7 @@ impl AlgebraicDef {
 	pub fn get_member(
 		&self,
 		name: &Name,
-		type_args: Option<&Vec<(Name, Type)>>,
+		type_args: Option<&Vec<Type>>,
 	) -> Option<(usize, Type)> {
 		let mut index = 0;
 
@@ -262,7 +262,7 @@ impl Basic {
 }
 
 impl Type {
-	pub fn get_concrete_type(&self, type_args: &Vec<(Name, Type)>) -> Type {
+	pub fn get_concrete_type(&self, type_args: &Vec<Type>) -> Type {
 		match self {
 			Type::Basic(b) => Type::Basic(*b),
 			Type::Pointer(ptr) => Type::Pointer(Box::new(ptr.get_concrete_type(type_args))),
@@ -270,7 +270,7 @@ impl Type {
 				Type::Array(Box::new(arr_ty.get_concrete_type(type_args)), size.clone())
 			}
 			Type::TypeRef(ty) => Type::TypeRef(ty.clone()),
-			Type::TypeParam(param) => type_args[*param].1.clone(),
+			Type::TypeParam(param) => type_args[*param].get_concrete_type(type_args),
 			Type::Never => Type::Never,
 			Type::Tuple(kind, types) => Type::Tuple(
 				*kind,
@@ -445,8 +445,7 @@ impl Eq for TypeRef {}
 impl Hash for TypeRef {
 	fn hash<H: Hasher>(&self, state: &mut H) {
 		ptr::hash(self.def.upgrade().unwrap().as_ref(), state);
-		for (name, arg) in &self.args {
-			name.hash(state);
+		for arg in &self.args {
 			arg.hash(state);
 		}
 	}
@@ -499,24 +498,39 @@ impl Display for Type {
 
 			Type::Array(t, _s) => write!(f, "{}[]", t),
 
-			Type::TypeRef(ItemRef::Unresolved { name, .. }) => {
-				write!(f, "\"{name}\"")
-			}
+			Type::TypeRef(ItemRef::Unresolved { name, type_args, .. }) => {
+				write!(f, "\"{name}\"")?;
 
-			Type::TypeRef(ItemRef::Resolved(TypeRef { name, args, .. })) => {
-				if args.is_empty() {
-					write!(f, "{name}")
-				} else {
-					let mut iter = args.iter();
+				if !type_args.is_empty() {
+					let mut iter = type_args.iter();
 
-					write!(f, "{name}<{}", iter.next().unwrap().0)?;
+					write!(f, "<{}", iter.next().unwrap())?;
 
-					for (arg, _) in iter {
+					for arg in iter {
 						write!(f, ", {arg}")?;
 					}
 
-					write!(f, ">")
+					write!(f, ">")?;
 				}
+				Ok(())
+			}
+
+			Type::TypeRef(ItemRef::Resolved(TypeRef { name, args, .. })) => {
+				write!(f, "{name}")?;
+
+				if !args.is_empty() {
+					let mut iter = args.iter();
+
+					write!(f, "<{}", iter.next().unwrap())?;
+
+					for arg in iter {
+						write!(f, ", {arg}")?;
+					}
+
+					write!(f, ">")?;
+				}
+
+				Ok(())
 			}
 
 			Type::TypeParam(t) => write!(f, "<{t}>"),
