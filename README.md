@@ -26,12 +26,17 @@ to get rust-analyzer working in i.e. Visual Studio Code, pass in the same featur
 ![VS Code screenshot, showing a rust-analyzer "Check On Save: Extra Args" setting, with the value "--features=llvm12".](https://media.discordapp.net/attachments/846781793834106902/1056940581185650768/image.png)
 
 # running
-the input and build directories are currently hard-coded  (this ought to be factored out into a proper build tool sometime soon), meaning you can compile files from `test/src` into `test/build` with a simple `target/debug/comune filename.co` from the repo root. this is pretty hacky, but it works for now.
+to run the debug build, simply invoke `target/debug/comune` from the repo root. invoking the compiler with `--help` will provide a basic overview of the available command-line options.
 
-the intermediate build files will be output into `test/build/modules`, with the final binary being saved to `test/build/filename`. for a given module, the intermediate files are as follows:
+the compiler takes a list of input files, as well as any modules they import, and compiles them into the specified output types (by default, an executable). the output types can be specified with `--emit`, and the valid options include:
 
-- `.cir` - the initial cIR (comune Intermediate Representation), generated from the AST. this is not monomorphized, nor optimized (so it's pretty verbose), but it can be useful for debugging, and it's target-independent.
-- `.cir_mono` - the monomorphized and optimized cIR, right before it goes into LLVM codegen. this is useful for diagnosing issues with cIR optimization and transformation passes, as well as monomorphization issues.
-- `.ll_raw` - the plain, unoptimized LLVM IR emitted by the compiler. i apologize for the state of this. useful for debugging LLVM codegen issues.
-- `.ll` - the optimized LLVM IR. in debug builds, this won't be very different from the `.ll_raw` stage, but it can still be useful for sanity-checking the IR as a whole - if code is being optimized away that shouldn't be, it's likely the IR codegen is invoking Undefined Behaviour.
+- `bin` - an executable binary (the default if unspecified)
+- `lib` - a static library
+- `dylib` - a dynamic library
+- `obj` - an object file
+- `cir` - the initial cIR (comune Intermediate Representation), generated from the AST. this is not monomorphized, nor optimized (so it's pretty verbose), but it can be useful for debugging, and it's target-independent.
+- `cirmono` - the monomorphized and optimized cIR, right before it goes into LLVM codegen. this is useful for diagnosing issues with cIR optimization and transformation passes, as well as monomorphization issues.
+- `llraw` - the plain, unoptimized LLVM IR emitted by the compiler. i apologize for the state of this. useful for debugging LLVM codegen issues.
+- `ll` - the optimized LLVM IR. in debug builds, this won't be very different from the `.ll_raw` stage, but it can still be useful for sanity-checking the IR as a whole - if code is being optimized away that shouldn't be, it's likely the IR codegen is invoking Undefined Behaviour.
 
+the compiler accepts any non-empty list of these options, and emits them into the directory specified by `--out-dir` (by default the current working directory). for output types that involve invoking the linker (`bin`, `lib` and `dylib`), the output filename can be specified with `--output` or `-o`. the default is `a.out`.
