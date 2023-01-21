@@ -21,7 +21,7 @@ use self::{
 	pattern::Binding,
 	statement::Stmt,
 	traits::{TraitDef, TraitRef},
-	types::{AlgebraicDef, FnDef, TupleKind, TypeParamList, TypeRef},
+	types::{AlgebraicDef, FnDef, TupleKind, TypeParamList, TypeRef, BindingProps},
 };
 
 pub mod controlflow;
@@ -129,7 +129,7 @@ pub fn validate_function(
 ) -> AnalyzeResult<()> {
 	let mut scope = FnScope::new(namespace, scope, func.ret.clone());
 
-	for (param, name) in &mut func.params.params {
+	for (param, name, props) in &mut func.params.params {
 		param.validate(&scope)?;
 		scope.add_variable(param.clone(), name.clone().unwrap())
 	}
@@ -214,7 +214,7 @@ pub fn is_candidate_viable(
 		return false;
 	}
 
-	for (i, (param, _)) in params.iter().enumerate() {
+	for (i, (param, ..)) in params.iter().enumerate() {
 		if let Some(arg) = args.get(i) {
 			if !arg
 				.get_type()
@@ -247,7 +247,7 @@ fn candidate_compare(
 	for (i, arg) in args.iter().enumerate() {
 		let arg_ty = arg.get_type();
 
-		if let Some((l_ty, _)) = l.params.params.get(i) {
+		if let Some((l_ty, ..)) = l.params.params.get(i) {
 			if arg_ty != l_ty {
 				if arg.coercable_to(arg_ty, l_ty, scope) {
 					l_coerces += 1
@@ -257,7 +257,7 @@ fn candidate_compare(
 			}
 		}
 
-		if let Some((r_ty, _)) = r.params.params.get(i) {
+		if let Some((r_ty, ..)) = r.params.params.get(i) {
 			if arg_ty != r_ty {
 				if arg.coercable_to(arg_ty, r_ty, scope) {
 					r_coerces += 1
@@ -463,13 +463,13 @@ fn resolve_method_call(
 
 fn validate_arg_list(
 	args: &mut [Expr],
-	params: &[(Type, Option<Name>)],
+	params: &[(Type, Option<Name>, BindingProps)],
 	type_args: &Vec<Type>,
 	scope: &mut FnScope,
 ) -> AnalyzeResult<()> {
 	for (i, arg) in args.iter_mut().enumerate() {
 		// add parameter's type info to argument
-		if let Some((param_ty, _)) = params.get(i) {
+		if let Some((param_ty, ..)) = params.get(i) {
 			let param_concrete = param_ty.get_concrete_type(type_args);
 
 			arg.get_node_data_mut().ty.replace(param_concrete.clone());

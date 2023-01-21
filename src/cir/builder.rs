@@ -220,7 +220,7 @@ impl CIRModuleBuilder {
 			.params
 			.params
 			.iter()
-			.map(|(param, _)| self.convert_type(param))
+			.map(|(param, ..)| self.convert_type(param))
 			.collect();
 
 		CIRFnPrototype {
@@ -305,24 +305,32 @@ impl CIRModuleBuilder {
 				if bindings.len() != 1 {
 					todo!()
 				}
-
-				let (ty, name) = &bindings[0];
+				
+				// TODO: Handle destructuring assignment
+				let (ty, name, props) = &bindings[0];
+				
+				let val = if let Some(expr) = expr {
+					// Stop building early if the expression never returns 
+					let Some(result) = self.generate_expr(expr) else { return };
+					
+					Some(result)
+				} else {
+					None
+				};
 
 				let var = self.insert_variable(Some(name.clone()), ty.clone());
-				let idx = var.local;
 
-				if let Some(expr) = expr {
-					let Some(val) = self.generate_expr(expr) else { return };
+				if let Some(val) = val {
 					self.write(CIRStmt::Assignment(
-						(var, *tk),
-						(val, expr.get_node_data().tk),
+						(var.clone(), *tk),
+						(val, expr.as_ref().unwrap().get_node_data().tk),
 					));
 				}
 
 				self.name_map_stack
 					.last_mut()
 					.unwrap()
-					.insert(name.clone(), idx);
+					.insert(name.clone(), var.local);
 			}
 		}
 	}

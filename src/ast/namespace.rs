@@ -144,8 +144,6 @@ pub struct Namespace {
 	pub referenced_modules: HashSet<Identifier>,
 	pub imported: HashMap<Identifier, Namespace>,
 	pub children: HashMap<Identifier, NamespaceEntry>,
-	//pub impls: HashMap<Identifier, HashMap<Name, FnOverloadList>>, // Impls defined in this namespace
-	//pub trait_impls: HashMap<Identifier, HashMap<Identifier, Impl>>,
 	pub trait_solver: TraitSolver,
 }
 

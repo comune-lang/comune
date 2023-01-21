@@ -16,7 +16,7 @@ use crate::ast::statement::Stmt;
 use crate::ast::traits::{Impl, TraitDef, TraitRef};
 use crate::ast::types::{
 	AlgebraicDef, Basic, FnDef, FnParamList, TupleKind, Type, TypeDef, TypeParamList, TypeRef,
-	Visibility,
+	Visibility, BindingProps,
 };
 use crate::ast::{Attribute, TokenData};
 
@@ -739,8 +739,36 @@ impl Parser {
 		Ok((name, item))
 	}
 
+	fn parse_binding_props(&self) -> ParseResult<Option<BindingProps>> {
+		if !matches!(self.get_current()?, Token::Operator("&") | Token::Keyword("mut")) {
+			return Ok(None);
+		}
+
+		let mut props = BindingProps::default();
+		
+		if self.get_current()? == Token::Operator("&") {
+			props.is_ref = true;
+			self.get_next()?;
+		}
+
+		// `unsafe` is only a binding property when it follows "&"
+		if self.get_current()? == Token::Keyword("unsafe") && props.is_ref {			
+			props.is_unsafe = true;
+			self.get_next()?;
+		}
+
+		if self.get_current()? == Token::Keyword("mut") {
+			props.is_mut = true;
+			self.get_next()?;
+		}
+
+		Ok(Some(props))
+	}
+
 	fn parse_statement(&self) -> ParseResult<Stmt> {
 		let begin = self.get_current_start_index();
+
+		let binding_props = self.parse_binding_props()?;
 
 		if self.is_at_type_token(true)? {
 			// This is a declaration
@@ -759,13 +787,16 @@ impl Parser {
 			}
 
 			let stmt_result = Stmt::Decl(
-				vec![(ty, name)],
+				vec![(ty, name, binding_props.unwrap_or_default())],
 				expr,
 				(begin, self.get_current_start_index() - begin),
 			);
 
 			Ok(stmt_result)
 		} else {
+			// TODO: Error out if binding_props.is_ref or binding_props.is_mut is true
+			// binding_props.is_unsafe is fine because that's allowed in front of a block
+
 			// This isn't a declaration, so parse an expression
 
 			let expr = self.parse_expression()?;
@@ -1335,8 +1366,6 @@ impl Parser {
 
 				Ok(true)
 			}
-		} else if let Token::Keyword(kw) = current {
-			Ok(matches!(kw, "mut" | "const" | "ref"))
 		} else {
 			Ok(false)
 		}
@@ -1498,9 +1527,15 @@ impl Parser {
 		} else {
 			return Err(self.err(CMNErrorCode::UnexpectedToken));
 		}
+		
+		loop {
+			let props = self.parse_binding_props()?;
+			
+			if !self.is_at_type_token(false)? {
+				break;
+			}
 
-		while self.is_at_type_token(false)? {
-			let mut param = (self.parse_type(false)?, None);
+			let mut param = (self.parse_type(false)?, None, props.unwrap_or_default());
 
 			// Check for param name
 			let mut current = self.get_current()?;

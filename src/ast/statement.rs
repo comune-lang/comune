@@ -8,13 +8,13 @@ use crate::{
 use super::{
 	expression::{Atom, Expr, NodeData},
 	namespace::Name,
-	types::Type,
+	types::{Type, BindingProps},
 	FnScope, TokenData,
 };
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Stmt {
-	Decl(Vec<(Type, Name)>, Option<Expr>, TokenData),
+	Decl(Vec<(Type, Name, BindingProps)>, Option<Expr>, TokenData),
 	Expr(Expr),
 }
 
@@ -26,7 +26,7 @@ impl Stmt {
 					todo!()
 				}
 
-				let (binding_ty, binding_name) = names[0].clone();
+				let (binding_ty, binding_name, bindings_props) = names[0].clone();
 
 				if let Some(expr) = expr {
 					binding_ty.validate(scope)?;

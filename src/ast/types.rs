@@ -23,9 +23,16 @@ pub enum Type {
 	Never, // Return type of a function that never returns, coerces to anything
 }
 
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BindingProps {
+	pub is_ref: bool,
+	pub is_mut: bool,
+	pub is_unsafe: bool,	
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FnParamList {
-	pub params: Vec<(Type, Option<Name>)>,
+	pub params: Vec<(Type, Option<Name>, BindingProps)>,
 	pub variadic: bool,
 }
 
