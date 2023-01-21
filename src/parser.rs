@@ -102,10 +102,10 @@ impl Parser {
 	}
 
 	pub fn generate_ast(&mut self) -> ParseResult<()> {
-		for child in &self.namespace.children {
-			match &child.1 .0 {
+		for child in self.namespace.children.values() {
+			match child {
 				NamespaceItem::Functions(fns) => {
-					for (_, ast) in fns {
+					for (_, ast, _) in fns {
 						let mut elem = ast.borrow_mut();
 
 						if let NamespaceASTElem::Unparsed(idx) = *elem {
@@ -116,7 +116,7 @@ impl Parser {
 					}
 				}
 
-				NamespaceItem::Type(_) | NamespaceItem::Alias(_) | NamespaceItem::Trait(_) => {}
+				NamespaceItem::Type(..) | NamespaceItem::Alias(_) | NamespaceItem::Trait(..) => {}
 
 				_ => todo!(),
 			}
@@ -127,7 +127,7 @@ impl Parser {
 			let im = im.read().unwrap();
 
 			for fns in im.items.values() {
-				for (_, ast) in fns {
+				for (_, ast, _) in fns {
 					let mut elem = ast.borrow_mut();
 
 					if let NamespaceASTElem::Unparsed(idx) = *elem {
@@ -143,194 +143,89 @@ impl Parser {
 	}
 
 	pub fn parse_namespace(&mut self, scope: &Identifier) -> ParseResult<()> {
-		let mut current = self.get_current()?;
-		let mut current_attributes = vec![];
+		while !matches!(self.get_current()?, Token::Eof | Token::Other('}')) {
+			let mut current_attributes = self.parse_attributes()?;
 
-		while current != Token::Eof && current != Token::Other('}') {
-			match current {
+			match self.get_current()? {
 				Token::Other(';') => {
 					self.get_next()?;
 				}
 
-				Token::Other('@') => {
-					// Parse attributes
-					while token_compare(&self.get_current()?, "@") {
-						current_attributes.push(self.parse_attribute()?);
+				Token::Keyword("enum") => {
+					let mut aggregate = AlgebraicDef::new();
+					let Token::Name(name) = self.get_next()? else { return Err(self.err(CMNErrorCode::ExpectedIdentifier)) };
+
+					let mut next = self.get_next()?;
+
+					if token_compare(&next, "<") {
+						aggregate.params = self.parse_type_parameter_list()?;
+						next = self.get_current()?;
 					}
+
+					if !token_compare(&next, "{") {
+						return Err(self.err(CMNErrorCode::UnexpectedToken));
+					}
+
+					next = self.get_next()?; // Consume brace
+
+					while !token_compare(&next, "}") {
+						let Token::Name(variant_name) = next else { return Err(self.err(CMNErrorCode::UnexpectedToken)) };
+
+						self.get_next()?;
+
+						let tuple = self.parse_tuple_type(false)?;
+						//aggregate.variants.push((variant_name, tuple));
+
+						next = self.get_current()?;
+
+						match next {
+							Token::Other(',') => next = self.get_next()?,
+
+							Token::Other('}') => break,
+
+							_ => return Err(self.err(CMNErrorCode::UnexpectedToken)),
+						}
+					}
+
+					self.get_next()?; // Consume closing brace
+
+					let aggregate = TypeDef::Algebraic(aggregate);
+
+					self.namespace.children.insert(
+						Identifier::from_parent(scope, name),
+						NamespaceItem::Type(Arc::new(RwLock::new(aggregate)), current_attributes),
+					);
 				}
 
-				Token::Keyword(keyword) => {
-					match keyword {
-						"enum" => {
-							let mut aggregate = AlgebraicDef::new();
-							let Token::Name(name) = self.get_next()? else { return Err(self.err(CMNErrorCode::ExpectedIdentifier)) };
+				Token::Keyword("struct") => {
+					// Register algebraic type
+					let mut current_visibility = Visibility::Public;
+					let mut aggregate = AlgebraicDef::new();
+					let Token::Name(name) = self.get_next()? else { return Err(self.err(CMNErrorCode::ExpectedIdentifier)) };
 
-							let mut next = self.get_next()?;
+					let mut next = self.get_next()?;
 
-							if token_compare(&next, "<") {
-								aggregate.params = self.parse_type_parameter_list()?;
-								next = self.get_current()?;
-							}
+					if token_compare(&next, "<") {
+						aggregate.params = self.parse_type_parameter_list()?;
+						next = self.get_current()?;
+					}
 
-							if !token_compare(&next, "{") {
-								return Err(self.err(CMNErrorCode::UnexpectedToken));
-							}
+					if !token_compare(&next, "{") {
+						return Err(self.err(CMNErrorCode::UnexpectedToken));
+					}
 
-							next = self.get_next()?; // Consume brace
+					next = self.get_next()?; // Consume brace
 
-							while !token_compare(&next, "}") {
-								let Token::Name(variant_name) = next else { return Err(self.err(CMNErrorCode::UnexpectedToken)) };
+					while !token_compare(&next, "}") {
+						match next {
+							Token::Name(_) => {
+								let result = self.parse_namespace_declaration(current_attributes)?;
+								current_attributes = vec![];
 
-								self.get_next()?;
-
-								let tuple = self.parse_tuple_type(false)?;
-								//aggregate.variants.push((variant_name, tuple));
-
-								next = self.get_current()?;
-
-								match next {
-									Token::Other(',') => next = self.get_next()?,
-
-									Token::Other('}') => break,
-
-									_ => return Err(self.err(CMNErrorCode::UnexpectedToken)),
-								}
-							}
-
-							self.get_next()?; // Consume closing brace
-
-							let aggregate = TypeDef::Algebraic(aggregate);
-
-							self.namespace.children.insert(
-								Identifier::from_parent(scope, name),
-								(
-									NamespaceItem::Type(Arc::new(RwLock::new(aggregate))),
-									current_attributes,
-									None,
-								),
-							);
-
-							current_attributes = vec![];
-						}
-
-						"struct" => {
-							// Register algebraic type
-							let mut current_visibility = Visibility::Public;
-							let mut aggregate = AlgebraicDef::new();
-							let Token::Name(name) = self.get_next()? else { return Err(self.err(CMNErrorCode::ExpectedIdentifier)) };
-
-							let mut next = self.get_next()?;
-
-							if token_compare(&next, "<") {
-								aggregate.params = self.parse_type_parameter_list()?;
-								next = self.get_current()?;
-							}
-
-							if !token_compare(&next, "{") {
-								return Err(self.err(CMNErrorCode::UnexpectedToken));
-							}
-
-							next = self.get_next()?; // Consume brace
-
-							while !token_compare(&next, "}") {
-								match next {
-									Token::Name(_) => {
-										let result = self.parse_namespace_declaration()?;
-
-										match result.1 {
-											NamespaceItem::Variable(t, _) => aggregate
-												.members
-												.push((result.0, t, current_visibility.clone())),
-
-											_ => todo!(),
-										}
-
-										next = self.get_current()?;
-									}
-
-									Token::Keyword(k) => {
-										match k {
-											"public" => {
-												current_visibility = Visibility::Public;
-											}
-											"private" => {
-												current_visibility = Visibility::Private;
-											}
-											"protected" => {
-												current_visibility = Visibility::Protected;
-											}
-											_ => {
-												return Err(
-													self.err(CMNErrorCode::UnexpectedKeyword)
-												)
-											}
-										}
-										self.get_next()?;
-										next = self.get_next()?;
-									}
-
-									_ => return Err(self.err(CMNErrorCode::ExpectedIdentifier)),
-								}
-							}
-
-							self.get_next()?; // Consume closing brace
-
-							let aggregate = TypeDef::Algebraic(aggregate);
-
-							self.namespace.children.insert(
-								Identifier::from_parent(scope, name),
-								(
-									NamespaceItem::Type(Arc::new(RwLock::new(aggregate))),
-									current_attributes,
-									None,
-								),
-							);
-
-							current_attributes = vec![];
-						}
-
-						"trait" => {
-							let Token::Name(name) = self.get_next()? else {
-								return Err(self.err(CMNErrorCode::UnexpectedToken));
-							};
-
-							let mut this_trait = TraitDef {
-								items: HashMap::new(),
-								types: HashMap::new(),
-								supers: vec![],
-							};
-
-							let mut next = self.get_next()?;
-
-							if !token_compare(&next, "{") {
-								return Err(self.err(CMNErrorCode::UnexpectedToken));
-							}
-
-							next = self.get_next()?; // Consume brace
-
-							while !token_compare(&next, "}") {
-								let Token::Name(_) = next else {
-									return Err(self.err(CMNErrorCode::UnexpectedToken))
-								};
-
-								let (name, item) = self.parse_namespace_declaration()?;
-
-								match item {
-									NamespaceItem::Functions(fns) => {
-										for (func, ast) in fns {
-											if !matches!(&*ast.borrow(), NamespaceASTElem::NoElem) {
-												panic!("default trait method definitions are not yet supported")
-											}
-
-											if let Some(fns) = this_trait.items.get_mut(&name) {
-												fns.push((func, ast));
-											} else {
-												this_trait
-													.items
-													.insert(name.clone(), vec![(func, ast)]);
-											}
-										}
-									}
+								match result.1 {
+									NamespaceItem::Variable(t, _) => aggregate
+										.members
+										.push((result.0, t, current_visibility.clone())),
 
 									_ => todo!(),
 								}
@@ -338,218 +233,282 @@ impl Parser {
 								next = self.get_current()?;
 							}
 
-							self.get_next()?; // Consume closing brace
+							Token::Keyword(k) => {
+								match k {
+									"public" => {
+										current_visibility = Visibility::Public;
+									}
+									"private" => {
+										current_visibility = Visibility::Private;
+									}
+									"protected" => {
+										current_visibility = Visibility::Protected;
+									}
+									_ => {
+										return Err(
+											self.err(CMNErrorCode::UnexpectedKeyword)
+										)
+									}
+								}
+								self.get_next()?;
+								next = self.get_next()?;
+							}
+
+							_ => return Err(self.err(CMNErrorCode::ExpectedIdentifier)),
+						}
+					}
+
+					self.get_next()?; // Consume closing brace
+
+					let aggregate = TypeDef::Algebraic(aggregate);
+
+					self.namespace.children.insert(
+						Identifier::from_parent(scope, name),
+						NamespaceItem::Type(Arc::new(RwLock::new(aggregate)), current_attributes),
+					);
+				}
+
+				Token::Keyword("trait") => {
+					let Token::Name(name) = self.get_next()? else {
+						return Err(self.err(CMNErrorCode::UnexpectedToken));
+					};
+
+					let mut this_trait = TraitDef {
+						items: HashMap::new(),
+						types: HashMap::new(),
+						supers: vec![],
+					};
+
+					let mut next = self.get_next()?;
+
+					if !token_compare(&next, "{") {
+						return Err(self.err(CMNErrorCode::UnexpectedToken));
+					}
+
+					next = self.get_next()?; // Consume brace
+
+					while !token_compare(&next, "}") {
+						let func_attributes = self.parse_attributes()?;
+						let (name, item) = self.parse_namespace_declaration(func_attributes)?;
+
+						match item {
+							NamespaceItem::Functions(mut parsed) => {
+								if let Some(fns) = this_trait.items.get_mut(&name) {
+									fns.append(&mut parsed);
+								} else {
+									this_trait
+										.items
+										.insert(name.clone(), parsed);
+								}
+							}
+
+							_ => todo!(),
+						}
+
+						next = self.get_current()?;
+					}
+
+					self.get_next()?; // Consume closing brace
+
+					self.namespace.children.insert(
+						Identifier::from_parent(scope, name),
+						NamespaceItem::Trait(Arc::new(RwLock::new(this_trait)), current_attributes),
+					);
+				}
+
+				Token::Keyword("namespace") => {
+					let Token::Name(namespace_name) = self.get_next()? else {
+						return Err(self.err(CMNErrorCode::ExpectedIdentifier));
+					};
+
+					self.get_next()?; // Consume name
+					self.consume(&Token::Other('{'))?; // Consume brace
+
+					self.current_scope.path.push(namespace_name);
+
+					let scope = self.current_scope.clone();
+					self.parse_namespace(&scope)?;
+					self.current_scope.path.pop();
+				}
+
+				Token::Keyword("impl") => {
+					self.get_next()?;
+
+					// Parse type or trait name, depending on if the next token is "for"
+					let mut impl_ty = self.parse_type(false)?;
+					let mut trait_name = None;
+
+					if self.get_current()? == Token::Keyword("for") {
+						self.get_next()?;
+
+						// We parsed the trait as a type, so extract it
+						let Type::TypeRef(ItemRef::Unresolved { name, scope, type_args }) = impl_ty else {
+							return Err(self.err(CMNErrorCode::ExpectedIdentifier)); // TODO: Proper error
+						};
+
+						trait_name = Some(ItemRef::<TraitRef>::Unresolved {
+							name,
+							scope,
+							type_args,
+						});
+
+						// Then parse the implementing type, for real this time
+						impl_ty = self.parse_type(false)?;
+					}
+
+					// Consume barce
+					self.consume(&Token::Other('{'))?;
+
+					// Parse functions
+					let mut functions = HashMap::new();
+
+					while self.get_current()? != Token::Other('}') {
+						let func_attributes = self.parse_attributes()?;
+
+						let ret = self.parse_type(false)?;
+
+						let Token::Name(fn_name) = self.get_current()? else {
+							return Err(self.err(CMNErrorCode::ExpectedIdentifier));
+						};
+
+						self.get_next()?;
+
+						let params = self.parse_parameter_list()?;
+
+						let ast =
+							NamespaceASTElem::Unparsed(self.get_current_token_index());
+
+						self.skip_block()?;
+
+						let current_impl = vec![(
+							Arc::new(RwLock::new(FnDef {
+								ret,
+								params,
+								type_params: vec![],
+							})),
+							RefCell::new(ast),
+							func_attributes
+						)];
+
+						functions.insert(fn_name, current_impl);
+					}
+
+					// Register impl to solver
+					let im = Arc::new(RwLock::new(Impl {
+						implements: trait_name.clone(),
+						items: functions,
+						types: HashMap::new(),
+						scope: self.current_scope.clone(),
+
+						canonical_root: Identifier {
+							qualifier: (
+								Some(Box::new(impl_ty.clone())),
+								trait_name.map(Box::new),
+							),
+							path: vec![],
+							absolute: true,
+						},
+					}));
+
+					self.namespace.trait_solver.register_impl(impl_ty, im);
+
+					self.consume(&Token::Other('}'))?;
+				}
+
+				Token::Keyword("import") => {
+					// Register import statement
+					self.get_next()?;
+
+					if self.is_at_identifier_token()? {
+						self.namespace
+							.referenced_modules
+							.insert(self.parse_identifier()?);
+						self.check_semicolon()?;
+					} else {
+						return Err(self.err(CMNErrorCode::ExpectedIdentifier));
+					}
+				}
+
+				Token::Keyword("using") => {
+					self.get_next()?;
+
+					let mut names = self.parse_multi_identifier()?;
+
+					if names.len() == 1 {
+						if self.get_current()? == Token::Operator("=") {
+							// Found a '=' token, so fetch the name to alias
+							self.get_next()?;
+
+							let name = names[0].expect_scopeless()?.clone();
+							let aliased = self.parse_identifier()?;
 
 							self.namespace.children.insert(
 								Identifier::from_parent(scope, name),
-								(
-									NamespaceItem::Trait(Arc::new(RwLock::new(this_trait))),
-									current_attributes,
-									None,
-								),
+								NamespaceItem::Alias(aliased),
 							);
-							current_attributes = vec![];
-						}
 
-						"namespace" => {
-							let Token::Name(namespace_name) = self.get_next()? else {
-								return Err(self.err(CMNErrorCode::ExpectedIdentifier));
-							};
+							self.check_semicolon()?;
+						} else {
+							// No '=' token, just bring the name into scope
+							let name = names.remove(0);
 
-							self.get_next()?; // Consume name
-							self.consume(&Token::Other('{'))?; // Consume brace
-
-							self.current_scope.path.push(namespace_name);
-
-							let scope = self.current_scope.clone();
-							self.parse_namespace(&scope)?;
-							self.current_scope.path.pop();
-
-							current_attributes = vec![];
-						}
-
-						"impl" => {
-							self.get_next()?;
-
-							// Parse type or trait name, depending on if the next token is "for"
-							let mut impl_ty = self.parse_type(false)?;
-							let mut trait_name = None;
-
-							if self.get_current()? == Token::Keyword("for") {
-								self.get_next()?;
-
-								// We parsed the trait as a type, so extract it
-								let Type::TypeRef(ItemRef::Unresolved { name, scope, type_args }) = impl_ty else {
-									return Err(self.err(CMNErrorCode::ExpectedIdentifier)); // TODO: Proper error
-								};
-
-								trait_name = Some(ItemRef::<TraitRef>::Unresolved {
-									name,
+							self.namespace.children.insert(
+								Identifier::from_parent(
 									scope,
-									type_args,
-								});
+									name.path.last().unwrap().clone(),
+								),
+								NamespaceItem::Alias(name),
+							);
 
-								// Then parse the implementing type, for real this time
-								impl_ty = self.parse_type(false)?;
-							}
-
-							// Consume barce
-							self.consume(&Token::Other('{'))?;
-
-							// Parse functions
-							let mut functions = HashMap::new();
-
-							while self.get_current()? != Token::Other('}') {
-								let ret = self.parse_type(false)?;
-
-								let Token::Name(fn_name) = self.get_current()? else {
-									return Err(self.err(CMNErrorCode::ExpectedIdentifier));
-								};
-
-								self.get_next()?;
-
-								let params = self.parse_parameter_list()?;
-
-								let ast =
-									NamespaceASTElem::Unparsed(self.get_current_token_index());
-
-								self.skip_block()?;
-
-								let current_impl = vec![(
-									Arc::new(RwLock::new(FnDef {
-										ret,
-										params,
-										type_params: vec![],
-									})),
-									RefCell::new(ast),
-								)];
-
-								functions.insert(fn_name, current_impl);
-								current_attributes = vec![];
-							}
-
-							// Register impl to solver
-							let im = Arc::new(RwLock::new(Impl {
-								implements: trait_name.clone(),
-								items: functions,
-								types: HashMap::new(),
-								scope: self.current_scope.clone(),
-
-								canonical_root: Identifier {
-									qualifier: (
-										Some(Box::new(impl_ty.clone())),
-										trait_name.map(Box::new),
-									),
-									path: vec![],
-									absolute: true,
-								},
-							}));
-
-							self.namespace.trait_solver.register_impl(impl_ty, im);
-
-							self.consume(&Token::Other('}'))?;
+							self.check_semicolon()?;
 						}
-
-						"import" => {
-							// Register import statement
-							self.get_next()?;
-
-							if self.is_at_identifier_token()? {
-								self.namespace
-									.referenced_modules
-									.insert(self.parse_identifier()?);
-								self.check_semicolon()?;
-							} else {
-								return Err(self.err(CMNErrorCode::ExpectedIdentifier));
-							}
+					} else {
+						for name in names {
+							self.namespace.children.insert(
+								Identifier::from_parent(scope, name.name().clone()),
+								NamespaceItem::Alias(name),
+							);
 						}
-
-						"using" => {
-							self.get_next()?;
-
-							let mut names = self.parse_multi_identifier()?;
-
-							if names.len() == 1 {
-								if self.get_current()? == Token::Operator("=") {
-									// Found a '=' token, so fetch the name to alias
-									self.get_next()?;
-
-									let name = names[0].expect_scopeless()?.clone();
-									let aliased = self.parse_identifier()?;
-
-									self.namespace.children.insert(
-										Identifier::from_parent(scope, name),
-										(NamespaceItem::Alias(aliased), vec![], None),
-									);
-
-									self.check_semicolon()?;
-								} else {
-									// No '=' token, just bring the name into scope
-									let name = names.remove(0);
-
-									self.namespace.children.insert(
-										Identifier::from_parent(
-											scope,
-											name.path.last().unwrap().clone(),
-										),
-										(NamespaceItem::Alias(name), vec![], None),
-									);
-
-									self.check_semicolon()?;
-								}
-							} else {
-								for name in names {
-									self.namespace.children.insert(
-										Identifier::from_parent(scope, name.name().clone()),
-										(NamespaceItem::Alias(name), vec![], None),
-									);
-								}
-								self.check_semicolon()?;
-							}
-						}
-
-						_ => {
-							return Err(self.err(CMNErrorCode::UnexpectedToken));
-						}
+						self.check_semicolon()?;
 					}
+				}
+
+				Token::Keyword(_) => {
+					return Err(self.err(CMNErrorCode::UnexpectedKeyword));
 				}
 
 				_ => {
 					// Parse declaration/definition
-					let (name, mut result) = self.parse_namespace_declaration()?;
+					let (name, mut result) = self.parse_namespace_declaration(current_attributes)?;
 
 					let id = Identifier::from_parent(scope, name);
 
 					match &mut result {
 						NamespaceItem::Functions(fns) => {
-							if let Some((NamespaceItem::Functions(existing), ..)) =
+							if let Some(NamespaceItem::Functions(existing)) =
 								self.namespace.children.get_mut(&id)
 							{
 								existing.append(fns);
 							} else {
 								self.namespace
 									.children
-									.insert(id, (result, current_attributes, None));
+									.insert(id, result);
 							}
 						}
 
 						_ => todo!(),
-					};
-
-					current_attributes = vec![];
+					}
 				}
 			}
-
-			current = self.get_current()?;
 		}
 
-		if current == Token::Eof {
+		if self.get_current()? == Token::Eof {
 			if scope.path.is_empty() {
 				Ok(())
 			} else {
 				Err(self.err(CMNErrorCode::UnexpectedEOF))
 			}
-		} else if current == Token::Other('}') {
+		} else if self.get_current()? == Token::Other('}') {
 			if !scope.path.is_empty() {
 				self.get_next()?;
 				Ok(())
@@ -652,6 +611,15 @@ impl Parser {
 		))
 	}
 
+	fn parse_attributes(&self) -> ParseResult<Vec<Attribute>> {
+		let mut result = vec![];
+
+		while self.get_current()? == Token::Other('@') {
+			result.push(self.parse_attribute()?);
+		}
+		Ok(result)
+	}
+
 	fn check_semicolon(&self) -> ParseResult<()> {
 		if token_compare(&self.get_current()?, ";") {
 			self.get_next()?;
@@ -661,7 +629,7 @@ impl Parser {
 		}
 	}
 
-	fn parse_namespace_declaration(&self) -> ParseResult<(Name, NamespaceItem)> {
+	fn parse_namespace_declaration(&self, attributes: Vec<Attribute>) -> ParseResult<(Name, NamespaceItem)> {
 		let t = self.parse_type(false)?;
 		let item;
 
@@ -706,6 +674,7 @@ impl Parser {
 					item = NamespaceItem::Functions(vec![(
 						Arc::new(RwLock::new(t)),
 						RefCell::new(ast_elem),
+						attributes
 					)]);
 				}
 
@@ -1079,7 +1048,7 @@ impl Parser {
 
 						self.namespace
 							.with_item(&id, &self.current_scope, |item, _| {
-								is_function = matches!(&item.0, NamespaceItem::Functions(..));
+								is_function = matches!(item, NamespaceItem::Functions(..));
 							});
 
 						if is_function {

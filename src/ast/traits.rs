@@ -35,6 +35,7 @@ pub struct Impl {
 	pub canonical_root: Identifier, // The root of the canonical names used by items in this impl
 }
 
+// Safety: see super::namespace.
 unsafe impl Send for TraitRef {}
 unsafe impl Sync for TraitRef {}
 

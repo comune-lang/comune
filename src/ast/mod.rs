@@ -104,7 +104,7 @@ impl<'ctx> FnScope<'ctx> {
 		if result.is_none() && search_namespace {
 			// Look for it in the namespace tree
 			self.context.with_item(id, &self.scope, |item, id| {
-				if let NamespaceItem::Functions(fns) = &item.0 {
+				if let NamespaceItem::Functions(fns) = item {
 					result = Some((
 						id.clone(),
 						todo!(), // Implement function types
@@ -336,10 +336,10 @@ pub fn validate_fn_call(
 
 	let mut candidates: Vec<_> = candidates
 		.into_iter()
-		.filter(|(_, (func, _))| is_candidate_viable(args, type_args, func))
+		.filter(|(_, (func, ..))| is_candidate_viable(args, type_args, func))
 		.collect();
 
-	let (selected_name, (selected_candidate, _)) = match candidates.len() {
+	let (selected_name, (selected_candidate, ..)) = match candidates.len() {
 		0 => todo!(), // No viable candidate
 
 		1 => candidates[0].clone(),
@@ -348,7 +348,7 @@ pub fn validate_fn_call(
 		_ => {
 			// Sort candidates by cost
 			candidates
-				.sort_unstable_by(|(_, (l, _)), (_, (r, _))| candidate_compare(args, l, r, scope));
+				.sort_unstable_by(|(_, (l, ..)), (_, (r, ..))| candidate_compare(args, l, r, scope));
 
 			match candidate_compare(args, &candidates[0].1 .0, &candidates[1].1 .0, scope) {
 				Ordering::Less => candidates[0].clone(),
@@ -408,7 +408,7 @@ fn resolve_method_call(
 			let ty = &*ty.read().unwrap();
 
 			if receiver.fits_generic(ty) {
-				for (func, _) in fns {
+				for (func, ..) in fns {
 					candidates.push((
 						ty.clone(),
 						Identifier::from_parent(&im.canonical_root, name.clone()),
@@ -508,12 +508,12 @@ fn validate_arg_list(
 
 pub fn validate_namespace(namespace: &mut Namespace) -> AnalyzeResult<()> {
 	for (id, child) in &namespace.children {
-		if let NamespaceItem::Functions(fns) = &child.0 {
-			for (func, elem) in fns {
+		if let NamespaceItem::Functions(fns) = child {
+			for (func, elem, attributes) in fns {
 				let mut scope = id.clone();
 				scope.path.pop();
 
-				validate_function(scope, &mut func.write().unwrap(), elem, namespace)?
+				validate_function(scope, &mut func.write().unwrap(), &elem, namespace)?
 			}
 		}
 	}
@@ -522,7 +522,7 @@ pub fn validate_namespace(namespace: &mut Namespace) -> AnalyzeResult<()> {
 		let im = im.read().unwrap();
 
 		for fns in im.items.values() {
-			for (func, elem) in fns {
+			for (func, elem, attributes) in fns {
 				validate_function(
 					im.scope.clone(),
 					&mut func.write().unwrap(),
@@ -662,10 +662,10 @@ pub fn resolve_type_def(
 pub fn resolve_namespace_types(namespace: &Namespace) -> ParseResult<()> {
 	// Resolve types
 
-	for (child, attributes, _) in namespace.children.values() {
+	for child in namespace.children.values() {
 		match &child {
 			NamespaceItem::Functions(fns) => {
-				for (func, _) in fns {
+				for (func, ..) in fns {
 					let FnDef {
 						ret,
 						params,
@@ -680,13 +680,13 @@ pub fn resolve_namespace_types(namespace: &Namespace) -> ParseResult<()> {
 				}
 			}
 
-			NamespaceItem::Type(t) => {
+			NamespaceItem::Type(t, attributes) => {
 				resolve_type_def(&mut t.write().unwrap(), attributes, namespace, &vec![])?
 			}
 
 			NamespaceItem::Alias(_) => {}
 
-			NamespaceItem::Trait(tr) => {
+			NamespaceItem::Trait(tr, _) => {
 				let TraitDef {
 					items,
 					supers: _,
@@ -694,7 +694,7 @@ pub fn resolve_namespace_types(namespace: &Namespace) -> ParseResult<()> {
 				} = &mut *tr.write().unwrap();
 
 				for fns in items.values_mut() {
-					for (func, _) in fns {
+					for (func, _, attributes) in fns {
 						let FnDef {
 							ret,
 							params,
@@ -727,8 +727,8 @@ pub fn resolve_namespace_types(namespace: &Namespace) -> ParseResult<()> {
 			type_args,
 		}) = &im.read().unwrap().implements
 		{
-			namespace.with_item(&name, &scope, |(item, ..), name| match item {
-				NamespaceItem::Trait(tr) => Box::new(ItemRef::Resolved(TraitRef {
+			namespace.with_item(&name, &scope, |item, name| match item {
+				NamespaceItem::Trait(tr, _) => Box::new(ItemRef::Resolved(TraitRef {
 					def: Arc::downgrade(tr),
 					name: name.clone(),
 					args: type_args.clone(),
@@ -744,7 +744,7 @@ pub fn resolve_namespace_types(namespace: &Namespace) -> ParseResult<()> {
 			(Some(Box::new(ty.read().unwrap().clone())), resolved_trait);
 
 		for fns in im.write().unwrap().items.values_mut() {
-			for (func, _) in fns {
+			for (func, ..) in fns {
 				let FnDef {
 					ret,
 					params,
@@ -789,8 +789,8 @@ pub fn check_cyclical_deps(
 }
 
 pub fn check_namespace_cyclical_deps(namespace: &Namespace) -> ParseResult<()> {
-	for item in &namespace.children {
-		if let NamespaceItem::Type(ty) = &item.1 .0 {
+	for item in namespace.children.values() {
+		if let NamespaceItem::Type(ty, _) = item {
 			check_cyclical_deps(ty, &mut vec![])?
 		}
 	}

@@ -24,14 +24,12 @@ pub type Name = String;
 #[cfg(not(debug_assertions))]
 pub type Name = Arc<str>;
 
-pub type NamespaceEntry = (NamespaceItem, Vec<Attribute>, Option<String>); // Option<String> is the item's mangled name
-
 #[derive(Default, Clone, Debug)]
 pub struct Namespace {
 	pub path: Identifier,
 	pub referenced_modules: HashSet<Identifier>,
 	pub imported: HashMap<Identifier, Namespace>,
-	pub children: HashMap<Identifier, NamespaceEntry>,
+	pub children: HashMap<Identifier, NamespaceItem>,
 	pub trait_solver: TraitSolver,
 }
 
@@ -62,9 +60,9 @@ impl Namespace {
 		assert!(id.absolute, "argument to get_item should be absolute!");
 
 		match self.children.get(id) {
-			Some((NamespaceItem::Alias(alias), ..)) => self.get_item(alias),
+			Some(NamespaceItem::Alias(alias)) => self.get_item(alias),
 
-			Some((item, ..)) => Some(item),
+			Some(item) => Some(item),
 
 			None => {
 				if let Some(import) = self
@@ -105,7 +103,7 @@ impl Namespace {
 				let mut scope_combined = scope_unwind.clone();
 				scope_combined.path.append(&mut id.clone().path);
 
-				if let Some((item, ..)) = self.children.get(&scope_combined) {
+				if let Some(item) = self.children.get(&scope_combined) {
 					found = Some((scope_combined, item));
 					break;
 				}
@@ -116,12 +114,12 @@ impl Namespace {
 					break;
 				}
 			}
-		} else if let Some((item, ..)) = self.children.get(id) {
+		} else if let Some(item) = self.children.get(id) {
 			found = Some((id.clone(), item));
 		}
 
 		match found {
-			Some((id, NamespaceItem::Type(ty))) => {
+			Some((id, NamespaceItem::Type(ty, _))) => {
 				Some(Type::TypeRef(ItemRef::Resolved(TypeRef {
 					def: Arc::downgrade(ty),
 					name: id,
@@ -153,7 +151,7 @@ impl Namespace {
 		&self,
 		id: &Identifier,
 		scope: &Identifier,
-		mut closure: impl FnMut(&NamespaceEntry, &Identifier) -> Ret,
+		mut closure: impl FnMut(&NamespaceItem, &Identifier) -> Ret,
 	) -> Option<Ret> {
 		if !id.absolute {
 			let mut scope_unwind = scope.clone();
@@ -164,7 +162,7 @@ impl Namespace {
 				scope_combined.path.append(&mut id.clone().path);
 
 				if let Some(found_item) = self.children.get(&scope_combined) {
-					if let (NamespaceItem::Alias(alias), ..) = found_item {
+					if let NamespaceItem::Alias(alias) = found_item {
 						return self.with_item(alias, scope, closure);
 					} else {
 						return Some(closure(found_item, &scope_combined));
@@ -183,7 +181,7 @@ impl Namespace {
 		if let Some(absolute_lookup) = self.children.get(&id) {
 			// Found a match for the absolute path in this namespace!
 
-			if let (NamespaceItem::Alias(alias), ..) = absolute_lookup {
+			if let NamespaceItem::Alias(alias) = absolute_lookup {
 				self.with_item(alias, scope, closure)
 			} else {
 				Some(closure(absolute_lookup, &id))
@@ -206,16 +204,16 @@ impl Namespace {
 
 impl Display for Namespace {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		for (name, (item, _, _)) in &self.children {
+		for (name, item) in &self.children {
 			match item {
 				NamespaceItem::Alias(id) => writeln!(f, "\t[alias] {}", id)?,
-				NamespaceItem::Type(t) => writeln!(f, "\t[type] {}: {}", name, t.read().unwrap())?,
-				NamespaceItem::Trait(t) => {
+				NamespaceItem::Type(t, _) => writeln!(f, "\t[type] {}: {}", name, t.read().unwrap())?,
+				NamespaceItem::Trait(t, _) => {
 					writeln!(f, "\t[trait] {}: {:?}", name, t.read().unwrap())?
 				}
 
 				NamespaceItem::Functions(fs) => {
-					for (t, _) in fs {
+					for (t, ..) in fs {
 						writeln!(f, "\t[func] {}: {}", name, t.read().unwrap())?
 					}
 				}
@@ -324,14 +322,13 @@ pub enum NamespaceASTElem {
 	NoElem,
 }
 
-pub type FnOverloadList = Vec<(Arc<RwLock<FnDef>>, RefCell<NamespaceASTElem>)>;
+pub type FnOverloadList = Vec<(Arc<RwLock<FnDef>>, RefCell<NamespaceASTElem>, Vec<Attribute>)>;
 
 #[derive(Clone, Debug)]
 pub enum NamespaceItem {
-	Type(Arc<RwLock<TypeDef>>),
-	Trait(Arc<RwLock<TraitDef>>),
-	// Plural in order to support function overloads
-	Functions(FnOverloadList),
+	Type(Arc<RwLock<TypeDef>>, Vec<Attribute>),
+	Trait(Arc<RwLock<TraitDef>>, Vec<Attribute>),
+	Functions(FnOverloadList),	// Plural in order to support function overloads
 	Variable(Type, RefCell<NamespaceASTElem>),
 	Alias(Identifier),
 }
