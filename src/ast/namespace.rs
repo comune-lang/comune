@@ -207,7 +207,9 @@ impl Display for Namespace {
 		for (name, item) in &self.children {
 			match item {
 				NamespaceItem::Alias(id) => writeln!(f, "\t[alias] {}", id)?,
-				NamespaceItem::Type(t, _) => writeln!(f, "\t[type] {}: {}", name, t.read().unwrap())?,
+				NamespaceItem::Type(t, _) => {
+					writeln!(f, "\t[type] {}: {}", name, t.read().unwrap())?
+				}
 				NamespaceItem::Trait(t, _) => {
 					writeln!(f, "\t[trait] {}: {:?}", name, t.read().unwrap())?
 				}
@@ -322,13 +324,17 @@ pub enum NamespaceASTElem {
 	NoElem,
 }
 
-pub type FnOverloadList = Vec<(Arc<RwLock<FnDef>>, RefCell<NamespaceASTElem>, Vec<Attribute>)>;
+pub type FnOverloadList = Vec<(
+	Arc<RwLock<FnDef>>,
+	RefCell<NamespaceASTElem>,
+	Vec<Attribute>,
+)>;
 
 #[derive(Clone, Debug)]
 pub enum NamespaceItem {
 	Type(Arc<RwLock<TypeDef>>, Vec<Attribute>),
 	Trait(Arc<RwLock<TraitDef>>, Vec<Attribute>),
-	Functions(FnOverloadList),	// Plural in order to support function overloads
+	Functions(FnOverloadList), // Plural in order to support function overloads
 	Variable(Type, RefCell<NamespaceASTElem>),
 	Alias(Identifier),
 }

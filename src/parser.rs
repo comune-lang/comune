@@ -219,13 +219,16 @@ impl Parser {
 					while !token_compare(&next, "}") {
 						match next {
 							Token::Name(_) => {
-								let result = self.parse_namespace_declaration(current_attributes)?;
+								let result =
+									self.parse_namespace_declaration(current_attributes)?;
 								current_attributes = vec![];
 
 								match result.1 {
-									NamespaceItem::Variable(t, _) => aggregate
-										.members
-										.push((result.0, t, current_visibility.clone())),
+									NamespaceItem::Variable(t, _) => aggregate.members.push((
+										result.0,
+										t,
+										current_visibility.clone(),
+									)),
 
 									_ => todo!(),
 								}
@@ -244,11 +247,7 @@ impl Parser {
 									"protected" => {
 										current_visibility = Visibility::Protected;
 									}
-									_ => {
-										return Err(
-											self.err(CMNErrorCode::UnexpectedKeyword)
-										)
-									}
+									_ => return Err(self.err(CMNErrorCode::UnexpectedKeyword)),
 								}
 								self.get_next()?;
 								next = self.get_next()?;
@@ -296,9 +295,7 @@ impl Parser {
 								if let Some(fns) = this_trait.items.get_mut(&name) {
 									fns.append(&mut parsed);
 								} else {
-									this_trait
-										.items
-										.insert(name.clone(), parsed);
+									this_trait.items.insert(name.clone(), parsed);
 								}
 							}
 
@@ -375,8 +372,7 @@ impl Parser {
 
 						let params = self.parse_parameter_list()?;
 
-						let ast =
-							NamespaceASTElem::Unparsed(self.get_current_token_index());
+						let ast = NamespaceASTElem::Unparsed(self.get_current_token_index());
 
 						self.skip_block()?;
 
@@ -387,7 +383,7 @@ impl Parser {
 								type_params: vec![],
 							})),
 							RefCell::new(ast),
-							func_attributes
+							func_attributes,
 						)];
 
 						functions.insert(fn_name, current_impl);
@@ -401,10 +397,7 @@ impl Parser {
 						scope: self.current_scope.clone(),
 
 						canonical_root: Identifier {
-							qualifier: (
-								Some(Box::new(impl_ty.clone())),
-								trait_name.map(Box::new),
-							),
+							qualifier: (Some(Box::new(impl_ty.clone())), trait_name.map(Box::new)),
 							path: vec![],
 							absolute: true,
 						},
@@ -453,10 +446,7 @@ impl Parser {
 							let name = names.remove(0);
 
 							self.namespace.children.insert(
-								Identifier::from_parent(
-									scope,
-									name.path.last().unwrap().clone(),
-								),
+								Identifier::from_parent(scope, name.path.last().unwrap().clone()),
 								NamespaceItem::Alias(name),
 							);
 
@@ -479,7 +469,8 @@ impl Parser {
 
 				_ => {
 					// Parse declaration/definition
-					let (name, mut result) = self.parse_namespace_declaration(current_attributes)?;
+					let (name, mut result) =
+						self.parse_namespace_declaration(current_attributes)?;
 
 					let id = Identifier::from_parent(scope, name);
 
@@ -490,9 +481,7 @@ impl Parser {
 							{
 								existing.append(fns);
 							} else {
-								self.namespace
-									.children
-									.insert(id, result);
+								self.namespace.children.insert(id, result);
 							}
 						}
 
@@ -629,7 +618,10 @@ impl Parser {
 		}
 	}
 
-	fn parse_namespace_declaration(&self, attributes: Vec<Attribute>) -> ParseResult<(Name, NamespaceItem)> {
+	fn parse_namespace_declaration(
+		&self,
+		attributes: Vec<Attribute>,
+	) -> ParseResult<(Name, NamespaceItem)> {
 		let t = self.parse_type(false)?;
 		let item;
 
@@ -674,7 +666,7 @@ impl Parser {
 					item = NamespaceItem::Functions(vec![(
 						Arc::new(RwLock::new(t)),
 						RefCell::new(ast_elem),
-						attributes
+						attributes,
 					)]);
 				}
 

@@ -347,8 +347,9 @@ pub fn validate_fn_call(
 		// More than one viable candidate
 		_ => {
 			// Sort candidates by cost
-			candidates
-				.sort_unstable_by(|(_, (l, ..)), (_, (r, ..))| candidate_compare(args, l, r, scope));
+			candidates.sort_unstable_by(|(_, (l, ..)), (_, (r, ..))| {
+				candidate_compare(args, l, r, scope)
+			});
 
 			match candidate_compare(args, &candidates[0].1 .0, &candidates[1].1 .0, scope) {
 				Ordering::Less => candidates[0].clone(),
