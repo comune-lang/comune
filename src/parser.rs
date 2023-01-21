@@ -15,8 +15,8 @@ use crate::ast::namespace::{
 use crate::ast::statement::Stmt;
 use crate::ast::traits::{Impl, TraitDef, TraitRef};
 use crate::ast::types::{
-	AlgebraicDef, Basic, FnDef, FnParamList, TupleKind, Type, TypeDef, TypeParamList, TypeRef,
-	Visibility, BindingProps,
+	AlgebraicDef, Basic, BindingProps, FnDef, FnParamList, TupleKind, Type, TypeDef, TypeParamList,
+	TypeRef, Visibility,
 };
 use crate::ast::{Attribute, TokenData};
 
@@ -740,19 +740,22 @@ impl Parser {
 	}
 
 	fn parse_binding_props(&self) -> ParseResult<Option<BindingProps>> {
-		if !matches!(self.get_current()?, Token::Operator("&") | Token::Keyword("mut")) {
+		if !matches!(
+			self.get_current()?,
+			Token::Operator("&") | Token::Keyword("mut")
+		) {
 			return Ok(None);
 		}
 
 		let mut props = BindingProps::default();
-		
+
 		if self.get_current()? == Token::Operator("&") {
 			props.is_ref = true;
 			self.get_next()?;
 		}
 
 		// `unsafe` is only a binding property when it follows "&"
-		if self.get_current()? == Token::Keyword("unsafe") && props.is_ref {			
+		if self.get_current()? == Token::Keyword("unsafe") && props.is_ref {
 			props.is_unsafe = true;
 			self.get_next()?;
 		}
@@ -1527,10 +1530,10 @@ impl Parser {
 		} else {
 			return Err(self.err(CMNErrorCode::UnexpectedToken));
 		}
-		
+
 		loop {
 			let props = self.parse_binding_props()?;
-			
+
 			if !self.is_at_type_token(false)? {
 				break;
 			}

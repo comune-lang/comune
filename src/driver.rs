@@ -67,9 +67,6 @@ impl EmitType {
 	}
 }
 
-// This is only sound under the condition that Namespaces are ONLY modified by their owning Parsers.
-unsafe impl Send for Namespace {}
-
 pub fn launch_module_compilation(
 	state: Arc<ManagerState>,
 	src_path: PathBuf,

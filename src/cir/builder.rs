@@ -296,7 +296,7 @@ impl CIRModuleBuilder {
 	fn generate_stmt(&mut self, stmt: &Stmt) {
 		match stmt {
 			Stmt::Expr(expr) => {
-				// As of the CIRStmt::FnCall refactor, RValues have no side effects, 
+				// As of the CIRStmt::FnCall refactor, RValues have no side effects,
 				// so we can discard the result of this expression
 				let _ = self.generate_expr(expr);
 			}
@@ -305,14 +305,14 @@ impl CIRModuleBuilder {
 				if bindings.len() != 1 {
 					todo!()
 				}
-				
+
 				// TODO: Handle destructuring assignment
 				let (ty, name, props) = &bindings[0];
-				
+
 				let val = if let Some(expr) = expr {
-					// Stop building early if the expression never returns 
+					// Stop building early if the expression never returns
 					let Some(result) = self.generate_expr(expr) else { return };
-					
+
 					Some(result)
 				} else {
 					None

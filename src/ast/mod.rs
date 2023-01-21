@@ -21,7 +21,7 @@ use self::{
 	pattern::Binding,
 	statement::Stmt,
 	traits::{TraitDef, TraitRef},
-	types::{AlgebraicDef, FnDef, TupleKind, TypeParamList, TypeRef, BindingProps},
+	types::{AlgebraicDef, BindingProps, FnDef, TupleKind, TypeParamList, TypeRef},
 };
 
 pub mod controlflow;

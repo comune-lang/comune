@@ -23,11 +23,35 @@ pub enum Type {
 	Never, // Return type of a function that never returns, coerces to anything
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Basic {
+	Integral { signed: bool, size_bytes: u32 },
+	PtrSizeInt { signed: bool },
+	Float { size_bytes: u32 },
+	Char,
+	Bool,
+	Void,
+	Str,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct TypeRef {
+	pub def: Weak<RwLock<TypeDef>>,
+	pub name: Identifier,
+	pub args: Vec<Type>,
+}
+
+#[derive(Debug)]
+pub enum TypeDef {
+	Algebraic(AlgebraicDef),
+	Class, // TODO: Implement classes
+}
+
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BindingProps {
 	pub is_ref: bool,
 	pub is_mut: bool,
-	pub is_unsafe: bool,	
+	pub is_unsafe: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -62,32 +86,6 @@ pub struct AlgebraicDef {
 	pub params: TypeParamList,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Basic {
-	Integral { signed: bool, size_bytes: u32 },
-	PtrSizeInt { signed: bool },
-	Float { size_bytes: u32 },
-	Char,
-	Bool,
-	Void,
-	Str,
-}
-#[derive(Clone, Debug, Default)]
-pub struct TypeRef {
-	pub def: Weak<RwLock<TypeDef>>,
-	pub name: Identifier,
-	pub args: Vec<Type>,
-}
-
-unsafe impl Send for TypeRef {}
-unsafe impl Sync for TypeRef {}
-
-#[derive(Debug)]
-pub enum TypeDef {
-	Algebraic(AlgebraicDef),
-	Class, // TODO: Implement classes
-}
-
 #[derive(Clone, Debug)]
 pub enum Visibility {
 	Public,
@@ -101,9 +99,6 @@ pub enum DataLayout {
 	Optimized, // Layout may be shuffled to minimize padding
 	Packed,    // Layout is packed in declaration order with no padding (inner alignment is 1 byte)
 }
-
-// Don't mutate TypeDefs through TypeRef or so help me god
-unsafe impl Send for Type {}
 
 impl AlgebraicDef {
 	pub fn new() -> Self {
@@ -412,11 +407,15 @@ impl Type {
 	}
 }
 
-impl Display for Basic {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		write!(f, "{}", self.as_str())
+impl PartialEq for TypeRef {
+	fn eq(&self, other: &Self) -> bool {
+		Arc::ptr_eq(&self.def.upgrade().unwrap(), &other.def.upgrade().unwrap())
+			&& self.name == other.name
+			&& self.args == other.args
 	}
 }
+
+impl Eq for TypeRef {}
 
 impl PartialEq for Type {
 	fn eq(&self, other: &Self) -> bool {
@@ -435,16 +434,15 @@ impl PartialEq for Type {
 
 impl Eq for Type {}
 
-impl PartialEq for TypeRef {
-	fn eq(&self, other: &Self) -> bool {
-		Arc::ptr_eq(&self.def.upgrade().unwrap(), &other.def.upgrade().unwrap())
-			&& self.name == other.name
-			&& self.args == other.args
+impl Hash for AlgebraicDef {
+	fn hash<H: Hasher>(&self, state: &mut H) {
+		// We hash based on Type only, so two aggregates with the same layout have the same Hash
+		// Hashing is only relevant for LLVM codegen, so semantic analysis will already have happened
+		for (_, ty, _) in &self.members {
+			ty.hash(state)
+		}
 	}
 }
-
-impl Eq for TypeRef {}
-
 impl Hash for TypeRef {
 	fn hash<H: Hasher>(&self, state: &mut H) {
 		ptr::hash(self.def.upgrade().unwrap().as_ref(), state);
@@ -493,6 +491,12 @@ impl Hash for Type {
 				args.hash(state)
 			}
 		}
+	}
+}
+
+impl Display for Basic {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		write!(f, "{}", self.as_str())
 	}
 }
 
@@ -620,16 +624,6 @@ impl Display for AlgebraicDef {
 			write!(f, ", {:?}", mem.1)?;
 		}
 		write!(f, "}}")
-	}
-}
-
-impl Hash for AlgebraicDef {
-	fn hash<H: Hasher>(&self, state: &mut H) {
-		// We hash based on Type only, so two aggregates with the same layout have the same Hash
-		// Hashing is only relevant for LLVM codegen, so semantic analysis will already have happened
-		for (_, ty, _) in &self.members {
-			ty.hash(state)
-		}
 	}
 }
 

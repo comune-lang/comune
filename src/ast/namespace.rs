@@ -24,118 +24,6 @@ pub type Name = String;
 #[cfg(not(debug_assertions))]
 pub type Name = Arc<str>;
 
-#[derive(Default, Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Identifier {
-	pub qualifier: (Option<Box<Type>>, Option<Box<ItemRef<TraitRef>>>),
-	pub path: Vec<Name>,
-	pub absolute: bool,
-}
-
-unsafe impl Send for Identifier {} // Because of the fuckin RefCells deep in the TraitRef
-unsafe impl Sync for Identifier {}
-
-impl Identifier {
-	pub fn new(absolute: bool) -> Self {
-		Identifier {
-			qualifier: (None, None),
-			path: vec![],
-			absolute,
-		}
-	}
-
-	pub fn from_name(name: Name, absolute: bool) -> Self {
-		Identifier {
-			qualifier: (None, None),
-			path: vec![name],
-			absolute,
-		}
-	}
-
-	pub fn from_parent(parent: &Identifier, name: Name) -> Self {
-		let mut result = parent.clone();
-		result.path.push(name);
-		result
-	}
-
-	pub fn name(&self) -> &Name {
-		self.path.last().unwrap()
-	}
-
-	pub fn is_qualified(&self) -> bool {
-		self.path.len() > 1
-	}
-
-	pub fn expect_scopeless(&self) -> ParseResult<&Name> {
-		if self.path.len() == 1 && !self.absolute {
-			Ok(self.path.last().unwrap())
-		} else {
-			Err(CMNError::new(CMNErrorCode::ExpectedIdentifier)) // TODO: Give appropriate error
-		}
-	}
-}
-
-impl Display for Identifier {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		let mut result = String::new();
-
-		if !self.absolute {
-			result.push('~');
-		}
-
-		match &self.qualifier {
-			(Some(ty), None) => result.push_str(&format!("{ty}::")),
-
-			(Some(ty), Some(tr)) => {
-				result.push('<');
-
-				match &**tr {
-					ItemRef::Resolved(tr) => {
-						result.push_str(&format!("{ty} as {}", tr.name));
-					}
-
-					ItemRef::Unresolved { name, .. } => {
-						result.push_str(&format!("{ty} as \"{name}\""));
-					}
-				}
-
-				result.push_str(">::");
-			}
-
-			(None, Some(_)) => todo!(),
-
-			(None, None) => {}
-		}
-
-		for scope in &self.path {
-			result.push_str(scope);
-			if scope != self.path.last().unwrap() {
-				result.push_str("::");
-			}
-		}
-
-		write!(f, "{result}")
-	}
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum NamespaceASTElem {
-	Parsed(Expr),
-	Unparsed(usize), // Token index
-	NoElem,
-}
-
-pub type FnOverloadList = Vec<(Arc<RwLock<FnDef>>, RefCell<NamespaceASTElem>)>;
-
-#[derive(Clone, Debug)]
-pub enum NamespaceItem {
-	Type(Arc<RwLock<TypeDef>>),
-	Trait(Arc<RwLock<TraitDef>>),
-	// Plural in order to support function overloads
-	Functions(FnOverloadList),
-	Variable(Type, RefCell<NamespaceASTElem>),
-	Alias(Identifier),
-}
-
 pub type NamespaceEntry = (NamespaceItem, Vec<Attribute>, Option<String>); // Option<String> is the item's mangled name
 
 #[derive(Default, Clone, Debug)]
@@ -147,83 +35,12 @@ pub struct Namespace {
 	pub trait_solver: TraitSolver,
 }
 
-#[derive(Clone)]
-pub enum ItemRef<T: Clone> {
-	Unresolved {
-		name: Identifier,
-		scope: Identifier,
-		type_args: Vec<Type>,
-	},
-	Resolved(T),
-}
-
-impl<T: Clone> Eq for ItemRef<T> where T: PartialEq + Eq {}
-
-impl<T: Clone> PartialEq for ItemRef<T>
-where
-	T: PartialEq,
-{
-	fn eq(&self, other: &Self) -> bool {
-		match (self, other) {
-			(
-				Self::Unresolved {
-					name: l0,
-					scope: l1,
-					type_args: l2,
-				},
-				Self::Unresolved {
-					name: r0,
-					scope: r1,
-					type_args: r2,
-				},
-			) => l0 == r0 && l1 == r1 && l2 == r2,
-			(Self::Resolved(l0), Self::Resolved(r0)) => l0 == r0,
-			_ => false,
-		}
-	}
-}
-
-impl<T: Clone> Hash for ItemRef<T>
-where
-	T: Hash,
-{
-	fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-		match self {
-			Self::Unresolved {
-				name,
-				scope,
-				type_args,
-			} => {
-				name.hash(state);
-				scope.hash(state);
-				type_args.hash(state);
-			}
-
-			Self::Resolved(t) => t.hash(state),
-		}
-	}
-}
-
-impl<T: Clone> Debug for ItemRef<T>
-where
-	T: Debug,
-{
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		match self {
-			Self::Unresolved {
-				name: arg0,
-				scope: arg1,
-				type_args: arg2,
-			} => f
-				.debug_tuple("Unresolved")
-				.field(arg0)
-				.field(arg1)
-				.field(arg2)
-				.finish(),
-			Self::Resolved(arg0) => f.debug_tuple("Resolved").field(arg0).finish(),
-		}
-	}
-}
+// Safety: function bodies are storied in RefCells. These
+// bodies should (read: MUST) only ever be accessed by
+// their owning modules, because any downstream modules
+// only care about the function signatures.
+// Sketchy, I know. Remind me to fix this sometime.
+unsafe impl Send for Namespace {}
 
 impl Namespace {
 	pub fn new(path: Identifier) -> Self {
@@ -407,5 +224,192 @@ impl Display for Namespace {
 			}
 		}
 		Ok(())
+	}
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Identifier {
+	pub qualifier: (Option<Box<Type>>, Option<Box<ItemRef<TraitRef>>>),
+	pub path: Vec<Name>,
+	pub absolute: bool,
+}
+
+impl Identifier {
+	pub fn new(absolute: bool) -> Self {
+		Identifier {
+			qualifier: (None, None),
+			path: vec![],
+			absolute,
+		}
+	}
+
+	pub fn from_name(name: Name, absolute: bool) -> Self {
+		Identifier {
+			qualifier: (None, None),
+			path: vec![name],
+			absolute,
+		}
+	}
+
+	pub fn from_parent(parent: &Identifier, name: Name) -> Self {
+		let mut result = parent.clone();
+		result.path.push(name);
+		result
+	}
+
+	pub fn name(&self) -> &Name {
+		self.path.last().unwrap()
+	}
+
+	pub fn is_qualified(&self) -> bool {
+		self.path.len() > 1
+	}
+
+	pub fn expect_scopeless(&self) -> ParseResult<&Name> {
+		if self.path.len() == 1 && !self.absolute {
+			Ok(self.path.last().unwrap())
+		} else {
+			Err(CMNError::new(CMNErrorCode::ExpectedIdentifier)) // TODO: Give appropriate error
+		}
+	}
+}
+
+impl Display for Identifier {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		let mut result = String::new();
+
+		if !self.absolute {
+			result.push('~');
+		}
+
+		match &self.qualifier {
+			(Some(ty), None) => result.push_str(&format!("{ty}::")),
+
+			(Some(ty), Some(tr)) => {
+				result.push('<');
+
+				match &**tr {
+					ItemRef::Resolved(tr) => {
+						result.push_str(&format!("{ty} as {}", tr.name));
+					}
+
+					ItemRef::Unresolved { name, .. } => {
+						result.push_str(&format!("{ty} as \"{name}\""));
+					}
+				}
+
+				result.push_str(">::");
+			}
+
+			(None, Some(_)) => todo!(),
+
+			(None, None) => {}
+		}
+
+		for scope in &self.path {
+			result.push_str(scope);
+			if scope != self.path.last().unwrap() {
+				result.push_str("::");
+			}
+		}
+
+		write!(f, "{result}")
+	}
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum NamespaceASTElem {
+	Parsed(Expr),
+	Unparsed(usize), // Token index
+	NoElem,
+}
+
+pub type FnOverloadList = Vec<(Arc<RwLock<FnDef>>, RefCell<NamespaceASTElem>)>;
+
+#[derive(Clone, Debug)]
+pub enum NamespaceItem {
+	Type(Arc<RwLock<TypeDef>>),
+	Trait(Arc<RwLock<TraitDef>>),
+	// Plural in order to support function overloads
+	Functions(FnOverloadList),
+	Variable(Type, RefCell<NamespaceASTElem>),
+	Alias(Identifier),
+}
+
+#[derive(Clone)]
+pub enum ItemRef<T: Clone> {
+	Unresolved {
+		name: Identifier,
+		scope: Identifier,
+		type_args: Vec<Type>,
+	},
+	Resolved(T),
+}
+
+impl<T: Clone> Eq for ItemRef<T> where T: PartialEq + Eq {}
+
+impl<T: Clone> PartialEq for ItemRef<T>
+where
+	T: PartialEq,
+{
+	fn eq(&self, other: &Self) -> bool {
+		match (self, other) {
+			(
+				Self::Unresolved {
+					name: l0,
+					scope: l1,
+					type_args: l2,
+				},
+				Self::Unresolved {
+					name: r0,
+					scope: r1,
+					type_args: r2,
+				},
+			) => l0 == r0 && l1 == r1 && l2 == r2,
+			(Self::Resolved(l0), Self::Resolved(r0)) => l0 == r0,
+			_ => false,
+		}
+	}
+}
+
+impl<T: Clone> Hash for ItemRef<T>
+where
+	T: Hash,
+{
+	fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+		match self {
+			Self::Unresolved {
+				name,
+				scope,
+				type_args,
+			} => {
+				name.hash(state);
+				scope.hash(state);
+				type_args.hash(state);
+			}
+
+			Self::Resolved(t) => t.hash(state),
+		}
+	}
+}
+
+impl<T: Clone> Debug for ItemRef<T>
+where
+	T: Debug,
+{
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		match self {
+			Self::Unresolved {
+				name: arg0,
+				scope: arg1,
+				type_args: arg2,
+			} => f
+				.debug_tuple("Unresolved")
+				.field(arg0)
+				.field(arg1)
+				.field(arg2)
+				.finish(),
+			Self::Resolved(arg0) => f.debug_tuple("Resolved").field(arg0).finish(),
+		}
 	}
 }
