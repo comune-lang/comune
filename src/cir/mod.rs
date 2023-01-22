@@ -5,7 +5,7 @@ use std::{collections::HashMap, ffi::CString, hash::Hash};
 use crate::ast::{
 	expression::Operator,
 	namespace::{Identifier, Name},
-	types::{Basic, DataLayout, TupleKind, TypeParam},
+	types::{Basic, DataLayout, TupleKind, TypeParam, BindingProps},
 	Attribute, TokenData,
 };
 
@@ -145,7 +145,7 @@ pub enum CIRStmt {
 pub struct CIRFnPrototype {
 	pub name: Identifier,
 	pub ret: CIRType,
-	pub params: Vec<CIRType>,
+	pub params: Vec<(BindingProps, CIRType)>,
 	pub type_params: CIRTypeParamList,
 }
 
@@ -153,7 +153,7 @@ pub struct CIRFnPrototype {
 pub struct CIRFunction {
 	// In cIR, variables are referenced by an index, not a name.
 	// (They may still have a name for pretty-printing, though.)
-	pub variables: Vec<(CIRType, Option<Name>)>,
+	pub variables: Vec<(CIRType, BindingProps, Option<Name>)>,
 	pub blocks: Vec<CIRBlock>,
 	pub ret: CIRType,
 	pub arg_count: usize,

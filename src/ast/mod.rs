@@ -53,7 +53,7 @@ pub struct FnScope<'ctx> {
 	scope: Identifier,
 	parent: Option<&'ctx FnScope<'ctx>>,
 	fn_return_type: Type,
-	variables: HashMap<Name, Type>,
+	variables: HashMap<Name, (Type, BindingProps)>,
 }
 
 impl<'ctx> FnScope<'ctx> {
@@ -89,7 +89,7 @@ impl<'ctx> FnScope<'ctx> {
 			let local_lookup;
 
 			if self.variables.contains_key(id.name()) {
-				local_lookup = Some((id.clone(), self.variables.get(id.name()).cloned().unwrap()));
+				local_lookup = Some((id.clone(), self.variables.get(id.name()).cloned().unwrap().0));
 			} else if let Some(parent) = self.parent {
 				local_lookup = parent.find_symbol(id, search_namespace);
 			} else {
@@ -116,8 +116,8 @@ impl<'ctx> FnScope<'ctx> {
 		result
 	}
 
-	pub fn add_variable(&mut self, t: Type, n: Name) {
-		self.variables.insert(n, t);
+	pub fn add_variable(&mut self, t: Type, n: Name, p: BindingProps) {
+		self.variables.insert(n, (t, p));
 	}
 }
 
@@ -131,7 +131,7 @@ pub fn validate_function(
 
 	for (param, name, props) in &mut func.params.params {
 		param.validate(&scope)?;
-		scope.add_variable(param.clone(), name.clone().unwrap())
+		scope.add_variable(param.clone(), name.clone().unwrap(), *props)
 	}
 
 	if let NamespaceASTElem::Parsed(elem) = &mut *elem.borrow_mut() {
@@ -141,9 +141,11 @@ pub fn validate_function(
 		elem.validate(&mut scope)?;
 
 		let Expr::Atom(Atom::Block { items, result }, _) = elem else { panic!() };
-
+		
 		// Turn result values into explicit return expressions
-		if result.is_some() {
+		let has_result = result.is_some();
+		
+		if has_result {
 			let expr = *result.take().unwrap();
 			let node_data = expr.get_node_data().clone();
 
@@ -155,22 +157,24 @@ pub fn validate_function(
 
 		let mut has_return = false;
 
-		if let Some(Stmt::Decl(_, Some(expr), _) | Stmt::Expr(expr)) = items.last() {
-			let expr_ty = expr.get_type();
+		if has_result {
+			if let Some(Stmt::Expr(expr)) = items.last() {
+				let expr_ty = expr.get_type();
 
-			if !expr_ty.castable_to(&scope.fn_return_type) {
-				return Err((
-					CMNError::new(CMNErrorCode::ReturnTypeMismatch {
-						expected: scope.fn_return_type,
-						got: expr_ty.clone(),
-					}),
-					elem.get_node_data().tk,
-				));
+				if !expr_ty.castable_to(&scope.fn_return_type) {
+					return Err((
+						CMNError::new(CMNErrorCode::ReturnTypeMismatch {
+							expected: scope.fn_return_type,
+							got: expr_ty.clone(),
+						}),
+						elem.get_node_data().tk,
+					));
+				}
 			}
-
-			if let Expr::Atom(Atom::CtrlFlow(ctrl), _) = expr {
-				has_return = matches!(&**ctrl, ControlFlow::Return { .. })
-			}
+		}
+		
+		if let Some(Stmt::Expr(Expr::Atom(Atom::CtrlFlow(ctrl), _))) = items.last() {
+			has_return = matches!(&**ctrl, ControlFlow::Return { .. })
 		}
 
 		if !has_return {
@@ -510,7 +514,7 @@ fn validate_arg_list(
 pub fn validate_namespace(namespace: &mut Namespace) -> AnalyzeResult<()> {
 	for (id, child) in &namespace.children {
 		if let NamespaceItem::Functions(fns) = child {
-			for (func, elem, attributes) in fns {
+			for (func, elem, _) in fns {
 				let mut scope = id.clone();
 				scope.path.pop();
 
@@ -523,7 +527,7 @@ pub fn validate_namespace(namespace: &mut Namespace) -> AnalyzeResult<()> {
 		let im = im.read().unwrap();
 
 		for fns in im.items.values() {
-			for (func, elem, attributes) in fns {
+			for (func, elem, _) in fns {
 				validate_function(
 					im.scope.clone(),
 					&mut func.write().unwrap(),
@@ -695,7 +699,7 @@ pub fn resolve_namespace_types(namespace: &Namespace) -> ParseResult<()> {
 				} = &mut *tr.write().unwrap();
 
 				for fns in items.values_mut() {
-					for (func, _, attributes) in fns {
+					for (func, ..) in fns {
 						let FnDef {
 							ret,
 							params,
@@ -1312,10 +1316,10 @@ impl Atom {
 							if let Binding {
 								name: Some(name),
 								ty,
-								..
+								props
 							} = binding
 							{
-								subscope.add_variable(ty.clone(), name.clone());
+								subscope.add_variable(ty.clone(), name.clone(), *props);
 							}
 						}
 

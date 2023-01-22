@@ -26,7 +26,7 @@ struct Vector<T> {
 }
 
 impl Test {
-	int sum(Test self) {
+	int sum(&mut Test self) {
 		printf(c"This is a method call!\n");
 		self.a + self.b
 	}
@@ -46,6 +46,11 @@ void impl_test() {
 	Test test = Test { a: 413, b: 612, };
 	test.hello();
 	printf(c"The sum of a and b is %i!\n", test.sum());
+}
+
+void ref_test(&i32 test) {
+	&i32 test_var = test;
+	test_var++;
 }
 
 //void fn_pointer_test(&unsafe mut fn<void(int)> callback) {
@@ -71,9 +76,13 @@ Vector<i32> generic_ret() {
 int main() {
 	impl_test();
 
-	overload_test(12 as i32);
+	overload_test(12i32);
 
-	(i64 | float) who_knows = 322.f;
+	int int_ref_test = 12;
+	ref_test(int_ref_test);
+	printf(c"int_ref_test: %i\n", int_ref_test);
+
+	(i64 | f32) who_knows = 322.f;
 	
 	match who_knows {
 		i64 int_result => {

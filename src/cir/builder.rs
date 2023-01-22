@@ -7,7 +7,7 @@ use crate::{
 		namespace::{Identifier, ItemRef, Name, Namespace, NamespaceASTElem, NamespaceItem},
 		pattern::{Binding, Pattern},
 		statement::Stmt,
-		types::{Basic, FnDef, TupleKind, Type, TypeDef, TypeParamList, TypeRef},
+		types::{Basic, FnDef, TupleKind, Type, TypeDef, TypeParamList, TypeRef, BindingProps},
 		Attribute,
 	},
 	constexpr::{ConstExpr, ConstValue},
@@ -107,7 +107,7 @@ impl CIRModuleBuilder {
 
 		for (name, item) in &namespace.children {
 			if let NamespaceItem::Functions(fns) = item {
-				for (func, ast, attribs) in fns {
+				for (func, ast, _) in fns {
 					let proto = self.get_prototype(name.clone(), &func.read().unwrap());
 
 					if let NamespaceASTElem::Parsed(ast) = &*ast.borrow() {
@@ -220,7 +220,7 @@ impl CIRModuleBuilder {
 			.params
 			.params
 			.iter()
-			.map(|(param, ..)| self.convert_type(param))
+			.map(|(param, _, props)| (*props, self.convert_type(param)))
 			.collect();
 
 		CIRFnPrototype {
@@ -251,10 +251,8 @@ impl CIRModuleBuilder {
 			mangled_name: None,
 		});
 
-		for param in &func.params.params {
-			if let Some(name) = &param.1 {
-				self.insert_variable(Some(name.clone()), param.0.clone());
-			}
+		for (ty, name, props) in &func.params.params {
+			self.insert_variable(name.clone(), *props, ty.clone());
 		}
 
 		(proto, self.current_fn.take().unwrap())
@@ -318,7 +316,7 @@ impl CIRModuleBuilder {
 					None
 				};
 
-				let var = self.insert_variable(Some(name.clone()), ty.clone());
+				let var = self.insert_variable(Some(name.clone()), *props, ty.clone());
 
 				if let Some(val) = val {
 					self.write(CIRStmt::Assignment(
@@ -336,19 +334,19 @@ impl CIRModuleBuilder {
 	}
 
 	// For a given pattern match, generate the appropriate bindings
-	fn generate_pattern_bindings(&mut self, pattern: &Pattern, value: LValue, value_ty: &CIRType) {
+	fn generate_pattern_bindings(&mut self, pattern: Pattern, value: LValue, value_ty: &CIRType) {
 		match pattern {
 			Pattern::Binding(Binding {
 				name: Some(name),
 				ty,
-				..
+				props
 			}) => {
-				let cir_ty = self.convert_type(ty);
+				let cir_ty = self.convert_type(&ty);
 				let idx = self.get_fn().variables.len();
 
 				self.get_fn_mut()
 					.variables
-					.push((cir_ty.clone(), Some(name.clone())));
+					.push((cir_ty.clone(), props, Some(name.clone())));
 
 				self.name_map_stack
 					.last_mut()
@@ -386,13 +384,13 @@ impl CIRModuleBuilder {
 		}
 	}
 
-	fn generate_binding(&mut self, ty: &Type, name: Name, elem: &Option<Box<Expr>>) {
+	fn generate_binding(&mut self, ty: &Type, name: Name, props: BindingProps, elem: &Option<Box<Expr>>) {
 		let cir_ty = self.convert_type(ty);
 		let idx = self.get_fn().variables.len();
 
 		self.get_fn_mut()
 			.variables
-			.push((cir_ty, Some(name.clone())));
+			.push((cir_ty, props, Some(name.clone())));
 		self.name_map_stack.last_mut().unwrap().insert(name, idx);
 
 		let lval = LValue {
@@ -842,7 +840,7 @@ impl CIRModuleBuilder {
 
 							let binding_idx = self.append_block();
 							self.generate_pattern_bindings(
-								pattern,
+								pattern.clone(),
 								scrutinee_lval.clone(),
 								&scrutinee_ty,
 							);
@@ -1047,7 +1045,8 @@ impl CIRModuleBuilder {
 		let result = if ret == &Type::Basic(Basic::Void) {
 			None
 		} else {
-			Some(self.insert_variable(None, ret.clone()))
+			// TODO: BindingProps for return type
+			Some(self.insert_variable(None, BindingProps::default(), ret.clone()))
 		};
 
 		let id = self.get_prototype(name, &resolved.read().unwrap());
@@ -1193,7 +1192,7 @@ impl CIRModuleBuilder {
 		None
 	}
 
-	fn insert_variable(&mut self, name: Option<Name>, ty: Type) -> LValue {
+	fn insert_variable(&mut self, name: Option<Name>, props: BindingProps, ty: Type) -> LValue {
 		let cir_ty = self.convert_type(&ty);
 		let idx = self.get_fn().variables.len();
 
@@ -1204,7 +1203,7 @@ impl CIRModuleBuilder {
 				.insert(name.clone(), idx);
 		}
 
-		self.get_fn_mut().variables.push((cir_ty, name));
+		self.get_fn_mut().variables.push((cir_ty, props, name));
 
 		LValue {
 			local: idx,
@@ -1221,7 +1220,7 @@ impl CIRModuleBuilder {
 	}
 
 	fn insert_temporary(&mut self, ty: CIRType, rval: RValue) -> LValue {
-		self.get_fn_mut().variables.push((ty, None));
+		self.get_fn_mut().variables.push((ty, BindingProps::default(), None));
 
 		let lval = LValue {
 			local: self.get_fn().variables.len() - 1,

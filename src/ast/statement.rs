@@ -26,7 +26,7 @@ impl Stmt {
 					todo!()
 				}
 
-				let (binding_ty, binding_name, bindings_props) = names[0].clone();
+				let (binding_ty, binding_name, binding_props) = names[0].clone();
 
 				if let Some(expr) = expr {
 					binding_ty.validate(scope)?;
@@ -48,10 +48,14 @@ impl Stmt {
 						}
 					}
 
-					scope.add_variable(binding_ty, binding_name);
+					if binding_props.is_ref {
+						return Err((CMNError::new(CMNErrorCode::UnstableFeature("ref_locals")), *tk));
+					}
+
+					scope.add_variable(binding_ty, binding_name, binding_props);
 					Ok(expr_ty)
 				} else {
-					scope.add_variable(binding_ty.clone(), binding_name);
+					scope.add_variable(binding_ty.clone(), binding_name, binding_props);
 					Ok(binding_ty)
 				}
 			}

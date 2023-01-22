@@ -167,13 +167,15 @@ impl Parser {
 					}
 
 					next = self.get_next()?; // Consume brace
-
+					
+					// TODO: Actually finish this
+					
 					while !token_compare(&next, "}") {
-						let Token::Name(variant_name) = next else { return Err(self.err(CMNErrorCode::UnexpectedToken)) };
+						let Token::Name(_variant_name) = next else { return Err(self.err(CMNErrorCode::UnexpectedToken)) };
 
 						self.get_next()?;
 
-						let tuple = self.parse_tuple_type(false)?;
+						let _tuple = self.parse_tuple_type(false)?;
 						//aggregate.variants.push((variant_name, tuple));
 
 						next = self.get_current()?;
@@ -770,6 +772,8 @@ impl Parser {
 	}
 
 	fn parse_pattern(&self) -> ParseResult<Pattern> {
+		let props = self.parse_binding_props()?;
+
 		if self.is_at_type_token(true)? {
 			let pattern_ty = self.parse_type(true)?;
 
@@ -786,8 +790,7 @@ impl Parser {
 					Ok(Pattern::Binding(Binding {
 						name: Some(id),
 						ty: pattern_ty,
-						is_ref,
-						is_mut: true,
+						props: props.unwrap_or_default(),
 					}))
 				}
 

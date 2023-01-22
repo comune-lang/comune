@@ -1,4 +1,4 @@
-use std::{collections::HashMap, rc::Rc};
+use std::{collections::HashMap, rc::Rc, any::Any};
 
 use inkwell::{
 	basic_block::BasicBlock,
@@ -21,7 +21,7 @@ use inkwell::{
 use crate::{
 	ast::{
 		expression::Operator,
-		types::{Basic, DataLayout, TupleKind},
+		types::{Basic, DataLayout, TupleKind, BindingProps},
 	},
 	cir::{
 		CIRFnPrototype, CIRFunction, CIRModule, CIRStmt, CIRType, CIRTypeDef, LValue, Operand,
@@ -56,7 +56,7 @@ pub struct LLVMBackend<'ctx> {
 	type_map: HashMap<String, AnyTypeEnum<'ctx>>,
 	fn_map: HashMap<CIRFnPrototype, String>,
 	blocks: Vec<BasicBlock<'ctx>>,
-	variables: Vec<PointerValue<'ctx>>,
+	variables: Vec<(PointerValue<'ctx>, BindingProps)>,
 }
 
 impl<'ctx> LLVMBackend<'ctx> {
@@ -191,10 +191,15 @@ impl<'ctx> LLVMBackend<'ctx> {
 			);
 		}
 
-		for i in 0..t.variables.len() {
-			let ty = Self::to_basic_type(self.get_llvm_type(&t.variables[i].0));
+		for (i, (ty, props, _)) in t.variables.iter().enumerate() {
+			let mut ty = Self::to_basic_type(self.get_llvm_type(ty));
+			
+			if props.is_ref {
+				ty = ty.ptr_type(AddressSpace::Generic).as_basic_type_enum();
+			}
+
 			self.variables
-				.push(self.create_entry_block_alloca(&format!("_{i}"), ty));
+				.push((self.create_entry_block_alloca(&format!("_{i}"), ty), *props));
 		}
 
 		// Build parameter stores
@@ -208,7 +213,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 				.get_param_iter()
 				.enumerate()
 			{
-				self.builder.build_store(self.variables[idx], param);
+				self.builder.build_store(self.variables[idx].0, param);
 			}
 		}
 
@@ -288,10 +293,15 @@ impl<'ctx> LLVMBackend<'ctx> {
 						if let Some(except) = except {
 							let args_mapped: Vec<_> = args
 								.iter()
-								.map(|x| {
-									self.builder
-										.build_load(self.generate_lvalue(x), "argld")
-										.as_basic_value_enum()
+								.enumerate()
+								.map(|(i, x)| {
+									if id.params[i].0.is_ref {
+										self.generate_lvalue(x).as_basic_value_enum()
+									} else {
+										self.builder
+											.build_load(self.generate_lvalue(x), "argld")
+											.as_basic_value_enum()
+									}
 								})
 								.collect();
 
@@ -305,12 +315,21 @@ impl<'ctx> LLVMBackend<'ctx> {
 						} else {
 							let args_mapped: Vec<_> = args
 								.iter()
-								.map(|x| {
-									Self::to_basic_metadata_value(
+								.enumerate()
+								.map(|(i, x)| {
+									let is_ref = if let Some(param) = id.params.get(i) {
+										param.0.is_ref
+									} else {
+										false
+									};
+									
+									Self::to_basic_metadata_value(if is_ref {
+										self.generate_lvalue(x).as_any_value_enum()
+									} else {
 										self.builder
 											.build_load(self.generate_lvalue(x), "argld")
-											.as_any_value_enum(),
-									)
+											.as_any_value_enum()
+									})
 								})
 								.collect();
 
@@ -787,8 +806,12 @@ impl<'ctx> LLVMBackend<'ctx> {
 	}
 
 	fn generate_lvalue(&self, expr: &LValue) -> PointerValue<'ctx> {
-		let mut local = self.variables[expr.local];
-
+		let (mut local, props) = self.variables[expr.local];
+		
+		if props.is_ref {
+			local = self.builder.build_load(local, "deref").as_basic_value_enum().into_pointer_value();
+		}
+		
 		for proj in &expr.projection {
 			local = match proj {
 				PlaceElem::Deref => self
@@ -822,7 +845,20 @@ impl<'ctx> LLVMBackend<'ctx> {
 	fn generate_prototype(&mut self, t: &CIRFunction) -> LLVMResult<FunctionType<'ctx>> {
 		let types_mapped: Vec<_> = t.variables[0..t.arg_count]
 			.iter()
-			.map(|t| Self::to_basic_metadata_type(self.get_llvm_type(&t.0)))
+			.map(|t| 
+				if t.1.is_ref {
+					Self::to_basic_metadata_type(match self.get_llvm_type(&t.0).as_any_type_enum() {
+						AnyTypeEnum::ArrayType(a) => a.ptr_type(AddressSpace::Generic),
+						AnyTypeEnum::FloatType(f) => f.ptr_type(AddressSpace::Generic),
+						AnyTypeEnum::IntType(i) => i.ptr_type(AddressSpace::Generic),
+						AnyTypeEnum::PointerType(p) => p.ptr_type(AddressSpace::Generic),
+						AnyTypeEnum::StructType(s) => s.ptr_type(AddressSpace::Generic),
+						AnyTypeEnum::VectorType(v) => v.ptr_type(AddressSpace::Generic),
+						_ => panic!(),
+					}.as_any_type_enum())
+				} else {
+					Self::to_basic_metadata_type(self.get_llvm_type(&t.0))
+				})
 			.collect();
 
 		Ok(match self.get_llvm_type(&t.ret) {

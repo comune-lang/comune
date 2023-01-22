@@ -154,7 +154,7 @@ fn convert_invalid_use_error(
 			CMNError::new(CMNErrorCode::InvalidUse {
 				variable: Identifier::from_name(
 					func.variables[e.0.local]
-						.1
+						.2
 						.as_ref()
 						.unwrap_or(&"(???)".into())
 						.clone(),

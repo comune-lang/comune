@@ -60,11 +60,11 @@ impl Display for CIRFnPrototype {
 			write!(f, "()")?;
 		} else {
 			let mut iter = self.params.iter();
+			let first = iter.next().unwrap();
+			write!(f, "({}{}", first.0, first.1)?;
 
-			write!(f, "({}", iter.next().unwrap())?;
-
-			for param in iter {
-				write!(f, ", {param}")?;
+			for (props, param) in iter {
+				write!(f, ", {props}{param}")?;
 			}
 
 			write!(f, ")")?;
@@ -81,11 +81,11 @@ impl Display for CIRFunction {
 		} else {
 			writeln!(f, " {{")?;
 
-			for i in 0..self.variables.len() {
-				if let Some(name) = &self.variables[i].1 {
-					writeln!(f, "\tlet _{i}: {}; ({name})", &self.variables[i].0)?;
+			for (i, (ty, props, name)) in self.variables.iter().enumerate() {
+				if let Some(name) = name {
+					writeln!(f, "\tlet _{i}: {props}{ty}; ({name})")?;
 				} else {
-					writeln!(f, "\tlet _{i}: {};", &self.variables[i].0)?;
+					writeln!(f, "\tlet _{i}: {props}{ty};")?;
 				}
 			}
 

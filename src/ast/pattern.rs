@@ -1,11 +1,10 @@
-use super::{namespace::Name, types::Type};
+use super::{namespace::Name, types::{Type, BindingProps}};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Binding {
 	pub name: Option<Name>,
 	pub ty: Type,
-	pub is_ref: bool,
-	pub is_mut: bool,
+	pub props: BindingProps,
 }
 
 #[derive(Debug, Clone, PartialEq)]

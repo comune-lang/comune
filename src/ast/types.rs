@@ -47,7 +47,7 @@ pub enum TypeDef {
 	Class, // TODO: Implement classes
 }
 
-#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct BindingProps {
 	pub is_ref: bool,
 	pub is_mut: bool,
@@ -624,6 +624,21 @@ impl Display for AlgebraicDef {
 			write!(f, ", {:?}", mem.1)?;
 		}
 		write!(f, "}}")
+	}
+}
+
+impl Display for BindingProps {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		if self.is_ref {
+			write!(f, "&")?;
+		}
+		if self.is_unsafe {
+			write!(f, "unsafe ")?;
+		}
+		if self.is_mut {
+			write!(f, "mut ")?;
+		}
+		Ok(())
 	}
 }
 

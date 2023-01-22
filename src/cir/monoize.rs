@@ -86,7 +86,7 @@ impl CIRModule {
 	) -> CIRFunction {
 		let mut func = func.clone();
 
-		for (var, _) in &mut func.variables {
+		for (var, ..) in &mut func.variables {
 			Self::monoize_type(types, var, param_map, ty_instances);
 		}
 

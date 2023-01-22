@@ -15,7 +15,7 @@ use crate::{
 		namespace::{Identifier, Namespace},
 	},
 	cir::{
-		analyze::{cleanup, lifeline, verify, CIRPassManager},
+		analyze::{verify, CIRPassManager},
 		builder::CIRModuleBuilder,
 	},
 	errors::{CMNError, CMNErrorCode, CMNMessage, CMNMessageLog},

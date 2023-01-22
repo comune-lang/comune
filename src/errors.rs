@@ -116,6 +116,7 @@ pub enum CMNErrorCode {
 	NotCallable(String),
 	InvalidDeref(Type),
 	InfiniteSizeType,
+	UnstableFeature(&'static str),
 
 	// Resolution errors
 	ModuleNotFound(OsString),
@@ -199,10 +200,9 @@ impl Display for CMNErrorCode {
 			CMNErrorCode::NotCallable(id) => write!(f, "{id} is not callable"),
 			CMNErrorCode::InvalidDeref(ty) => write!(f, "can't dereference value of type {ty}"),
 			CMNErrorCode::InfiniteSizeType => write!(f, "cyclical type dependency found"),
+			CMNErrorCode::UnstableFeature(feat) => write!(f, "feature `{feat}` is unstable"),
 
-			CMNErrorCode::ModuleNotFound(m) => {
-				write!(f, "module not found: {}", m.to_string_lossy())
-			}
+			CMNErrorCode::ModuleNotFound(m) => write!(f, "module not found: {m:#?}"),
 
 			CMNErrorCode::LLVMError => write!(f, "an internal compiler error occurred"),
 
