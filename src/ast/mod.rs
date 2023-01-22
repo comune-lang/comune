@@ -563,7 +563,7 @@ pub fn resolve_type(
 				// Generic type parameter
 				result = Some(Type::TypeParam(generic_pos));
 			} else {
-				result = namespace.resolve_type(id, scope, &vec![]);
+				result = namespace.resolve_type(id, scope);
 			}
 
 			if let Some(Type::TypeRef(ItemRef::Resolved(TypeRef {
@@ -667,6 +667,13 @@ pub fn resolve_type_def(
 pub fn resolve_namespace_types(namespace: &Namespace) -> ParseResult<()> {
 	// Resolve types
 
+	
+	for child in namespace.children.values() {
+		if let NamespaceItem::TypeAlias(alias) = child {
+			resolve_type(&mut alias.write().unwrap(), namespace, &vec![])?;
+		}
+	}
+
 	for child in namespace.children.values() {
 		match &child {
 			NamespaceItem::Functions(fns) => {
@@ -689,7 +696,7 @@ pub fn resolve_namespace_types(namespace: &Namespace) -> ParseResult<()> {
 				resolve_type_def(&mut t.write().unwrap(), attributes, namespace, &vec![])?
 			}
 
-			NamespaceItem::Alias(_) => {}
+			NamespaceItem::Alias(_) | NamespaceItem::TypeAlias(_) => {}
 
 			NamespaceItem::Trait(tr, _) => {
 				let TraitDef {

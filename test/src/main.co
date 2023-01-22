@@ -49,11 +49,10 @@ void impl_test() {
 }
 
 void ref_test(&i32 test) {
-	&i32 test_var = test;
-	test_var++;
+	test++;
 }
 
-//void fn_pointer_test(&unsafe mut fn<void(int)> callback) {
+//void fn_pointer_test(callback: &unsafe mut fn(int)) {
 //	callback(12);
 //}
 
@@ -73,19 +72,17 @@ Vector<i32> generic_ret() {
 	};
 }
 
+using TestSumType = (i32 | f32);
+
+TestSumType sum_type_test() {
+	return 322;
+}
+
 int main() {
-	impl_test();
-
-	overload_test(12i32);
-
-	int int_ref_test = 12;
-	ref_test(int_ref_test);
-	printf(c"int_ref_test: %i\n", int_ref_test);
-
-	(i64 | f32) who_knows = 322.f;
+	TestSumType who_knows = sum_type_test();
 	
 	match who_knows {
-		i64 int_result => {
+		int int_result => {
 			printf(c"It's an int! %i\n", int_result)
 		}
 
@@ -93,6 +90,14 @@ int main() {
 			printf(c"It's a float! %f\n", float_result)
 		}
 	};
+
+	impl_test();
+
+	overload_test(12i32);
+
+	int int_ref_test = 12;
+	ref_test(int_ref_test);
+	printf(c"int_ref_test: %i\n", int_ref_test);
 
 	(i64 | i32) int_test = 32 as i32;
 

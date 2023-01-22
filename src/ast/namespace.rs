@@ -85,10 +85,9 @@ impl Namespace {
 	pub fn resolve_type(
 		&self,
 		id: &Identifier,
-		scope: &Identifier,
-		type_args: &Vec<(Name, Type)>,
+		scope: &Identifier
 	) -> Option<Type> {
-		if !id.is_qualified() && type_args.is_empty() {
+		if !id.is_qualified() {
 			if let Some(basic) = Basic::get_basic_type(id.name()) {
 				return Some(Type::Basic(basic));
 			}
@@ -128,7 +127,11 @@ impl Namespace {
 			}
 
 			Some((_, NamespaceItem::Alias(alias))) => {
-				self.resolve_type(alias, &Identifier::new(true), type_args)
+				self.resolve_type(alias, &Identifier::new(true))
+			}
+
+			Some((_, NamespaceItem::TypeAlias(alias))) => {
+				Some(alias.read().unwrap().clone())	
 			}
 
 			_ => {
@@ -139,7 +142,7 @@ impl Namespace {
 					let mut id_sub = id.clone();
 					id_sub.path.remove(0);
 
-					imported.resolve_type(&id_sub, &Identifier::new(true), type_args)
+					imported.resolve_type(&id_sub, &Identifier::new(true))
 				} else {
 					None
 				}
@@ -206,7 +209,8 @@ impl Display for Namespace {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		for (name, item) in &self.children {
 			match item {
-				NamespaceItem::Alias(id) => writeln!(f, "\t[alias] {}", id)?,
+				NamespaceItem::Alias(id) => writeln!(f, "\t[alias] {id}")?,
+				NamespaceItem::TypeAlias(ty) => writeln!(f, "\t[alias] {}", &ty.read().unwrap())?,
 				NamespaceItem::Type(t, _) => {
 					writeln!(f, "\t[type] {}: {}", name, t.read().unwrap())?
 				}
@@ -337,6 +341,7 @@ pub enum NamespaceItem {
 	Functions(FnOverloadList), // Plural in order to support function overloads
 	Variable(Type, RefCell<NamespaceASTElem>),
 	Alias(Identifier),
+	TypeAlias(Arc<RwLock<Type>>),
 }
 
 #[derive(Clone)]

@@ -116,7 +116,7 @@ impl Parser {
 					}
 				}
 
-				NamespaceItem::Type(..) | NamespaceItem::Alias(_) | NamespaceItem::Trait(..) => {}
+				NamespaceItem::Type(..) | NamespaceItem::Alias(_) | NamespaceItem::TypeAlias(_) | NamespaceItem::Trait(..) => {}
 
 				_ => todo!(),
 			}
@@ -435,12 +435,23 @@ impl Parser {
 							self.get_next()?;
 
 							let name = names[0].expect_scopeless()?.clone();
-							let aliased = self.parse_identifier()?;
 
-							self.namespace.children.insert(
-								Identifier::from_parent(scope, name),
-								NamespaceItem::Alias(aliased),
-							);
+							if self.is_at_type_token(false)? {
+								let ty = self.parse_type(false)?;
+								
+								self.namespace.children.insert(
+									Identifier::from_parent(scope, name),
+									NamespaceItem::TypeAlias(Arc::new(RwLock::new(ty)))
+								);
+							} else {
+
+								let aliased = self.parse_identifier()?;
+
+								self.namespace.children.insert(
+									Identifier::from_parent(scope, name),
+									NamespaceItem::Alias(aliased),
+								);
+							}
 
 							self.check_semicolon()?;
 						} else {
@@ -1303,7 +1314,7 @@ impl Parser {
 
 	fn find_type(&self, typename: &Identifier) -> Option<Type> {
 		self.namespace
-			.resolve_type(typename, &self.current_scope, &vec![])
+			.resolve_type(typename, &self.current_scope)
 	}
 
 	// Returns true if the current token is the start of a Type.
@@ -1326,7 +1337,7 @@ impl Parser {
 
 				Ok(self
 					.namespace
-					.resolve_type(&typename, &self.current_scope, &vec![])
+					.resolve_type(&typename, &self.current_scope)
 					.is_some())
 			} else {
 				self.lexer.borrow_mut().seek_token_idx(current_idx);
@@ -1568,7 +1579,7 @@ impl Parser {
 			if immediate_resolve {
 				if let Some(ty) =
 					self.namespace
-						.resolve_type(&typename, &self.current_scope, &vec![])
+						.resolve_type(&typename, &self.current_scope)
 				{
 					result = ty;
 				} else {
