@@ -16,6 +16,7 @@ use backtrace::Backtrace;
 use lazy_static::lazy_static;
 
 use super::types::Type;
+use crate::ast::expression::FnRef;
 use crate::{
 	ast::{expression::Operator, namespace::Identifier, TokenData},
 	cir::analyze::lifeline::LivenessState,
@@ -117,6 +118,7 @@ pub enum CMNErrorCode {
 	InvalidDeref(Type),
 	InfiniteSizeType,
 	UnstableFeature(&'static str),
+	NoCandidateFound { name: Identifier, args: Vec<Type>, type_args: Vec<Type> },
 
 	// Resolution errors
 	ModuleNotFound(OsString),
@@ -201,6 +203,30 @@ impl Display for CMNErrorCode {
 			CMNErrorCode::InvalidDeref(ty) => write!(f, "can't dereference value of type {ty}"),
 			CMNErrorCode::InfiniteSizeType => write!(f, "cyclical type dependency found"),
 			CMNErrorCode::UnstableFeature(feat) => write!(f, "feature `{feat}` is unstable"),
+			CMNErrorCode::NoCandidateFound { name, args, type_args} => {
+				write!(f, "no viable overload found for `{name}")?;
+
+				if !type_args.is_empty() {
+					let mut iter = type_args.iter();
+					write!(f, "<{}", iter.next().unwrap())?;
+					for arg in iter {
+						write!(f, ", {arg}")?;
+					}
+					write!(f, ">")?;
+				}
+				
+				write!(f, "(")?;
+
+				if !args.is_empty() {
+					let mut iter = args.iter();
+					write!(f, "{}", iter.next().unwrap())?;
+					for arg in iter {
+						write!(f, ", {arg}")?;
+					}
+					
+				}
+				write!(f, ")")
+			}
 
 			CMNErrorCode::ModuleNotFound(m) => write!(f, "module not found: {m:#?}"),
 

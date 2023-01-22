@@ -52,9 +52,10 @@ void ref_test(&i32 test) {
 	test++;
 }
 
-//void fn_pointer_test(callback: &unsafe mut fn(int)) {
+//void fn_pointer_test(fn<void(int)> callback) {
 //	callback(12);
 //}
+
 
 void overload_test(i32 a) {
 	printf(c"i32 overload called!\n");
@@ -89,7 +90,7 @@ int main() {
 		float float_result => {
 			printf(c"It's a float! %f\n", float_result)
 		}
-	};
+	}
 
 	impl_test();
 
@@ -98,20 +99,6 @@ int main() {
 	int int_ref_test = 12;
 	ref_test(int_ref_test);
 	printf(c"int_ref_test: %i\n", int_ref_test);
-
-	(i64 | i32) int_test = 32 as i32;
-
-	match int_test {
-		i32 a => {
-			printf(c"It's an i32! %i\n", a)
-		}
-
-		i64 b => {
-			printf(c"It's an i64! %i\n", b)
-		}
-	};
-
-	printf(c"who_knows discriminant:%i\n", who_knows);
 
 	printf(c"Temporary->lvalue promotion: %i\n", Test { a: 23, b: 35 }.sum());
 

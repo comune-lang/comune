@@ -344,7 +344,11 @@ pub fn validate_fn_call(
 		.collect();
 
 	let (selected_name, (selected_candidate, ..)) = match candidates.len() {
-		0 => todo!(), // No viable candidate
+		0 => return Err((CMNError::new(CMNErrorCode::NoCandidateFound {
+			args: args.iter().map(|arg| arg.get_type().clone()).collect(), 
+			type_args: type_args.clone(),
+			name: name.clone()
+		}), node_data.tk)), // No viable candidate
 
 		1 => candidates[0].clone(),
 
@@ -667,7 +671,6 @@ pub fn resolve_type_def(
 pub fn resolve_namespace_types(namespace: &Namespace) -> ParseResult<()> {
 	// Resolve types
 
-	
 	for child in namespace.children.values() {
 		if let NamespaceItem::TypeAlias(alias) = child {
 			resolve_type(&mut alias.write().unwrap(), namespace, &vec![])?;
