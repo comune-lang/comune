@@ -242,7 +242,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 					CIRStmt::Switch(cond, branches, else_block) => {
 						let cond_ir = self
-							.generate_rvalue(cond)
+							.generate_operand(&CIRType::Basic(Basic::Integral { signed: true, size_bytes: 4 }), cond)
 							.unwrap()
 							.as_basic_value_enum()
 							.into_int_value();
@@ -263,7 +263,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 					CIRStmt::Return(expr) => {
 						if let Some((expr, _)) = expr {
-							if let Some(result) = self.generate_rvalue(expr) {
+							if let Some(result) = self.generate_operand(&t.ret, expr) {
 								self.builder.build_return(Some(&result));
 							} else {
 								self.builder.build_return(None);

@@ -129,8 +129,8 @@ pub enum CIRStmt {
 	Expression(RValue, TokenData),
 	Assignment((LValue, TokenData), (RValue, TokenData)),
 	Jump(BlockIndex),
-	Switch(RValue, Vec<(CIRType, Operand, BlockIndex)>, BlockIndex),
-	Return(Option<(RValue, TokenData)>),
+	Switch(Operand, Vec<(CIRType, Operand, BlockIndex)>, BlockIndex),
+	Return(Option<(Operand, TokenData)>),
 	FnCall {
 		id: FuncID,
 		args: Vec<LValue>,

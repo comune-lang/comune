@@ -39,30 +39,6 @@ impl CIRPass for Verify {
 			}
 		}
 
-		// Perform basic typecheck
-		for block in &func.blocks {
-			for stmt in block {
-				match stmt {
-					CIRStmt::Switch(switch, branches, _) => {
-						let switch_ty = switch.get_type();
-
-						for (branch_ty, ..) in branches {
-							if branch_ty != switch_ty {
-								errors.push((
-									CMNError::new(CMNErrorCode::Custom(format!(
-										"switch type mismatch in cIR! {branch_ty} != {switch_ty}"
-									))),
-									(0, 0),
-								))
-							}
-						}
-					}
-
-					_ => {}
-				}
-			}
-		}
-
 		errors
 	}
 }

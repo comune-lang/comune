@@ -196,10 +196,6 @@ impl CIRPassMut for BorrowCheck {
 						state.eval_rvalue(rval, *token_data)?;
 					}
 
-					CIRStmt::Return(Some((rval, token_data))) => {
-						state.eval_rvalue(rval, *token_data)?;
-					}
-
 					_ => {}
 				}
 

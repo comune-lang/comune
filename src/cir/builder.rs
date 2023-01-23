@@ -566,8 +566,10 @@ impl CIRModuleBuilder {
 					ControlFlow::Return { expr } => {
 						if let Some(expr) = expr {
 							let expr_ir = self.generate_expr(expr)?;
+							let ty = self.convert_type(expr.get_type());
+							let operand = self.get_as_operand(ty, expr_ir);
 
-							self.write(CIRStmt::Return(Some((expr_ir, expr.get_node_data().tk))));
+							self.write(CIRStmt::Return(Some((operand, expr.get_node_data().tk))));
 						} else {
 							self.write(CIRStmt::Return(None));
 						}
@@ -594,6 +596,9 @@ impl CIRModuleBuilder {
 						let mut has_result = false;
 						// Generate condition directly in current block, since we don't need to jump back to it
 						let cond_ir = self.generate_expr(cond)?;
+						let cond_ty = self.convert_type(cond.get_type());
+						let cond_op = self.get_as_operand(cond_ty, cond_ir);
+
 						let start_block = self.current_block;
 
 						let (if_idx, block_ir) = self.generate_block(items, result, false);
@@ -634,7 +639,7 @@ impl CIRModuleBuilder {
 
 							self.current_block = start_block;
 
-							self.generate_branch(cond_ir, if_idx, else_idx);
+							self.generate_branch(cond_op, if_idx, else_idx);
 
 							self.get_fn_mut().blocks[if_write_idx].push(CIRStmt::Jump(cont_block));
 							self.get_fn_mut().blocks[else_write_idx]
@@ -644,7 +649,7 @@ impl CIRModuleBuilder {
 							let cont_block = self.append_block();
 
 							self.current_block = start_block;
-							self.generate_branch(cond_ir, if_idx, cont_block);
+							self.generate_branch(cond_op, if_idx, cont_block);
 
 							self.get_fn_mut().blocks[if_write_idx].push(CIRStmt::Jump(cont_block));
 							self.current_block = cont_block;
@@ -669,6 +674,9 @@ impl CIRModuleBuilder {
 						let cond_block = self.append_block();
 
 						let cond_ir = self.generate_expr(cond)?;
+						let cond_ty = self.convert_type(cond.get_type());
+						let cond_op = self.get_as_operand(cond_ty, cond_ir);
+
 						let cond_write_block = self.current_block;
 
 						// Write jump-to-cond statement to start block
@@ -687,7 +695,7 @@ impl CIRModuleBuilder {
 						let next_block = self.append_block();
 
 						self.current_block = cond_write_block;
-						self.generate_branch(cond_ir, body_idx, next_block);
+						self.generate_branch(cond_op, body_idx, next_block);
 
 						self.current_block = next_block;
 
@@ -731,7 +739,10 @@ impl CIRModuleBuilder {
 
 						if let Some(cond) = cond {
 							if let Some(cond_ir) = self.generate_expr(cond) {
-								self.generate_branch(cond_ir, body_block, next_block);
+								let cond_ty = self.convert_type(cond.get_type());
+								let cond_op = self.get_as_operand(cond_ty, cond_ir);
+		
+								self.generate_branch(cond_op, body_block, next_block);
 							}
 						} else {
 							self.write(CIRStmt::Jump(body_block));
@@ -867,7 +878,7 @@ impl CIRModuleBuilder {
 
 						self.current_block = start_block;
 						self.write(CIRStmt::Switch(
-							RValue::Atom(disc_ty, None, Operand::LValue(disc_lval)),
+							Operand::LValue(disc_lval),
 							branches_ir,
 							cont_block,
 						));
@@ -1175,7 +1186,7 @@ impl CIRModuleBuilder {
 		}
 	}
 
-	fn generate_branch(&mut self, cond: RValue, a: BlockIndex, b: BlockIndex) {
+	fn generate_branch(&mut self, cond: Operand, a: BlockIndex, b: BlockIndex) {
 		self.write(CIRStmt::Switch(
 			cond,
 			vec![(CIRType::Basic(Basic::Bool), Operand::BoolLit(true), a)],
