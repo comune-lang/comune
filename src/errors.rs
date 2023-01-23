@@ -1,5 +1,6 @@
 use colored::Colorize;
 use std::io::Write;
+use std::ops::RangeInclusive;
 use std::{
 	ffi::OsString,
 	fmt::Display,
@@ -16,7 +17,6 @@ use backtrace::Backtrace;
 use lazy_static::lazy_static;
 
 use super::types::Type;
-use crate::ast::expression::FnRef;
 use crate::ast::namespace::Name;
 use crate::{
 	ast::{expression::Operator, namespace::Identifier, TokenData},
@@ -298,8 +298,8 @@ pub enum CMNMessageLog {
 		msg: CMNMessage,
 		filename: String,
 
-		line_text: String,
-		line: usize,
+		lines_text: Vec<String>,
+		lines: RangeInclusive<usize>,
 		column: usize,
 		length: usize,
 	},
@@ -354,36 +354,74 @@ pub fn spawn_logger(backtrace_on_error: bool) -> Sender<CMNMessageLog> {
 					// Print file:row:column
 					match &message {
 						CMNMessageLog::Annotated {
-							line,
+							lines,
 							column,
-							line_text,
+							lines_text,
 							length,
 							..
 						} => {
 							writeln!(
 								out,
 								"{}",
-								format!(" in {}:{}:{}\n", filename, line + 1, column)
+								format!(" in {}:{}:{}\n", filename, lines.start() + 1, column)
 									.bright_black()
 							)
 							.unwrap();
 
-							// Print code snippet
-							writeln!(
-								out,
-								"{} {}",
-								format!("{}\t{}", line + 1, "|").bright_black(),
-								line_text
-							)
-							.unwrap();
+							let mut length_left = *length - *column;
 
-							// Print squiggle
-							write!(out, "\t{: <1$}", "", column + 1).unwrap();
-							writeln!(out, "{:~<1$}", "", length).unwrap();
+							// Print code snippet
+							for line in lines.clone() {
+								let line_text = &lines_text[line - lines.start()];
+								writeln!(
+									out,
+									"{} {}",
+									format!("{}\t{}", line + 1, "|").bright_black(),
+									line_text
+								)
+								.unwrap();
+
+								let column = {
+									if line == *lines.start() {
+										*column
+									} else {
+										if let Some(first) = line_text.chars().position(|c| c != ' ') {
+											first + 1
+										} else {
+											0
+										}
+									}
+								};
+
+								let len;
+
+								// welcome to off-by-one hell. don't touch anything or suffer the consequences
+
+								if line == *lines.start() {
+									len = usize::min(column + length, line_text.len()) - column + 1;
+									length_left -= len - 2;
+								} else if line == *lines.end() {
+									len = line_text.len() - length_left - column;
+								} else {
+									len = line_text.len() - column + 1;
+									length_left -= line_text.len() - 1;
+								}
+								
+								// Print gutter
+								write!(
+									out,
+									"{}",
+									format!("\t{}", "|").bright_black()
+								).unwrap();
+								
+								// Print squiggle
+								write!(out, "{: <1$}", "", column).unwrap();
+								writeln!(out, "{}", format!("{:~<1$}", "", len).red()).unwrap();
+							}
 						}
 
 						CMNMessageLog::Plain { .. } => {
-							writeln!(out, "{}", format!(" in {}", filename,).bright_black())
+							writeln!(out, "{}", format!(" in {}", filename).bright_black())
 								.unwrap();
 						}
 

@@ -5,6 +5,8 @@ use std::io::{self, Error, Read};
 use std::path::Path;
 use std::sync::mpsc::Sender;
 
+use rayon::str::Lines;
+
 use crate::errors::{CMNMessage, CMNMessageLog};
 
 use crate::ast::namespace::Name;
@@ -518,15 +520,21 @@ impl Lexer {
 
 	pub fn log_msg_at(&self, char_idx: usize, token_len: usize, e: CMNMessage) {
 		if char_idx > 0 {
-			let line = self.get_line_number(char_idx);
+			let first_line = self.get_line_number(char_idx);
+			let last_line = self.get_line_number(char_idx + token_len);
 			let column = self.get_column(char_idx);
+			let mut lines_text = vec![];
+
+			for line in first_line..=last_line {
+				lines_text.push(self.get_line(line).to_string());
+			}
 
 			self.error_logger
 				.send(CMNMessageLog::Annotated {
 					msg: e,
-					line_text: self.get_line(line).to_string(),
+					lines_text,
 					filename: self.file_name.to_string_lossy().into_owned(),
-					line,
+					lines: first_line..=last_line,
 					column,
 					length: token_len,
 				})
