@@ -1021,7 +1021,7 @@ impl Parser {
 
 									let expr = self.parse_expression()?;
 
-									inits.push((Some(member_name), expr));
+									inits.push((member_name, expr));
 								} else if self.get_current()? != Token::Other('}') {
 									return Err(self.err(CMNErrorCode::UnexpectedToken));
 								}

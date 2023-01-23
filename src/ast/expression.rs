@@ -413,7 +413,7 @@ pub enum Atom {
 
 	// Advanced literals
 	ArrayLit(Vec<Expr>),
-	AlgebraicLit(Type, Vec<(Option<Name>, Expr)>),
+	AlgebraicLit(Type, Vec<(Name, Expr)>),
 
 	Identifier(Identifier),
 

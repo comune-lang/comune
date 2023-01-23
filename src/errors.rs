@@ -17,6 +17,7 @@ use lazy_static::lazy_static;
 
 use super::types::Type;
 use crate::ast::expression::FnRef;
+use crate::ast::namespace::Name;
 use crate::{
 	ast::{expression::Operator, namespace::Identifier, TokenData},
 	cir::analyze::lifeline::LivenessState,
@@ -119,6 +120,7 @@ pub enum CMNErrorCode {
 	InfiniteSizeType,
 	UnstableFeature(&'static str),
 	NoCandidateFound { name: Identifier, args: Vec<Type>, type_args: Vec<Type> },
+	MissingInitializers { ty: Type, members: Vec<Name> },
 
 	// Resolution errors
 	ModuleNotFound(OsString),
@@ -226,6 +228,17 @@ impl Display for CMNErrorCode {
 					
 				}
 				write!(f, ")")
+			}
+			
+			CMNErrorCode::MissingInitializers { ty, members } => {
+				let mut iter = members.iter();
+				write!(f, "missing initializers for type {ty}: {}", iter.next().unwrap())?;
+				
+				for member in iter {
+					write!(f, ", {member}")?;
+				}
+				
+				Ok(())
 			}
 
 			CMNErrorCode::ModuleNotFound(m) => write!(f, "module not found: {m:#?}"),

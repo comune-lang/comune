@@ -497,7 +497,7 @@ impl CIRModuleBuilder {
 
 					if let CIRTypeDef::Algebraic { members_map, .. } = &self.module.types[ty_idx] {
 						for elem in elems {
-							indices.push(members_map[elem.0.as_ref().unwrap()]);
+							indices.push(members_map[&elem.0]);
 						}
 					} else {
 						panic!()

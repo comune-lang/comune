@@ -1146,28 +1146,42 @@ impl Atom {
 			Atom::AlgebraicLit(ty, elems) => {
 				if let Type::TypeRef(ItemRef::Resolved(TypeRef { def, args, .. })) = ty {
 					if let TypeDef::Algebraic(alg) = &*def.upgrade().unwrap().read().unwrap() {
-						for elem in elems {
-							let member_ty = if let Some((_, ty)) =
-								alg.get_member(elem.0.as_ref().unwrap(), Some(args))
-							{
+						
+
+						for (name, expr) in elems.iter_mut() {
+							let member_ty = if let Some((_, ty)) = alg.get_member(name, Some(args)) {
 								ty
 							} else {
 								// Invalid member in strenum literal
 								todo!()
 							};
 
-							elem.1.get_node_data_mut().ty.replace(member_ty.clone());
-							let expr_ty = elem.1.validate(scope)?;
+							expr.get_node_data_mut().ty.replace(member_ty.clone());
+							let expr_ty = expr.validate(scope)?;
 
-							if !elem.1.coercable_to(&expr_ty, &member_ty, scope) {
+							if !expr.coercable_to(&expr_ty, &member_ty, scope) {
 								return Err((
 									CMNError::new(CMNErrorCode::AssignTypeMismatch {
 										expr: expr_ty,
 										to: member_ty,
 									}),
-									elem.1.get_node_data().tk,
+									expr.get_node_data().tk,
 								));
 							}
+						}
+						let mut missing_members = vec![];
+
+						for (member, ..) in &alg.members {
+							if !elems.iter().any(|(m, _)| member == m) {
+								missing_members.push(member.clone());
+							}
+						}
+
+						if !missing_members.is_empty() {
+							return Err((CMNError::new(CMNErrorCode::MissingInitializers {
+								ty: ty.clone(),
+								members: missing_members
+							}), meta.tk))
 						}
 
 						return Ok(ty.clone());
