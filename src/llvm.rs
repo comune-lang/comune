@@ -1,4 +1,4 @@
-use std::{collections::HashMap, rc::Rc, any::Any};
+use std::{collections::HashMap, rc::Rc};
 
 use inkwell::{
 	basic_block::BasicBlock,
@@ -15,7 +15,7 @@ use inkwell::{
 		AnyValue, AnyValueEnum, BasicMetadataValueEnum, BasicValue, BasicValueEnum, FunctionValue,
 		PointerValue,
 	},
-	AddressSpace, FloatPredicate, GlobalVisibility, IntPredicate,
+	AddressSpace, FloatPredicate, GlobalVisibility, IntPredicate, attributes::{Attribute, AttributeLoc},
 };
 
 use crate::{
@@ -213,6 +213,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 				.get_param_iter()
 				.enumerate()
 			{
+				fn_v.add_attribute(AttributeLoc::Param(idx as u32), self.get_attribute("noundef"));
 				self.builder.build_store(self.variables[idx].0, param);
 			}
 		}
@@ -720,18 +721,13 @@ impl<'ctx> LLVMBackend<'ctx> {
 					.module
 					.add_global(string_t, Some(AddressSpace::Const), ".str");
 
+				let literal = self.context.const_string(s.as_bytes(), false);
+				
 				val.set_visibility(GlobalVisibility::Hidden);
 				val.set_linkage(Linkage::Private);
 				val.set_unnamed_addr(true);
-
-				let literal: Vec<_> = s
-					.as_bytes()
-					.iter()
-					.map(|x| self.context.i8_type().const_int(*x as u64, false))
-					.collect();
-
-				val.set_initializer(&IntType::const_array(self.context.i8_type(), &literal));
-
+				val.set_initializer(&literal);
+				
 				Some(
 					self.slice_type(&self.context.i8_type())
 						.const_named_struct(&[
@@ -753,17 +749,17 @@ impl<'ctx> LLVMBackend<'ctx> {
 					Some(AddressSpace::Const),
 					".cstr",
 				);
+				
 				val.set_visibility(GlobalVisibility::Hidden);
 				val.set_linkage(Linkage::Private);
 				val.set_unnamed_addr(true);
 
-				let literal: Vec<_> = s
-					.as_bytes_with_nul()
-					.iter()
-					.map(|c| self.context.i8_type().const_int(*c as u64, false))
-					.collect();
-
-				val.set_initializer(&self.context.i8_type().const_array(&literal));
+				let literal = self.context.const_string(s.as_bytes(), true);
+				
+				val.set_visibility(GlobalVisibility::Hidden);
+				val.set_linkage(Linkage::Private);
+				val.set_unnamed_addr(true);
+				val.set_initializer(&literal);
 
 				Some(
 					self.builder
@@ -1088,5 +1084,9 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 			_ => panic!(),
 		}
+	}
+
+	fn get_attribute(&self, name: &str) -> Attribute {
+		self.context.create_enum_attribute(Attribute::get_named_enum_kind_id(name), 0)
 	}
 }
