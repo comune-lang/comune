@@ -1119,9 +1119,11 @@ impl CIRModuleBuilder {
 
 				Operator::Subscr => {
 					let mut indexed = self.generate_lvalue_expr(lhs)?;
+					let index = self.generate_expr(rhs)?;
+					let index_ty = self.convert_type(rhs.get_type());
 					indexed
 						.projection
-						.push(PlaceElem::Index(self.generate_expr(rhs)?));
+						.push(PlaceElem::Index(index_ty.clone(), self.get_as_operand(index_ty, index)));
 					Some(indexed)
 				}
 

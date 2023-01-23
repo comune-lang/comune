@@ -180,18 +180,18 @@ impl Display for RValue {
 		match self {
 			RValue::Atom(ty, op_opt, value) => {
 				if let Some(op) = op_opt {
-					write!(f, "{op} {value}:{ty}")
+					write!(f, "{op} {ty} {value}")
 				} else {
-					write!(f, "{value}:{ty}")
+					write!(f, "{ty} {value}")
 				}
 			}
 
 			RValue::Cons(expr_ty, [(lhs_ty, lhs), (rhs_ty, rhs)], op) => {
-				write!(f, "({lhs}:{lhs_ty} {op} {rhs}:{rhs_ty}):{expr_ty}")
+				write!(f, "{expr_ty} ({lhs_ty} {lhs} {op} {rhs_ty} {rhs})")
 			}
 
 			RValue::Cast { from, to, val: op } => {
-				write!(f, "{op}:{from} as {to}")
+				write!(f, "{from} {op} as {to}")
 			}
 		}
 	}
@@ -205,7 +205,7 @@ impl Display for LValue {
 			match proj {
 				PlaceElem::Deref => write!(f, ">"),
 				PlaceElem::Field(i) => write!(f, ".{i}"),
-				PlaceElem::Index(i) => write!(f, "[{i}]"),
+				PlaceElem::Index(i, t) => write!(f, "[{t} {i}]"),
 			}?;
 		}
 		Ok(())
