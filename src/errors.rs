@@ -368,7 +368,7 @@ pub fn spawn_logger(backtrace_on_error: bool) -> Sender<CMNMessageLog> {
 							)
 							.unwrap();
 
-							let mut length_left = *length - *column;
+							let mut length_left = *length;
 
 							// Print code snippet
 							for line in lines.clone() {
@@ -397,14 +397,24 @@ pub fn spawn_logger(backtrace_on_error: bool) -> Sender<CMNMessageLog> {
 
 								// welcome to off-by-one hell. don't touch anything or suffer the consequences
 
-								if line == *lines.start() {
+								if line_text.is_empty() {
+									// Blank line, skip it
+									len = 0;
+									length_left -= 1;
+
+								} else if line == *lines.start() {
+									// First line
 									len = usize::min(column + length, line_text.len()) - column + 1;
-									length_left -= len - 2;
-								} else if line == *lines.end() {
-									len = line_text.len() - length_left - column;
-								} else {
+									length_left -= len;
+
+								} else if line != *lines.end() {
+									// Middle line
 									len = line_text.len() - column + 1;
-									length_left -= line_text.len() - 1;
+									length_left -= line_text.len() + 1;
+
+								} else {
+									// Last line
+									len = length_left - column;
 								}
 								
 								// Print gutter
@@ -414,9 +424,14 @@ pub fn spawn_logger(backtrace_on_error: bool) -> Sender<CMNMessageLog> {
 									format!("\t{}", "|").bright_black()
 								).unwrap();
 								
-								// Print squiggle
-								write!(out, "{: <1$}", "", column).unwrap();
-								writeln!(out, "{}", format!("{:~<1$}", "", len).red()).unwrap();
+								if column == 0 {
+									// No text on this line, just print a newline
+									writeln!(out, "").unwrap();
+								} else {
+									// Print squiggle
+									write!(out, "{: <1$}", "", column).unwrap();
+									writeln!(out, "{}", format!("{:~<1$}", "", len).red()).unwrap();
+								}
 							}
 						}
 
