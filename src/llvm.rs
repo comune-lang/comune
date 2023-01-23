@@ -9,7 +9,7 @@ use inkwell::{
 	targets::{InitializationConfig, Target, TargetMachine, TargetTriple},
 	types::{
 		AnyType, AnyTypeEnum, BasicMetadataTypeEnum, BasicType, BasicTypeEnum, FunctionType,
-		IntType, StructType,
+		StructType,
 	},
 	values::{
 		AnyValue, AnyValueEnum, BasicMetadataValueEnum, BasicValue, BasicValueEnum, FunctionValue,
@@ -225,9 +225,8 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 			for stmt in block {
 				match stmt {
-					CIRStmt::Expression(expr, _) => {
-						panic!()
-						//self.generate_expr(expr);
+					CIRStmt::Expression(..) => {
+						panic!("loose Expression found in LLVM codegen!")
 					}
 
 					CIRStmt::Assignment((lval, _), (expr, _)) => {
@@ -477,7 +476,6 @@ impl<'ctx> LLVMBackend<'ctx> {
 				match to {
 					CIRType::Tuple(TupleKind::Sum, types) => {
 						let val = self.generate_operand(from, val).unwrap();
-						let store_ty = self.get_llvm_type(to);
 						let idx = types.iter().position(|ty| ty == from).unwrap();
 
 						let discriminant = self
