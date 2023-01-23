@@ -66,11 +66,7 @@ void overload_test(i64 a) {
 }
 
 Vector<i32> generic_ret() {
-	return Vector<i32> { 
-		data: malloc(4) as i32*, 
-		len: 1,
-	
-	};
+	return Vector<i32> { data: malloc(4) as i32*, len: 1, };
 }
 
 using TestSumType = (i32 | f32);

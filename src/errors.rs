@@ -404,7 +404,7 @@ pub fn spawn_logger(backtrace_on_error: bool) -> Sender<CMNMessageLog> {
 
 								} else if line == *lines.start() {
 									// First line
-									len = usize::min(column + length, line_text.len()) - column + 1;
+									len = usize::min(column + length - 1, line_text.len()) - column + 1;
 									length_left -= len;
 
 								} else if line != *lines.end() {
