@@ -15,7 +15,7 @@ use crate::{
 		namespace::{Identifier, Namespace},
 	},
 	cir::{
-		analyze::{verify, CIRPassManager},
+		analyze::{verify, CIRPassManager, lifeline},
 		builder::CIRModuleBuilder,
 	},
 	errors::{CMNError, CMNErrorCode, CMNMessage, CMNMessageLog},
@@ -343,8 +343,9 @@ pub fn generate_code<'ctx>(
 	let mut cir_man = CIRPassManager::new();
 
 	cir_man.add_pass(verify::Verify);
-	//cir_man.add_mut_pass(borrowck::BorrowCheck);
-	//cir_man.add_pass(verify::Verify);
+	//cir_man.add_pass(verify::CFGWalkerTest);
+	//cir_man.add_mut_pass(lifeline::BorrowCheck);
+	cir_man.add_pass(verify::Verify);
 
 	let cir_errors = cir_man.run_on_module(&mut cir_module);
 
@@ -359,7 +360,7 @@ pub fn generate_code<'ctx>(
 				CMNMessage::Error(error.0),
 			);
 
-			println!("{cir_module}\n");
+			//println!("{cir_module}\n");
 		}
 
 		return Err(CMNError::new(CMNErrorCode::Pack(return_errors)));

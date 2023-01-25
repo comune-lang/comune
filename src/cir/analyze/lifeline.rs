@@ -184,16 +184,12 @@ impl CIRPassMut for BorrowCheck {
 			);
 		}
 
-		func.walk_cfg(liveness, |state, stmt| {
+		func.walk_cfg(liveness, |state, stmt, block| {
 			convert_invalid_use_error(func, || {
 				match stmt {
 					CIRStmt::Assignment((lval, _), (rval, token_data)) => {
 						state.eval_rvalue(rval, *token_data)?;
 						state.liveness.insert(lval.clone(), LivenessState::Live);
-					}
-
-					CIRStmt::Expression(rval, token_data) => {
-						state.eval_rvalue(rval, *token_data)?;
 					}
 
 					_ => {}

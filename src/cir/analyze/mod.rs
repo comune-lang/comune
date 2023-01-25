@@ -116,7 +116,7 @@ impl CIRFunction {
 	pub fn walk_cfg<State: Clone>(
 		&self,
 		initial_state: State,
-		f: impl Fn(&mut State, &CIRStmt) -> AnalyzeResult<()>,
+		f: impl Fn(&mut State, &CIRStmt, BlockIndex) -> AnalyzeResult<()>,
 	) -> Vec<(CMNError, TokenData)> {
 		self.walk_block(0, initial_state, &f, &mut HashSet::new())
 	}
@@ -133,13 +133,13 @@ impl CIRFunction {
 		&self,
 		i: usize,
 		mut state: State,
-		f: &impl Fn(&mut State, &CIRStmt) -> AnalyzeResult<()>,
+		f: &impl Fn(&mut State, &CIRStmt, BlockIndex) -> AnalyzeResult<()>,
 		processed_jumps: &mut HashSet<JumpID>,
 	) -> Vec<(CMNError, TokenData)> {
 		let mut errors = vec![];
 
 		for j in 0..self.blocks[i].len() {
-			if let Err(e) = f(&mut state, &self.blocks[i][j]) {
+			if let Err(e) = f(&mut state, &self.blocks[i][j], i) {
 				errors.push(e);
 			};
 		}
@@ -148,7 +148,7 @@ impl CIRFunction {
 
 		match &self.blocks[i][j] {
 			// Handle terminators
-			CIRStmt::Jump(jmp) => {
+			CIRStmt::Jump(jmp) | CIRStmt::FnCall { next: jmp, .. } => {
 				errors.append(&mut self.walk_block(*jmp, state, f, processed_jumps))
 			}
 

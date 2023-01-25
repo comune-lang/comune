@@ -282,10 +282,6 @@ impl Display for Identifier {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		let mut result = String::new();
 
-		if !self.absolute {
-			result.push('~');
-		}
-
 		match &self.qualifier {
 			(Some(ty), None) => result.push_str(&format!("{ty}::")),
 
