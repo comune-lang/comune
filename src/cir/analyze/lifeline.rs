@@ -2,11 +2,11 @@
 
 use std::collections::HashMap;
 
-use super::{CIRPassMut, AnalysisDomain, JoinSemiLattice, Analysis, Forward};
+use super::{CIRPassMut, AnalysisDomain, JoinSemiLattice, Analysis, Forward, AnalysisResultHandler, ResultVisitor};
 use crate::{
-	ast::TokenData,
+	ast::{TokenData, namespace::Identifier},
 	cir::{CIRFunction, CIRStmt, CIRType, LValue, Operand, PlaceElem, RValue},
-	errors::CMNError,
+	errors::{CMNError, CMNErrorCode},
 };
 
 pub struct BorrowCheck;
@@ -233,5 +233,49 @@ impl Analysis for VarInitCheck {
 
 			_ => {}
 		}
+	}
+}
+
+impl AnalysisResultHandler for VarInitCheck {
+	fn process_result(result: ResultVisitor<Self>, func: &CIRFunction) -> Vec<(CMNError, TokenData)> {
+		let mut errors = vec![];
+		
+		for (i, block) in func.blocks.iter().enumerate() {
+			for (j, stmt) in block.items.iter().enumerate() {
+				match stmt {
+					CIRStmt::Assignment(_, (RValue::Atom(_, _, Operand::LValue(lval)), _)) | 
+					CIRStmt::Switch(Operand::LValue(lval), ..) | 
+					CIRStmt::Return(Some((Operand::LValue(lval), _)))=> {
+						let state = result.get_state_before(i, j);
+						
+						match state.get_liveness(lval) {
+							LivenessState::Live => { }
+
+							_ => {
+								errors.push((
+									CMNError::new(CMNErrorCode::InvalidUse {
+										variable: Identifier::from_name(
+											func.variables[lval.local]
+												.2
+												.as_ref()
+												.unwrap_or(&format!("(temp variable _{})", lval.local).into())
+												.clone(),
+											false,
+										),
+										state: state.get_liveness(lval),
+									}), 
+									(0, 0)
+								))
+							}
+						}
+					}
+
+					_ => {}
+				}
+			}
+		}
+		
+		errors
+	
 	}
 }

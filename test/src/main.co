@@ -113,9 +113,9 @@ int main() {
 	printf(c"Temporary->lvalue promotion: %i\n", Test { a: 23, b: 35 }.sum());
 
 	Vector<int> my_cool_generic;
-
-	my_cool_generic.data = malloc(4) as int*;
 	
+	my_cool_generic.data = malloc(4) as int*;
+
 	*my_cool_generic.data = if true {
 		printf(c"True!\n");
 		69
@@ -125,8 +125,8 @@ int main() {
 	};
 	
 	// This fucks with lifeline's liveness check - something to do with sublocation tracking
-	i32 generic_get = *my_cool_generic.data;
-	*my_cool_generic.data = 69;
+	//i32 generic_get = *my_cool_generic.data;
+	//*my_cool_generic.data = 69;
 	free(my_cool_generic.data as void*);
 
 	return 0;

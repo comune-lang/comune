@@ -163,32 +163,31 @@ impl Direction for Backward {
 	const IS_FORWARD: bool = false;
 }
 
-pub struct DataFlowPass<T, F> 
-where
-	T: Analysis + Send + Sync,
-	F: Fn(ResultVisitor<T>, &CIRFunction) -> Vec<(CMNError, TokenData)> + Send + Sync
-{
-	analysis: T,
-	callback: F
+pub trait AnalysisResultHandler: Analysis {
+	fn process_result(result: ResultVisitor<Self>, func: &CIRFunction) -> Vec<(CMNError, TokenData)> where Self: Sized;
 }
 
-impl<T, F> DataFlowPass<T, F>
+pub struct DataFlowPass<T> 
+where
+	T: AnalysisResultHandler + Send + Sync,
+{
+	analysis: T,
+}
+
+impl<T> DataFlowPass<T>
 where 
-	T: Analysis + Send + Sync, 
-	F: Fn(ResultVisitor<T>, &CIRFunction) -> Vec<(CMNError, TokenData)> + Send + Sync
+	T: AnalysisResultHandler + Send + Sync, 
 {	
-	pub fn new(analysis: T, on_result: F) -> Self {
+	pub fn new(analysis: T) -> Self {
 		Self {
 			analysis,
-			callback: on_result
 		}
 	}
 }
 
-impl<T, F> CIRPass for DataFlowPass<T, F> 
+impl<T> CIRPass for DataFlowPass<T> 
 where 
-	T: Analysis + Send + Sync, 
-	F: Fn(ResultVisitor<T>, &CIRFunction) -> Vec<(CMNError, TokenData)> + Send + Sync
+	T: AnalysisResultHandler + Send + Sync, 
 {
 	fn on_function(&self, func: &CIRFunction) -> Vec<(CMNError, TokenData)> {
 		let mut state = self.analysis.bottom_value(func);
@@ -251,7 +250,7 @@ where
 			}
 		}
 
-		(self.callback)(ResultVisitor::new(func, &self.analysis, in_states), func)
+		T::process_result(ResultVisitor::new(func, &self.analysis, in_states), func)
 	}
 }
 
