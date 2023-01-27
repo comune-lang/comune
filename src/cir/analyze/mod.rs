@@ -202,11 +202,13 @@ where
 		for (i, block) in func.blocks.iter().enumerate() {
 			in_states.push(state.clone());
 
+			let mut block_state = state.clone();
+
 			for (j, stmt) in block.items.iter().enumerate() {
-				self.analysis.apply_effect(stmt, (i, j), &mut state);
+				self.analysis.apply_effect(stmt, (i, j), &mut block_state);
 			}
 
-			out_states.push(state.clone());
+			out_states.push(block_state.clone());
 		}
 
 		// While we haven't reached fixpoint, update blocks iteratively
@@ -215,7 +217,10 @@ where
 		let mut work_list: BTreeSet<_> = (0..func.blocks.len()).into_iter().collect();
 
 		while let Some(i) = work_list.first() {
-			let block = &func.blocks[*i];
+			let i = *i;
+			let block = &func.blocks[i];
+
+			work_list.pop_first();
 
 			if block.preds.is_empty() {
 				work_list.pop_first();
@@ -230,20 +235,19 @@ where
 				changed |= in_state.join(&out_states[*pred]);
 			}
 
+			if in_state.clone().join(&in_states[i]) {
+				// in_state is different from in_states[i]
+				in_states[i] = in_state;
+				changed = true;
+			}
+
 			if changed {
 				for (j, stmt) in block.items.iter().enumerate() {
-					self.analysis.apply_effect(stmt, (*i, j), &mut state);
+					self.analysis.apply_effect(stmt, (i, j), &mut state);
 				}
 
-				work_list.pop_first();
-
-				// do NOT laugh. this is SERIOUS BUSINESS
 				work_list.extend(block.succs.clone().into_iter());
 			
-			} else {
-				// No change here, move on
-
-				work_list.pop_first();
 			}
 		}
 

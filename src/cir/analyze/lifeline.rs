@@ -1,15 +1,12 @@
 // lifeline - the comune liveness & borrow checker
 
-use std::{collections::HashMap, mem::MaybeUninit};
-
-use bit_set::BitSet;
+use std::collections::HashMap;
 
 use super::{CIRPassMut, AnalysisDomain, JoinSemiLattice, Analysis, Forward};
 use crate::{
-	ast::{namespace::Identifier, TokenData},
+	ast::TokenData,
 	cir::{CIRFunction, CIRStmt, CIRType, LValue, Operand, PlaceElem, RValue},
-	errors::{CMNError, CMNErrorCode},
-	parser::AnalyzeResult,
+	errors::CMNError,
 };
 
 pub struct BorrowCheck;
@@ -168,19 +165,6 @@ impl CIRPassMut for BorrowCheck {
 }
 
 pub struct VarInitCheck;
-
-#[derive(Clone)]
-pub struct VarInitCheckDomain(BitSet<u32>);
-
-impl JoinSemiLattice for VarInitCheckDomain {
-	fn join(&mut self, other: &Self) -> bool {
-		let prev = self.0.clone();
-
-		self.0.union_with(&other.0);
-
-		prev != self.0
-	}
-}
 
 impl JoinSemiLattice for LiveVarCheckState {
 	fn join(&mut self, other: &Self) -> bool {

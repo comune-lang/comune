@@ -1,10 +1,11 @@
 
+
+// this doesn't
 int main() {
 	int i;
 
 	if true {
 		i = 12;
 	}
-
 	return i;
 }
