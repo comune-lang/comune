@@ -223,7 +223,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 			self.builder.position_at_end(self.blocks[i]);
 
-			for stmt in block {
+			for stmt in block.items.iter() {
 				match stmt {
 					CIRStmt::Expression(..) => {
 						panic!("loose Expression found in LLVM codegen!")

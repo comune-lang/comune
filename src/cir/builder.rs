@@ -16,7 +16,7 @@ use crate::{
 
 use super::{
 	BlockIndex, CIRFnPrototype, CIRFunction, CIRModule, CIRStmt, CIRType, CIRTypeDef,
-	CIRTypeParamList, LValue, Operand, PlaceElem, RValue, TypeName, VarIndex,
+	CIRTypeParamList, LValue, Operand, PlaceElem, RValue, TypeName, VarIndex, CIRBlock,
 };
 
 pub struct CIRModuleBuilder {
@@ -258,18 +258,52 @@ impl CIRModuleBuilder {
 		(proto, self.current_fn.take().unwrap())
 	}
 
-	pub fn generate_function(&mut self, func: CIRFnPrototype, fn_block: &Expr) {
-		self.current_fn = self.module.functions.remove(&func);
-
+	pub fn generate_function(&mut self, proto: CIRFnPrototype, fn_block: &Expr) {
+		self.current_fn = self.module.functions.remove(&proto);
+		
+		// Generate function body
 		self.append_block();
-
+		
 		let _ = self.generate_expr(fn_block);
+		
+		let func = self.current_fn.borrow_mut().as_mut().unwrap();
+		
+		// Find block preds & succs
+		
+		for i in 0..func.blocks.len() {
+			let succs = match func.blocks[i].items.last().unwrap() {
+				
+				CIRStmt::FnCall { next, except: Some(except), .. } => vec![*next, *except],
+				
+				CIRStmt::FnCall { next, except: None, .. } => vec![*next],
+				
+				CIRStmt::Jump(jmp) => vec![*jmp],
+
+				CIRStmt::Switch(_, branches, else_idx) => {
+					let mut result = vec![];
+					result.reserve(branches.len() + 1);
+					result.extend(branches.iter().map(|(.., idx)| *idx));
+					result.push(*else_idx);
+					
+					result
+				}
+
+				CIRStmt::Return(_) => vec![],
+
+				_ => panic!()
+			};
+
+			for succ in &succs {
+				func.blocks[*succ].preds.push(i);
+			}
+
+			func.blocks[i].succs = succs;
+		}
 
 		self.current_fn.borrow_mut().as_mut().unwrap().is_extern = false;
-
 		self.module
 			.functions
-			.insert(func, self.current_fn.take().unwrap());
+			.insert(proto, self.current_fn.take().unwrap());
 	}
 
 	// Shorthand
@@ -282,11 +316,11 @@ impl CIRModuleBuilder {
 	}
 
 	fn write(&mut self, stmt: CIRStmt) {
-		self.current_fn.as_mut().unwrap().blocks[self.current_block].push(stmt)
+		self.current_fn.as_mut().unwrap().blocks[self.current_block].items.push(stmt)
 	}
 
 	fn append_block(&mut self) -> BlockIndex {
-		self.get_fn_mut().blocks.push(vec![]);
+		self.get_fn_mut().blocks.push(CIRBlock { items: vec![], preds: vec![], succs: vec![] });
 		self.current_block = self.get_fn().blocks.len() - 1;
 		self.current_block
 	}
@@ -641,9 +675,8 @@ impl CIRModuleBuilder {
 
 							self.generate_branch(cond_op, if_idx, else_idx);
 
-							self.get_fn_mut().blocks[if_write_idx].push(CIRStmt::Jump(cont_block));
-							self.get_fn_mut().blocks[else_write_idx]
-								.push(CIRStmt::Jump(cont_block));
+							self.get_fn_mut().blocks[if_write_idx].items.push(CIRStmt::Jump(cont_block));
+							self.get_fn_mut().blocks[else_write_idx].items.push(CIRStmt::Jump(cont_block));
 							self.current_block = cont_block;
 						} else {
 							let cont_block = self.append_block();
@@ -651,7 +684,7 @@ impl CIRModuleBuilder {
 							self.current_block = start_block;
 							self.generate_branch(cond_op, if_idx, cont_block);
 
-							self.get_fn_mut().blocks[if_write_idx].push(CIRStmt::Jump(cont_block));
+							self.get_fn_mut().blocks[if_write_idx].items.push(CIRStmt::Jump(cont_block));
 							self.current_block = cont_block;
 						}
 

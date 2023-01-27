@@ -1,8 +1,10 @@
 // lifeline - the comune liveness & borrow checker
 
-use std::collections::HashMap;
+use std::{collections::HashMap, mem::MaybeUninit};
 
-use super::CIRPassMut;
+use bit_set::BitSet;
+
+use super::{CIRPassMut, AnalysisDomain, JoinSemiLattice, Analysis, Forward};
 use crate::{
 	ast::{namespace::Identifier, TokenData},
 	cir::{CIRFunction, CIRStmt, CIRType, LValue, Operand, PlaceElem, RValue},
@@ -23,16 +25,17 @@ pub enum LivenessState {
 	Moved,
 	PartialMoved,
 	Dropped,
+	MaybeUninit,
 }
 
 #[derive(Clone)]
-struct LiveVarCheckState {
+pub struct LiveVarCheckState {
 	// TODO: Create Path type, for canonicalized LValues
 	liveness: HashMap<LValue, LivenessState>,
 }
 
 impl LiveVarCheckState {
-	fn set_liveness(&mut self, lval: &LValue, state: LivenessState) {
+	pub fn set_liveness(&mut self, lval: &LValue, state: LivenessState) {
 		// Clear liveness state for all sublocations
 
 		let keys: Vec<_> = self
@@ -48,16 +51,16 @@ impl LiveVarCheckState {
 
 		for key in keys {
 			if !key.projection[lval.projection.len()..].contains(&PlaceElem::Deref) {
-				println!("removing state for {key}");
+				//println!("removing state for {key}");
 				self.liveness.remove(&key);
 			}
 		}
 
-		println!("setting {state:?} for {lval}");
+		//println!("setting {state:?} for {lval}");
 		self.liveness.insert(lval.clone(), state);
 	}
 
-	fn get_liveness(&self, lval: &LValue) -> LivenessState {
+	pub fn get_liveness(&self, lval: &LValue) -> LivenessState {
 		if self.liveness.get(lval).is_some() {
 			// This state has a defined liveness value, so look through its children to check for partial moves
 
@@ -68,7 +71,7 @@ impl LiveVarCheckState {
 					&& key.projection[0..lval.projection.len()] == *lval.projection.as_slice()
 			}) {
 				if *val == LivenessState::Moved {
-					println!("returning PartialMoved for {lval} as {key} is Moved");
+					//println!("returning PartialMoved for {lval} as {key} is Moved");
 					return LivenessState::PartialMoved;
 				}
 			}
@@ -81,7 +84,7 @@ impl LiveVarCheckState {
 
 		loop {
 			if let Some(state) = self.liveness.get(&lval) {
-				println!("returning {state:?} for {lval}");
+				//println!("returning {state:?} for {lval}");
 				return *state;
 			}
 
@@ -144,29 +147,6 @@ impl LiveVarCheckState {
 	}
 }
 
-fn convert_invalid_use_error(
-	func: &CIRFunction,
-	mut stmt: impl FnMut() -> Result<(), (LValue, LivenessState, TokenData)>,
-) -> AnalyzeResult<()> {
-	match stmt() {
-		Ok(()) => Ok(()),
-		Err(e) => Err((
-			CMNError::new(CMNErrorCode::InvalidUse {
-				variable: Identifier::from_name(
-					func.variables[e.0.local]
-						.2
-						.as_ref()
-						.unwrap_or(&"(???)".into())
-						.clone(),
-					false,
-				),
-				state: e.1,
-			}),
-			e.2,
-		)),
-	}
-}
-
 impl CIRPassMut for BorrowCheck {
 	fn on_function(&self, func: &mut CIRFunction) -> Vec<(CMNError, TokenData)> {
 		let mut liveness = LiveVarCheckState {
@@ -183,20 +163,91 @@ impl CIRPassMut for BorrowCheck {
 				LivenessState::Live,
 			);
 		}
+		vec![]
+	}
+}
 
-		func.walk_cfg(liveness, |state, stmt, block| {
-			convert_invalid_use_error(func, || {
-				match stmt {
-					CIRStmt::Assignment((lval, _), (rval, token_data)) => {
-						state.eval_rvalue(rval, *token_data)?;
-						state.liveness.insert(lval.clone(), LivenessState::Live);
+pub struct VarInitCheck;
+
+#[derive(Clone)]
+pub struct VarInitCheckDomain(BitSet<u32>);
+
+impl JoinSemiLattice for VarInitCheckDomain {
+	fn join(&mut self, other: &Self) -> bool {
+		let prev = self.0.clone();
+
+		self.0.union_with(&other.0);
+
+		prev != self.0
+	}
+}
+
+impl JoinSemiLattice for LiveVarCheckState {
+	fn join(&mut self, other: &Self) -> bool {
+		let mut changed = false;
+
+		for (lval, liveness) in &other.liveness {
+			let own_liveness = self.get_liveness(lval);
+			
+			if liveness != &own_liveness {
+				changed = true;
+
+				match (*liveness, own_liveness) {
+					(LivenessState::Live, _) | (_, LivenessState::Live) => {
+						self.set_liveness(lval, LivenessState::MaybeUninit)
 					}
 
 					_ => {}
 				}
+			}
+		}
 
-				Ok(())
-			})
-		})
+		changed
+	}
+}
+
+impl AnalysisDomain for VarInitCheck {
+	type Domain = LiveVarCheckState;
+	type Direction = Forward;
+
+	fn bottom_value(&self, func: &CIRFunction) -> Self::Domain {
+		LiveVarCheckState { 
+			liveness: (0..func.variables.len())
+				.into_iter()
+				.map(|idx| (
+					LValue { local: idx, projection: vec![] }, 
+					LivenessState::Uninit
+				))
+				.collect()
+			}
+	}
+
+	fn initialize_start_block(&self, func: &CIRFunction, state: &mut Self::Domain) {
+		// There is *definitely* a way to do this with bit math but fuck if i know lol
+		for var in 0..func.arg_count {
+			state.liveness.insert(LValue { local: var, projection: vec![] }, LivenessState::Live);
+		}
+	}
+}
+
+impl Analysis for VarInitCheck {
+	fn apply_effect(
+		&self,
+		stmt: &CIRStmt,
+		position: (crate::cir::BlockIndex, crate::cir::StmtIndex),
+		state: &mut Self::Domain
+	) {
+		match stmt {
+			CIRStmt::Assignment((lval, _), (rval, token_data)) => {
+				state.eval_rvalue(rval, *token_data);
+				state.set_liveness(lval, LivenessState::Live);
+			}
+
+			CIRStmt::FnCall { result: Some(lval), .. } => {
+				state.set_liveness(lval, LivenessState::Live);
+			}
+
+			_ => {}
+		}
 	}
 }

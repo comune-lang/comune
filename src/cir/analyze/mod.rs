@@ -1,10 +1,10 @@
-use std::collections::HashSet;
+use std::collections::BTreeSet;
 
 use rayon::prelude::{IntoParallelRefIterator, ParallelIterator};
 
-use crate::{ast::TokenData, errors::CMNError, parser::AnalyzeResult};
+use crate::{ast::TokenData, errors::CMNError};
 
-use super::{BlockIndex, CIRBlock, CIRFunction, CIRModule, CIRStmt, StmtIndex};
+use super::{BlockIndex, CIRFunction, CIRModule, CIRStmt, StmtIndex};
 
 pub mod cleanup;
 pub mod lifeline;
@@ -106,120 +106,185 @@ impl CIRPassManager {
 	}
 }
 
-// CFG Walking
+// Static Program Analysis
+//
+// listen. i have stared at so many fucking pages of arcane 
+// math symbols these past few days, and i finally *think* i
+// understand just enough to write this shit. but i can make
+// no promises of explaining it clearly.
+// 
+// basically, this framework lets us do Weird Math Shit to
+// turn CFG analysis into a problem of finding the fixpoint
+// of a "join-semilattice". if you wanna know more, check out:
+// https://cs.au.dk/~amoeller/spa/spa.pdf
+//
+// oh also this API is pretty much taken verbatim from rustc lol
 
-type JumpID = ((BlockIndex, StmtIndex), BlockIndex);
+pub trait JoinSemiLattice {
+	fn join(&mut self, other: &Self) -> bool;
+}
 
-impl CIRFunction {
-	// Walk the MIR, calling a closure on every unique statement sequence (minus terminators)
+pub trait AnalysisDomain {
+	type Domain: Clone + JoinSemiLattice;
+	type Direction: Direction;
 
-	pub fn walk_cfg<State: Clone>(
+	fn bottom_value(&self, func: &CIRFunction) -> Self::Domain;
+	fn initialize_start_block(&self, func: &CIRFunction, state: &mut Self::Domain);
+}
+
+pub trait Analysis: AnalysisDomain {
+	fn apply_before_effect(
+		&self, 
+		_stmt: &CIRStmt,
+		_position: (BlockIndex, StmtIndex),
+		_state: &mut Self::Domain
+	) {}
+
+	fn apply_effect(
 		&self,
-		initial_state: State,
-		f: impl Fn(&mut State, &CIRStmt, BlockIndex) -> AnalyzeResult<()>,
-	) -> Vec<(CMNError, TokenData)> {
-		self.walk_block(0, initial_state, &f, &mut HashSet::new())
+		stmt: &CIRStmt,
+		position: (BlockIndex, StmtIndex),
+		state: &mut Self::Domain
+	);
+}
+
+pub trait Direction {
+	const IS_FORWARD: bool;
+}
+
+pub struct Forward;
+pub struct Backward;
+
+impl Direction for Forward {
+	const IS_FORWARD: bool = true;
+}
+
+impl Direction for Backward {
+	const IS_FORWARD: bool = false;
+}
+
+pub struct DataFlowPass<T, F> 
+where
+	T: Analysis + Send + Sync,
+	F: Fn(ResultVisitor<T>, &CIRFunction) -> Vec<(CMNError, TokenData)> + Send + Sync
+{
+	analysis: T,
+	callback: F
+}
+
+impl<T, F> DataFlowPass<T, F>
+where 
+	T: Analysis + Send + Sync, 
+	F: Fn(ResultVisitor<T>, &CIRFunction) -> Vec<(CMNError, TokenData)> + Send + Sync
+{	
+	pub fn new(analysis: T, on_result: F) -> Self {
+		Self {
+			analysis,
+			callback: on_result
+		}
+	}
+}
+
+impl<T, F> CIRPass for DataFlowPass<T, F> 
+where 
+	T: Analysis + Send + Sync, 
+	F: Fn(ResultVisitor<T>, &CIRFunction) -> Vec<(CMNError, TokenData)> + Send + Sync
+{
+	fn on_function(&self, func: &CIRFunction) -> Vec<(CMNError, TokenData)> {
+		let mut state = self.analysis.bottom_value(func);
+
+		let mut in_states = vec![];
+		let mut out_states = vec![];
+
+		self.analysis.initialize_start_block(func, &mut state);
+
+		// Initialize blocks
+		for (i, block) in func.blocks.iter().enumerate() {
+			in_states.push(state.clone());
+
+			for (j, stmt) in block.items.iter().enumerate() {
+				self.analysis.apply_effect(stmt, (i, j), &mut state);
+			}
+
+			out_states.push(state.clone());
+		}
+
+		// While we haven't reached fixpoint, update blocks iteratively
+		// If a block's in-state changes, process it and its successors
+
+		let mut work_list: BTreeSet<_> = (0..func.blocks.len()).into_iter().collect();
+
+		while let Some(i) = work_list.first() {
+			let block = &func.blocks[*i];
+
+			if block.preds.is_empty() {
+				work_list.pop_first();
+				continue;
+			}
+
+			let mut preds = block.preds.iter();
+			let mut in_state = out_states[*preds.next().unwrap()].clone();
+			let mut changed = false;
+
+			for pred in preds {
+				changed |= in_state.join(&out_states[*pred]);
+			}
+
+			if changed {
+				for (j, stmt) in block.items.iter().enumerate() {
+					self.analysis.apply_effect(stmt, (*i, j), &mut state);
+				}
+
+				work_list.pop_first();
+
+				// do NOT laugh. this is SERIOUS BUSINESS
+				work_list.extend(block.succs.clone().into_iter());
+			
+			} else {
+				// No change here, move on
+
+				work_list.pop_first();
+			}
+		}
+
+		(self.callback)(ResultVisitor::new(func, &self.analysis, in_states), func)
+	}
+}
+
+pub struct ResultVisitor<'a, T> 
+where
+	T: Analysis
+{
+	func: &'a CIRFunction,
+	analysis: &'a T,
+	block_start_states: Vec<T::Domain>,
+}
+
+impl<'a, T> ResultVisitor<'a, T>
+where
+	T: Analysis
+{
+	fn new(func: &'a CIRFunction, analysis: &'a T, block_start_states: Vec<T::Domain>) -> Self {
+		Self {
+			func,
+			analysis,
+			block_start_states
+		}
 	}
 
-	pub fn walk_cfg_mut<State: Clone>(
-		&mut self,
-		initial_state: State,
-		f: impl Fn(&mut State, &mut CIRBlock, StmtIndex) -> AnalyzeResult<()>,
-	) -> Vec<(CMNError, TokenData)> {
-		self.walk_block_mut(0, initial_state, &f, &mut HashSet::new())
-	}
+	pub fn get_state_before(&self, block: BlockIndex, stmt: StmtIndex) -> T::Domain {
+		if stmt == 0 {
+			self.block_start_states[block].clone()
+		} else {
+			let mut result = self.block_start_states[block].clone();
+			
+			for i in 0..stmt {
+				let s = &self.func.blocks[block].items[i];
+				self.analysis.apply_before_effect(s, (block, i), &mut result);
+				self.analysis.apply_effect(s, (block, i), &mut result);
+			}
 
-	fn walk_block<State: Clone>(
-		&self,
-		i: usize,
-		mut state: State,
-		f: &impl Fn(&mut State, &CIRStmt, BlockIndex) -> AnalyzeResult<()>,
-		processed_jumps: &mut HashSet<JumpID>,
-	) -> Vec<(CMNError, TokenData)> {
-		let mut errors = vec![];
-
-		for j in 0..self.blocks[i].len() {
-			if let Err(e) = f(&mut state, &self.blocks[i][j], i) {
-				errors.push(e);
-			};
+			result
 		}
-
-		let j = self.blocks[i].len() - 1;
-
-		match &self.blocks[i][j] {
-			// Handle terminators
-			CIRStmt::Jump(jmp) | CIRStmt::FnCall { next: jmp, .. } => {
-				errors.append(&mut self.walk_block(*jmp, state, f, processed_jumps))
-			}
-
-			CIRStmt::Switch(_, branches, _) => {
-				for (_, _, branch) in branches {
-					if !processed_jumps.contains(&((j, i), *branch)) {
-						processed_jumps.insert(((j, i), *branch));
-						errors.append(&mut self.walk_block(
-							*branch,
-							state.clone(),
-							f,
-							processed_jumps,
-						));
-					}
-				}
-			}
-
-			CIRStmt::Return(_) => {}
-
-			_ => panic!("no terminator!"),
-		}
-
-		errors
-	}
-
-	fn walk_block_mut<State: Clone>(
-		&mut self,
-		i: usize,
-		mut state: State,
-		f: impl Fn(&mut State, &mut CIRBlock, StmtIndex) -> AnalyzeResult<()>,
-		processed_jumps: &mut HashSet<JumpID>,
-	) -> Vec<(CMNError, TokenData)> {
-		let mut errors = vec![];
-
-		for j in 0..self.blocks[i].len() {
-			if let Err(e) = f(&mut state, &mut self.blocks[i], j) {
-				errors.push(e)
-			}
-		}
-
-		let j = self.blocks[i].len() - 1;
-
-		match &self.blocks[i][j] {
-			// Handle terminators
-			CIRStmt::Jump(jmp) => {
-				if !processed_jumps.contains(&((j, i), *jmp)) {
-					processed_jumps.insert(((j, i), *jmp));
-					errors.append(&mut self.walk_block_mut(*jmp, state, f, processed_jumps))
-				}
-			}
-
-			CIRStmt::Switch(_, branches, _) => {
-				let branches = branches.clone();
-				for (_, _, branch) in &branches {
-					if !processed_jumps.contains(&((j, i), *branch)) {
-						processed_jumps.insert(((j, i), *branch));
-						errors.append(&mut self.walk_block_mut(
-							*branch,
-							state.clone(),
-							&f,
-							processed_jumps,
-						));
-					}
-				}
-			}
-
-			CIRStmt::Return(_) => {}
-
-			_ => panic!("no terminator!"),
-		}
-
-		errors
 	}
 }

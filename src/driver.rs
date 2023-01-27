@@ -15,8 +15,8 @@ use crate::{
 		namespace::{Identifier, Namespace},
 	},
 	cir::{
-		analyze::{verify, CIRPassManager, lifeline},
-		builder::CIRModuleBuilder,
+		analyze::{verify, CIRPassManager, lifeline::{self, VarInitCheck, LivenessState}, DataFlowPass},
+		builder::CIRModuleBuilder, CIRStmt, RValue, Operand,
 	},
 	errors::{CMNError, CMNErrorCode, CMNMessage, CMNMessageLog},
 	lexer::{self, Lexer},
@@ -343,8 +343,48 @@ pub fn generate_code<'ctx>(
 	let mut cir_man = CIRPassManager::new();
 
 	cir_man.add_pass(verify::Verify);
-	//cir_man.add_pass(verify::CFGWalkerTest);
-	//cir_man.add_mut_pass(lifeline::BorrowCheck);
+	
+	cir_man.add_pass(DataFlowPass::new(VarInitCheck {}, |result, func| {
+		let mut errors = vec![];
+		
+		for (i, block) in func.blocks.iter().enumerate() {
+			for (j, stmt) in block.items.iter().enumerate() {
+				match stmt {
+					CIRStmt::Assignment(_, (RValue::Atom(_, _, Operand::LValue(lval)), _)) | 
+					CIRStmt::Switch(Operand::LValue(lval), ..) | 
+					CIRStmt::Return(Some((Operand::LValue(lval), _)))=> {
+						let state = result.get_state_before(i, j);
+						
+						match state.get_liveness(lval) {
+							LivenessState::Live => { }
+
+							_ => {
+								errors.push((
+									CMNError::new(CMNErrorCode::InvalidUse {
+										variable: Identifier::from_name(
+											func.variables[lval.local]
+												.2
+												.as_ref()
+												.unwrap_or(&format!("(temp variable _{})", lval.local).into())
+												.clone(),
+											false,
+										),
+										state: state.get_liveness(lval),
+									}), 
+									(0, 0)
+								))
+							}
+						}
+					}
+
+					_ => {}
+				}
+			}
+		}
+		
+		errors
+	}));
+
 	cir_man.add_pass(verify::Verify);
 
 	let cir_errors = cir_man.run_on_module(&mut cir_module);

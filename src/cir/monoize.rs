@@ -93,7 +93,7 @@ impl CIRModule {
 		Self::monoize_type(types, &mut func.ret, param_map, ty_instances);
 
 		for block in &mut func.blocks {
-			for stmt in block {
+			for stmt in block.items.iter_mut() {
 				if let CIRStmt::Assignment((_lval, _), _) = stmt {
 					// TODO: Find RValues in LValue projection
 				}

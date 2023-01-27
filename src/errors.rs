@@ -255,6 +255,7 @@ impl Display for CMNErrorCode {
 						LivenessState::Moved => "moved",
 						LivenessState::PartialMoved => "partially-moved",
 						LivenessState::Dropped => "dropped",
+						LivenessState::MaybeUninit => "potentially uninitialized",
 					}
 				)
 			}

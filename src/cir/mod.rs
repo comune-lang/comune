@@ -16,7 +16,6 @@ pub mod serialize;
 
 // Bunch of type aliases to make code more readable
 type CIRFnMap = HashMap<CIRFnPrototype, CIRFunction>;
-type CIRBlock = Vec<CIRStmt>;
 type BlockIndex = usize;
 type StmtIndex = usize;
 type VarIndex = usize;
@@ -139,6 +138,13 @@ pub enum CIRStmt {
 		next: BlockIndex,
 		except: Option<BlockIndex>,
 	},
+}
+
+#[derive(Debug, Clone)]
+pub struct CIRBlock {
+	pub items: Vec<CIRStmt>,
+	pub preds: Vec<BlockIndex>,
+	pub succs: Vec<BlockIndex>,
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
