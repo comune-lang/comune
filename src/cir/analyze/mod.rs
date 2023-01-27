@@ -222,23 +222,23 @@ where
 
 			work_list.pop_first();
 
-			if block.preds.is_empty() {
-				work_list.pop_first();
-				continue;
-			}
-
-			let mut preds = block.preds.iter();
-			let mut in_state = out_states[*preds.next().unwrap()].clone();
 			let mut changed = false;
 
-			for pred in preds {
-				changed |= in_state.join(&out_states[*pred]);
-			}
+			if !block.preds.is_empty() {
+				let mut preds = block.preds.iter();
+				let mut in_state = out_states[*preds.next().unwrap()].clone();
+				
 
-			if in_state.clone().join(&in_states[i]) {
-				// in_state is different from in_states[i]
-				in_states[i] = in_state;
-				changed = true;
+				for pred in preds {
+					changed |= in_state.join(&out_states[*pred]);
+				}
+			
+
+				if in_state.clone().join(&in_states[i]) {
+					// in_state is different from in_states[i]
+					in_states[i] = in_state;
+					changed = true;
+				}
 			}
 
 			if changed {
