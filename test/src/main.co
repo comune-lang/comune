@@ -80,7 +80,7 @@ TestSumType sum_type_test() {
 }
 
 int main() {
-	int i;
+	mut int i;
 
 	if true {
 		i = 12;

@@ -82,6 +82,11 @@ impl Parser {
 		self.lexer.borrow().current().unwrap().0.start
 	}
 
+	fn get_prev_end_index(&self) -> usize {
+		let prev = self.lexer.borrow().previous().unwrap().0;
+		prev.start + prev.len
+	}
+
 	fn get_current_token_index(&self) -> usize {
 		self.lexer.borrow().current_token_index()
 	}
@@ -604,7 +609,7 @@ impl Parser {
 
 		self.get_next()?; // consume closing bracket
 
-		let end = self.get_current_start_index();
+		let end = self.get_prev_end_index();
 
 		Ok(Expr::Atom(
 			Atom::Block { items, result },
@@ -773,7 +778,7 @@ impl Parser {
 				expr,
 				SrcSpan {
 					start: begin,
-					len: self.get_current_start_index() - begin,
+					len: self.get_prev_end_index() - begin,
 				},
 			);
 
@@ -839,7 +844,7 @@ impl Parser {
 					ty: None,
 					tk: SrcSpan {
 						start: begin_lhs,
-						len: self.get_current_start_index() - begin_lhs,
+						len: self.get_prev_end_index() - begin_lhs,
 					},
 				},
 			)
@@ -856,7 +861,7 @@ impl Parser {
 						ty: None,
 						tk: SrcSpan {
 							start: begin_lhs,
-							len: self.get_current_start_index() - begin_lhs,
+							len: self.get_prev_end_index() - begin_lhs,
 						},
 					},
 				),
@@ -887,7 +892,7 @@ impl Parser {
 					} else {
 						let rhs = self.parse_expression_bp(op.get_binding_power())?;
 
-						let end_index = self.get_current_start_index();
+						let end_index = self.get_prev_end_index();
 
 						let tk = SrcSpan {
 							start: begin_lhs,
@@ -939,7 +944,7 @@ impl Parser {
 				Operator::Cast => {
 					let goal_t = self.parse_type(true)?;
 
-					let end_index = self.get_current_start_index();
+					let end_index = self.get_prev_end_index();
 					let tk = SrcSpan {
 						start: begin_lhs,
 						len: end_index - begin_lhs,
@@ -951,7 +956,7 @@ impl Parser {
 				Operator::PostInc | Operator::PostDec => {
 					let tk = SrcSpan {
 						start: begin_lhs,
-						len: self.get_current_start_index() - begin_lhs,
+						len: self.get_prev_end_index() - begin_lhs,
 					};
 
 					// Create compound assignment expression
@@ -977,7 +982,7 @@ impl Parser {
 
 				Operator::Subscr => {
 					let rhs = self.parse_expression_bp(rbp)?;
-					let end_rhs = self.get_current_start_index();
+					let end_rhs = self.get_prev_end_index();
 
 					lhs = Expr::Cons(
 						[Box::new(lhs), Box::new(rhs)],
@@ -1000,7 +1005,7 @@ impl Parser {
 
 				_ => {
 					let rhs = self.parse_expression_bp(rbp)?;
-					let end_rhs = self.get_current_start_index();
+					let end_rhs = self.get_prev_end_index();
 
 					lhs = Expr::Cons(
 						[Box::new(lhs), Box::new(rhs)],

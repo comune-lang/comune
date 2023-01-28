@@ -230,6 +230,14 @@ impl Lexer {
 		self.token_buffer.get(self.token_index)
 	}
 
+	pub fn previous(&self) -> Option<&(SrcSpan, Token)> {
+		if self.token_index == 0 {
+			None
+		} else {
+			self.token_buffer.get(self.token_index - 1)
+		}
+	}
+
 	pub fn current_token_index(&self) -> usize {
 		self.token_index
 	}
