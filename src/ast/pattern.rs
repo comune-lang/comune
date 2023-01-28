@@ -1,4 +1,7 @@
-use super::{namespace::Name, types::{Type, BindingProps}};
+use super::{
+	namespace::Name,
+	types::{BindingProps, Type},
+};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Binding {

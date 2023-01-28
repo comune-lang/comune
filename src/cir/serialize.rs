@@ -91,8 +91,12 @@ impl Display for CIRFunction {
 
 			for idx in 0..self.blocks.len() {
 				let block = &self.blocks[idx];
-				
-				writeln!(f, "bb{idx}:\t\t\t\t\t\t\t\t\t\t\t; preds: {:?}, succs: {:?}", block.preds, block.succs)?;
+
+				writeln!(
+					f,
+					"bb{idx}:\t\t\t\t\t\t\t\t\t\t\t; preds: {:?}, succs: {:?}",
+					block.preds, block.succs
+				)?;
 
 				for stmt in &block.items {
 					write!(f, "\t{stmt}")?;

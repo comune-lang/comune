@@ -116,7 +116,10 @@ impl Parser {
 					}
 				}
 
-				NamespaceItem::Type(..) | NamespaceItem::Alias(_) | NamespaceItem::TypeAlias(_) | NamespaceItem::Trait(..) => {}
+				NamespaceItem::Type(..)
+				| NamespaceItem::Alias(_)
+				| NamespaceItem::TypeAlias(_)
+				| NamespaceItem::Trait(..) => {}
 
 				_ => todo!(),
 			}
@@ -167,9 +170,9 @@ impl Parser {
 					}
 
 					next = self.get_next()?; // Consume brace
-					
+
 					// TODO: Actually finish this
-					
+
 					while !token_compare(&next, "}") {
 						let Token::Name(_variant_name) = next else { return Err(self.err(CMNErrorCode::UnexpectedToken)) };
 
@@ -438,13 +441,12 @@ impl Parser {
 
 							if self.is_at_type_token(false)? {
 								let ty = self.parse_type(false)?;
-								
+
 								self.namespace.children.insert(
 									Identifier::from_parent(scope, name),
-									NamespaceItem::TypeAlias(Arc::new(RwLock::new(ty)))
+									NamespaceItem::TypeAlias(Arc::new(RwLock::new(ty))),
 								);
 							} else {
-
 								let aliased = self.parse_identifier()?;
 
 								self.namespace.children.insert(
@@ -1313,8 +1315,7 @@ impl Parser {
 	}
 
 	fn find_type(&self, typename: &Identifier) -> Option<Type> {
-		self.namespace
-			.resolve_type(typename, &self.current_scope)
+		self.namespace.resolve_type(typename, &self.current_scope)
 	}
 
 	// Returns true if the current token is the start of a Type.
@@ -1577,10 +1578,7 @@ impl Parser {
 			let typename = self.parse_identifier()?;
 
 			if immediate_resolve {
-				if let Some(ty) =
-					self.namespace
-						.resolve_type(&typename, &self.current_scope)
-				{
+				if let Some(ty) = self.namespace.resolve_type(&typename, &self.current_scope) {
 					result = ty;
 				} else {
 					return Err(self.err(CMNErrorCode::UnresolvedTypename(typename.to_string())));

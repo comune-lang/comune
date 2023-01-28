@@ -30,6 +30,19 @@ pub trait CIRPassMut {
 	}
 }
 
+impl<T> CIRPassMut for T
+where
+	T: CIRPass,
+{
+	fn on_function(&self, func: &mut CIRFunction) -> Vec<(CMNError, TokenData)> {
+		self.on_function(func)
+	}
+
+	fn on_module(&self, module: &mut CIRModule) -> Vec<(CMNError, TokenData)> {
+		self.on_module(module)
+	}
+}
+
 enum Pass {
 	Shared(Vec<Box<dyn CIRPass>>),
 	Unique(Box<dyn CIRPassMut>),
@@ -108,11 +121,11 @@ impl CIRPassManager {
 
 // Static Program Analysis
 //
-// listen. i have stared at so many fucking pages of arcane 
+// listen. i have stared at so many fucking pages of arcane
 // math symbols these past few days, and i finally *think* i
 // understand just enough to write this shit. but i can make
 // no promises of explaining it clearly.
-// 
+//
 // basically, this framework lets us do Weird Math Shit to
 // turn CFG analysis into a problem of finding the fixpoint
 // of a "join-semilattice". if you wanna know more, check out:
@@ -134,17 +147,18 @@ pub trait AnalysisDomain {
 
 pub trait Analysis: AnalysisDomain {
 	fn apply_before_effect(
-		&self, 
+		&self,
 		_stmt: &CIRStmt,
 		_position: (BlockIndex, StmtIndex),
-		_state: &mut Self::Domain
-	) {}
+		_state: &mut Self::Domain,
+	) {
+	}
 
 	fn apply_effect(
 		&self,
 		stmt: &CIRStmt,
 		position: (BlockIndex, StmtIndex),
-		state: &mut Self::Domain
+		state: &mut Self::Domain,
 	);
 }
 
@@ -164,10 +178,15 @@ impl Direction for Backward {
 }
 
 pub trait AnalysisResultHandler: Analysis {
-	fn process_result(result: ResultVisitor<Self>, func: &CIRFunction) -> Vec<(CMNError, TokenData)> where Self: Sized;
+	fn process_result(
+		result: ResultVisitor<Self>,
+		func: &CIRFunction,
+	) -> Vec<(CMNError, TokenData)>
+	where
+		Self: Sized;
 }
 
-pub struct DataFlowPass<T> 
+pub struct DataFlowPass<T>
 where
 	T: AnalysisResultHandler + Send + Sync,
 {
@@ -175,19 +194,17 @@ where
 }
 
 impl<T> DataFlowPass<T>
-where 
-	T: AnalysisResultHandler + Send + Sync, 
-{	
+where
+	T: AnalysisResultHandler + Send + Sync,
+{
 	pub fn new(analysis: T) -> Self {
-		Self {
-			analysis,
-		}
+		Self { analysis }
 	}
 }
 
-impl<T> CIRPass for DataFlowPass<T> 
-where 
-	T: AnalysisResultHandler + Send + Sync, 
+impl<T> CIRPass for DataFlowPass<T>
+where
+	T: AnalysisResultHandler + Send + Sync,
 {
 	fn on_function(&self, func: &CIRFunction) -> Vec<(CMNError, TokenData)> {
 		let mut state = self.analysis.bottom_value(func);
@@ -226,12 +243,10 @@ where
 			if !block.preds.is_empty() {
 				let mut preds = block.preds.iter();
 				let mut in_state = out_states[*preds.next().unwrap()].clone();
-				
 
 				for pred in preds {
 					changed |= in_state.join(&out_states[*pred]);
 				}
-			
 
 				if in_state.clone().join(&in_states[i]) {
 					// in_state is different from in_states[i]
@@ -246,7 +261,6 @@ where
 				}
 
 				work_list.extend(block.succs.clone().into_iter());
-			
 			}
 		}
 
@@ -254,9 +268,9 @@ where
 	}
 }
 
-pub struct ResultVisitor<'a, T> 
+pub struct ResultVisitor<'a, T>
 where
-	T: Analysis
+	T: Analysis,
 {
 	func: &'a CIRFunction,
 	analysis: &'a T,
@@ -265,13 +279,13 @@ where
 
 impl<'a, T> ResultVisitor<'a, T>
 where
-	T: Analysis
+	T: Analysis,
 {
 	fn new(func: &'a CIRFunction, analysis: &'a T, block_start_states: Vec<T::Domain>) -> Self {
 		Self {
 			func,
 			analysis,
-			block_start_states
+			block_start_states,
 		}
 	}
 
@@ -280,10 +294,11 @@ where
 			self.block_start_states[block].clone()
 		} else {
 			let mut result = self.block_start_states[block].clone();
-			
+
 			for i in 0..stmt {
 				let s = &self.func.blocks[block].items[i];
-				self.analysis.apply_before_effect(s, (block, i), &mut result);
+				self.analysis
+					.apply_before_effect(s, (block, i), &mut result);
 				self.analysis.apply_effect(s, (block, i), &mut result);
 			}
 

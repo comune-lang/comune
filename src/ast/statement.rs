@@ -49,7 +49,10 @@ impl Stmt {
 					}
 
 					if binding_props.is_ref {
-						return Err((CMNError::new(CMNErrorCode::UnstableFeature("ref_locals")), *tk));
+						return Err((
+							CMNError::new(CMNErrorCode::UnstableFeature("ref_locals")),
+							*tk,
+						));
 					}
 
 					scope.add_variable(binding_ty, binding_name, binding_props);

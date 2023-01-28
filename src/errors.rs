@@ -119,8 +119,15 @@ pub enum CMNErrorCode {
 	InvalidDeref(Type),
 	InfiniteSizeType,
 	UnstableFeature(&'static str),
-	NoCandidateFound { name: Identifier, args: Vec<Type>, type_args: Vec<Type> },
-	MissingInitializers { ty: Type, members: Vec<Name> },
+	NoCandidateFound {
+		name: Identifier,
+		args: Vec<Type>,
+		type_args: Vec<Type>,
+	},
+	MissingInitializers {
+		ty: Type,
+		members: Vec<Name>,
+	},
 
 	// Resolution errors
 	ModuleNotFound(OsString),
@@ -205,7 +212,11 @@ impl Display for CMNErrorCode {
 			CMNErrorCode::InvalidDeref(ty) => write!(f, "can't dereference value of type {ty}"),
 			CMNErrorCode::InfiniteSizeType => write!(f, "cyclical type dependency found"),
 			CMNErrorCode::UnstableFeature(feat) => write!(f, "feature `{feat}` is unstable"),
-			CMNErrorCode::NoCandidateFound { name, args, type_args} => {
+			CMNErrorCode::NoCandidateFound {
+				name,
+				args,
+				type_args,
+			} => {
 				write!(f, "no viable overload found for `{name}")?;
 
 				if !type_args.is_empty() {
@@ -216,7 +227,7 @@ impl Display for CMNErrorCode {
 					}
 					write!(f, ">")?;
 				}
-				
+
 				write!(f, "(")?;
 
 				if !args.is_empty() {
@@ -225,19 +236,22 @@ impl Display for CMNErrorCode {
 					for arg in iter {
 						write!(f, ", {arg}")?;
 					}
-					
 				}
 				write!(f, ")")
 			}
-			
+
 			CMNErrorCode::MissingInitializers { ty, members } => {
 				let mut iter = members.iter();
-				write!(f, "missing initializers for type {ty}: {}", iter.next().unwrap())?;
-				
+				write!(
+					f,
+					"missing initializers for type {ty}: {}",
+					iter.next().unwrap()
+				)?;
+
 				for member in iter {
 					write!(f, ", {member}")?;
 				}
-				
+
 				Ok(())
 			}
 
@@ -386,7 +400,9 @@ pub fn spawn_logger(backtrace_on_error: bool) -> Sender<CMNMessageLog> {
 									if line == *lines.start() {
 										*column
 									} else {
-										if let Some(first) = line_text.chars().position(|c| c != ' ') {
+										if let Some(first) =
+											line_text.chars().position(|c| c != ' ')
+										{
 											first + 1
 										} else {
 											0
@@ -402,29 +418,23 @@ pub fn spawn_logger(backtrace_on_error: bool) -> Sender<CMNMessageLog> {
 									// Blank line, skip it
 									len = 0;
 									length_left -= 1;
-
 								} else if line == *lines.start() {
 									// First line
-									len = usize::min(column + length - 1, line_text.len()) - column + 1;
+									len = usize::min(column + length - 1, line_text.len()) - column
+										+ 1;
 									length_left -= len;
-
 								} else if line != *lines.end() {
 									// Middle line
 									len = line_text.len() - column + 1;
 									length_left -= line_text.len() + 1;
-
 								} else {
 									// Last line
 									len = length_left - column;
 								}
-								
+
 								// Print gutter
-								write!(
-									out,
-									"{}",
-									format!("\t{}", "|").bright_black()
-								).unwrap();
-								
+								write!(out, "{}", format!("\t{}", "|").bright_black()).unwrap();
+
 								if column == 0 {
 									// No text on this line, just print a newline
 									writeln!(out, "").unwrap();

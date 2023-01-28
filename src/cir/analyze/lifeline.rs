@@ -2,9 +2,12 @@
 
 use std::collections::HashMap;
 
-use super::{CIRPassMut, AnalysisDomain, JoinSemiLattice, Analysis, Forward, AnalysisResultHandler, ResultVisitor};
+use super::{
+	Analysis, AnalysisDomain, AnalysisResultHandler, CIRPassMut, Forward, JoinSemiLattice,
+	ResultVisitor,
+};
 use crate::{
-	ast::{TokenData, namespace::Identifier},
+	ast::{namespace::Identifier, TokenData},
 	cir::{CIRFunction, CIRStmt, CIRType, LValue, Operand, PlaceElem, RValue},
 	errors::{CMNError, CMNErrorCode},
 };
@@ -172,7 +175,7 @@ impl JoinSemiLattice for LiveVarCheckState {
 
 		for (lval, liveness) in &other.liveness {
 			let own_liveness = self.get_liveness(lval);
-			
+
 			if liveness != &own_liveness {
 				changed = true;
 
@@ -195,21 +198,32 @@ impl AnalysisDomain for VarInitCheck {
 	type Direction = Forward;
 
 	fn bottom_value(&self, func: &CIRFunction) -> Self::Domain {
-		LiveVarCheckState { 
+		LiveVarCheckState {
 			liveness: (0..func.variables.len())
 				.into_iter()
-				.map(|idx| (
-					LValue { local: idx, projection: vec![] }, 
-					LivenessState::Uninit
-				))
-				.collect()
-			}
+				.map(|idx| {
+					(
+						LValue {
+							local: idx,
+							projection: vec![],
+						},
+						LivenessState::Uninit,
+					)
+				})
+				.collect(),
+		}
 	}
 
 	fn initialize_start_block(&self, func: &CIRFunction, state: &mut Self::Domain) {
 		// There is *definitely* a way to do this with bit math but fuck if i know lol
 		for var in 0..func.arg_count {
-			state.liveness.insert(LValue { local: var, projection: vec![] }, LivenessState::Live);
+			state.liveness.insert(
+				LValue {
+					local: var,
+					projection: vec![],
+				},
+				LivenessState::Live,
+			);
 		}
 	}
 }
@@ -219,7 +233,7 @@ impl Analysis for VarInitCheck {
 		&self,
 		stmt: &CIRStmt,
 		position: (crate::cir::BlockIndex, crate::cir::StmtIndex),
-		state: &mut Self::Domain
+		state: &mut Self::Domain,
 	) {
 		match stmt {
 			CIRStmt::Assignment((lval, _), (rval, token_data)) => {
@@ -227,7 +241,9 @@ impl Analysis for VarInitCheck {
 				state.set_liveness(lval, LivenessState::Live);
 			}
 
-			CIRStmt::FnCall { result: Some(lval), .. } => {
+			CIRStmt::FnCall {
+				result: Some(lval), ..
+			} => {
 				state.set_liveness(lval, LivenessState::Live);
 			}
 
@@ -237,36 +253,39 @@ impl Analysis for VarInitCheck {
 }
 
 impl AnalysisResultHandler for VarInitCheck {
-	fn process_result(result: ResultVisitor<Self>, func: &CIRFunction) -> Vec<(CMNError, TokenData)> {
+	fn process_result(
+		result: ResultVisitor<Self>,
+		func: &CIRFunction,
+	) -> Vec<(CMNError, TokenData)> {
 		let mut errors = vec![];
-		
+
 		for (i, block) in func.blocks.iter().enumerate() {
 			for (j, stmt) in block.items.iter().enumerate() {
 				match stmt {
-					CIRStmt::Assignment(_, (RValue::Atom(_, _, Operand::LValue(lval)), _)) | 
-					CIRStmt::Switch(Operand::LValue(lval), ..) | 
-					CIRStmt::Return(Some((Operand::LValue(lval), _)))=> {
+					CIRStmt::Assignment(_, (RValue::Atom(_, _, Operand::LValue(lval)), _))
+					| CIRStmt::Switch(Operand::LValue(lval), ..)
+					| CIRStmt::Return(Some((Operand::LValue(lval), _))) => {
 						let state = result.get_state_before(i, j);
-						
-						match state.get_liveness(lval) {
-							LivenessState::Live => { }
 
-							_ => {
-								errors.push((
-									CMNError::new(CMNErrorCode::InvalidUse {
-										variable: Identifier::from_name(
-											func.variables[lval.local]
-												.2
-												.as_ref()
-												.unwrap_or(&format!("(temp variable _{})", lval.local).into())
-												.clone(),
-											false,
-										),
-										state: state.get_liveness(lval),
-									}), 
-									(0, 0)
-								))
-							}
+						match state.get_liveness(lval) {
+							LivenessState::Live => {}
+
+							_ => errors.push((
+								CMNError::new(CMNErrorCode::InvalidUse {
+									variable: Identifier::from_name(
+										func.variables[lval.local]
+											.2
+											.as_ref()
+											.unwrap_or(
+												&format!("(temp variable _{})", lval.local).into(),
+											)
+											.clone(),
+										false,
+									),
+									state: state.get_liveness(lval),
+								}),
+								(0, 0),
+							)),
 						}
 					}
 
@@ -274,8 +293,7 @@ impl AnalysisResultHandler for VarInitCheck {
 				}
 			}
 		}
-		
+
 		errors
-	
 	}
 }

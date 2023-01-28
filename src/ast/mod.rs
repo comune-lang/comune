@@ -89,7 +89,10 @@ impl<'ctx> FnScope<'ctx> {
 			let local_lookup;
 
 			if self.variables.contains_key(id.name()) {
-				local_lookup = Some((id.clone(), self.variables.get(id.name()).cloned().unwrap().0));
+				local_lookup = Some((
+					id.clone(),
+					self.variables.get(id.name()).cloned().unwrap().0,
+				));
 			} else if let Some(parent) = self.parent {
 				local_lookup = parent.find_symbol(id, search_namespace);
 			} else {
@@ -141,10 +144,10 @@ pub fn validate_function(
 		elem.validate(&mut scope)?;
 
 		let Expr::Atom(Atom::Block { items, result }, _) = elem else { panic!() };
-		
+
 		// Turn result values into explicit return expressions
 		let has_result = result.is_some();
-		
+
 		if has_result {
 			let expr = *result.take().unwrap();
 			let node_data = expr.get_node_data().clone();
@@ -172,7 +175,7 @@ pub fn validate_function(
 				}
 			}
 		}
-		
+
 		if let Some(Stmt::Expr(Expr::Atom(Atom::CtrlFlow(ctrl), _))) = items.last() {
 			has_return = matches!(&**ctrl, ControlFlow::Return { .. })
 		}
@@ -344,11 +347,16 @@ pub fn validate_fn_call(
 		.collect();
 
 	let (selected_name, (selected_candidate, ..)) = match candidates.len() {
-		0 => return Err((CMNError::new(CMNErrorCode::NoCandidateFound {
-			args: args.iter().map(|arg| arg.get_type().clone()).collect(), 
-			type_args: type_args.clone(),
-			name: name.clone()
-		}), node_data.tk)), // No viable candidate
+		0 => {
+			return Err((
+				CMNError::new(CMNErrorCode::NoCandidateFound {
+					args: args.iter().map(|arg| arg.get_type().clone()).collect(),
+					type_args: type_args.clone(),
+					name: name.clone(),
+				}),
+				node_data.tk,
+			))
+		} // No viable candidate
 
 		1 => candidates[0].clone(),
 
@@ -1146,10 +1154,9 @@ impl Atom {
 			Atom::AlgebraicLit(ty, elems) => {
 				if let Type::TypeRef(ItemRef::Resolved(TypeRef { def, args, .. })) = ty {
 					if let TypeDef::Algebraic(alg) = &*def.upgrade().unwrap().read().unwrap() {
-						
-
 						for (name, expr) in elems.iter_mut() {
-							let member_ty = if let Some((_, ty)) = alg.get_member(name, Some(args)) {
+							let member_ty = if let Some((_, ty)) = alg.get_member(name, Some(args))
+							{
 								ty
 							} else {
 								// Invalid member in strenum literal
@@ -1178,10 +1185,13 @@ impl Atom {
 						}
 
 						if !missing_members.is_empty() {
-							return Err((CMNError::new(CMNErrorCode::MissingInitializers {
-								ty: ty.clone(),
-								members: missing_members
-							}), meta.tk))
+							return Err((
+								CMNError::new(CMNErrorCode::MissingInitializers {
+									ty: ty.clone(),
+									members: missing_members,
+								}),
+								meta.tk,
+							));
 						}
 
 						return Ok(ty.clone());
@@ -1340,7 +1350,7 @@ impl Atom {
 							if let Binding {
 								name: Some(name),
 								ty,
-								props
+								props,
 							} = binding
 							{
 								subscope.add_variable(ty.clone(), name.clone(), *props);
