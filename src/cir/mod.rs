@@ -2,11 +2,14 @@
 
 use std::{collections::HashMap, ffi::CString, hash::Hash};
 
-use crate::ast::{
-	expression::Operator,
-	namespace::{Identifier, Name},
-	types::{Basic, BindingProps, DataLayout, TupleKind, TypeParam},
-	Attribute, TokenData,
+use crate::{
+	ast::{
+		expression::Operator,
+		namespace::{Identifier, Name},
+		types::{Basic, BindingProps, DataLayout, TupleKind, TypeParam},
+		Attribute,
+	},
+	lexer::SrcSpan,
 };
 
 pub mod analyze;
@@ -125,11 +128,11 @@ pub enum CIRTypeDef {
 
 #[derive(Debug, Clone)]
 pub enum CIRStmt {
-	Expression(RValue, TokenData),
-	Assignment((LValue, TokenData), (RValue, TokenData)),
+	Expression(RValue, SrcSpan),
+	Assignment((LValue, SrcSpan), (RValue, SrcSpan)),
 	Jump(BlockIndex),
 	Switch(Operand, Vec<(CIRType, Operand, BlockIndex)>, BlockIndex),
-	Return(Option<(Operand, TokenData)>),
+	Return(Option<(Operand, SrcSpan)>),
 	FnCall {
 		id: FuncID,
 		args: Vec<LValue>,
@@ -231,5 +234,18 @@ impl RValue {
 			RValue::Atom(ty, _, _) | RValue::Cons(ty, _, _) => ty,
 			RValue::Cast { to, .. } => to,
 		}
+	}
+}
+
+impl CIRFunction {
+	pub fn get_variable_name(&self, local: VarIndex) -> Identifier {
+		Identifier::from_name(
+			self.variables[local]
+				.2
+				.as_ref()
+				.unwrap_or(&format!("(temporary variable _{})", local).into())
+				.clone(),
+			false,
+		)
 	}
 }

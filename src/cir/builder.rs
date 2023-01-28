@@ -12,6 +12,7 @@ use crate::{
 	},
 	constexpr::{ConstExpr, ConstValue},
 	driver::ModuleState,
+	lexer::SrcSpan,
 };
 
 use super::{
@@ -405,20 +406,23 @@ impl CIRModuleBuilder {
 
 				if &cir_ty != value_ty {
 					self.write(CIRStmt::Assignment(
-						(store_place, (0, 0)),
+						(store_place, SrcSpan::new()),
 						(
 							RValue::Cast {
 								to: cir_ty,
 								from: value_ty.clone(),
 								val: Operand::LValue(value),
 							},
-							(0, 0),
+							SrcSpan::new(),
 						),
 					));
 				} else {
 					self.write(CIRStmt::Assignment(
-						(store_place, (0, 0)),
-						(RValue::Atom(cir_ty, None, Operand::LValue(value)), (0, 0)),
+						(store_place, SrcSpan::new()),
+						(
+							RValue::Atom(cir_ty, None, Operand::LValue(value)),
+							SrcSpan::new(),
+						),
 					));
 				}
 			}
@@ -452,7 +456,7 @@ impl CIRModuleBuilder {
 		if let Some(elem) = elem {
 			if let Some(rval) = self.generate_expr(elem) {
 				self.write(CIRStmt::Assignment(
-					(lval, (0, 0)),
+					(lval, SrcSpan::new()),
 					(rval, elem.get_node_data().tk),
 				));
 			}
@@ -567,7 +571,7 @@ impl CIRModuleBuilder {
 
 						if let Some(mem_expr) = mem_expr {
 							self.write(CIRStmt::Assignment(
-								(mem_lval, (0, 0)),
+								(mem_lval, SrcSpan::new()),
 								(mem_expr, elems[i].1.get_node_data().tk),
 							))
 						}
@@ -658,7 +662,7 @@ impl CIRModuleBuilder {
 						if let Some(if_val) = block_ir {
 							if let Some(result) = &result_loc {
 								self.write(CIRStmt::Assignment(
-									(result.clone(), (0, 0)),
+									(result.clone(), SrcSpan::new()),
 									(if_val, body_meta.tk),
 								));
 								has_result = true;
@@ -680,7 +684,7 @@ impl CIRModuleBuilder {
 							if let Some(else_val) = else_ir {
 								if let Some(result) = &result_loc {
 									self.write(CIRStmt::Assignment(
-										(result.clone(), (0, 0)),
+										(result.clone(), SrcSpan::new()),
 										(else_val, else_meta.tk),
 									));
 									has_result = true;
@@ -873,7 +877,7 @@ impl CIRModuleBuilder {
 							);
 
 							let add_ir = CIRStmt::Assignment(
-								(disc_lval.clone(), (0, 0)),
+								(disc_lval.clone(), SrcSpan::new()),
 								(
 									RValue::Cons(
 										disc_ty.clone(),
@@ -883,7 +887,7 @@ impl CIRModuleBuilder {
 										],
 										Operator::Add,
 									),
-									(0, 0),
+									SrcSpan::new(),
 								),
 							);
 
@@ -917,7 +921,7 @@ impl CIRModuleBuilder {
 							if let Some(match_result) = match_result {
 								if let Some(result_loc) = &result_loc {
 									self.write(CIRStmt::Assignment(
-										(result_loc.clone(), (0, 0)),
+										(result_loc.clone(), SrcSpan::new()),
 										(match_result, branch_meta.tk),
 									));
 								}
@@ -1290,16 +1294,25 @@ impl CIRModuleBuilder {
 	}
 
 	fn insert_temporary(&mut self, ty: CIRType, rval: RValue) -> LValue {
-		self.get_fn_mut()
-			.variables
-			.push((ty, BindingProps::default(), None));
+		self.get_fn_mut().variables.push((
+			ty,
+			BindingProps {
+				is_mut: true,
+				is_ref: false,
+				is_unsafe: false,
+			},
+			None,
+		));
 
 		let lval = LValue {
 			local: self.get_fn().variables.len() - 1,
 			projection: vec![],
 		};
 
-		self.write(CIRStmt::Assignment((lval.clone(), (0, 0)), (rval, (0, 0))));
+		self.write(CIRStmt::Assignment(
+			(lval.clone(), SrcSpan::new()),
+			(rval, SrcSpan::new()),
+		));
 
 		lval
 	}

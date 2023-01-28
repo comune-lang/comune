@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 
 use rayon::prelude::{IntoParallelRefIterator, ParallelIterator};
 
-use crate::{ast::TokenData, errors::CMNError};
+use crate::{errors::CMNError, lexer::SrcSpan};
 
 use super::{BlockIndex, CIRFunction, CIRModule, CIRStmt, StmtIndex};
 
@@ -11,21 +11,21 @@ pub mod lifeline;
 pub mod verify;
 
 pub trait CIRPass: Send + Sync {
-	fn on_function(&self, _func: &CIRFunction) -> Vec<(CMNError, TokenData)> {
+	fn on_function(&self, _func: &CIRFunction) -> Vec<(CMNError, SrcSpan)> {
 		vec![]
 	}
 
-	fn on_module(&self, _module: &CIRModule) -> Vec<(CMNError, TokenData)> {
+	fn on_module(&self, _module: &CIRModule) -> Vec<(CMNError, SrcSpan)> {
 		vec![]
 	}
 }
 
 pub trait CIRPassMut {
-	fn on_function(&self, _func: &mut CIRFunction) -> Vec<(CMNError, TokenData)> {
+	fn on_function(&self, _func: &mut CIRFunction) -> Vec<(CMNError, SrcSpan)> {
 		vec![]
 	}
 
-	fn on_module(&self, _module: &mut CIRModule) -> Vec<(CMNError, TokenData)> {
+	fn on_module(&self, _module: &mut CIRModule) -> Vec<(CMNError, SrcSpan)> {
 		vec![]
 	}
 }
@@ -34,11 +34,11 @@ impl<T> CIRPassMut for T
 where
 	T: CIRPass,
 {
-	fn on_function(&self, func: &mut CIRFunction) -> Vec<(CMNError, TokenData)> {
+	fn on_function(&self, func: &mut CIRFunction) -> Vec<(CMNError, SrcSpan)> {
 		self.on_function(func)
 	}
 
-	fn on_module(&self, module: &mut CIRModule) -> Vec<(CMNError, TokenData)> {
+	fn on_module(&self, module: &mut CIRModule) -> Vec<(CMNError, SrcSpan)> {
 		self.on_module(module)
 	}
 }
@@ -69,7 +69,7 @@ impl CIRPassManager {
 		self.passes.push(Pass::Unique(Box::new(pass)))
 	}
 
-	pub fn run_on_module(&self, module: &mut CIRModule) -> Vec<(CMNError, TokenData)> {
+	pub fn run_on_module(&self, module: &mut CIRModule) -> Vec<(CMNError, SrcSpan)> {
 		let mut errors = vec![];
 
 		// Run on each function
@@ -97,7 +97,7 @@ impl CIRPassManager {
 		errors
 	}
 
-	pub fn run_on_function(&self, func: &mut CIRFunction) -> Vec<(CMNError, TokenData)> {
+	pub fn run_on_function(&self, func: &mut CIRFunction) -> Vec<(CMNError, SrcSpan)> {
 		let mut errors = vec![];
 
 		for pass in &self.passes {
@@ -178,10 +178,7 @@ impl Direction for Backward {
 }
 
 pub trait AnalysisResultHandler: Analysis {
-	fn process_result(
-		result: ResultVisitor<Self>,
-		func: &CIRFunction,
-	) -> Vec<(CMNError, TokenData)>
+	fn process_result(result: ResultVisitor<Self>, func: &CIRFunction) -> Vec<(CMNError, SrcSpan)>
 	where
 		Self: Sized;
 }
@@ -206,7 +203,7 @@ impl<T> CIRPass for DataFlowPass<T>
 where
 	T: AnalysisResultHandler + Send + Sync,
 {
-	fn on_function(&self, func: &CIRFunction) -> Vec<(CMNError, TokenData)> {
+	fn on_function(&self, func: &CIRFunction) -> Vec<(CMNError, SrcSpan)> {
 		let mut state = self.analysis.bottom_value(func);
 
 		let mut in_states = vec![];

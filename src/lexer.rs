@@ -5,8 +5,6 @@ use std::io::{self, Error, Read};
 use std::path::Path;
 use std::sync::mpsc::Sender;
 
-use rayon::str::Lines;
-
 use crate::errors::{CMNMessage, CMNMessageLog};
 
 use crate::ast::namespace::Name;
@@ -71,9 +69,19 @@ impl Token {
 		match self {
 			Token::Name(x) => x.len(),
 
-			Token::NumLiteral(x, _) => x.len(),
+			Token::NumLiteral(x, suf) => x.len() + suf.len(),
+
+			Token::BoolLiteral(val) => {
+				if *val {
+					4
+				} else {
+					5
+				}
+			}
 
 			Token::StringLiteral(x) => x.len() + 2,
+
+			Token::CStringLiteral(x) => x.as_bytes().len() + 3,
 
 			Token::Keyword(x) | Token::Operator(x) => x.len(),
 
@@ -81,6 +89,18 @@ impl Token {
 
 			_ => 1,
 		}
+	}
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct SrcSpan {
+	pub start: usize,
+	pub len: usize,
+}
+
+impl SrcSpan {
+	pub fn new() -> Self {
+		SrcSpan { start: 0, len: 0 }
 	}
 }
 
@@ -114,7 +134,7 @@ pub struct Lexer {
 	file_buffer: String,
 	file_index: usize, // must be on a valid utf-8 character boundary
 	char_buffer: Option<char>,
-	token_buffer: Vec<(usize, Token)>,
+	token_buffer: Vec<(SrcSpan, Token)>,
 	token_index: usize,
 	error_logger: Sender<CMNMessageLog>,
 	pub file_name: OsString,
@@ -154,8 +174,8 @@ impl Lexer {
 		self.advance_char()?;
 		loop {
 			match self.parse_next() {
-				Ok((idx, Token::Eof)) => {
-					self.token_buffer.push((idx, Token::Eof));
+				Ok((span, Token::Eof)) => {
+					self.token_buffer.push((span, Token::Eof));
 					break;
 				}
 				Ok(tk) => self.token_buffer.push(tk),
@@ -206,7 +226,7 @@ impl Lexer {
 		self.file_buffer.lines().nth(line).unwrap()
 	}
 
-	pub fn current(&self) -> Option<&(usize, Token)> {
+	pub fn current(&self) -> Option<&(SrcSpan, Token)> {
 		self.token_buffer.get(self.token_index)
 	}
 
@@ -277,15 +297,15 @@ impl Lexer {
 		}
 	}
 
-	pub fn next(&mut self) -> Option<&(usize, Token)> {
+	pub fn next(&mut self) -> Option<&(SrcSpan, Token)> {
 		self.token_index += 1;
-		if let Some(current) = self.current() {
-			self.file_index = current.0;
+		if let Some((span, _)) = self.current() {
+			self.file_index = span.start;
 		}
 		self.current()
 	}
 
-	pub fn parse_next(&mut self) -> io::Result<(usize, Token)> {
+	pub fn parse_next(&mut self) -> io::Result<(SrcSpan, Token)> {
 		let mut result_token = Ok(Token::Eof);
 		let mut start = self.file_index;
 
@@ -460,7 +480,7 @@ impl Lexer {
 
 				result_token = Ok(Token::StringLiteral(result));
 			} else if self.eof_reached() && token.is_whitespace() {
-				return Ok((start, Token::Eof));
+				return Ok((SrcSpan { start, len: 0 }, Token::Eof));
 			} else {
 				result_token = Ok(Token::Other(token));
 				self.get_next_char()?;
@@ -468,7 +488,13 @@ impl Lexer {
 		}
 
 		match result_token {
-			Ok(tk) => Ok((start, tk)),
+			Ok(tk) => Ok((
+				SrcSpan {
+					start,
+					len: tk.len(),
+				},
+				tk,
+			)),
 			Err(e) => Err(e),
 		}
 	}
@@ -518,11 +544,11 @@ impl Lexer {
 			.ok_or_else(|| Error::new(io::ErrorKind::UnexpectedEof, "Unexpected EOF"))
 	}
 
-	pub fn log_msg_at(&self, char_idx: usize, token_len: usize, e: CMNMessage) {
-		if char_idx > 0 {
-			let first_line = self.get_line_number(char_idx);
-			let last_line = self.get_line_number(char_idx + token_len);
-			let column = self.get_column(char_idx);
+	pub fn log_msg_at(&self, span: SrcSpan, e: CMNMessage) {
+		if span.start > 0 {
+			let first_line = self.get_line_number(span.start);
+			let last_line = self.get_line_number(span.start + span.len);
+			let column = self.get_column(span.start);
 			let mut lines_text = vec![];
 
 			for line in first_line..=last_line {
@@ -536,7 +562,7 @@ impl Lexer {
 					filename: self.file_name.to_string_lossy().into_owned(),
 					lines: first_line..=last_line,
 					column,
-					length: token_len,
+					length: span.len,
 				})
 				.unwrap();
 		} else {
@@ -550,11 +576,10 @@ impl Lexer {
 	}
 
 	pub fn log_msg(&self, e: CMNMessage) {
-		if let Some(current) = self.current() {
-			let len = current.1.len();
-			self.log_msg_at(self.token_buffer[self.token_index].0, len, e)
+		if let Some((span, _)) = self.current() {
+			self.log_msg_at(*span, e)
 		} else {
-			self.log_msg_at(0, 0, e)
+			self.log_msg_at(SrcSpan { start: 0, len: 0 }, e)
 		}
 	}
 }

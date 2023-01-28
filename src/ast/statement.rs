@@ -2,6 +2,7 @@ use std::fmt::Display;
 
 use crate::{
 	errors::{CMNError, CMNErrorCode},
+	lexer::SrcSpan,
 	parser::AnalyzeResult,
 };
 
@@ -9,12 +10,12 @@ use super::{
 	expression::{Atom, Expr, NodeData},
 	namespace::Name,
 	types::{BindingProps, Type},
-	FnScope, TokenData,
+	FnScope,
 };
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Stmt {
-	Decl(Vec<(Type, Name, BindingProps)>, Option<Expr>, TokenData),
+	Decl(Vec<(Type, Name, BindingProps)>, Option<Expr>, SrcSpan),
 	Expr(Expr),
 }
 

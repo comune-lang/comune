@@ -7,9 +7,9 @@ use super::{
 	ResultVisitor,
 };
 use crate::{
-	ast::{namespace::Identifier, TokenData},
 	cir::{CIRFunction, CIRStmt, CIRType, LValue, Operand, PlaceElem, RValue},
 	errors::{CMNError, CMNErrorCode},
+	lexer::SrcSpan,
 };
 
 pub struct BorrowCheck;
@@ -51,12 +51,10 @@ impl LiveVarCheckState {
 
 		for key in keys {
 			if !key.projection[lval.projection.len()..].contains(&PlaceElem::Deref) {
-				//println!("removing state for {key}");
 				self.liveness.remove(&key);
 			}
 		}
 
-		//println!("setting {state:?} for {lval}");
 		self.liveness.insert(lval.clone(), state);
 	}
 
@@ -65,13 +63,12 @@ impl LiveVarCheckState {
 			// This state has a defined liveness value, so look through its children to check for partial moves
 
 			// Get all keys that are sublocations of this lvalue
-			for (key, val) in self.liveness.iter().filter(|(key, _)| {
+			for (_, val) in self.liveness.iter().filter(|(key, _)| {
 				key.local == lval.local
 					&& key.projection.len() > lval.projection.len()
 					&& key.projection[0..lval.projection.len()] == *lval.projection.as_slice()
 			}) {
 				if *val == LivenessState::Moved {
-					//println!("returning PartialMoved for {lval} as {key} is Moved");
 					return LivenessState::PartialMoved;
 				}
 			}
@@ -99,8 +96,8 @@ impl LiveVarCheckState {
 	fn eval_rvalue(
 		&mut self,
 		rval: &RValue,
-		token_data: TokenData,
-	) -> Result<(), (LValue, LivenessState, TokenData)> {
+		token_data: SrcSpan,
+	) -> Result<(), (LValue, LivenessState, SrcSpan)> {
 		match rval {
 			RValue::Atom(ty, _, op) => self.eval_operand(ty, op, token_data),
 
@@ -118,8 +115,8 @@ impl LiveVarCheckState {
 		&mut self,
 		_ty: &CIRType,
 		op: &Operand,
-		token_data: TokenData,
-	) -> Result<(), (LValue, LivenessState, TokenData)> {
+		token_data: SrcSpan,
+	) -> Result<(), (LValue, LivenessState, SrcSpan)> {
 		match op {
 			Operand::LValue(lval) => self.eval_lvalue(_ty, lval, token_data)?,
 
@@ -132,8 +129,8 @@ impl LiveVarCheckState {
 		&mut self,
 		_ty: &CIRType,
 		lval: &LValue,
-		token_data: TokenData,
-	) -> Result<(), (LValue, LivenessState, TokenData)> {
+		token_data: SrcSpan,
+	) -> Result<(), (LValue, LivenessState, SrcSpan)> {
 		let sub_liveness = self.get_liveness(lval);
 
 		// TODO: Check for `Copy` types? Might be handled earlier
@@ -148,7 +145,7 @@ impl LiveVarCheckState {
 }
 
 impl CIRPassMut for BorrowCheck {
-	fn on_function(&self, func: &mut CIRFunction) -> Vec<(CMNError, TokenData)> {
+	fn on_function(&self, func: &mut CIRFunction) -> Vec<(CMNError, SrcSpan)> {
 		let mut liveness = LiveVarCheckState {
 			liveness: HashMap::new(),
 		};
@@ -253,43 +250,44 @@ impl Analysis for VarInitCheck {
 }
 
 impl AnalysisResultHandler for VarInitCheck {
-	fn process_result(
-		result: ResultVisitor<Self>,
-		func: &CIRFunction,
-	) -> Vec<(CMNError, TokenData)> {
+	fn process_result(result: ResultVisitor<Self>, func: &CIRFunction) -> Vec<(CMNError, SrcSpan)> {
 		let mut errors = vec![];
 
 		for (i, block) in func.blocks.iter().enumerate() {
 			for (j, stmt) in block.items.iter().enumerate() {
+				let state = result.get_state_before(i, j);
+
+				// Check for uses of uninit/moved lvalues
 				match stmt {
 					CIRStmt::Assignment(_, (RValue::Atom(_, _, Operand::LValue(lval)), _))
 					| CIRStmt::Switch(Operand::LValue(lval), ..)
-					| CIRStmt::Return(Some((Operand::LValue(lval), _))) => {
-						let state = result.get_state_before(i, j);
+					| CIRStmt::Return(Some((Operand::LValue(lval), _))) => match state.get_liveness(lval) {
+						LivenessState::Live => {}
 
-						match state.get_liveness(lval) {
-							LivenessState::Live => {}
-
-							_ => errors.push((
-								CMNError::new(CMNErrorCode::InvalidUse {
-									variable: Identifier::from_name(
-										func.variables[lval.local]
-											.2
-											.as_ref()
-											.unwrap_or(
-												&format!("(temp variable _{})", lval.local).into(),
-											)
-											.clone(),
-										false,
-									),
-									state: state.get_liveness(lval),
-								}),
-								(0, 0),
-							)),
-						}
-					}
+						_ => errors.push((
+							CMNError::new(CMNErrorCode::InvalidUse {
+								variable: func.get_variable_name(lval.local),
+								state: state.get_liveness(lval),
+							}),
+							SrcSpan::new(),
+						)),
+					},
 
 					_ => {}
+				}
+
+				// Check for mutation of immutable lvalues
+				if let CIRStmt::Assignment((lval, tk), _) = stmt {
+					if state.get_liveness(lval) != LivenessState::Uninit
+						&& !func.variables[lval.local].1.is_mut
+					{
+						errors.push((
+							CMNError::new(CMNErrorCode::ImmutVarMutation {
+								variable: func.get_variable_name(lval.local),
+							}),
+							*tk,
+						))
+					}
 				}
 			}
 		}

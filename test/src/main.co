@@ -89,10 +89,10 @@ int main() {
 	}
 
 	int j = i;
-	
-	while true {
-		
-	}
+
+	i = 12;
+
+	int k = i;
 
 	mut TestSumType who_knows = sum_type_test();
 	

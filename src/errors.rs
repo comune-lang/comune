@@ -18,8 +18,9 @@ use lazy_static::lazy_static;
 
 use super::types::Type;
 use crate::ast::namespace::Name;
+use crate::lexer::SrcSpan;
 use crate::{
-	ast::{expression::Operator, namespace::Identifier, TokenData},
+	ast::{expression::Operator, namespace::Identifier},
 	cir::analyze::lifeline::LivenessState,
 	parser::Parser,
 };
@@ -32,7 +33,7 @@ lazy_static! {
 pub struct CMNError {
 	pub code: CMNErrorCode,
 	pub origin: Backtrace,
-	pub notes: Vec<(Option<TokenData>, String)>,
+	pub notes: Vec<(Option<SrcSpan>, String)>,
 }
 
 impl CMNError {
@@ -45,7 +46,7 @@ impl CMNError {
 		}
 	}
 
-	pub fn with_note(mut self, note: String, location: Option<TokenData>) -> Self {
+	pub fn with_note(mut self, note: String, location: Option<SrcSpan>) -> Self {
 		self.notes.push((location, note));
 		self
 	}
@@ -139,6 +140,10 @@ pub enum CMNErrorCode {
 	InvalidUse {
 		variable: Identifier,
 		state: LivenessState,
+	},
+
+	ImmutVarMutation {
+		variable: Identifier,
 	},
 
 	// Packaged-up collection of errors as a single Err
@@ -274,6 +279,13 @@ impl Display for CMNErrorCode {
 				)
 			}
 
+			CMNErrorCode::ImmutVarMutation { variable } => {
+				write!(
+					f,
+					"cannot mutate {variable}, as it is not declared as mutable"
+				)
+			}
+
 			CMNErrorCode::AmbiguousCall => {
 				write!(f, "ambiguous call")
 			}
@@ -300,7 +312,7 @@ impl Display for CMNWarning {
 }
 
 impl CMNMessage {
-	pub fn get_notes(&self) -> &Vec<(Option<TokenData>, String)> {
+	pub fn get_notes(&self) -> &Vec<(Option<SrcSpan>, String)> {
 		match self {
 			CMNMessage::Error(e) => &e.notes,
 			CMNMessage::Warning(_) => todo!(), // CMNError and CMNWarning are probably gonna get merged into one enum

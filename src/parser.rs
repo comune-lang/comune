@@ -5,7 +5,7 @@ use std::sync::{Arc, RwLock};
 use crate::ast::pattern::{Binding, Pattern};
 use crate::constexpr::ConstExpr;
 use crate::errors::{CMNError, CMNErrorCode};
-use crate::lexer::{Lexer, Token};
+use crate::lexer::{Lexer, SrcSpan, Token};
 
 use crate::ast::controlflow::ControlFlow;
 use crate::ast::expression::{Atom, Expr, FnRef, NodeData, Operator};
@@ -18,7 +18,7 @@ use crate::ast::types::{
 	AlgebraicDef, Basic, BindingProps, FnDef, FnParamList, TupleKind, Type, TypeDef, TypeParamList,
 	TypeRef, Visibility,
 };
-use crate::ast::{Attribute, TokenData};
+use crate::ast::Attribute;
 
 // Convenience function that matches a &str against various token kinds
 fn token_compare(token: &Token, text: &str) -> bool {
@@ -31,7 +31,7 @@ fn token_compare(token: &Token, text: &str) -> bool {
 }
 
 pub type ParseResult<T> = Result<T, CMNError>;
-pub type AnalyzeResult<T> = Result<T, (CMNError, TokenData)>;
+pub type AnalyzeResult<T> = Result<T, (CMNError, SrcSpan)>;
 
 pub struct Parser {
 	pub namespace: Namespace,
@@ -79,7 +79,7 @@ impl Parser {
 	}
 
 	fn get_current_start_index(&self) -> usize {
-		self.lexer.borrow().current().unwrap().0
+		self.lexer.borrow().current().unwrap().0.start
 	}
 
 	fn get_current_token_index(&self) -> usize {
@@ -609,7 +609,10 @@ impl Parser {
 		Ok(Expr::Atom(
 			Atom::Block { items, result },
 			NodeData {
-				tk: (begin, end - begin),
+				tk: SrcSpan {
+					start: begin,
+					len: end - begin,
+				},
 				ty: None,
 			},
 		))
@@ -768,7 +771,10 @@ impl Parser {
 			let stmt_result = Stmt::Decl(
 				vec![(ty, name, binding_props.unwrap_or_default())],
 				expr,
-				(begin, self.get_current_start_index() - begin),
+				SrcSpan {
+					start: begin,
+					len: self.get_current_start_index() - begin,
+				},
 			);
 
 			Ok(stmt_result)
@@ -831,7 +837,10 @@ impl Parser {
 				self.parse_atom()?,
 				NodeData {
 					ty: None,
-					tk: (begin_lhs, self.get_current_start_index() - begin_lhs),
+					tk: SrcSpan {
+						start: begin_lhs,
+						len: self.get_current_start_index() - begin_lhs,
+					},
 				},
 			)
 		} else {
@@ -845,7 +854,10 @@ impl Parser {
 					self.parse_atom()?,
 					NodeData {
 						ty: None,
-						tk: (begin_lhs, self.get_current_start_index() - begin_lhs),
+						tk: SrcSpan {
+							start: begin_lhs,
+							len: self.get_current_start_index() - begin_lhs,
+						},
 					},
 				),
 
@@ -877,7 +889,10 @@ impl Parser {
 
 						let end_index = self.get_current_start_index();
 
-						let tk = (begin_lhs, end_index - begin_lhs);
+						let tk = SrcSpan {
+							start: begin_lhs,
+							len: end_index - begin_lhs,
+						};
 						Expr::Unary(Box::new(rhs), op, NodeData { ty: None, tk })
 					}
 				}
@@ -925,13 +940,19 @@ impl Parser {
 					let goal_t = self.parse_type(true)?;
 
 					let end_index = self.get_current_start_index();
-					let meta = (begin_lhs, end_index - begin_lhs);
+					let tk = SrcSpan {
+						start: begin_lhs,
+						len: end_index - begin_lhs,
+					};
 
-					lhs = Expr::create_cast(lhs, goal_t, NodeData { ty: None, tk: meta });
+					lhs = Expr::create_cast(lhs, goal_t, NodeData { ty: None, tk });
 				}
 
 				Operator::PostInc | Operator::PostDec => {
-					let meta = (begin_lhs, self.get_current_start_index() - begin_lhs);
+					let tk = SrcSpan {
+						start: begin_lhs,
+						len: self.get_current_start_index() - begin_lhs,
+					};
 
 					// Create compound assignment expression
 					lhs = Expr::Cons(
@@ -941,7 +962,7 @@ impl Parser {
 								Atom::IntegerLit(1, None),
 								NodeData {
 									ty: None,
-									tk: (0, 0),
+									tk: SrcSpan::new(),
 								},
 							)),
 						],
@@ -950,7 +971,7 @@ impl Parser {
 							Operator::PostDec => Operator::AssSub,
 							_ => panic!(),
 						},
-						NodeData { ty: None, tk: meta },
+						NodeData { ty: None, tk },
 					);
 				}
 
@@ -963,7 +984,10 @@ impl Parser {
 						op,
 						NodeData {
 							ty: None,
-							tk: (begin_rhs, end_rhs - begin_rhs),
+							tk: SrcSpan {
+								start: begin_rhs,
+								len: end_rhs - begin_rhs,
+							},
 						},
 					);
 
@@ -983,7 +1007,10 @@ impl Parser {
 						op,
 						NodeData {
 							ty: None,
-							tk: (begin_rhs, end_rhs - begin_rhs),
+							tk: SrcSpan {
+								start: begin_rhs,
+								len: end_rhs - begin_rhs,
+							},
 						},
 					);
 				}

@@ -5,12 +5,13 @@ use std::{
 	sync::{Arc, RwLock},
 };
 
+use crate::lexer::SrcSpan;
+
 use super::{
 	controlflow::ControlFlow,
 	namespace::{Identifier, Name},
 	statement::Stmt,
 	types::{Basic, FnDef, Type},
-	TokenData,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -279,7 +280,7 @@ impl Display for Operator {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NodeData {
 	pub ty: Option<Type>,
-	pub tk: TokenData,
+	pub tk: SrcSpan,
 }
 
 // Expression node

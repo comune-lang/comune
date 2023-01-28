@@ -2,15 +2,15 @@
 
 use super::CIRPass;
 use crate::{
-	ast::TokenData,
 	cir::{CIRFunction, CIRStmt},
 	errors::{CMNError, CMNErrorCode},
+	lexer::SrcSpan,
 };
 pub struct CFGWalkerTest;
 pub struct Verify;
 
 impl CIRPass for Verify {
-	fn on_function(&self, func: &CIRFunction) -> Vec<(CMNError, TokenData)> {
+	fn on_function(&self, func: &CIRFunction) -> Vec<(CMNError, SrcSpan)> {
 		let mut errors = vec![];
 
 		// Check for empty blocks & blocks without terminators
@@ -26,7 +26,7 @@ impl CIRPass for Verify {
 						CMNError::new(CMNErrorCode::Custom(
 							"cIR block doesn't have a terminator".to_string(),
 						)),
-						(0, 0),
+						SrcSpan::new(),
 					));
 				}
 			} else {
@@ -34,7 +34,7 @@ impl CIRPass for Verify {
 					CMNError::new(CMNErrorCode::Custom(
 						"found empty block during cIR verification!".to_string(),
 					)),
-					(0, 0),
+					SrcSpan::new(),
 				))
 			}
 		}

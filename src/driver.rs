@@ -15,15 +15,11 @@ use crate::{
 		namespace::{Identifier, Namespace},
 	},
 	cir::{
-		analyze::{
-			lifeline::{self, LivenessState, VarInitCheck},
-			verify, CIRPassManager, DataFlowPass,
-		},
+		analyze::{lifeline::VarInitCheck, verify, CIRPassManager, DataFlowPass},
 		builder::CIRModuleBuilder,
-		CIRStmt, Operand, RValue,
 	},
 	errors::{CMNError, CMNErrorCode, CMNMessage, CMNMessageLog},
-	lexer::{self, Lexer},
+	lexer::{self, Lexer, SrcSpan},
 	llvm::{self, LLVMBackend},
 	parser::{ParseResult, Parser},
 };
@@ -114,7 +110,7 @@ pub fn launch_module_compilation(
 				.parser
 				.lexer
 				.borrow()
-				.log_msg_at(0, 0, CMNMessage::Error(e.clone()));
+				.log_msg_at(SrcSpan::new(), CMNMessage::Error(e.clone()));
 			return Err(e);
 		}
 	};
@@ -314,11 +310,11 @@ pub fn generate_code<'ctx>(
 			}
 		}
 		Err(e) => {
-			mod_state.parser.lexer.borrow().log_msg_at(
-				e.1 .0,
-				e.1 .1,
-				CMNMessage::Error(e.0.clone()),
-			);
+			mod_state
+				.parser
+				.lexer
+				.borrow()
+				.log_msg_at(e.1, CMNMessage::Error(e.0.clone()));
 			return Err(e.0);
 		}
 	}
@@ -357,13 +353,13 @@ pub fn generate_code<'ctx>(
 	if !cir_errors.is_empty() {
 		let mut return_errors = vec![];
 
-		for (error, tk) in cir_errors {
+		for (error, span) in cir_errors {
 			return_errors.push(error.clone());
 			mod_state
 				.parser
 				.lexer
 				.borrow()
-				.log_msg_at(tk.0, tk.1, CMNMessage::Error(error));
+				.log_msg_at(span, CMNMessage::Error(error));
 		}
 
 		return Err(CMNError::new(CMNErrorCode::Pack(return_errors)));

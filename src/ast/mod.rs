@@ -36,8 +36,6 @@ pub mod types;
 // This module contains structs and impls related to the AST, name resolution, and type validation.
 // TODO: This module is pretty big, the semantic analysis code could probably be organized better
 
-pub type TokenData = (usize, usize); // idx, len
-
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct Attribute {
 	pub name: String,
