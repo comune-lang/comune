@@ -844,31 +844,27 @@ impl Parser {
 			| Token::NumLiteral(_, _)
 			| Token::BoolLiteral(_)
 			| Token::Operator("[")
-			| Token::Keyword(_) => {
-				Expr::Atom(
-					self.parse_atom()?,
-					NodeData {
-						ty: None,
-						tk: SrcSpan {
-							start: begin_lhs,
-							len: self.get_prev_end_index() - begin_lhs,
-						},
+			| Token::Keyword(_) => Expr::Atom(
+				self.parse_atom()?,
+				NodeData {
+					ty: None,
+					tk: SrcSpan {
+						start: begin_lhs,
+						len: self.get_prev_end_index() - begin_lhs,
 					},
-				)
-			}
+				},
+			),
 
-			_ if self.is_at_identifier_token()? => {
-				Expr::Atom(
-					self.parse_atom()?,
-					NodeData {
-						ty: None,
-						tk: SrcSpan {
-							start: begin_lhs,
-							len: self.get_prev_end_index() - begin_lhs,
-						},
+			_ if self.is_at_identifier_token()? => Expr::Atom(
+				self.parse_atom()?,
+				NodeData {
+					ty: None,
+					tk: SrcSpan {
+						start: begin_lhs,
+						len: self.get_prev_end_index() - begin_lhs,
 					},
-				)
-			}
+				},
+			),
 
 			// Handle unary prefix operators
 			Token::Operator(tk) => {
@@ -1133,7 +1129,7 @@ impl Parser {
 		} else {
 			// Not at an identifier, parse the other kinds of Atom
 
-			let next = self.get_next()?;	
+			let next = self.get_next()?;
 
 			match current {
 				Token::StringLiteral(s) => result = Some(Atom::StringLit(s)),
@@ -1165,12 +1161,12 @@ impl Parser {
 
 				Token::Operator("[") => {
 					// Array literal
-					
+
 					let mut elements = vec![];
 
 					loop {
 						elements.push(self.parse_expression()?);
-						
+
 						if self.get_current()? == Token::Other(',') {
 							self.get_next()?;
 						} else if self.get_current()? == Token::Operator("]") {
@@ -1181,7 +1177,7 @@ impl Parser {
 					}
 
 					self.consume(&Token::Operator("]"))?;
-					
+
 					result = Some(Atom::ArrayLit(elements));
 				}
 
@@ -1362,7 +1358,6 @@ impl Parser {
 
 					// Invalid keyword at start of statement
 					_ => return Err(self.err(CMNErrorCode::UnexpectedKeyword)),
-				
 				},
 
 				_ => return Err(self.err(CMNErrorCode::UnexpectedToken)),

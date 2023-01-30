@@ -196,7 +196,9 @@ impl Display for RValue {
 				write!(f, "{expr_ty} ({lhs_ty} {lhs} {op} {rhs_ty} {rhs})")
 			}
 
-			RValue::Cast { from, to, val: op, .. } => {
+			RValue::Cast {
+				from, to, val: op, ..
+			} => {
 				write!(f, "{from} {op} as {to}")
 			}
 		}

@@ -227,7 +227,12 @@ impl CIRType {
 
 impl RValue {
 	pub fn const_bool(value: bool) -> Self {
-		RValue::Atom(CIRType::Basic(Basic::Bool), None, Operand::BoolLit(value, SrcSpan::new()), SrcSpan::new())
+		RValue::Atom(
+			CIRType::Basic(Basic::Bool),
+			None,
+			Operand::BoolLit(value, SrcSpan::new()),
+			SrcSpan::new(),
+		)
 	}
 
 	pub fn get_type(&self) -> &CIRType {

@@ -93,10 +93,7 @@ impl LiveVarCheckState {
 		}
 	}
 
-	fn eval_rvalue(
-		&mut self,
-		rval: &RValue,
-	) -> Result<(), (LValue, LivenessState, SrcSpan)> {
+	fn eval_rvalue(&mut self, rval: &RValue) -> Result<(), (LValue, LivenessState, SrcSpan)> {
 		match rval {
 			RValue::Atom(ty, _, op, _) => self.eval_operand(ty, op),
 
@@ -266,7 +263,9 @@ impl AnalysisResultHandler for VarInitCheck {
 							CMNError::new(CMNErrorCode::InvalidUse {
 								variable: func.get_variable_name(lval.local),
 								state: state.get_liveness(lval),
-							}), *span)),
+							}),
+							*span,
+						)),
 					},
 
 					_ => {}

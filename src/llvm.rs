@@ -488,7 +488,12 @@ impl<'ctx> LLVMBackend<'ctx> {
 				self.builder.build_store(store, result)
 			}
 
-			RValue::Cast { from, to, val, span: _ } => {
+			RValue::Cast {
+				from,
+				to,
+				val,
+				span: _,
+			} => {
 				match to {
 					CIRType::Tuple(TupleKind::Sum, types) => {
 						let val = self.generate_operand(from, val).unwrap();
@@ -804,7 +809,9 @@ impl<'ctx> LLVMBackend<'ctx> {
 					.const_int(u64::from(*b), false)
 					.as_basic_value_enum(),
 			),
-			Operand::LValue(l, _) => Some(self.builder.build_load(self.generate_lvalue(l), "lread")),
+			Operand::LValue(l, _) => {
+				Some(self.builder.build_load(self.generate_lvalue(l), "lread"))
+			}
 			Operand::Undef => Some(self.get_undef(&Self::to_basic_type(self.get_llvm_type(ty)))),
 		}
 	}

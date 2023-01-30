@@ -365,10 +365,7 @@ impl CIRModuleBuilder {
 				let var = self.insert_variable(Some(name.clone()), *props, ty.clone());
 
 				if let Some(val) = val {
-					self.write(CIRStmt::Assignment(
-						(var.clone(), *tk),
-						val
-					));
+					self.write(CIRStmt::Assignment((var.clone(), *tk), val));
 				}
 
 				self.name_map_stack
@@ -417,7 +414,12 @@ impl CIRModuleBuilder {
 				} else {
 					self.write(CIRStmt::Assignment(
 						(store_place, SrcSpan::new()),
-						RValue::Atom(cir_ty, None, Operand::LValue(value, SrcSpan::new()), SrcSpan::new()),
+						RValue::Atom(
+							cir_ty,
+							None,
+							Operand::LValue(value, SrcSpan::new()),
+							SrcSpan::new(),
+						),
 					));
 				}
 			}
@@ -450,10 +452,7 @@ impl CIRModuleBuilder {
 
 		if let Some(elem) = elem {
 			if let Some(rval) = self.generate_expr(elem) {
-				self.write(CIRStmt::Assignment(
-					(lval, elem.get_node_data().tk),
-					rval,
-				));
+				self.write(CIRStmt::Assignment((lval, elem.get_node_data().tk), rval));
 			}
 		}
 	}
@@ -484,7 +483,15 @@ impl CIRModuleBuilder {
 
 			self.name_map_stack.pop();
 
-			(jump_idx, Some(RValue::Atom(result_type, None, result_ir, result.get_node_data().tk)))
+			(
+				jump_idx,
+				Some(RValue::Atom(
+					result_type,
+					None,
+					result_ir,
+					result.get_node_data().tk,
+				)),
+			)
 		} else {
 			self.name_map_stack.pop();
 			(jump_idx, Some(Self::get_void_rvalue()))
@@ -501,15 +508,30 @@ impl CIRModuleBuilder {
 		match expr {
 			Expr::Atom(atom, _) => match atom {
 				Atom::IntegerLit(i, b) => Some(if let Some(b) = b {
-					RValue::Atom(CIRType::Basic(*b), None, Operand::IntegerLit(*i, span), span)
+					RValue::Atom(
+						CIRType::Basic(*b),
+						None,
+						Operand::IntegerLit(*i, span),
+						span,
+					)
 				} else {
-					RValue::Atom(self.convert_type(expr_ty), None, Operand::IntegerLit(*i, span), span)
+					RValue::Atom(
+						self.convert_type(expr_ty),
+						None,
+						Operand::IntegerLit(*i, span),
+						span,
+					)
 				}),
 
 				Atom::FloatLit(f, b) => Some(if let Some(b) = b {
 					RValue::Atom(CIRType::Basic(*b), None, Operand::FloatLit(*f, span), span)
 				} else {
-					RValue::Atom(self.convert_type(expr_ty), None, Operand::FloatLit(*f, span), span)
+					RValue::Atom(
+						self.convert_type(expr_ty),
+						None,
+						Operand::FloatLit(*f, span),
+						span,
+					)
 				}),
 
 				Atom::BoolLit(b) => Some(RValue::Atom(
@@ -539,21 +561,29 @@ impl CIRModuleBuilder {
 				Atom::ArrayLit(elems) => {
 					let cir_ty = self.convert_type(expr_ty);
 
-					let tmp = self.insert_temporary(cir_ty.clone(), RValue::Atom(cir_ty.clone(), None, Operand::Undef, span));
-					
+					let tmp = self.insert_temporary(
+						cir_ty.clone(),
+						RValue::Atom(cir_ty.clone(), None, Operand::Undef, span),
+					);
+
 					for (i, expr) in elems.iter().enumerate() {
 						let expr_ir = self.generate_expr(expr)?;
 
 						let mut tmp_idx = tmp.clone();
-						tmp_idx.projection.push(PlaceElem::Index(CIRType::Basic(Basic::PtrSizeInt { signed: false }), Operand::IntegerLit(i as i128, SrcSpan::new())));
+						tmp_idx.projection.push(PlaceElem::Index(
+							CIRType::Basic(Basic::PtrSizeInt { signed: false }),
+							Operand::IntegerLit(i as i128, SrcSpan::new()),
+						));
 
-						self.write(CIRStmt::Assignment(
-							(tmp_idx, SrcSpan::new()), 
-							expr_ir)
-						)
+						self.write(CIRStmt::Assignment((tmp_idx, SrcSpan::new()), expr_ir))
 					}
 
-					Some(RValue::Atom(cir_ty, None, Operand::LValue(tmp, SrcSpan::new()), span))
+					Some(RValue::Atom(
+						cir_ty,
+						None,
+						Operand::LValue(tmp, SrcSpan::new()),
+						span,
+					))
 				}
 
 				Atom::AlgebraicLit(ty, elems) => {
@@ -612,10 +642,13 @@ impl CIRModuleBuilder {
 					Some(RValue::Atom(
 						lval_ty.clone(),
 						None,
-						Operand::LValue(LValue {
-							local: idx,
-							projection: vec![],
-						}, span), 
+						Operand::LValue(
+							LValue {
+								local: idx,
+								projection: vec![],
+							},
+							span,
+						),
 						span,
 					))
 				}
@@ -736,7 +769,12 @@ impl CIRModuleBuilder {
 
 						if has_result {
 							if let Some(result) = result_loc {
-								Some(RValue::Atom(cir_ty, None, Operand::LValue(result, span), span))
+								Some(RValue::Atom(
+									cir_ty,
+									None,
+									Operand::LValue(result, span),
+									span,
+								))
 							} else {
 								Some(RValue::Atom(cir_ty, None, Operand::Undef, span))
 							}
@@ -849,7 +887,12 @@ impl CIRModuleBuilder {
 						let disc_ty = CIRType::Basic(scrutinee_ty.get_discriminant_type().unwrap());
 						let disc_lval = self.insert_temporary(
 							disc_ty.clone(),
-							RValue::Atom(disc_ty.clone(), None, Operand::IntegerLit(0, SrcSpan::new()), SrcSpan::new()),
+							RValue::Atom(
+								disc_ty.clone(),
+								None,
+								Operand::IntegerLit(0, SrcSpan::new()),
+								SrcSpan::new(),
+							),
 						);
 
 						let mut branches_ir = vec![];
@@ -889,7 +932,10 @@ impl CIRModuleBuilder {
 								RValue::Cons(
 									disc_ty.clone(),
 									[
-										(disc_ty.clone(), Operand::IntegerLit(i as i128 + 1, SrcSpan::new())),
+										(
+											disc_ty.clone(),
+											Operand::IntegerLit(i as i128 + 1, SrcSpan::new()),
+										),
 										(disc_ty.clone(), cast_ir),
 									],
 									Operator::Mul,
@@ -902,12 +948,15 @@ impl CIRModuleBuilder {
 								RValue::Cons(
 									disc_ty.clone(),
 									[
-										(disc_ty.clone(), Operand::LValue(disc_lval.clone(), SrcSpan::new())),
+										(
+											disc_ty.clone(),
+											Operand::LValue(disc_lval.clone(), SrcSpan::new()),
+										),
 										(disc_ty.clone(), mult_ir.clone()),
 									],
 									Operator::Add,
-									SrcSpan::new()
-								),	
+									SrcSpan::new(),
+								),
 							);
 
 							self.write(add_ir);
@@ -965,7 +1014,12 @@ impl CIRModuleBuilder {
 
 						if has_result {
 							if let Some(result_loc) = result_loc {
-								Some(RValue::Atom(cir_ty, None, Operand::LValue(result_loc, span), span))
+								Some(RValue::Atom(
+									cir_ty,
+									None,
+									Operand::LValue(result_loc, span),
+									span,
+								))
 							} else {
 								Some(Self::get_void_rvalue())
 							}
@@ -984,25 +1038,33 @@ impl CIRModuleBuilder {
 						return Some(RValue::Atom(
 							cir_ty,
 							None,
-							Operand::LValue(LValue {
-								local,
-								projection: vec![],
-							}, SrcSpan::new()),
+							Operand::LValue(
+								LValue {
+									local,
+									projection: vec![],
+								},
+								SrcSpan::new(),
+							),
 							SrcSpan::new(),
 						));
 					}
 
 					let once_uneval = &mut *once.write().unwrap();
 					let OnceAtom::Uneval(expr) = once_uneval else { panic!() };
-					
+
 					let span = expr.get_node_data().tk;
 
 					let expr_ir = self.generate_expr(expr)?;
 					let local = self.insert_temporary(cir_ty.clone(), expr_ir);
-					
+
 					*once_uneval = OnceAtom::Eval(local.local);
 
-					Some(RValue::Atom(cir_ty, None, Operand::LValue(local, span), span))
+					Some(RValue::Atom(
+						cir_ty,
+						None,
+						Operand::LValue(local, span),
+						span,
+					))
 				}
 			},
 
@@ -1024,7 +1086,7 @@ impl CIRModuleBuilder {
 							(r_ty.clone(), r_tmp),
 						],
 						op,
-						expr.get_node_data().tk
+						expr.get_node_data().tk,
 					);
 
 					let expr_tmp = self.get_as_operand(l_ty.clone(), expr_ir);
@@ -1034,7 +1096,12 @@ impl CIRModuleBuilder {
 						RValue::Atom(r_ty, None, expr_tmp, rhs.get_node_data().tk),
 					));
 
-					Some(RValue::Atom(l_ty, None, Operand::LValue(lval_ir, lval_span), span))
+					Some(RValue::Atom(
+						l_ty,
+						None,
+						Operand::LValue(lval_ir, lval_span),
+						span,
+					))
 				} else {
 					match op {
 						Operator::MemberAccess => match &**rhs {
@@ -1045,7 +1112,12 @@ impl CIRModuleBuilder {
 							Expr::Atom(Atom::Identifier(_), _) => {
 								let (lval, lval_span) = self.generate_lvalue_expr(expr)?;
 								let cir_ty = self.convert_type(rhs.get_type());
-								Some(RValue::Atom(cir_ty, None, Operand::LValue(lval, lval_span), span))
+								Some(RValue::Atom(
+									cir_ty,
+									None,
+									Operand::LValue(lval, lval_span),
+									span,
+								))
 							}
 
 							_ => panic!(),
@@ -1054,7 +1126,12 @@ impl CIRModuleBuilder {
 						Operator::Subscr => {
 							let (lval, lval_span) = self.generate_lvalue_expr(expr)?;
 							let cir_ty = self.convert_type(expr_ty);
-							Some(RValue::Atom(cir_ty, None, Operand::LValue(lval, lval_span), span))
+							Some(RValue::Atom(
+								cir_ty,
+								None,
+								Operand::LValue(lval, lval_span),
+								span,
+							))
 						}
 
 						Operator::Assign => {
@@ -1070,7 +1147,12 @@ impl CIRModuleBuilder {
 								RValue::Atom(r_ty, None, r_tmp, rhs.get_node_data().tk),
 							));
 
-							Some(RValue::Atom(l_ty, None, Operand::LValue(lval_ir, lval_span), span))
+							Some(RValue::Atom(
+								l_ty,
+								None,
+								Operand::LValue(lval_ir, lval_span),
+								span,
+							))
 						}
 
 						_ => {
@@ -1084,7 +1166,7 @@ impl CIRModuleBuilder {
 								self.convert_type(expr_ty),
 								[(lhs_ty, lhs_tmp), (rhs_ty, rhs_tmp)],
 								op.clone(),
-								expr.get_node_data().tk
+								expr.get_node_data().tk,
 							))
 						}
 					}
@@ -1096,7 +1178,12 @@ impl CIRModuleBuilder {
 				let cir_ty = self.convert_type(sub.get_type());
 				let temp = self.get_as_operand(cir_ty.clone(), sub_expr);
 
-				Some(RValue::Atom(cir_ty, Some(op.clone()), temp, expr.get_node_data().tk))
+				Some(RValue::Atom(
+					cir_ty,
+					Some(op.clone()),
+					temp,
+					expr.get_node_data().tk,
+				))
 			}
 		}
 	}
@@ -1163,7 +1250,7 @@ impl CIRModuleBuilder {
 				self.convert_type(&ret),
 				None,
 				Operand::LValue(result, span),
-				span
+				span,
 			))
 		} else {
 			Some(Self::get_void_rvalue())
@@ -1173,10 +1260,13 @@ impl CIRModuleBuilder {
 	fn generate_lvalue_expr(&mut self, expr: &Expr) -> Option<(LValue, SrcSpan)> {
 		match expr {
 			Expr::Atom(atom, meta) => match atom {
-				Atom::Identifier(id) => Some((LValue {
-					local: self.get_var_index(id.expect_scopeless().unwrap()).unwrap(),
-					projection: vec![],
-				}, meta.tk)),
+				Atom::Identifier(id) => Some((
+					LValue {
+						local: self.get_var_index(id.expect_scopeless().unwrap()).unwrap(),
+						projection: vec![],
+					},
+					meta.tk,
+				)),
 
 				Atom::Once(_) => {
 					let RValue::Atom(_, None, Operand::LValue(lvalue, _), span) = self.generate_expr(expr)? else { panic!() };
@@ -1257,15 +1347,21 @@ impl CIRModuleBuilder {
 						[
 							(
 								disc_type.clone(),
-								Operand::LValue(LValue {
-									local: value.local,
-									projection: vec![PlaceElem::Field(0)],
-								}, SrcSpan::new()),
+								Operand::LValue(
+									LValue {
+										local: value.local,
+										projection: vec![PlaceElem::Field(0)],
+									},
+									SrcSpan::new(),
+								),
 							),
-							(disc_type, Operand::IntegerLit(discriminant as i128, SrcSpan::new())),
+							(
+								disc_type,
+								Operand::IntegerLit(discriminant as i128, SrcSpan::new()),
+							),
 						],
 						Operator::Eq,
-						SrcSpan::new()
+						SrcSpan::new(),
 					)
 				} else {
 					todo!()
@@ -1279,7 +1375,11 @@ impl CIRModuleBuilder {
 	fn generate_branch(&mut self, cond: Operand, a: BlockIndex, b: BlockIndex) {
 		self.write(CIRStmt::Switch(
 			cond,
-			vec![(CIRType::Basic(Basic::Bool), Operand::BoolLit(true, SrcSpan::new()), a)],
+			vec![(
+				CIRType::Basic(Basic::Bool),
+				Operand::BoolLit(true, SrcSpan::new()),
+				a,
+			)],
 			b,
 		));
 	}
@@ -1342,6 +1442,11 @@ impl CIRModuleBuilder {
 	}
 
 	fn get_void_rvalue() -> RValue {
-		RValue::Atom(CIRType::Basic(Basic::Void), None, Operand::Undef, SrcSpan::new())
+		RValue::Atom(
+			CIRType::Basic(Basic::Void),
+			None,
+			Operand::Undef,
+			SrcSpan::new(),
+		)
 	}
 }
