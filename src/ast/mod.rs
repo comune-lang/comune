@@ -8,7 +8,7 @@ use std::{
 use types::{Basic, Type, TypeDef};
 
 use crate::{
-	constexpr::{ConstEval, ConstExpr},
+	constexpr::{ConstEval, ConstExpr, ConstValue},
 	errors::{CMNError, CMNErrorCode},
 	lexer::Token,
 	parser::{AnalyzeResult, ParseResult},
@@ -1147,7 +1147,52 @@ impl Atom {
 
 			Atom::FnCall { .. } => validate_fn_call(self, scope, meta),
 
-			Atom::ArrayLit(_) => todo!(),
+			Atom::ArrayLit(elems) => {
+				let array_len = Arc::new(RwLock::new(vec![
+					ConstExpr::Result(
+						ConstValue::Integral(
+							elems.len() as i128, 
+							Some(Basic::PtrSizeInt { signed: false })
+						)
+					)
+				]));
+
+				match &meta.ty {
+					Some(Type::Array(ty, _)) => {
+						for elem in elems {
+							elem.get_node_data_mut().ty = Some(*ty.clone());
+	
+							elem.validate(scope)?;
+						}
+
+						Ok(Type::Array(ty.clone(), array_len))
+					}
+
+					_ => {
+						let mut last_ty = None;
+						
+						for elem in elems {
+							let current_ty = elem.validate(scope)?;
+							
+							if let Some(last_ty) = &last_ty {
+								if &current_ty != last_ty {
+									todo!()
+								}
+							} else {
+								last_ty = Some(current_ty.clone());
+							}
+						}
+						if let Some(ty) = &meta.ty {
+							// Type hint is not an array type
+							Err((CMNError::new(CMNErrorCode::AssignTypeMismatch { expr: Type::Array(Box::new(last_ty.unwrap()), array_len), to: ty.clone() }), meta.tk))
+						} else {
+							Ok(Type::Array(Box::new(last_ty.unwrap()), array_len))
+						}
+					
+					}
+					
+				}	
+			},
 
 			Atom::AlgebraicLit(ty, elems) => {
 				if let Type::TypeRef(ItemRef::Resolved(TypeRef { def, args, .. })) = ty {

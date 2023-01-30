@@ -96,18 +96,17 @@ impl LiveVarCheckState {
 	fn eval_rvalue(
 		&mut self,
 		rval: &RValue,
-		token_data: SrcSpan,
 	) -> Result<(), (LValue, LivenessState, SrcSpan)> {
 		match rval {
-			RValue::Atom(ty, _, op) => self.eval_operand(ty, op, token_data),
+			RValue::Atom(ty, _, op, _) => self.eval_operand(ty, op),
 
-			RValue::Cons(_, [(lty, lhs), (rty, rhs)], _) => {
-				self.eval_operand(lty, lhs, token_data)?;
-				self.eval_operand(rty, rhs, token_data)?;
+			RValue::Cons(_, [(lty, lhs), (rty, rhs)], ..) => {
+				self.eval_operand(lty, lhs)?;
+				self.eval_operand(rty, rhs)?;
 				Ok(())
 			}
 
-			RValue::Cast { from, val, .. } => self.eval_operand(from, val, token_data),
+			RValue::Cast { from, val, .. } => self.eval_operand(from, val),
 		}
 	}
 
@@ -115,10 +114,9 @@ impl LiveVarCheckState {
 		&mut self,
 		_ty: &CIRType,
 		op: &Operand,
-		token_data: SrcSpan,
 	) -> Result<(), (LValue, LivenessState, SrcSpan)> {
 		match op {
-			Operand::LValue(lval) => self.eval_lvalue(_ty, lval, token_data)?,
+			Operand::LValue(lval, span) => self.eval_lvalue(_ty, lval, *span)?,
 
 			_ => {}
 		}
@@ -129,7 +127,7 @@ impl LiveVarCheckState {
 		&mut self,
 		_ty: &CIRType,
 		lval: &LValue,
-		token_data: SrcSpan,
+		span: SrcSpan,
 	) -> Result<(), (LValue, LivenessState, SrcSpan)> {
 		let sub_liveness = self.get_liveness(lval);
 
@@ -139,7 +137,7 @@ impl LiveVarCheckState {
 			self.set_liveness(lval, LivenessState::Moved);
 			Ok(())
 		} else {
-			Err((lval.clone(), sub_liveness, token_data))
+			Err((lval.clone(), sub_liveness, span))
 		}
 	}
 }
@@ -233,8 +231,8 @@ impl Analysis for VarInitCheck {
 		state: &mut Self::Domain,
 	) {
 		match stmt {
-			CIRStmt::Assignment((lval, _), (rval, token_data)) => {
-				state.eval_rvalue(rval, *token_data);
+			CIRStmt::Assignment((lval, _), rval) => {
+				state.eval_rvalue(rval);
 				state.set_liveness(lval, LivenessState::Live);
 			}
 
@@ -259,18 +257,16 @@ impl AnalysisResultHandler for VarInitCheck {
 
 				// Check for uses of uninit/moved lvalues
 				match stmt {
-					CIRStmt::Assignment(_, (RValue::Atom(_, _, Operand::LValue(lval)), _))
-					| CIRStmt::Switch(Operand::LValue(lval), ..)
-					| CIRStmt::Return(Some((Operand::LValue(lval), _))) => match state.get_liveness(lval) {
+					CIRStmt::Assignment(_, RValue::Atom(_, _, Operand::LValue(lval, _), span))
+					| CIRStmt::Switch(Operand::LValue(lval, span), ..)
+					| CIRStmt::Return(Some(Operand::LValue(lval, span))) => match state.get_liveness(lval) {
 						LivenessState::Live => {}
 
 						_ => errors.push((
 							CMNError::new(CMNErrorCode::InvalidUse {
 								variable: func.get_variable_name(lval.local),
 								state: state.get_liveness(lval),
-							}),
-							SrcSpan::new(),
-						)),
+							}), *span)),
 					},
 
 					_ => {}

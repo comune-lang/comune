@@ -91,6 +91,7 @@ fn main() -> color_eyre::eyre::Result<()> {
 	// Launch multithreaded compilation
 
 	let error_sender = errors::spawn_logger(args.backtrace);
+	
 	rayon::in_place_scope(|s| {
 		for input_file in &args.input_files {
 			let input_file = fs::canonicalize(input_file).unwrap();

@@ -76,12 +76,13 @@ impl Hash for PlaceElem {
 // All LValues are also usable as RValues, using Operand::LValue(LValue).
 #[derive(Clone, Debug)]
 pub enum RValue {
-	Atom(CIRType, Option<Operator>, Operand),
-	Cons(CIRType, [(CIRType, Operand); 2], Operator),
+	Atom(CIRType, Option<Operator>, Operand, SrcSpan),
+	Cons(CIRType, [(CIRType, Operand); 2], Operator, SrcSpan),
 	Cast {
 		from: CIRType,
 		to: CIRType,
 		val: Operand,
+		span: SrcSpan,
 	},
 }
 
@@ -90,12 +91,12 @@ pub enum RValue {
 // Crucially, operands do not have side effects. Yes, past Ash, I'm talking to you.
 #[derive(Clone, Debug)]
 pub enum Operand {
-	IntegerLit(i128),
-	FloatLit(f64),
-	StringLit(String),
-	CStringLit(CString),
-	BoolLit(bool),
-	LValue(LValue),
+	IntegerLit(i128, SrcSpan),
+	FloatLit(f64, SrcSpan),
+	StringLit(String, SrcSpan),
+	CStringLit(CString, SrcSpan),
+	BoolLit(bool, SrcSpan),
+	LValue(LValue, SrcSpan),
 	Undef,
 }
 
@@ -128,11 +129,11 @@ pub enum CIRTypeDef {
 
 #[derive(Debug, Clone)]
 pub enum CIRStmt {
-	Expression(RValue, SrcSpan),
-	Assignment((LValue, SrcSpan), (RValue, SrcSpan)),
+	Expression(RValue),
+	Assignment((LValue, SrcSpan), RValue),
 	Jump(BlockIndex),
 	Switch(Operand, Vec<(CIRType, Operand, BlockIndex)>, BlockIndex),
-	Return(Option<(Operand, SrcSpan)>),
+	Return(Option<Operand>),
 	FnCall {
 		id: FuncID,
 		args: Vec<LValue>,
@@ -226,12 +227,12 @@ impl CIRType {
 
 impl RValue {
 	pub fn const_bool(value: bool) -> Self {
-		RValue::Atom(CIRType::Basic(Basic::Bool), None, Operand::BoolLit(value))
+		RValue::Atom(CIRType::Basic(Basic::Bool), None, Operand::BoolLit(value, SrcSpan::new()), SrcSpan::new())
 	}
 
 	pub fn get_type(&self) -> &CIRType {
 		match self {
-			RValue::Atom(ty, _, _) | RValue::Cons(ty, _, _) => ty,
+			RValue::Atom(ty, ..) | RValue::Cons(ty, ..) => ty,
 			RValue::Cast { to, .. } => to,
 		}
 	}

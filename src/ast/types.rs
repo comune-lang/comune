@@ -424,7 +424,7 @@ impl PartialEq for Type {
 			(Self::Pointer(l0), Self::Pointer(r0)) => l0 == r0,
 			(Self::TypeRef(l0), Self::TypeRef(r0)) => l0 == r0,
 			(Self::TypeParam(l0), Self::TypeParam(r0)) => l0 == r0,
-			(Self::Array(l0, _l1), Self::Array(r0, _r1)) => l0 == r0 && todo!(),
+			(Self::Array(l0, _l1), Self::Array(r0, _r1)) => l0 == r0,
 			(Self::Tuple(l0, l1), Self::Tuple(r0, r1)) => l0 == r0 && l1 == r1,
 			(Self::Never, Self::Never) => true,
 			_ => false,

@@ -837,25 +837,15 @@ impl Parser {
 		let begin_lhs = self.get_current_start_index();
 
 		// Get initial part of expression, could be an Atom or the operator of a unary Cons
-		let mut lhs = if self.is_at_identifier_token()? {
-			Expr::Atom(
-				self.parse_atom()?,
-				NodeData {
-					ty: None,
-					tk: SrcSpan {
-						start: begin_lhs,
-						len: self.get_prev_end_index() - begin_lhs,
-					},
-				},
-			)
-		} else {
-			match current {
-				// Parse atom
-				Token::StringLiteral(_)
-				| Token::CStringLiteral(_)
-				| Token::NumLiteral(_, _)
-				| Token::BoolLiteral(_)
-				| Token::Keyword(_) => Expr::Atom(
+		let mut lhs = match current {
+			// Parse atom
+			Token::StringLiteral(_)
+			| Token::CStringLiteral(_)
+			| Token::NumLiteral(_, _)
+			| Token::BoolLiteral(_)
+			| Token::Operator("[")
+			| Token::Keyword(_) => {
+				Expr::Atom(
 					self.parse_atom()?,
 					NodeData {
 						ty: None,
@@ -864,47 +854,60 @@ impl Parser {
 							len: self.get_prev_end_index() - begin_lhs,
 						},
 					},
-				),
+				)
+			}
 
-				// Handle unary prefix operators
-				Token::Operator(tk) => {
-					let Some(op) = Operator::get_operator(tk, false) else {
-							return Err(self.err(CMNErrorCode::UnexpectedToken))
-						};
+			_ if self.is_at_identifier_token()? => {
+				Expr::Atom(
+					self.parse_atom()?,
+					NodeData {
+						ty: None,
+						tk: SrcSpan {
+							start: begin_lhs,
+							len: self.get_prev_end_index() - begin_lhs,
+						},
+					},
+				)
+			}
 
-					self.get_next()?;
+			// Handle unary prefix operators
+			Token::Operator(tk) => {
+				let Some(op) = Operator::get_operator(tk, false) else {
+						return Err(self.err(CMNErrorCode::UnexpectedToken))
+					};
 
-					if let Operator::Call = op {
-						// Special case; parse sub-expression
-						let sub = self.parse_expression_bp(0)?;
+				self.get_next()?;
 
-						current = self.get_current()?;
+				if let Operator::Call = op {
+					// Special case; parse sub-expression
+					let sub = self.parse_expression_bp(0)?;
 
-						if let Token::Operator(op) = current {
-							if op != ")" {
-								return Err(self.err(CMNErrorCode::UnexpectedToken));
-							}
-							self.get_next()?;
-							sub
-						} else {
+					current = self.get_current()?;
+
+					if let Token::Operator(op) = current {
+						if op != ")" {
 							return Err(self.err(CMNErrorCode::UnexpectedToken));
 						}
+						self.get_next()?;
+						sub
 					} else {
-						let rhs = self.parse_expression_bp(op.get_binding_power())?;
-
-						let end_index = self.get_prev_end_index();
-
-						let tk = SrcSpan {
-							start: begin_lhs,
-							len: end_index - begin_lhs,
-						};
-						Expr::Unary(Box::new(rhs), op, NodeData { ty: None, tk })
+						return Err(self.err(CMNErrorCode::UnexpectedToken));
 					}
-				}
+				} else {
+					let rhs = self.parse_expression_bp(op.get_binding_power())?;
 
-				_ => {
-					return Err(self.err(CMNErrorCode::UnexpectedToken));
+					let end_index = self.get_prev_end_index();
+
+					let tk = SrcSpan {
+						start: begin_lhs,
+						len: end_index - begin_lhs,
+					};
+					Expr::Unary(Box::new(rhs), op, NodeData { ty: None, tk })
 				}
+			}
+
+			_ => {
+				return Err(self.err(CMNErrorCode::UnexpectedToken));
 			}
 		};
 
@@ -1128,7 +1131,9 @@ impl Parser {
 				}
 			}
 		} else {
-			let next = self.get_next()?;
+			// Not at an identifier, parse the other kinds of Atom
+
+			let next = self.get_next()?;	
 
 			match current {
 				Token::StringLiteral(s) => result = Some(Atom::StringLit(s)),
@@ -1158,9 +1163,32 @@ impl Parser {
 
 				Token::BoolLiteral(b) => result = Some(Atom::BoolLit(b)),
 
+				Token::Operator("[") => {
+					// Array literal
+					
+					let mut elements = vec![];
+
+					loop {
+						elements.push(self.parse_expression()?);
+						
+						if self.get_current()? == Token::Other(',') {
+							self.get_next()?;
+						} else if self.get_current()? == Token::Operator("]") {
+							break;
+						} else {
+							return Err(self.err(CMNErrorCode::UnexpectedToken));
+						}
+					}
+
+					self.consume(&Token::Operator("]"))?;
+					
+					result = Some(Atom::ArrayLit(elements));
+				}
+
 				Token::Keyword(keyword) => match keyword {
-					// Parse return statement
 					"return" => {
+						// Parse return statement
+
 						if next == Token::Other(';') || next == Token::Other('}') {
 							result =
 								Some(Atom::CtrlFlow(Box::new(ControlFlow::Return { expr: None })));
@@ -1232,8 +1260,9 @@ impl Parser {
 						})));
 					}
 
-					// Parse if statement
 					"if" => {
+						// Parse if statement
+
 						// Parse condition
 						let cond = self.parse_expression()?;
 
@@ -1277,11 +1306,7 @@ impl Parser {
 					// Parse for loop
 					"for" => {
 						// Check opening brace
-						if token_compare(&next, "(") {
-							current = self.get_next()?;
-						} else {
-							return Err(self.err(CMNErrorCode::UnexpectedToken));
-						}
+						self.consume(&Token::Operator("("))?;
 
 						let mut init = None;
 						let mut cond = None;
@@ -1337,6 +1362,7 @@ impl Parser {
 
 					// Invalid keyword at start of statement
 					_ => return Err(self.err(CMNErrorCode::UnexpectedKeyword)),
+				
 				},
 
 				_ => return Err(self.err(CMNErrorCode::UnexpectedToken)),

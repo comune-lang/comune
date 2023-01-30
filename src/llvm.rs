@@ -233,7 +233,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 						panic!("loose Expression found in LLVM codegen!")
 					}
 
-					CIRStmt::Assignment((lval, _), (expr, _)) => {
+					CIRStmt::Assignment((lval, _), expr) => {
 						self.generate_expr(self.generate_lvalue(lval), expr);
 					}
 
@@ -269,7 +269,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 					}
 
 					CIRStmt::Return(expr) => {
-						if let Some((expr, _)) = expr {
+						if let Some(expr) = expr {
 							if let Some(result) = self.generate_operand(&t.ret, expr) {
 								self.builder.build_return(Some(&result));
 							} else {
@@ -366,7 +366,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 	fn generate_expr(&self, store: PointerValue<'ctx>, expr: &RValue) -> InstructionValue<'ctx> {
 		match expr {
-			RValue::Atom(ty, op_opt, atom) => {
+			RValue::Atom(ty, op_opt, atom, _) => {
 				match op_opt {
 					Some(Operator::Deref) => {
 						let atom_ir = Self::to_basic_value(
@@ -385,7 +385,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 					}
 
 					Some(Operator::Ref) => {
-						if let Operand::LValue(lval) = atom {
+						if let Operand::LValue(lval, _) = atom {
 							self.builder.build_store(
 								store,
 								self.generate_lvalue(lval).as_basic_value_enum(),
@@ -404,7 +404,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 				}
 			}
 
-			RValue::Cons(expr_ty, [(lhs_ty, lhs), (rhs_ty, rhs)], op) => {
+			RValue::Cons(expr_ty, [(lhs_ty, lhs), (rhs_ty, rhs)], op, _) => {
 				let lhs_v = Self::to_basic_value(
 					self.generate_operand(lhs_ty, lhs)
 						.unwrap()
@@ -488,7 +488,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 				self.builder.build_store(store, result)
 			}
 
-			RValue::Cast { from, to, val } => {
+			RValue::Cast { from, to, val, span: _ } => {
 				match to {
 					CIRType::Tuple(TupleKind::Sum, types) => {
 						let val = self.generate_operand(from, val).unwrap();
@@ -722,7 +722,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 	fn generate_operand(&self, ty: &CIRType, expr: &Operand) -> Option<BasicValueEnum<'ctx>> {
 		match expr {
-			Operand::StringLit(s) => {
+			Operand::StringLit(s, _) => {
 				let len = s.as_bytes().len().try_into().unwrap();
 				let string_t = self.context.i8_type().array_type(len);
 				let val = self
@@ -749,7 +749,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 				)
 			}
 
-			Operand::CStringLit(s) => {
+			Operand::CStringLit(s, _) => {
 				let val = self.module.add_global(
 					self.context
 						.i8_type()
@@ -786,25 +786,25 @@ impl<'ctx> LLVMBackend<'ctx> {
 				)
 			}
 
-			Operand::IntegerLit(i) => Some(
+			Operand::IntegerLit(i, _) => Some(
 				Self::to_basic_type(self.get_llvm_type(ty))
 					.into_int_type()
 					.const_int(*i as u64, true)
 					.as_basic_value_enum(),
 			),
-			Operand::FloatLit(f) => Some(
+			Operand::FloatLit(f, _) => Some(
 				Self::to_basic_type(self.get_llvm_type(ty))
 					.into_float_type()
 					.const_float(*f)
 					.as_basic_value_enum(),
 			),
-			Operand::BoolLit(b) => Some(
+			Operand::BoolLit(b, _) => Some(
 				self.context
 					.bool_type()
 					.const_int(u64::from(*b), false)
 					.as_basic_value_enum(),
 			),
-			Operand::LValue(l) => Some(self.builder.build_load(self.generate_lvalue(l), "lread")),
+			Operand::LValue(l, _) => Some(self.builder.build_load(self.generate_lvalue(l), "lread")),
 			Operand::Undef => Some(self.get_undef(&Self::to_basic_type(self.get_llvm_type(ty)))),
 		}
 	}

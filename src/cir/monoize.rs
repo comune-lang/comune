@@ -99,7 +99,7 @@ impl CIRModule {
 				}
 
 				match stmt {
-					CIRStmt::Expression(expr, _) | CIRStmt::Assignment(_, (expr, _)) => {
+					CIRStmt::Expression(expr) | CIRStmt::Assignment(_, expr) => {
 						Self::monoize_rvalue_types(types, expr, param_map, ty_instances);
 					}
 
@@ -192,7 +192,7 @@ impl CIRModule {
 				Self::monoize_type(types, ty, param_map, type_instances);
 			}
 
-			RValue::Cons(ty, [(lty, _), (rty, _)], _) => {
+			RValue::Cons(ty, [(lty, _), (rty, _)], ..) => {
 				Self::monoize_type(types, lty, param_map, type_instances);
 				Self::monoize_type(types, rty, param_map, type_instances);
 

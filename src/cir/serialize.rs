@@ -110,8 +110,8 @@ impl Display for CIRFunction {
 impl Display for CIRStmt {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match self {
-			CIRStmt::Expression(expr, _) => writeln!(f, "{expr};"),
-			CIRStmt::Assignment((lval, _), (expr, _)) => writeln!(f, "{lval} = {expr};"),
+			CIRStmt::Expression(expr) => writeln!(f, "{expr};"),
+			CIRStmt::Assignment((lval, _), expr) => writeln!(f, "{lval} = {expr};"),
 			CIRStmt::Jump(block) => writeln!(f, "jmp bb{block};"),
 			CIRStmt::Switch(expr, branches, else_branch) => {
 				writeln!(f, "switch {expr} {{")?;
@@ -124,7 +124,7 @@ impl Display for CIRStmt {
 			}
 
 			CIRStmt::Return(expr_opt) => {
-				if let Some((expr, _)) = expr_opt {
+				if let Some(expr) = expr_opt {
 					writeln!(f, "ret {expr};")
 				} else {
 					writeln!(f, "ret;")
@@ -184,7 +184,7 @@ impl Display for CIRStmt {
 impl Display for RValue {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match self {
-			RValue::Atom(ty, op_opt, value) => {
+			RValue::Atom(ty, op_opt, value, _) => {
 				if let Some(op) = op_opt {
 					write!(f, "{op} {ty} {value}")
 				} else {
@@ -192,11 +192,11 @@ impl Display for RValue {
 				}
 			}
 
-			RValue::Cons(expr_ty, [(lhs_ty, lhs), (rhs_ty, rhs)], op) => {
+			RValue::Cons(expr_ty, [(lhs_ty, lhs), (rhs_ty, rhs)], op, _) => {
 				write!(f, "{expr_ty} ({lhs_ty} {lhs} {op} {rhs_ty} {rhs})")
 			}
 
-			RValue::Cast { from, to, val: op } => {
+			RValue::Cast { from, to, val: op, .. } => {
 				write!(f, "{from} {op} as {to}")
 			}
 		}
@@ -221,16 +221,16 @@ impl Display for LValue {
 impl Display for Operand {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match self {
-			Operand::IntegerLit(num) => write!(f, "{num}"),
-			Operand::FloatLit(num) => write!(f, "{num}"),
-			Operand::StringLit(s) => {
+			Operand::IntegerLit(num, _) => write!(f, "{num}"),
+			Operand::FloatLit(num, _) => write!(f, "{num}"),
+			Operand::StringLit(s, _) => {
 				write!(f, "\"{}\"", lexer::get_unescaped(s))
 			}
-			Operand::CStringLit(s) => {
+			Operand::CStringLit(s, _) => {
 				write!(f, "{s:#?}")
 			}
-			Operand::BoolLit(b) => write!(f, "{b}"),
-			Operand::LValue(lval) => write!(f, "{lval}"),
+			Operand::BoolLit(b, _) => write!(f, "{b}"),
+			Operand::LValue(lval, _) => write!(f, "{lval}"),
 			Operand::Undef => write!(f, "undef"),
 		}
 	}
