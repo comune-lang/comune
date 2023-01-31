@@ -21,9 +21,7 @@ comune is a simple `cargo` project, though you are required to pass in a feature
 
 on Windows, getting LLVM set up for development can be a veritable nightmare, so i recommend using WSL.
 
-to get rust-analyzer working in i.e. Visual Studio Code, pass in the same feature flag in the Workspace Settings:
-
-![VS Code screenshot, showing a rust-analyzer "Check On Save: Extra Args" setting, with the value "--features=llvm12".](https://media.discordapp.net/attachments/846781793834106902/1056940581185650768/image.png)
+to get rust-analyzer working in i.e. Visual Studio Code, pass in the same feature flag in the Workspace Settings.
 
 # running
 to run the debug build, simply invoke `target/debug/comune` from the repo root. invoking the compiler with `--help` will provide a basic overview of the available command-line options.
