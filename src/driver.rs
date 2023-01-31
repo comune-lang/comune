@@ -84,24 +84,27 @@ pub fn launch_module_compilation(
 
 	let sender_lock = Mutex::new(error_sender.clone());
 
-	let imports = module_names
+	let imports: Result<_, _> = module_names
 		.into_par_iter()
 		.map(|name| {
 			let import_path = get_module_source_path(&state, src_path.clone(), &name).unwrap();
 
 			let error_sender = sender_lock.lock().unwrap().clone();
-			let module_interface = launch_module_compilation(
+			
+			match launch_module_compilation(
 				state.clone(),
 				import_path,
 				name.clone(),
 				error_sender,
 				s,
-			);
-			(name, module_interface.unwrap())
-		})
-		.collect();
+			) {
+				Ok(module_interface) => Ok((name, module_interface)),
+				Err(e) => Err(e),
+			}
+		}).collect();
 
-	mod_state.parser.namespace.imported = imports;
+	// Return early if any import failed
+	mod_state.parser.namespace.imported = imports?;
 
 	match resolve_types(&state, &mut mod_state) {
 		Ok(_) => {}
