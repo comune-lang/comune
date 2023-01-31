@@ -257,6 +257,8 @@ where
 					self.analysis.apply_effect(stmt, (i, j), &mut state);
 				}
 
+				out_states[i] = state.clone();
+
 				work_list.extend(block.succs.clone().into_iter());
 			}
 		}

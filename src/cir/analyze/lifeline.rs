@@ -1,6 +1,6 @@
 // lifeline - the comune liveness & borrow checker
 
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt::Display};
 
 use super::{
 	Analysis, AnalysisDomain, AnalysisResultHandler, CIRPassMut, Forward, JoinSemiLattice,
@@ -28,28 +28,28 @@ pub enum LivenessState {
 	MaybeUninit,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct LiveVarCheckState {
 	// TODO: Create Path type, for canonicalized LValues
 	liveness: HashMap<LValue, LivenessState>,
+}
+
+impl Display for LiveVarCheckState {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		for (lval, liveness) in &self.liveness {
+			writeln!(f, "{lval}: {liveness:?}")?;
+		}
+		Ok(())
+	}
 }
 
 impl LiveVarCheckState {
 	pub fn set_liveness(&mut self, lval: &LValue, state: LivenessState) {
 		// Clear liveness state for all sublocations
 
-		let keys: Vec<_> = self
-			.liveness
-			.keys()
-			.filter(|key| {
-				key.local == lval.local
-					&& key.projection.len() >= lval.projection.len()
-					&& key.projection[0..lval.projection.len()] == *lval.projection.as_slice()
-			})
-			.cloned()
-			.collect();
+		let keys: Vec<_> = self.get_active_sublocations(lval).map(|(a,b)| (a.clone(), b.clone())).collect();
 
-		for key in keys {
+		for (key, _) in keys {
 			if !key.projection[lval.projection.len()..].contains(&PlaceElem::Deref) {
 				self.liveness.remove(&key);
 			}
@@ -63,11 +63,7 @@ impl LiveVarCheckState {
 			// This state has a defined liveness value, so look through its children to check for partial moves
 
 			// Get all keys that are sublocations of this lvalue
-			for (_, val) in self.liveness.iter().filter(|(key, _)| {
-				key.local == lval.local
-					&& key.projection.len() > lval.projection.len()
-					&& key.projection[0..lval.projection.len()] == *lval.projection.as_slice()
-			}) {
+			for (_, val) in self.get_active_sublocations(lval) {
 				if *val == LivenessState::Moved {
 					return LivenessState::PartialMoved;
 				}
@@ -77,11 +73,9 @@ impl LiveVarCheckState {
 		let mut lval = lval.clone();
 
 		// Look through superlocations for a defined LivenessState
-		// (If the provided lval has a defined state, it'll just return that)
 
 		loop {
 			if let Some(state) = self.liveness.get(&lval) {
-				//println!("returning {state:?} for {lval}");
 				return *state;
 			}
 
@@ -91,6 +85,28 @@ impl LiveVarCheckState {
 				lval.projection.pop();
 			}
 		}
+	}
+
+	fn get_active_sublocations<'a>(&'a self, lval: &'a LValue) -> impl Iterator<Item = (&'a LValue, &'a LivenessState)> {
+		self.liveness.iter().filter_map(|(key, val)| {
+			if key.local != lval.local { 
+				return None;
+			}
+
+			if key.projection.len() <= lval.projection.len() {
+				return None;
+			}
+
+			if key.projection[0..lval.projection.len()] != *lval.projection.as_slice() {
+				return None;
+			}
+
+			if key.projection[lval.projection.len()..].contains(&PlaceElem::Deref) {
+				return None;
+			}
+
+			Some((key, val))
+		})
 	}
 
 	fn eval_rvalue(&mut self, rval: &RValue) -> Result<(), (LValue, LivenessState, SrcSpan)> {
@@ -249,6 +265,9 @@ impl AnalysisResultHandler for VarInitCheck {
 		let mut errors = vec![];
 
 		for (i, block) in func.blocks.iter().enumerate() {
+			let state = result.get_state_before(i, 0);
+			println!("state at start of block {i}:\n {state}\n\n");
+
 			for (j, stmt) in block.items.iter().enumerate() {
 				let state = result.get_state_before(i, j);
 
@@ -256,21 +275,26 @@ impl AnalysisResultHandler for VarInitCheck {
 				match stmt {
 					CIRStmt::Assignment(_, RValue::Atom(_, _, Operand::LValue(lval, _), span))
 					| CIRStmt::Switch(Operand::LValue(lval, span), ..)
-					| CIRStmt::Return(Some(Operand::LValue(lval, span))) => match state.get_liveness(lval) {
-						LivenessState::Live => {}
+					| CIRStmt::Return(Some(Operand::LValue(lval, span))) => {
+						let liveness = state.get_liveness(lval);
 
-						_ => errors.push((
-							CMNError::new(CMNErrorCode::InvalidUse {
-								variable: func.get_variable_name(lval.local),
-								state: state.get_liveness(lval),
-							}),
-							*span,
-						)),
+						match liveness {
+							LivenessState::Live => {}
+
+							_ => errors.push((
+								CMNError::new(CMNErrorCode::InvalidUse {
+									variable: func.get_variable_name(lval.local),
+									state: liveness,
+								}),
+								*span,
+							)),
+						}
 					},
 
 					_ => {}
 				}
 
+			
 				// Check for mutation of immutable lvalues
 				if let CIRStmt::Assignment((lval, tk), _) = stmt {
 					if state.get_liveness(lval) != LivenessState::Uninit
@@ -285,6 +309,9 @@ impl AnalysisResultHandler for VarInitCheck {
 					}
 				}
 			}
+			
+			let state = result.get_state_before(i, block.items.len() - 1);
+			println!("state at end of block {i}:\n {state}\n\n");
 		}
 
 		errors
