@@ -13,6 +13,7 @@ use crate::{
 	constexpr::{ConstExpr, ConstValue},
 	driver::ModuleState,
 	lexer::SrcSpan,
+	parser::Parser,
 };
 
 use super::{
@@ -32,7 +33,7 @@ pub struct CIRModuleBuilder {
 }
 
 impl CIRModuleBuilder {
-	pub fn from_ast(ast: &ModuleState) -> Self {
+	pub fn from_ast(ast: &Parser) -> Self {
 		let mut result = CIRModuleBuilder {
 			module: CIRModule {
 				types: HashMap::new(),
@@ -47,8 +48,8 @@ impl CIRModuleBuilder {
 			current_block: 0,
 		};
 
-		result.register_namespace(&ast.parser.namespace);
-		result.generate_namespace(&ast.parser.namespace);
+		result.register_namespace(&ast.namespace);
+		result.generate_namespace(&ast.namespace);
 
 		result
 	}

@@ -1508,7 +1508,6 @@ impl Parser {
 
 				Token::Other('{') => {
 					self.get_next()?;
-					let mut paths = vec![];
 
 					while self.get_current()? != Token::Other('}') {
 						let mut sub_paths = self.parse_multi_identifier_component(absolute)?;
@@ -1521,7 +1520,7 @@ impl Parser {
 							sub_path.path = sub_path_prefix
 						}
 
-						paths.append(&mut sub_paths);
+						result.append(&mut sub_paths);
 
 						if self.get_current()? == Token::Other(',') {
 							self.get_next()?;

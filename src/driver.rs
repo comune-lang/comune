@@ -1,8 +1,9 @@
 use std::{
+	collections::HashMap,
 	ffi::OsString,
 	fs,
 	path::{Path, PathBuf},
-	sync::{mpsc::Sender, Arc, Mutex},
+	sync::{mpsc::Sender, Arc, Mutex, RwLock},
 };
 
 use colored::Colorize;
@@ -33,10 +34,15 @@ pub struct ManagerState {
 	pub output_dir: OsString,
 	pub emit_types: Vec<EmitType>,
 	pub backtrace_on_error: bool,
+	pub module_states: RwLock<HashMap<PathBuf, ModuleState>>,
 }
 
-pub struct ModuleState {
-	pub parser: Parser,
+#[derive(Clone)]
+pub enum ModuleState {
+	Parsing,
+	ParsingFailed,
+	InterfaceUntyped(Namespace),
+	InterfaceComplete(Namespace),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -73,44 +79,91 @@ pub fn launch_module_compilation(
 	module_name: Identifier,
 	error_sender: Sender<CMNMessageLog>,
 	s: &rayon::Scope,
-) -> Result<Namespace, CMNError> {
+) -> Result<(), CMNError> {
+	if state.module_states.read().unwrap().contains_key(&src_path) {
+		return Ok(());
+	}
+
 	let out_path = get_module_out_path(&state, &module_name);
+
 	state.output_modules.lock().unwrap().push(out_path.clone());
 
-	let mut mod_state = parse_interface(&state, &src_path, error_sender.clone())?;
+	state
+		.module_states
+		.write()
+		.unwrap()
+		.insert(src_path.clone(), ModuleState::Parsing);
+
+	let mut parser = match parse_interface(&state, &src_path, error_sender.clone()) {
+		Ok(parser) => parser,
+
+		Err(e) => {
+			state
+				.module_states
+				.write()
+				.unwrap()
+				.insert(src_path, ModuleState::ParsingFailed);
+			return Err(e);
+		}
+	};
+
+	state.module_states.write().unwrap().insert(
+		src_path.clone(),
+		ModuleState::InterfaceUntyped(parser.namespace.get_interface()),
+	);
 
 	// Resolve module imports
-	let module_names = mod_state.parser.namespace.referenced_modules.clone();
-
+	let module_names = parser.namespace.referenced_modules.clone();
 	let sender_lock = Mutex::new(error_sender.clone());
-
 	let imports: Result<_, _> = module_names
 		.into_par_iter()
 		.map(|name| {
 			let import_path = get_module_source_path(&state, src_path.clone(), &name).unwrap();
 
 			let error_sender = sender_lock.lock().unwrap().clone();
-			
-			match launch_module_compilation(
-				state.clone(),
-				import_path,
-				name.clone(),
-				error_sender,
-				s,
-			) {
-				Ok(module_interface) => Ok((name, module_interface)),
-				Err(e) => Err(e),
+
+			// Query module interface, blocking this thread until it's ready
+			loop {
+				let import_state = state
+					.module_states
+					.read()
+					.unwrap()
+					.get(&import_path)
+					.cloned();
+				match import_state {
+					None => launch_module_compilation(
+						state.clone(),
+						import_path.clone(),
+						name.clone(),
+						error_sender.clone(),
+						s,
+					)?,
+
+					// Sleep for some short duration, so we don't hog the CPU
+					Some(ModuleState::Parsing) => {
+						std::thread::sleep(std::time::Duration::from_millis(1))
+					}
+
+					Some(ModuleState::ParsingFailed) => {
+						return Err(CMNError::new(CMNErrorCode::DependencyError))
+					}
+
+					Some(
+						ModuleState::InterfaceUntyped(interface)
+						| ModuleState::InterfaceComplete(interface),
+					) => return Ok((name, interface.clone())),
+				}
 			}
-		}).collect();
+		})
+		.collect();
 
 	// Return early if any import failed
-	mod_state.parser.namespace.imported = imports?;
+	parser.namespace.imported = imports?;
 
-	match resolve_types(&state, &mut mod_state) {
+	match resolve_types(&state, &mut parser) {
 		Ok(_) => {}
 		Err(e) => {
-			mod_state
-				.parser
+			parser
 				.lexer
 				.borrow()
 				.log_msg_at(SrcSpan::new(), CMNMessage::Error(e.clone()));
@@ -118,16 +171,55 @@ pub fn launch_module_compilation(
 		}
 	};
 
-	let interface = mod_state.parser.namespace.get_interface();
+	// Update the module database with the fully-typed version of the interface
+	state.module_states.write().unwrap().insert(
+		src_path.clone(),
+		ModuleState::InterfaceComplete(parser.namespace.get_interface()),
+	);
 
 	// The rest of the module's compilation happens in a worker thread
 
 	s.spawn(move |_s| {
+		// Wait for all module interfaces to be finalized
+		let mut imports_left = parser
+			.namespace
+			.imported
+			.keys()
+			.cloned()
+			.collect::<Vec<_>>();
+
+		while let Some(import_name) = imports_left.first() {
+			let import_path =
+				get_module_source_path(&state, src_path.clone(), import_name).unwrap();
+			let import_state = state
+				.module_states
+				.read()
+				.unwrap()
+				.get(&import_path)
+				.cloned()
+				.unwrap();
+
+			match import_state {
+				ModuleState::InterfaceComplete(complete) => {
+					parser
+						.namespace
+						.imported
+						.insert(import_name.clone(), complete);
+					imports_left.remove(0);
+				}
+
+				ModuleState::InterfaceUntyped(_) => continue,
+
+				_ => panic!(),
+			};
+		}
+
+		// Time to generate some code baby!!! god this module is messy lmao
+
 		let context = Context::create();
 		let src_name = src_path.file_name().unwrap().to_str().unwrap();
 
-		let result = match generate_code(&state, &mut mod_state, &context, &src_path, &module_name)
-		{
+		let result = match generate_code(&state, &mut parser, &context, &src_path, &module_name) {
 			Ok(res) => res,
 			Err(_) => {
 				error_sender
@@ -161,7 +253,7 @@ pub fn launch_module_compilation(
 		}
 	});
 
-	Ok(interface)
+	Ok(())
 }
 
 // TODO: Add proper module searching support, based on a list of module search dirs, as well as support for .co, .h, .hpp etc
@@ -213,34 +305,32 @@ pub fn parse_interface(
 	state: &Arc<ManagerState>,
 	path: &Path,
 	error_sender: Sender<CMNMessageLog>,
-) -> Result<ModuleState, CMNError> {
+) -> Result<Parser, CMNError> {
 	// First phase of module compilation: create Lexer and Parser, and parse the module at the namespace level
 
-	let mut mod_state = ModuleState {
-		parser: Parser::new(
-			match Lexer::new(path, error_sender) {
-				// TODO: Take module name instead of filename
-				Ok(f) => f,
-				Err(e) => {
-					println!(
-						"{} failed to open module '{}' ({})",
-						"fatal:".red().bold(),
-						path.file_name().unwrap().to_string_lossy(),
-						e
-					);
-					return Err(CMNError::new(CMNErrorCode::ModuleNotFound(OsString::from(
-						path.file_name().unwrap(),
-					))));
-				}
-			},
-			state.verbose_output,
-		),
-	};
+	let mut mod_state = Parser::new(
+		match Lexer::new(path, error_sender) {
+			// TODO: Take module name instead of filename
+			Ok(f) => f,
+			Err(e) => {
+				println!(
+					"{} failed to open module '{}' ({})",
+					"fatal:".red().bold(),
+					path.file_name().unwrap().to_string_lossy(),
+					e
+				);
+				return Err(CMNError::new(CMNErrorCode::ModuleNotFound(OsString::from(
+					path.file_name().unwrap(),
+				))));
+			}
+		},
+		state.verbose_output,
+	);
 
 	println!(
 		"{:>10} {}",
 		"compiling".bold().green(),
-		mod_state.parser.lexer.borrow().file_name.to_string_lossy()
+		mod_state.lexer.borrow().file_name.to_string_lossy()
 	);
 
 	if state.verbose_output {
@@ -249,11 +339,10 @@ pub fn parse_interface(
 
 	// Parse namespace level
 
-	return match mod_state.parser.parse_module() {
+	return match mod_state.parse_module() {
 		Ok(_) => Ok(mod_state),
 		Err(e) => {
 			mod_state
-				.parser
 				.lexer
 				.borrow()
 				.log_msg(CMNMessage::Error(e.clone()));
@@ -262,18 +351,16 @@ pub fn parse_interface(
 	};
 }
 
-pub fn resolve_types(state: &Arc<ManagerState>, mod_state: &mut ModuleState) -> ParseResult<()> {
-	let root = &mut mod_state.parser.namespace;
-
+pub fn resolve_types(state: &Arc<ManagerState>, parser: &mut Parser) -> ParseResult<()> {
 	// At this point, all imports have been resolved, so validate namespace-level types
-	ast::resolve_namespace_types(root)?;
+	ast::resolve_namespace_types(&mut parser.namespace)?;
 
 	// Check for cyclical dependencies without indirection
 	// TODO: Nice error reporting for this
-	ast::check_namespace_cyclical_deps(root)?;
+	ast::check_namespace_cyclical_deps(&mut parser.namespace)?;
 
 	if state.verbose_output {
-		println!("\ntype resolution output:\n\n{}", root);
+		println!("\ntype resolution output:\n\n{}", &mut parser.namespace);
 	}
 
 	Ok(())
@@ -281,40 +368,35 @@ pub fn resolve_types(state: &Arc<ManagerState>, mod_state: &mut ModuleState) -> 
 
 pub fn generate_code<'ctx>(
 	state: &Arc<ManagerState>,
-	mod_state: &mut ModuleState,
+	parser: &mut Parser,
 	context: &'ctx Context,
 	src_path: &Path,
 	input_module: &Identifier,
 ) -> Result<LLVMBackend<'ctx>, CMNError> {
 	// Generate AST
 
-	match mod_state.parser.generate_ast() {
+	match parser.generate_ast() {
 		Ok(()) => {
 			if state.verbose_output {
 				println!("\nvalidating...");
 			}
 		}
 		Err(e) => {
-			mod_state
-				.parser
-				.lexer
-				.borrow()
-				.log_msg(CMNMessage::Error(e.clone()));
+			parser.lexer.borrow().log_msg(CMNMessage::Error(e.clone()));
 			return Err(e);
 		}
 	};
 
 	// Validate code
 
-	match ast::validate_namespace(&mut mod_state.parser.namespace) {
+	match ast::validate_namespace(&mut parser.namespace) {
 		Ok(()) => {
 			if state.verbose_output {
 				println!("generating code...");
 			}
 		}
 		Err(e) => {
-			mod_state
-				.parser
+			parser
 				.lexer
 				.borrow()
 				.log_msg_at(e.1, CMNMessage::Error(e.0.clone()));
@@ -325,7 +407,7 @@ pub fn generate_code<'ctx>(
 	// Generate cIR
 
 	let module_name = input_module.to_string();
-	let mut cir_module = CIRModuleBuilder::from_ast(mod_state).module;
+	let mut cir_module = CIRModuleBuilder::from_ast(parser).module;
 
 	// Note: we currently write the output of a lot of
 	// intermediate stages to the build directory. This is
@@ -358,8 +440,7 @@ pub fn generate_code<'ctx>(
 
 		for (error, span) in cir_errors {
 			return_errors.push(error.clone());
-			mod_state
-				.parser
+			parser
 				.lexer
 				.borrow()
 				.log_msg_at(span, CMNMessage::Error(error));

@@ -133,5 +133,5 @@ int main() {
 	//*my_cool_generic.data = 69;
 	free(my_cool_generic.data as void*);
 
-	return 0;
+	return module_test::foo();
 }

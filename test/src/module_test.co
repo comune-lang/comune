@@ -1,24 +1,18 @@
-@no_mangle
-void printf(u8* fmt);
+import main;
 
 u64 fib(u64 n) {
-	//mut u64[3] store = [ 0, 1, 0 ];
 	mut u64 a = 0;
 	mut u64 b = 1;
 	mut u64 c = 0;
 
-	for (mut u64 i = 1; i < n; i++) {
-		//store[2] = store[0] + store[1];
-		//store[0] = store[1];
-		//store[1] = store[2];
-		c = a + b;
-		a = b;
-		b = c;
-		printf(c"Loop!\n");
-	};
+	//for (mut u64 i = 1; i < n; i++) {
+	//	c = a + b;
+	//	a = b;
+	//	b = c;
+	//	printf(c"Loop!\n");
+	//};
 
 	return b;
-	//return store[2];
 }
 
 

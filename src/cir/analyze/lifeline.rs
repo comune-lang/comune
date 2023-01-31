@@ -47,7 +47,10 @@ impl LiveVarCheckState {
 	pub fn set_liveness(&mut self, lval: &LValue, state: LivenessState) {
 		// Clear liveness state for all sublocations
 
-		let keys: Vec<_> = self.get_active_sublocations(lval).map(|(a,b)| (a.clone(), b.clone())).collect();
+		let keys: Vec<_> = self
+			.get_active_sublocations(lval)
+			.map(|(a, b)| (a.clone(), b.clone()))
+			.collect();
 
 		for (key, _) in keys {
 			if !key.projection[lval.projection.len()..].contains(&PlaceElem::Deref) {
@@ -87,9 +90,12 @@ impl LiveVarCheckState {
 		}
 	}
 
-	fn get_active_sublocations<'a>(&'a self, lval: &'a LValue) -> impl Iterator<Item = (&'a LValue, &'a LivenessState)> {
+	fn get_active_sublocations<'a>(
+		&'a self,
+		lval: &'a LValue,
+	) -> impl Iterator<Item = (&'a LValue, &'a LivenessState)> {
 		self.liveness.iter().filter_map(|(key, val)| {
-			if key.local != lval.local { 
+			if key.local != lval.local {
 				return None;
 			}
 
@@ -289,12 +295,11 @@ impl AnalysisResultHandler for VarInitCheck {
 								*span,
 							)),
 						}
-					},
+					}
 
 					_ => {}
 				}
 
-			
 				// Check for mutation of immutable lvalues
 				if let CIRStmt::Assignment((lval, tk), _) = stmt {
 					if state.get_liveness(lval) != LivenessState::Uninit
@@ -309,7 +314,7 @@ impl AnalysisResultHandler for VarInitCheck {
 					}
 				}
 			}
-			
+
 			//let state = result.get_state_before(i, block.items.len() - 1);
 			//println!("state at end of block {i}:\n {state}\n\n");
 		}

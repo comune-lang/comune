@@ -39,6 +39,7 @@ pub struct Namespace {
 // only care about the function signatures.
 // Sketchy, I know. Remind me to fix this sometime.
 unsafe impl Send for Namespace {}
+unsafe impl Sync for Namespace {}
 
 impl Namespace {
 	pub fn new(path: Identifier) -> Self {
@@ -56,18 +57,18 @@ impl Namespace {
 		self.clone() // TODO: Actually implement
 	}
 
-	pub fn get_item(&self, id: &Identifier) -> Option<&NamespaceItem> {
+	pub fn get_item<'a>(&'a self, id: &Identifier) -> Option<(Identifier, &'a NamespaceItem)> {
 		assert!(id.absolute, "argument to get_item should be absolute!");
 
 		match self.children.get(id) {
 			Some(NamespaceItem::Alias(alias)) => self.get_item(alias),
 
-			Some(item) => Some(item),
+			Some(item) => Some((id.clone(), item)),
 
 			None => {
 				if let Some(import) = self
 					.imported
-					.get(&Identifier::from_name(id.path[0].clone(), true))
+					.get(&Identifier::from_name(id.path[0].clone(), false))
 				{
 					if id.path.len() > 1 {
 						let mut id_sub = id.clone();

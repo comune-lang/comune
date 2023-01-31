@@ -316,21 +316,24 @@ pub fn validate_fn_call(
 
 		name_unwrap.absolute = true;
 
+		let mut scope_len = scope.scope.path.len();
+		
 		for (i, elem) in scope.scope.path.iter().enumerate() {
 			name_unwrap.path.insert(i, elem.clone());
 		}
 
 		loop {
-			if let Some(NamespaceItem::Functions(fns)) = scope.context.get_item(&name_unwrap) {
+			if let Some((name, NamespaceItem::Functions(fns))) = scope.context.get_item(&name_unwrap) {
 				for func in fns {
-					candidates.push((name_unwrap.clone(), func));
+					candidates.push((name.clone(), func));
 				}
 			}
 
-			if name_unwrap.path.len() == 1 {
+			if scope_len == 0 {
 				break;
 			} else {
-				name_unwrap.path.remove(name_unwrap.path.len() - 2);
+				scope_len -= 1;
+				name_unwrap.path.remove(scope_len);
 			}
 		}
 	}

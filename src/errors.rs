@@ -132,6 +132,7 @@ pub enum CMNErrorCode {
 
 	// Resolution errors
 	ModuleNotFound(OsString),
+	DependencyError,
 
 	// Code generation errors
 	LLVMError,
@@ -222,7 +223,7 @@ impl Display for CMNErrorCode {
 				args,
 				type_args,
 			} => {
-				write!(f, "no viable overload found for `{name}")?;
+				write!(f, "no viable overload found for `{name}`")?;
 
 				if !type_args.is_empty() {
 					let mut iter = type_args.iter();
@@ -261,7 +262,7 @@ impl Display for CMNErrorCode {
 			}
 
 			CMNErrorCode::ModuleNotFound(m) => write!(f, "module not found: {m:#?}"),
-
+			CMNErrorCode::DependencyError => write!(f, "a dependency failed to compile"),
 			CMNErrorCode::LLVMError => write!(f, "an internal compiler error occurred"),
 
 			CMNErrorCode::InvalidUse { variable, state } => {

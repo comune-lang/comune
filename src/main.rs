@@ -13,6 +13,7 @@ use colored::Colorize;
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
+use std::sync::RwLock;
 use std::{
 	ffi::OsString,
 	io::{self, Write},
@@ -86,6 +87,7 @@ fn main() -> color_eyre::eyre::Result<()> {
 		output_dir: args.output_dir,
 		emit_types,
 		backtrace_on_error: args.backtrace,
+		module_states: RwLock::default(),
 	});
 
 	// Launch multithreaded compilation
