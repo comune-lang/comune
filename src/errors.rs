@@ -175,7 +175,7 @@ impl Display for ComuneErrCode {
 			ComuneErrCode::ExpectedIdentifier => write!(f, "expected identifier"),
 			ComuneErrCode::InvalidSuffix => write!(f, "invalid suffix"),
 
-			ComuneErrCode::UndeclaredIdentifier(id) => write!(f, "undeclared identifier `{id}`"),
+			ComuneErrCode::UndeclaredIdentifier(id) => write!(f, "`{id}` was not found in this scope"),
 			ComuneErrCode::UnresolvedTypename(id) => write!(f, "unresolved typename `{id}`"),
 			ComuneErrCode::ExprTypeMismatch(a, b, op) => write!(
 				f,

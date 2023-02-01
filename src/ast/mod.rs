@@ -342,6 +342,13 @@ pub fn validate_fn_call(
 		arg.validate(scope)?;
 	}
 
+	if candidates.is_empty() {
+		return Err(ComuneError::new(
+			ComuneErrCode::UndeclaredIdentifier(name.to_string()),
+			node_data.tk
+		))
+	}
+
 	let mut candidates: Vec<_> = candidates
 		.into_iter()
 		.filter(|(_, (func, ..))| is_candidate_viable(args, type_args, func))
