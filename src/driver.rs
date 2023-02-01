@@ -113,57 +113,66 @@ pub fn launch_module_compilation(
 	);
 
 	// Resolve module imports
-	let module_names = parser.namespace.import_names.clone();
+	let mut module_names: Vec<_> = parser.namespace.import_names.clone().into_iter().collect();
 	let sender_lock = Mutex::new(error_sender.clone());
-	let imports: Result<_, _> = module_names
-		.into_par_iter()
-		.map(|name| {
-			let (import_name, fs_name) = match name {
-				ModuleImportKind::Child(name) => (name.clone(), Identifier::from_parent(&module_name, name)),
-				ModuleImportKind::Other(name) => (name.name().clone(), name),
-			};
 
-			let import_path = get_module_source_path(&state, src_path.clone(), &fs_name).unwrap();
+	let mut imports = HashMap::new();
+	
+	while let Some(name) = module_names.first().cloned() {
+		let (import_name, fs_name) = match name {
+			ModuleImportKind::Child(name) => (name.clone(), Identifier::from_parent(&module_name, name)),
+			ModuleImportKind::Other(name) => (name.name().clone(), name),
+		};
 
-			let error_sender = sender_lock.lock().unwrap().clone();
+		let import_path = get_module_source_path(&state, src_path.clone(), &fs_name).unwrap();
 
-			// Query module interface, blocking this thread until it's ready
-			loop {
-				let import_state = state
-					.module_states
-					.read()
-					.unwrap()
-					.get(&import_path)
-					.cloned();
-				match import_state {
-					None => launch_module_compilation(
-						state.clone(),
-						import_path.clone(),
-						fs_name.clone(),
-						error_sender.clone(),
-						s,
-					)?,
+		let error_sender = sender_lock.lock().unwrap().clone();
 
-					// Sleep for some short duration, so we don't hog the CPU
-					Some(ModuleState::Parsing) => {
-						std::thread::sleep(std::time::Duration::from_millis(1))
-					}
+		// Query module interface, blocking this thread until it's ready
+		loop {
+			let import_state = state
+				.module_states
+				.read()
+				.unwrap()
+				.get(&import_path)
+				.cloned();
+			match import_state {
+				None => launch_module_compilation(
+					state.clone(),
+					import_path.clone(),
+					fs_name.clone(),
+					error_sender.clone(),
+					s,
+				)?,
 
-					Some(ModuleState::ParsingFailed) => {
-						return Err(ComuneError::new(ComuneErrCode::DependencyError, SrcSpan::new()))
-					}
+				// Sleep for some short duration, so we don't hog the CPU
+				Some(ModuleState::Parsing) => {
+					std::thread::sleep(std::time::Duration::from_millis(1))
+				}
 
-					Some(
-						ModuleState::InterfaceUntyped(interface)
-						| ModuleState::InterfaceComplete(interface),
-					) => return Ok((import_name, interface.clone())),
+				Some(ModuleState::ParsingFailed) => {
+					state.module_states.write().unwrap().insert(
+						src_path.clone(),
+						ModuleState::ParsingFailed
+					);
+
+					return Err(ComuneError::new(ComuneErrCode::DependencyError, SrcSpan::new()))
+				}
+
+				Some(
+					ModuleState::InterfaceUntyped(interface)
+					| ModuleState::InterfaceComplete(interface),
+				) => {
+					imports.insert(import_name, interface.clone());
+					module_names.remove(0);
+					break
 				}
 			}
-		})
-		.collect();
+		}
+	}
 
 	// Return early if any import failed
-	parser.namespace.imported = imports?;
+	parser.namespace.imported = imports;
 
 	match resolve_types(&state, &mut parser) {
 		Ok(_) => {}
@@ -172,7 +181,13 @@ pub fn launch_module_compilation(
 				.lexer
 				.borrow()
 				.log_msg_at(SrcSpan::new(), ComuneMessage::Error(e.clone()));
-			return Err(e);
+			
+			state.module_states.write().unwrap().insert(
+				src_path.clone(),
+				ModuleState::ParsingFailed
+			);
+			
+			return Err(e)
 		}
 	};
 
@@ -217,7 +232,11 @@ pub fn launch_module_compilation(
 					imports_left.remove(0);
 				}
 
-				ModuleState::InterfaceUntyped(_) => continue,
+				ModuleState::InterfaceUntyped(_) => {
+					let first = imports_left.remove(0);
+					imports_left.push(first);
+					continue
+				}
 
 				_ => panic!(),
 			};
