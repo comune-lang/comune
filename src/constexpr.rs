@@ -4,7 +4,7 @@ use crate::{
 		types::Basic,
 		FnScope,
 	},
-	parser::AnalyzeResult,
+	parser::ComuneResult,
 };
 
 // Constant expression evaluation module. For stuff like array lengths, generics, you get the idea
@@ -25,11 +25,11 @@ pub enum ConstValue {
 }
 
 pub trait ConstEval {
-	fn eval_const(&self, scope: &FnScope) -> AnalyzeResult<ConstValue>;
+	fn eval_const(&self, scope: &FnScope) -> ComuneResult<ConstValue>;
 }
 
 impl ConstEval for Expr {
-	fn eval_const(&self, scope: &FnScope) -> AnalyzeResult<ConstValue> {
+	fn eval_const(&self, scope: &FnScope) -> ComuneResult<ConstValue> {
 		match self {
 			Expr::Atom(a, _) => a.eval_const(scope),
 
@@ -139,7 +139,7 @@ impl ConstEval for Expr {
 }
 
 impl ConstEval for Atom {
-	fn eval_const(&self, _scope: &FnScope) -> AnalyzeResult<ConstValue> {
+	fn eval_const(&self, _scope: &FnScope) -> ComuneResult<ConstValue> {
 		match self {
 			Atom::IntegerLit(i, b) => Ok(ConstValue::Integral(*i, *b)),
 			Atom::FloatLit(f, b) => Ok(ConstValue::Float(*f, *b)),

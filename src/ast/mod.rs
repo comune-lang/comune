@@ -9,9 +9,9 @@ use types::{Basic, Type, TypeDef};
 
 use crate::{
 	constexpr::{ConstEval, ConstExpr, ConstValue},
-	errors::{CMNError, CMNErrorCode},
-	lexer::Token,
-	parser::{AnalyzeResult, ParseResult},
+	errors::{ComuneError, ComuneErrCode},
+	lexer::{Token, SrcSpan},
+	parser::ComuneResult,
 };
 
 use self::{
@@ -127,7 +127,7 @@ pub fn validate_function(
 	func: &mut FnDef,
 	elem: &RefCell<NamespaceASTElem>,
 	namespace: &Namespace,
-) -> AnalyzeResult<()> {
+) -> ComuneResult<()> {
 	let mut scope = FnScope::new(namespace, scope, func.ret.clone());
 
 	for (param, name, props) in &mut func.params.params {
@@ -163,11 +163,11 @@ pub fn validate_function(
 				let expr_ty = expr.get_type();
 
 				if !expr_ty.castable_to(&scope.fn_return_type) {
-					return Err((
-						CMNError::new(CMNErrorCode::ReturnTypeMismatch {
+					return Err(ComuneError::new(
+						ComuneErrCode::ReturnTypeMismatch {
 							expected: scope.fn_return_type,
 							got: expr_ty.clone(),
-						}),
+						},
 						elem.get_node_data().tk,
 					));
 				}
@@ -180,11 +180,11 @@ pub fn validate_function(
 
 		if !has_return {
 			if scope.fn_return_type != Type::Basic(Basic::Void) {
-				return Err((
-					CMNError::new(CMNErrorCode::ReturnTypeMismatch {
+				return Err(ComuneError::new(
+					ComuneErrCode::ReturnTypeMismatch {
 						expected: scope.fn_return_type.clone(),
 						got: Type::Basic(Basic::Void),
-					}),
+					},
 					elem_node_data.tk,
 				));
 			}
@@ -290,7 +290,7 @@ pub fn validate_fn_call(
 	call: &mut Atom,
 	scope: &mut FnScope,
 	node_data: &NodeData,
-) -> AnalyzeResult<Type> {
+) -> ComuneResult<Type> {
 	let mut candidates = vec![];
 	let Atom::FnCall { name, args, type_args, resolved } = call else { panic!() };
 
@@ -349,12 +349,12 @@ pub fn validate_fn_call(
 
 	let (selected_name, (selected_candidate, ..)) = match candidates.len() {
 		0 => {
-			return Err((
-				CMNError::new(CMNErrorCode::NoCandidateFound {
+			return Err(ComuneError::new(
+				ComuneErrCode::NoCandidateFound {
 					args: args.iter().map(|arg| arg.get_type().clone()).collect(),
 					type_args: type_args.clone(),
 					name: name.clone(),
-				}),
+				}, 
 				node_data.tk,
 			))
 		} // No viable candidate
@@ -372,7 +372,7 @@ pub fn validate_fn_call(
 				Ordering::Less => candidates[0].clone(),
 
 				Ordering::Equal => {
-					return Err((CMNError::new(CMNErrorCode::AmbiguousCall), node_data.tk))
+					return Err(ComuneError::new(ComuneErrCode::AmbiguousCall, node_data.tk))
 				} // Ambiguous call
 
 				_ => unreachable!(), // Not possible, just sorted it
@@ -395,7 +395,7 @@ fn resolve_method_call(
 	lhs: &Expr,
 	fn_call: &mut Atom,
 	scope: &mut FnScope,
-) -> AnalyzeResult<Type> {
+) -> ComuneResult<Type> {
 	let Atom::FnCall { name, args, type_args, resolved } = fn_call else { panic!() };
 
 	// Already validated
@@ -458,10 +458,7 @@ fn resolve_method_call(
 				Ordering::Less => candidates[0].clone(),
 
 				Ordering::Equal => {
-					return Err((
-						CMNError::new(CMNErrorCode::AmbiguousCall),
-						lhs.get_node_data().tk,
-					))
+					return Err(ComuneError::new(ComuneErrCode::AmbiguousCall, lhs.get_node_data().tk))
 				} // Ambiguous call
 
 				_ => unreachable!(), // Not possible
@@ -484,7 +481,7 @@ fn validate_arg_list(
 	params: &[(Type, Option<Name>, BindingProps)],
 	type_args: &Vec<Type>,
 	scope: &mut FnScope,
-) -> AnalyzeResult<()> {
+) -> ComuneResult<()> {
 	for (i, arg) in args.iter_mut().enumerate() {
 		// add parameter's type info to argument
 		if let Some((param_ty, ..)) = params.get(i) {
@@ -495,11 +492,11 @@ fn validate_arg_list(
 			let arg_type = arg.validate(scope)?;
 
 			if !arg.coercable_to(&arg_type, &param_concrete, scope) {
-				return Err((
-					CMNError::new(CMNErrorCode::InvalidCoercion {
+				return Err(
+					ComuneError::new(ComuneErrCode::InvalidCoercion {
 						from: arg_type,
 						to: param_concrete,
-					}),
+					},
 					args[i].get_node_data().tk,
 				));
 			}
@@ -524,7 +521,7 @@ fn validate_arg_list(
 	Ok(())
 }
 
-pub fn validate_namespace(namespace: &mut Namespace) -> AnalyzeResult<()> {
+pub fn validate_namespace(namespace: &mut Namespace) -> ComuneResult<()> {
 	for (id, child) in &namespace.children {
 		if let NamespaceItem::Functions(fns) = child {
 			for (func, elem, _) in fns {
@@ -558,7 +555,7 @@ pub fn resolve_type(
 	ty: &mut Type,
 	namespace: &Namespace,
 	generics: &TypeParamList,
-) -> ParseResult<()> {
+) -> ComuneResult<()> {
 	match ty {
 		Type::Pointer(pointee) => resolve_type(pointee, namespace, generics),
 
@@ -592,9 +589,10 @@ pub fn resolve_type(
 				*ty = resolved;
 				Ok(())
 			} else {
-				Err(CMNError::new(CMNErrorCode::UnresolvedTypename(
-					id.to_string(),
-				)))
+				Err(ComuneError::new(
+					ComuneErrCode::UnresolvedTypename(id.to_string()),
+					SrcSpan::new()
+				))
 			}
 		}
 
@@ -625,7 +623,7 @@ pub fn resolve_algebraic_def(
 	attributes: &[Attribute],
 	namespace: &Namespace,
 	base_generics: &TypeParamList,
-) -> ParseResult<()> {
+) -> ComuneResult<()> {
 	let mut generics = base_generics.clone();
 	generics.extend(agg.params.clone());
 
@@ -639,16 +637,16 @@ pub fn resolve_algebraic_def(
 
 	if let Some(layout) = get_attribute(attributes, "layout") {
 		if layout.args.len() != 1 {
-			return Err(CMNError::new(CMNErrorCode::ParamCountMismatch {
+			return Err(ComuneError::new(ComuneErrCode::ParamCountMismatch {
 				expected: 1,
 				got: layout.args.len(),
-			}));
+			}, SrcSpan::new()));
 		}
 		if layout.args[0].len() != 1 {
-			return Err(CMNError::new(CMNErrorCode::ParamCountMismatch {
+			return Err(ComuneError::new(ComuneErrCode::ParamCountMismatch {
 				expected: 1,
 				got: layout.args[0].len(),
-			}));
+			}, SrcSpan::new()));
 		}
 
 		if let Token::Name(layout_name) = &layout.args[0][0] {
@@ -656,7 +654,7 @@ pub fn resolve_algebraic_def(
 				"declared" => types::DataLayout::Declared,
 				"optimized" => types::DataLayout::Optimized,
 				"packed" => types::DataLayout::Packed,
-				_ => return Err(CMNError::new(CMNErrorCode::UnexpectedToken)),
+				_ => return Err(ComuneError::new(ComuneErrCode::UnexpectedToken, SrcSpan::new())),
 			}
 		}
 	}
@@ -669,7 +667,7 @@ pub fn resolve_type_def(
 	attributes: &[Attribute],
 	namespace: &Namespace,
 	base_generics: &TypeParamList,
-) -> ParseResult<()> {
+) -> ComuneResult<()> {
 	match ty {
 		TypeDef::Algebraic(agg) => resolve_algebraic_def(agg, attributes, namespace, base_generics),
 
@@ -677,7 +675,7 @@ pub fn resolve_type_def(
 	}
 }
 
-pub fn resolve_namespace_types(namespace: &Namespace) -> ParseResult<()> {
+pub fn resolve_namespace_types(namespace: &Namespace) -> ComuneResult<()> {
 	// Resolve types
 
 	for child in namespace.children.values() {
@@ -792,7 +790,7 @@ pub fn resolve_namespace_types(namespace: &Namespace) -> ParseResult<()> {
 pub fn check_cyclical_deps(
 	ty: &Arc<RwLock<TypeDef>>,
 	parent_types: &mut Vec<Arc<RwLock<TypeDef>>>,
-) -> ParseResult<()> {
+) -> ComuneResult<()> {
 	if let TypeDef::Algebraic(agg) = &*ty.as_ref().read().unwrap() {
 		for member in agg.members.iter() {
 			if let Type::TypeRef(ItemRef::Resolved(TypeRef { def: ref_t, .. })) = &member.1 {
@@ -800,7 +798,7 @@ pub fn check_cyclical_deps(
 					.iter()
 					.any(|elem| Arc::ptr_eq(elem, &ref_t.upgrade().unwrap()))
 				{
-					return Err(CMNError::new(CMNErrorCode::InfiniteSizeType));
+					return Err(ComuneError::new(ComuneErrCode::InfiniteSizeType, SrcSpan::new()));
 				}
 
 				parent_types.push(ty.clone());
@@ -812,7 +810,7 @@ pub fn check_cyclical_deps(
 	Ok(())
 }
 
-pub fn check_namespace_cyclical_deps(namespace: &Namespace) -> ParseResult<()> {
+pub fn check_namespace_cyclical_deps(namespace: &Namespace) -> ComuneResult<()> {
 	for item in namespace.children.values() {
 		if let NamespaceItem::Type(ty, _) = item {
 			check_cyclical_deps(ty, &mut vec![])?
@@ -827,7 +825,7 @@ impl Expr {
 		Expr::Atom(Atom::Cast(Box::new(expr), to), meta)
 	}
 
-	pub fn validate<'ctx>(&mut self, scope: &mut FnScope<'ctx>) -> AnalyzeResult<Type> {
+	pub fn validate<'ctx>(&mut self, scope: &mut FnScope<'ctx>) -> ComuneResult<Type> {
 		let result = match self {
 			Expr::Atom(a, meta) => a.validate(scope, meta),
 
@@ -857,10 +855,10 @@ impl Expr {
 								if rhs.coercable_to(&second_t, &idx_type, scope) {
 									rhs.wrap_in_cast(idx_type);
 								} else {
-									return Err((
-										CMNError::new(CMNErrorCode::InvalidSubscriptRHS {
+									return Err(
+										ComuneError::new(ComuneErrCode::InvalidSubscriptRHS {
 											t: second_t,
-										}),
+										},
 										meta.tk,
 									));
 								}
@@ -868,8 +866,8 @@ impl Expr {
 
 							Ok(*ty.clone())
 						} else {
-							Err((
-								CMNError::new(CMNErrorCode::InvalidSubscriptLHS { t: first_t }),
+							Err(ComuneError::new(
+								ComuneErrCode::InvalidSubscriptLHS { t: first_t },
 								meta.tk,
 							))
 						}
@@ -888,12 +886,12 @@ impl Expr {
 							} else if rhs.coercable_to(&second_t, &first_t, scope) {
 								rhs.wrap_in_cast(first_t.clone());
 							} else {
-								return Err((
-									CMNError::new(CMNErrorCode::ExprTypeMismatch(
+								return Err(ComuneError::new(
+									ComuneErrCode::ExprTypeMismatch(
 										first_t,
 										second_t,
 										op.clone(),
-									)),
+									),
 									meta.tk,
 								));
 							}
@@ -925,7 +923,7 @@ impl Expr {
 					Operator::Deref => match expr_ty {
 						Type::Pointer(t) => Ok(*t),
 
-						_ => Err((CMNError::new(CMNErrorCode::InvalidDeref(expr_ty)), meta.tk)),
+						_ => Err(ComuneError::new(ComuneErrCode::InvalidDeref(expr_ty), meta.tk)),
 					},
 
 					_ => Ok(expr_ty),
@@ -1041,9 +1039,9 @@ impl Expr {
 		rhs: &mut Expr,
 		scope: &mut FnScope,
 		meta: &NodeData,
-	) -> AnalyzeResult<Type> {
+	) -> ComuneResult<Type> {
 		let Type::TypeRef(ItemRef::Resolved(lhs_ref)) = lhs_ty else {
-			return Err((CMNError::new(CMNErrorCode::InvalidSubscriptLHS { t: lhs_ty.clone() }), meta.tk));
+			return Err(ComuneError::new(ComuneErrCode::InvalidSubscriptLHS { t: lhs_ty.clone() }, meta.tk));
 		};
 
 		match &*lhs_ref.def.upgrade().unwrap().read().unwrap() {
@@ -1083,7 +1081,7 @@ impl Atom {
 		&mut self,
 		scope: &mut FnScope<'ctx>,
 		meta: &NodeData,
-	) -> AnalyzeResult<Type> {
+	) -> ComuneResult<Type> {
 		match self {
 			Atom::IntegerLit(_, t) => {
 				if let Some(t) = t {
@@ -1124,8 +1122,8 @@ impl Atom {
 					*name = id;
 					Ok(ty)
 				} else {
-					Err((
-						CMNError::new(CMNErrorCode::UndeclaredIdentifier(name.to_string())),
+					Err(ComuneError::new(
+						ComuneErrCode::UndeclaredIdentifier(name.to_string()),
 						meta.tk,
 					))
 				}
@@ -1138,11 +1136,11 @@ impl Atom {
 					expr.get_node_data_mut().ty.replace(to.clone());
 					Ok(to.clone())
 				} else {
-					Err((
-						CMNError::new(CMNErrorCode::InvalidCast {
+					Err(ComuneError::new(
+						ComuneErrCode::InvalidCast {
 							from: expr_t,
 							to: to.clone(),
-						}),
+						},
 						expr.get_node_data().tk,
 					))
 				}
@@ -1184,11 +1182,11 @@ impl Atom {
 						}
 						if let Some(ty) = &meta.ty {
 							// Type hint is not an array type
-							Err((
-								CMNError::new(CMNErrorCode::AssignTypeMismatch {
+							Err(ComuneError::new(
+								ComuneErrCode::AssignTypeMismatch {
 									expr: Type::Array(Box::new(last_ty.unwrap()), array_len),
 									to: ty.clone(),
-								}),
+								},
 								meta.tk,
 							))
 						} else {
@@ -1214,11 +1212,11 @@ impl Atom {
 							let expr_ty = expr.validate(scope)?;
 
 							if !expr.coercable_to(&expr_ty, &member_ty, scope) {
-								return Err((
-									CMNError::new(CMNErrorCode::AssignTypeMismatch {
+								return Err(ComuneError::new(
+									ComuneErrCode::AssignTypeMismatch {
 										expr: expr_ty,
 										to: member_ty,
-									}),
+									},
 									expr.get_node_data().tk,
 								));
 							}
@@ -1232,11 +1230,11 @@ impl Atom {
 						}
 
 						if !missing_members.is_empty() {
-							return Err((
-								CMNError::new(CMNErrorCode::MissingInitializers {
+							return Err(ComuneError::new(
+								ComuneErrCode::MissingInitializers {
 									ty: ty.clone(),
 									members: missing_members,
-								}),
+								},
 								meta.tk,
 							));
 						}
@@ -1355,22 +1353,22 @@ impl Atom {
 							expr.wrap_in_cast(scope.fn_return_type.clone());
 							Ok(Type::Never)
 						} else {
-							Err((
-								CMNError::new(CMNErrorCode::ReturnTypeMismatch {
+							Err(ComuneError::new(
+								ComuneErrCode::ReturnTypeMismatch {
 									expected: scope.fn_return_type.clone(),
 									got: expr_ty,
-								}),
+								},
 								meta.tk,
 							))
 						}
 					} else if scope.fn_return_type == Type::Basic(Basic::Void) {
 						Ok(Type::Never)
 					} else {
-						Err((
-							CMNError::new(CMNErrorCode::ReturnTypeMismatch {
+						Err(ComuneError::new(
+							ComuneErrCode::ReturnTypeMismatch {
 								expected: scope.fn_return_type.clone(),
 								got: Type::Basic(Basic::Void),
-							}),
+							},
 							meta.tk,
 						))
 					}
@@ -1435,7 +1433,7 @@ impl Atom {
 }
 
 impl Type {
-	pub fn validate<'ctx>(&self, scope: &'ctx FnScope<'ctx>) -> AnalyzeResult<()> {
+	pub fn validate<'ctx>(&self, scope: &'ctx FnScope<'ctx>) -> ComuneResult<()> {
 		match self {
 			Type::Array(_, n) => {
 				// Old fashioned way to make life easier with the RefCell

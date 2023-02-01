@@ -5,7 +5,7 @@ use std::io::{self, Error, Read};
 use std::path::Path;
 use std::sync::mpsc::Sender;
 
-use crate::errors::{CMNMessage, CMNMessageLog};
+use crate::errors::{ComuneMessage, CMNMessageLog};
 
 use crate::ast::namespace::Name;
 
@@ -552,7 +552,7 @@ impl Lexer {
 			.ok_or_else(|| Error::new(io::ErrorKind::UnexpectedEof, "Unexpected EOF"))
 	}
 
-	pub fn log_msg_at(&self, span: SrcSpan, e: CMNMessage) {
+	pub fn log_msg_at(&self, span: SrcSpan, e: ComuneMessage) {
 		if span.start > 0 {
 			let first_line = self.get_line_number(span.start);
 			let last_line = self.get_line_number(span.start + span.len);
@@ -583,7 +583,7 @@ impl Lexer {
 		}
 	}
 
-	pub fn log_msg(&self, e: CMNMessage) {
+	pub fn log_msg(&self, e: ComuneMessage) {
 		if let Some((span, _)) = self.current() {
 			self.log_msg_at(*span, e)
 		} else {

@@ -19,10 +19,10 @@ use crate::{
 		analyze::{lifeline::VarInitCheck, verify, CIRPassManager, DataFlowPass},
 		builder::CIRModuleBuilder,
 	},
-	errors::{CMNError, CMNErrorCode, CMNMessage, CMNMessageLog},
+	errors::{ComuneError, ComuneErrCode, ComuneMessage, CMNMessageLog},
 	lexer::{self, Lexer, SrcSpan},
 	llvm::{self, LLVMBackend},
-	parser::{ParseResult, Parser},
+	parser::{ComuneResult, Parser},
 };
 
 pub struct ManagerState {
@@ -79,7 +79,7 @@ pub fn launch_module_compilation(
 	module_name: Identifier,
 	error_sender: Sender<CMNMessageLog>,
 	s: &rayon::Scope,
-) -> Result<(), CMNError> {
+) -> Result<(), ComuneError> {
 	if state.module_states.read().unwrap().contains_key(&src_path) {
 		return Ok(());
 	}
@@ -145,7 +145,7 @@ pub fn launch_module_compilation(
 					}
 
 					Some(ModuleState::ParsingFailed) => {
-						return Err(CMNError::new(CMNErrorCode::DependencyError))
+						return Err(ComuneError::new(ComuneErrCode::DependencyError, SrcSpan::new()))
 					}
 
 					Some(
@@ -166,7 +166,7 @@ pub fn launch_module_compilation(
 			parser
 				.lexer
 				.borrow()
-				.log_msg_at(SrcSpan::new(), CMNMessage::Error(e.clone()));
+				.log_msg_at(SrcSpan::new(), ComuneMessage::Error(e.clone()));
 			return Err(e);
 		}
 	};
@@ -305,7 +305,7 @@ pub fn parse_interface(
 	state: &Arc<ManagerState>,
 	path: &Path,
 	error_sender: Sender<CMNMessageLog>,
-) -> Result<Parser, CMNError> {
+) -> Result<Parser, ComuneError> {
 	// First phase of module compilation: create Lexer and Parser, and parse the module at the namespace level
 
 	let mut mod_state = Parser::new(
@@ -319,9 +319,12 @@ pub fn parse_interface(
 					path.file_name().unwrap().to_string_lossy(),
 					e
 				);
-				return Err(CMNError::new(CMNErrorCode::ModuleNotFound(OsString::from(
-					path.file_name().unwrap(),
-				))));
+				return Err(ComuneError::new(
+					ComuneErrCode::ModuleNotFound(OsString::from(
+						path.file_name().unwrap()
+					)),				
+					SrcSpan::new()
+				));
 			}
 		},
 		state.verbose_output,
@@ -345,13 +348,13 @@ pub fn parse_interface(
 			mod_state
 				.lexer
 				.borrow()
-				.log_msg(CMNMessage::Error(e.clone()));
+				.log_msg(ComuneMessage::Error(e.clone()));
 			Err(e)
 		}
 	};
 }
 
-pub fn resolve_types(state: &Arc<ManagerState>, parser: &mut Parser) -> ParseResult<()> {
+pub fn resolve_types(state: &Arc<ManagerState>, parser: &mut Parser) -> ComuneResult<()> {
 	// At this point, all imports have been resolved, so validate namespace-level types
 	ast::resolve_namespace_types(&mut parser.namespace)?;
 
@@ -372,7 +375,7 @@ pub fn generate_code<'ctx>(
 	context: &'ctx Context,
 	src_path: &Path,
 	input_module: &Identifier,
-) -> Result<LLVMBackend<'ctx>, CMNError> {
+) -> Result<LLVMBackend<'ctx>, ComuneError> {
 	// Generate AST
 
 	match parser.generate_ast() {
@@ -382,7 +385,7 @@ pub fn generate_code<'ctx>(
 			}
 		}
 		Err(e) => {
-			parser.lexer.borrow().log_msg(CMNMessage::Error(e.clone()));
+			parser.lexer.borrow().log_msg(ComuneMessage::Error(e.clone()));
 			return Err(e);
 		}
 	};
@@ -399,8 +402,8 @@ pub fn generate_code<'ctx>(
 			parser
 				.lexer
 				.borrow()
-				.log_msg_at(e.1, CMNMessage::Error(e.0.clone()));
-			return Err(e.0);
+				.log_msg_at(e.span, ComuneMessage::Error(e.clone()));
+			return Err(e);
 		}
 	}
 
@@ -438,15 +441,15 @@ pub fn generate_code<'ctx>(
 	if !cir_errors.is_empty() {
 		let mut return_errors = vec![];
 
-		for (error, span) in cir_errors {
+		for error in cir_errors {
 			return_errors.push(error.clone());
 			parser
 				.lexer
 				.borrow()
-				.log_msg_at(span, CMNMessage::Error(error));
+				.log_msg_at(error.span, ComuneMessage::Error(error));
 		}
 
-		return Err(CMNError::new(CMNErrorCode::Pack(return_errors)));
+		return Err(ComuneError::new(ComuneErrCode::Pack(return_errors), SrcSpan::new()));
 	}
 
 	let module_mono = cir_module.monoize();
@@ -488,7 +491,7 @@ pub fn generate_code<'ctx>(
 			"bogus.ll".bold()
 		);
 
-		return Err(CMNError::new(CMNErrorCode::LLVMError));
+		return Err(ComuneError::new(ComuneErrCode::LLVMError, SrcSpan::new()));
 	};
 
 	if state.emit_types.contains(&EmitType::LLVMIrRaw) {

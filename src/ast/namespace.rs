@@ -7,8 +7,8 @@ use std::{
 };
 
 use crate::{
-	errors::{CMNError, CMNErrorCode},
-	parser::ParseResult,
+	errors::{ComuneError, ComuneErrCode},
+	parser::ComuneResult, lexer::SrcSpan,
 };
 
 use super::{
@@ -264,11 +264,11 @@ impl Identifier {
 		self.path.len() > 1
 	}
 
-	pub fn expect_scopeless(&self) -> ParseResult<&Name> {
+	pub fn expect_scopeless(&self) -> ComuneResult<&Name> {
 		if self.path.len() == 1 && !self.absolute {
 			Ok(self.path.last().unwrap())
 		} else {
-			Err(CMNError::new(CMNErrorCode::ExpectedIdentifier)) // TODO: Give appropriate error
+			Err(ComuneError::new(ComuneErrCode::ExpectedIdentifier, SrcSpan::new())) // TODO: Give appropriate error
 		}
 	}
 }

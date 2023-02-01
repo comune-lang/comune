@@ -8,7 +8,7 @@ use super::{
 };
 use crate::{
 	cir::{CIRFunction, CIRStmt, CIRType, LValue, Operand, PlaceElem, RValue},
-	errors::{CMNError, CMNErrorCode},
+	errors::{ComuneError, ComuneErrCode},
 	lexer::SrcSpan,
 };
 
@@ -162,7 +162,7 @@ impl LiveVarCheckState {
 }
 
 impl CIRPassMut for BorrowCheck {
-	fn on_function(&self, func: &mut CIRFunction) -> Vec<(CMNError, SrcSpan)> {
+	fn on_function(&self, func: &mut CIRFunction) -> Vec<ComuneError> {
 		let mut liveness = LiveVarCheckState {
 			liveness: HashMap::new(),
 		};
@@ -267,7 +267,7 @@ impl Analysis for VarInitCheck {
 }
 
 impl AnalysisResultHandler for VarInitCheck {
-	fn process_result(result: ResultVisitor<Self>, func: &CIRFunction) -> Vec<(CMNError, SrcSpan)> {
+	fn process_result(result: ResultVisitor<Self>, func: &CIRFunction) -> Vec<ComuneError> {
 		let mut errors = vec![];
 
 		for (i, block) in func.blocks.iter().enumerate() {
@@ -287,11 +287,11 @@ impl AnalysisResultHandler for VarInitCheck {
 						match liveness {
 							LivenessState::Live => {}
 
-							_ => errors.push((
-								CMNError::new(CMNErrorCode::InvalidUse {
+							_ => errors.push(ComuneError::new(
+								ComuneErrCode::InvalidUse {
 									variable: func.get_variable_name(lval.local),
 									state: liveness,
-								}),
+								},
 								*span,
 							)),
 						}
@@ -305,10 +305,10 @@ impl AnalysisResultHandler for VarInitCheck {
 					if state.get_liveness(lval) != LivenessState::Uninit
 						&& !func.variables[lval.local].1.is_mut
 					{
-						errors.push((
-							CMNError::new(CMNErrorCode::ImmutVarMutation {
+						errors.push(ComuneError::new(
+							ComuneErrCode::ImmutVarMutation {
 								variable: func.get_variable_name(lval.local),
-							}),
+							},
 							*tk,
 						))
 					}

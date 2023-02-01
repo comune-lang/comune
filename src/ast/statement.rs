@@ -1,9 +1,9 @@
 use std::fmt::Display;
 
 use crate::{
-	errors::{CMNError, CMNErrorCode},
+	errors::{ComuneError, ComuneErrCode},
 	lexer::SrcSpan,
-	parser::AnalyzeResult,
+	parser::ComuneResult,
 };
 
 use super::{
@@ -20,7 +20,7 @@ pub enum Stmt {
 }
 
 impl Stmt {
-	pub fn validate<'ctx>(&mut self, scope: &mut FnScope<'ctx>) -> AnalyzeResult<Type> {
+	pub fn validate<'ctx>(&mut self, scope: &mut FnScope<'ctx>) -> ComuneResult<Type> {
 		match self {
 			Stmt::Decl(names, expr, tk) => {
 				if names.len() != 1 {
@@ -39,19 +39,19 @@ impl Stmt {
 						if expr_ty.is_subtype_of(&binding_ty) {
 							expr.wrap_in_cast(binding_ty.clone());
 						} else {
-							return Err((
-								CMNError::new(CMNErrorCode::AssignTypeMismatch {
+							return Err(
+								ComuneError::new(ComuneErrCode::AssignTypeMismatch {
 									expr: expr_ty,
 									to: binding_ty,
-								}),
+								},
 								*tk,
 							));
 						}
 					}
 
 					if binding_props.is_ref {
-						return Err((
-							CMNError::new(CMNErrorCode::UnstableFeature("ref_locals")),
+						return Err(ComuneError::new(
+							ComuneErrCode::UnstableFeature("ref_locals"),
 							*tk,
 						));
 					}

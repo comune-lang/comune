@@ -4,7 +4,7 @@ use std::sync::{Arc, RwLock};
 
 use crate::ast::pattern::{Binding, Pattern};
 use crate::constexpr::ConstExpr;
-use crate::errors::{CMNError, CMNErrorCode};
+use crate::errors::{ComuneError, ComuneErrCode};
 use crate::lexer::{Lexer, SrcSpan, Token};
 
 use crate::ast::controlflow::ControlFlow;
@@ -30,8 +30,7 @@ fn token_compare(token: &Token, text: &str) -> bool {
 	}
 }
 
-pub type ParseResult<T> = Result<T, CMNError>;
-pub type AnalyzeResult<T> = Result<T, (CMNError, SrcSpan)>;
+pub type ComuneResult<T> = Result<T, ComuneError>;
 
 pub struct Parser {
 	pub namespace: Namespace,
@@ -50,31 +49,31 @@ impl Parser {
 		}
 	}
 
-	fn err(&self, code: CMNErrorCode) -> CMNError {
-		CMNError::new_with_parser(code, self)
+	fn err<T>(&self, code: ComuneErrCode) -> ComuneResult<T> {
+		Err(ComuneError::new(code, SrcSpan::new()))
 	}
 
-	fn get_current(&self) -> ParseResult<Token> {
+	fn get_current(&self) -> ComuneResult<Token> {
 		match self.lexer.borrow().current() {
 			Some((_, tk)) => Ok(tk.clone()),
-			None => Err(self.err(CMNErrorCode::UnexpectedEOF)),
+			None => self.err(ComuneErrCode::UnexpectedEOF),
 		}
 	}
 
-	fn get_next(&self) -> ParseResult<Token> {
+	fn get_next(&self) -> ComuneResult<Token> {
 		match self.lexer.borrow_mut().next() {
 			Some((_, tk)) => Ok(tk.clone()),
-			None => Err(self.err(CMNErrorCode::UnexpectedEOF)),
+			None => self.err(ComuneErrCode::UnexpectedEOF),
 		}
 	}
 
 	// Consume the current token, returning an error if it doesn't match `expected`
-	fn consume(&self, expected: &Token) -> ParseResult<()> {
+	fn consume(&self, expected: &Token) -> ComuneResult<()> {
 		if &self.get_current()? == expected {
 			self.get_next()?;
 			Ok(())
 		} else {
-			Err(self.err(CMNErrorCode::UnexpectedToken))
+			self.err(ComuneErrCode::UnexpectedToken)
 		}
 	}
 
@@ -91,7 +90,7 @@ impl Parser {
 		self.lexer.borrow().current_token_index()
 	}
 
-	pub fn parse_module(&mut self) -> ParseResult<&Namespace> {
+	pub fn parse_module(&mut self) -> ComuneResult<&Namespace> {
 		self.lexer.borrow_mut().tokenize_file().unwrap();
 
 		match self.parse_namespace(&Identifier::new(true)) {
@@ -106,7 +105,7 @@ impl Parser {
 		}
 	}
 
-	pub fn generate_ast(&mut self) -> ParseResult<()> {
+	pub fn generate_ast(&mut self) -> ComuneResult<()> {
 		for child in self.namespace.children.values() {
 			match child {
 				NamespaceItem::Functions(fns) => {
@@ -150,7 +149,7 @@ impl Parser {
 		Ok(())
 	}
 
-	pub fn parse_namespace(&mut self, scope: &Identifier) -> ParseResult<()> {
+	pub fn parse_namespace(&mut self, scope: &Identifier) -> ComuneResult<()> {
 		while !matches!(self.get_current()?, Token::Eof | Token::Other('}')) {
 			let mut current_attributes = self.parse_attributes()?;
 
@@ -161,7 +160,7 @@ impl Parser {
 
 				Token::Keyword("enum") => {
 					let mut aggregate = AlgebraicDef::new();
-					let Token::Name(name) = self.get_next()? else { return Err(self.err(CMNErrorCode::ExpectedIdentifier)) };
+					let Token::Name(name) = self.get_next()? else { return self.err(ComuneErrCode::ExpectedIdentifier) };
 
 					let mut next = self.get_next()?;
 
@@ -171,7 +170,7 @@ impl Parser {
 					}
 
 					if !token_compare(&next, "{") {
-						return Err(self.err(CMNErrorCode::UnexpectedToken));
+						return self.err(ComuneErrCode::UnexpectedToken);
 					}
 
 					next = self.get_next()?; // Consume brace
@@ -179,7 +178,7 @@ impl Parser {
 					// TODO: Actually finish this
 
 					while !token_compare(&next, "}") {
-						let Token::Name(_variant_name) = next else { return Err(self.err(CMNErrorCode::UnexpectedToken)) };
+						let Token::Name(_variant_name) = next else { return self.err(ComuneErrCode::UnexpectedToken) };
 
 						self.get_next()?;
 
@@ -193,7 +192,7 @@ impl Parser {
 
 							Token::Other('}') => break,
 
-							_ => return Err(self.err(CMNErrorCode::UnexpectedToken)),
+							_ => return self.err(ComuneErrCode::UnexpectedToken),
 						}
 					}
 
@@ -211,7 +210,7 @@ impl Parser {
 					// Register algebraic type
 					let mut current_visibility = Visibility::Public;
 					let mut aggregate = AlgebraicDef::new();
-					let Token::Name(name) = self.get_next()? else { return Err(self.err(CMNErrorCode::ExpectedIdentifier)) };
+					let Token::Name(name) = self.get_next()? else { return self.err(ComuneErrCode::ExpectedIdentifier) };
 
 					let mut next = self.get_next()?;
 
@@ -221,7 +220,7 @@ impl Parser {
 					}
 
 					if !token_compare(&next, "{") {
-						return Err(self.err(CMNErrorCode::UnexpectedToken));
+						return self.err(ComuneErrCode::UnexpectedToken);
 					}
 
 					next = self.get_next()?; // Consume brace
@@ -257,13 +256,13 @@ impl Parser {
 									"protected" => {
 										current_visibility = Visibility::Protected;
 									}
-									_ => return Err(self.err(CMNErrorCode::UnexpectedKeyword)),
+									_ => return self.err(ComuneErrCode::UnexpectedKeyword),
 								}
 								self.get_next()?;
 								next = self.get_next()?;
 							}
 
-							_ => return Err(self.err(CMNErrorCode::ExpectedIdentifier)),
+							_ => return self.err(ComuneErrCode::ExpectedIdentifier),
 						}
 					}
 
@@ -279,7 +278,7 @@ impl Parser {
 
 				Token::Keyword("trait") => {
 					let Token::Name(name) = self.get_next()? else {
-						return Err(self.err(CMNErrorCode::UnexpectedToken));
+						return self.err(ComuneErrCode::UnexpectedToken);
 					};
 
 					let mut this_trait = TraitDef {
@@ -291,7 +290,7 @@ impl Parser {
 					let mut next = self.get_next()?;
 
 					if !token_compare(&next, "{") {
-						return Err(self.err(CMNErrorCode::UnexpectedToken));
+						return self.err(ComuneErrCode::UnexpectedToken);
 					}
 
 					next = self.get_next()?; // Consume brace
@@ -335,7 +334,7 @@ impl Parser {
 
 						// We parsed the trait as a type, so extract it
 						let Type::TypeRef(ItemRef::Unresolved { name, scope, type_args }) = impl_ty else {
-							return Err(self.err(CMNErrorCode::ExpectedIdentifier)); // TODO: Proper error
+							return self.err(ComuneErrCode::ExpectedIdentifier); // TODO: Proper error
 						};
 
 						trait_name = Some(ItemRef::<TraitRef>::Unresolved {
@@ -360,7 +359,7 @@ impl Parser {
 						let ret = self.parse_type(false)?;
 
 						let Token::Name(fn_name) = self.get_current()? else {
-							return Err(self.err(CMNErrorCode::ExpectedIdentifier));
+							return self.err(ComuneErrCode::ExpectedIdentifier);
 						};
 
 						self.get_next()?;
@@ -413,7 +412,7 @@ impl Parser {
 							.insert(self.parse_identifier()?);
 						self.check_semicolon()?;
 					} else {
-						return Err(self.err(CMNErrorCode::ExpectedIdentifier));
+						return self.err(ComuneErrCode::ExpectedIdentifier);
 					}
 				}
 
@@ -470,7 +469,7 @@ impl Parser {
 
 				Token::Keyword("module") => {
 					let Token::Name(module) = self.get_next()? else {
-						return Err(self.err(CMNErrorCode::UnexpectedToken))
+						return self.err(ComuneErrCode::UnexpectedToken)
 					};
 
 					match self.get_next()? {
@@ -487,13 +486,13 @@ impl Parser {
 							self.current_scope.path.pop();
 						}
 
-						_ => return Err(self.err(CMNErrorCode::UnexpectedToken))
+						_ => return self.err(ComuneErrCode::UnexpectedToken)
 					}
 					
 				}
 
 				Token::Keyword(_) => {
-					return Err(self.err(CMNErrorCode::UnexpectedKeyword));
+					return self.err(ComuneErrCode::UnexpectedKeyword);
 				}
 
 				_ => {
@@ -524,14 +523,14 @@ impl Parser {
 			if scope.path.is_empty() {
 				Ok(())
 			} else {
-				Err(self.err(CMNErrorCode::UnexpectedEOF))
+				self.err(ComuneErrCode::UnexpectedEOF)
 			}
 		} else if self.get_current()? == Token::Other('}') {
 			if !scope.path.is_empty() {
 				self.get_next()?;
 				Ok(())
 			} else {
-				Err(self.err(CMNErrorCode::UnexpectedToken))
+				self.err(ComuneErrCode::UnexpectedToken)
 			}
 		} else {
 			self.get_next()?;
@@ -540,11 +539,11 @@ impl Parser {
 	}
 
 	// Not super robust - add checks for namespace-level keywords and abort early if found
-	fn skip_block(&self) -> ParseResult<Token> {
+	fn skip_block(&self) -> ComuneResult<Token> {
 		let mut current = self.get_current()?;
 
 		if current != Token::Other('{') {
-			return Err(self.err(CMNErrorCode::UnexpectedToken));
+			return self.err(ComuneErrCode::UnexpectedToken);
 		}
 		let mut bracket_depth = 1;
 
@@ -562,12 +561,12 @@ impl Parser {
 		self.get_next()
 	}
 
-	fn parse_block(&self) -> ParseResult<Expr> {
+	fn parse_block(&self) -> ComuneResult<Expr> {
 		let begin = self.get_current_start_index();
 		let mut current = self.get_current()?;
 
 		if current != Token::Other('{') {
-			return Err(self.err(CMNErrorCode::UnexpectedToken));
+			return self.err(ComuneErrCode::UnexpectedToken);
 		}
 
 		let mut items = vec![];
@@ -632,7 +631,7 @@ impl Parser {
 		))
 	}
 
-	fn parse_attributes(&self) -> ParseResult<Vec<Attribute>> {
+	fn parse_attributes(&self) -> ComuneResult<Vec<Attribute>> {
 		let mut result = vec![];
 
 		while self.get_current()? == Token::Other('@') {
@@ -641,24 +640,24 @@ impl Parser {
 		Ok(result)
 	}
 
-	fn check_semicolon(&self) -> ParseResult<()> {
+	fn check_semicolon(&self) -> ComuneResult<()> {
 		if token_compare(&self.get_current()?, ";") {
 			self.get_next()?;
 			Ok(())
 		} else {
-			Err(self.err(CMNErrorCode::UnexpectedToken))
+			self.err(ComuneErrCode::UnexpectedToken)
 		}
 	}
 
 	fn parse_namespace_declaration(
 		&self,
 		attributes: Vec<Attribute>,
-	) -> ParseResult<(Name, NamespaceItem)> {
+	) -> ComuneResult<(Name, NamespaceItem)> {
 		let t = self.parse_type(false)?;
 		let item;
 
 		let Token::Name(name) = self.get_current()? else {
-			return Err(self.err(CMNErrorCode::ExpectedIdentifier))
+			return self.err(ComuneErrCode::ExpectedIdentifier)
 		};
 
 		if let Token::Operator(op) = self.get_next()? {
@@ -692,7 +691,7 @@ impl Parser {
 							self.get_next()?;
 						}
 
-						_ => return Err(self.err(CMNErrorCode::UnexpectedToken)),
+						_ => return self.err(ComuneErrCode::UnexpectedToken),
 					}
 
 					item = NamespaceItem::Functions(vec![(
@@ -721,7 +720,7 @@ impl Parser {
 				}
 
 				_ => {
-					return Err(self.err(CMNErrorCode::UnexpectedToken));
+					return self.err(ComuneErrCode::UnexpectedToken);
 				}
 			}
 		} else {
@@ -732,7 +731,7 @@ impl Parser {
 		Ok((name, item))
 	}
 
-	fn parse_binding_props(&self) -> ParseResult<Option<BindingProps>> {
+	fn parse_binding_props(&self) -> ComuneResult<Option<BindingProps>> {
 		if !matches!(
 			self.get_current()?,
 			Token::Operator("&") | Token::Keyword("mut")
@@ -761,7 +760,7 @@ impl Parser {
 		Ok(Some(props))
 	}
 
-	fn parse_statement(&self) -> ParseResult<Stmt> {
+	fn parse_statement(&self) -> ComuneResult<Stmt> {
 		let begin = self.get_current_start_index();
 
 		let binding_props = self.parse_binding_props()?;
@@ -772,7 +771,7 @@ impl Parser {
 			let ty = self.parse_type(true)?;
 
 			let Token::Name(name) = self.get_current()? else {
-				return Err(self.err(CMNErrorCode::ExpectedIdentifier))
+				return self.err(ComuneErrCode::ExpectedIdentifier)
 			};
 
 			let mut expr = None;
@@ -804,7 +803,7 @@ impl Parser {
 		}
 	}
 
-	fn parse_pattern(&self) -> ParseResult<Pattern> {
+	fn parse_pattern(&self) -> ComuneResult<Pattern> {
 		let props = self.parse_binding_props()?;
 
 		if self.is_at_type_token(true)? {
@@ -829,19 +828,19 @@ impl Parser {
 
 				Token::Other('{') => todo!(),
 
-				_ => Err(self.err(CMNErrorCode::UnexpectedToken)),
+				_ => self.err(ComuneErrCode::UnexpectedToken),
 			}
 		} else {
-			Err(self.err(CMNErrorCode::UnexpectedToken))
+			self.err(ComuneErrCode::UnexpectedToken)
 		}
 	}
 
-	fn parse_expression(&self) -> ParseResult<Expr> {
+	fn parse_expression(&self) -> ComuneResult<Expr> {
 		self.parse_expression_bp(0)
 	}
 
 	// World's most hacked-together pratt parser (tm)
-	fn parse_expression_bp(&self, min_bp: u8) -> ParseResult<Expr> {
+	fn parse_expression_bp(&self, min_bp: u8) -> ComuneResult<Expr> {
 		let mut current = self.get_current()?;
 		let begin_lhs = self.get_current_start_index();
 
@@ -878,7 +877,7 @@ impl Parser {
 			// Handle unary prefix operators
 			Token::Operator(tk) => {
 				let Some(op) = Operator::get_operator(tk, false) else {
-						return Err(self.err(CMNErrorCode::UnexpectedToken))
+						return self.err(ComuneErrCode::UnexpectedToken)
 					};
 
 				self.get_next()?;
@@ -891,12 +890,12 @@ impl Parser {
 
 					if let Token::Operator(op) = current {
 						if op != ")" {
-							return Err(self.err(CMNErrorCode::UnexpectedToken));
+							return self.err(ComuneErrCode::UnexpectedToken);
 						}
 						self.get_next()?;
 						sub
 					} else {
-						return Err(self.err(CMNErrorCode::UnexpectedToken));
+						return self.err(ComuneErrCode::UnexpectedToken);
 					}
 				} else {
 					let rhs = self.parse_expression_bp(op.get_binding_power())?;
@@ -912,7 +911,7 @@ impl Parser {
 			}
 
 			_ => {
-				return Err(self.err(CMNErrorCode::UnexpectedToken));
+				return self.err(ComuneErrCode::UnexpectedToken);
 			}
 		};
 
@@ -1007,7 +1006,7 @@ impl Parser {
 					if self.get_current()? == Token::Operator("]") {
 						self.get_next()?;
 					} else {
-						return Err(self.err(CMNErrorCode::UnexpectedToken));
+						return self.err(ComuneErrCode::UnexpectedToken);
 					}
 				}
 
@@ -1033,7 +1032,7 @@ impl Parser {
 		Ok(lhs)
 	}
 
-	fn parse_atom(&self) -> ParseResult<Atom> {
+	fn parse_atom(&self) -> ComuneResult<Atom> {
 		let mut result = None;
 		let mut current = self.get_current()?;
 
@@ -1065,7 +1064,7 @@ impl Parser {
 
 									inits.push((member_name, expr));
 								} else if self.get_current()? != Token::Other('}') {
-									return Err(self.err(CMNErrorCode::UnexpectedToken));
+									return self.err(ComuneErrCode::UnexpectedToken);
 								}
 							}
 
@@ -1076,7 +1075,7 @@ impl Parser {
 								inits,
 							));
 						} else {
-							return Err(self.err(CMNErrorCode::UnexpectedToken));
+							return self.err(ComuneErrCode::UnexpectedToken);
 						}
 					}
 
@@ -1121,7 +1120,7 @@ impl Parser {
 							} else if current == Token::Operator(")") {
 								break;
 							} else {
-								return Err(self.err(CMNErrorCode::UnexpectedToken));
+								return self.err(ComuneErrCode::UnexpectedToken);
 							}
 						}
 					}
@@ -1153,7 +1152,7 @@ impl Parser {
 							// Add special numeric suffixes here
 							"f" => Some(Basic::Float { size_bytes: 4 }),
 
-							_ => return Err(self.err(CMNErrorCode::InvalidSuffix)),
+							_ => return self.err(ComuneErrCode::InvalidSuffix),
 						};
 					}
 
@@ -1181,7 +1180,7 @@ impl Parser {
 						} else if self.get_current()? == Token::Operator("]") {
 							break;
 						} else {
-							return Err(self.err(CMNErrorCode::UnexpectedToken));
+							return self.err(ComuneErrCode::UnexpectedToken);
 						}
 					}
 
@@ -1221,7 +1220,7 @@ impl Parser {
 						current = self.get_current()?;
 
 						if current != Token::Other('{') {
-							return Err(self.err(CMNErrorCode::UnexpectedToken));
+							return self.err(ComuneErrCode::UnexpectedToken);
 						}
 
 						current = self.get_next()?;
@@ -1233,7 +1232,7 @@ impl Parser {
 							let branch_block;
 
 							if self.get_current()? != Token::Operator("=>") {
-								return Err(self.err(CMNErrorCode::UnexpectedToken));
+								return self.err(ComuneErrCode::UnexpectedToken);
 							}
 
 							if self.get_next()? == Token::Other('{') {
@@ -1243,7 +1242,7 @@ impl Parser {
 
 								// After a bare expression, a comma is required
 								if self.get_current()? != Token::Other(',') {
-									return Err(self.err(CMNErrorCode::UnexpectedToken));
+									return self.err(ComuneErrCode::UnexpectedToken);
 								}
 
 								self.get_next()?;
@@ -1278,7 +1277,7 @@ impl Parser {
 						if token_compare(&self.get_current()?, "{") {
 							body = self.parse_block()?;
 						} else {
-							return Err(self.err(CMNErrorCode::UnexpectedToken));
+							return self.err(ComuneErrCode::UnexpectedToken);
 						}
 
 						if token_compare(&self.get_current()?, "else") {
@@ -1287,7 +1286,7 @@ impl Parser {
 							if token_compare(&self.get_current()?, "{") {
 								else_body = Some(self.parse_block()?);
 							} else {
-								return Err(self.err(CMNErrorCode::UnexpectedToken));
+								return self.err(ComuneErrCode::UnexpectedToken);
 							}
 						}
 
@@ -1347,7 +1346,7 @@ impl Parser {
 						if token_compare(&current, ")") {
 							current = self.get_next()?;
 						} else {
-							return Err(self.err(CMNErrorCode::UnexpectedToken));
+							return self.err(ComuneErrCode::UnexpectedToken);
 						}
 
 						// Parse body
@@ -1366,10 +1365,10 @@ impl Parser {
 					}
 
 					// Invalid keyword at start of statement
-					_ => return Err(self.err(CMNErrorCode::UnexpectedKeyword)),
+					_ => return self.err(ComuneErrCode::UnexpectedKeyword),
 				},
 
-				_ => return Err(self.err(CMNErrorCode::UnexpectedToken)),
+				_ => return self.err(ComuneErrCode::UnexpectedToken),
 			};
 		}
 
@@ -1382,7 +1381,7 @@ impl Parser {
 
 	// Returns true if the current token is the start of a Type.
 	// In ambiguous contexts (i.e. function blocks), `resolve_idents` enables basic name resolution
-	fn is_at_type_token(&self, resolve_idents: bool) -> ParseResult<bool> {
+	fn is_at_type_token(&self, resolve_idents: bool) -> ComuneResult<bool> {
 		let current = self.get_current()?;
 
 		let current_idx = self.get_current_token_index();
@@ -1412,16 +1411,16 @@ impl Parser {
 		}
 	}
 
-	fn is_at_identifier_token(&self) -> ParseResult<bool> {
+	fn is_at_identifier_token(&self) -> ComuneResult<bool> {
 		Ok(matches!(
 			self.get_current()?,
 			Token::Name(_) | Token::Operator("::" | "<")
 		))
 	}
 
-	fn parse_identifier(&self) -> ParseResult<Identifier> {
+	fn parse_identifier(&self) -> ComuneResult<Identifier> {
 		if !self.is_at_identifier_token()? {
-			return Err(self.err(CMNErrorCode::ExpectedIdentifier));
+			return self.err(ComuneErrCode::ExpectedIdentifier);
 		}
 
 		let absolute;
@@ -1449,7 +1448,7 @@ impl Parser {
 
 				Token::Operator(">") => None,
 
-				_ => return Err(self.err(CMNErrorCode::UnexpectedToken)),
+				_ => return self.err(ComuneErrCode::UnexpectedToken),
 			};
 
 			self.consume(&Token::Operator(">"))?;
@@ -1465,7 +1464,7 @@ impl Parser {
 
 		loop {
 			let Token::Name(name) = self.get_current()? else {
-				return Err(self.err(CMNErrorCode::UnexpectedToken));
+				return self.err(ComuneErrCode::UnexpectedToken);
 			};
 
 			path.push(name);
@@ -1484,9 +1483,9 @@ impl Parser {
 		})
 	}
 
-	fn parse_multi_identifier(&self) -> ParseResult<Vec<Identifier>> {
+	fn parse_multi_identifier(&self) -> ComuneResult<Vec<Identifier>> {
 		if !self.is_at_identifier_token()? {
-			return Err(self.err(CMNErrorCode::ExpectedIdentifier));
+			return self.err(ComuneErrCode::ExpectedIdentifier);
 		}
 
 		let absolute = if self.get_current()? == Token::Operator("::") {
@@ -1499,7 +1498,7 @@ impl Parser {
 		self.parse_multi_identifier_component(absolute)
 	}
 
-	fn parse_multi_identifier_component(&self, absolute: bool) -> ParseResult<Vec<Identifier>> {
+	fn parse_multi_identifier_component(&self, absolute: bool) -> ComuneResult<Vec<Identifier>> {
 		let mut result = vec![];
 
 		let mut current = Identifier {
@@ -1539,7 +1538,7 @@ impl Parser {
 					self.consume(&Token::Other('}'))?;
 				}
 
-				_ => return Err(self.err(CMNErrorCode::UnexpectedToken)),
+				_ => return self.err(ComuneErrCode::UnexpectedToken),
 			}
 
 			if self.get_current()? == Token::Operator("::") {
@@ -1556,7 +1555,7 @@ impl Parser {
 		Ok(result)
 	}
 
-	fn parse_parameter_list(&self) -> ParseResult<FnParamList> {
+	fn parse_parameter_list(&self) -> ComuneResult<FnParamList> {
 		let mut result = FnParamList {
 			params: vec![],
 			variadic: false,
@@ -1565,7 +1564,7 @@ impl Parser {
 		if token_compare(&self.get_current()?, "(") {
 			self.get_next()?;
 		} else {
-			return Err(self.err(CMNErrorCode::UnexpectedToken));
+			return self.err(ComuneErrCode::UnexpectedToken);
 		}
 
 		loop {
@@ -1599,7 +1598,7 @@ impl Parser {
 				Token::Operator(")") => break,
 
 				_ => {
-					return Err(self.err(CMNErrorCode::UnexpectedToken));
+					return self.err(ComuneErrCode::UnexpectedToken);
 				}
 			}
 		}
@@ -1616,19 +1615,19 @@ impl Parser {
 					result.variadic = true;
 					Ok(result)
 				} else {
-					Err(self.err(CMNErrorCode::UnexpectedToken))
+					self.err(ComuneErrCode::UnexpectedToken)
 				}
 			}
 
-			_ => Err(self.err(CMNErrorCode::UnexpectedToken)),
+			_ => self.err(ComuneErrCode::UnexpectedToken),
 		}
 	}
 
-	fn parse_type(&self, immediate_resolve: bool) -> ParseResult<Type> {
+	fn parse_type(&self, immediate_resolve: bool) -> ComuneResult<Type> {
 		let mut result;
 
 		if !self.is_at_type_token(immediate_resolve)? {
-			return Err(self.err(CMNErrorCode::ExpectedIdentifier));
+			return self.err(ComuneErrCode::ExpectedIdentifier);
 		}
 
 		if self.get_current()? == Token::Operator("(") {
@@ -1642,7 +1641,7 @@ impl Parser {
 				if let Some(ty) = self.namespace.resolve_type(&typename, &self.current_scope) {
 					result = ty;
 				} else {
-					return Err(self.err(CMNErrorCode::UnresolvedTypename(typename.to_string())));
+					return self.err(ComuneErrCode::UnresolvedTypename(typename.to_string()));
 				}
 			} else {
 				result = Type::TypeRef(ItemRef::Unresolved {
@@ -1695,7 +1694,7 @@ impl Parser {
 
 							Token::Operator(")") => break,
 
-							_ => return Err(self.err(CMNErrorCode::UnexpectedToken)),
+							_ => return self.err(ComuneErrCode::UnexpectedToken),
 						};
 					}
 
@@ -1725,13 +1724,13 @@ impl Parser {
 
 			Ok(result)
 		} else {
-			Err(self.err(CMNErrorCode::UnexpectedToken))
+			self.err(ComuneErrCode::UnexpectedToken)
 		}
 	}
 
-	fn parse_attribute(&self) -> ParseResult<Attribute> {
+	fn parse_attribute(&self) -> ComuneResult<Attribute> {
 		if !token_compare(&self.get_current()?, "@") {
-			return Err(self.err(CMNErrorCode::UnexpectedToken)); // You called this from the wrong place lol
+			return self.err(ComuneErrCode::UnexpectedToken); // You called this from the wrong place lol
 		}
 
 		let name = self.get_next()?;
@@ -1743,7 +1742,7 @@ impl Parser {
 				args: vec![],
 			};
 		} else {
-			return Err(self.err(CMNErrorCode::ExpectedIdentifier));
+			return self.err(ComuneErrCode::ExpectedIdentifier);
 		}
 
 		let mut current = self.get_next()?;
@@ -1793,9 +1792,9 @@ impl Parser {
 		Ok(result)
 	}
 
-	fn parse_type_parameter_list(&self) -> ParseResult<TypeParamList> {
+	fn parse_type_parameter_list(&self) -> ComuneResult<TypeParamList> {
 		if !token_compare(&self.get_current()?, "<") {
-			return Err(self.err(CMNErrorCode::UnexpectedToken));
+			return self.err(ComuneErrCode::UnexpectedToken);
 		}
 
 		let mut result = vec![];
@@ -1828,7 +1827,7 @@ impl Parser {
 
 								Token::Other(',') => break,
 
-								_ => return Err(self.err(CMNErrorCode::UnexpectedToken)),
+								_ => return self.err(ComuneErrCode::UnexpectedToken),
 							}
 						}
 					}
@@ -1842,14 +1841,14 @@ impl Parser {
 							continue;
 						}
 
-						_ => return Err(self.err(CMNErrorCode::UnexpectedToken)),
+						_ => return self.err(ComuneErrCode::UnexpectedToken),
 					}
 				}
 
 				Token::Operator(">") => break,
 
 				_ => {
-					return Err(self.err(CMNErrorCode::UnexpectedToken));
+					return self.err(ComuneErrCode::UnexpectedToken);
 				}
 			}
 		}
@@ -1859,7 +1858,7 @@ impl Parser {
 		Ok(result)
 	}
 
-	fn parse_type_argument_list(&self) -> ParseResult<Vec<Type>> {
+	fn parse_type_argument_list(&self) -> ComuneResult<Vec<Type>> {
 		self.get_next()?;
 
 		let mut result = vec![];
@@ -1876,7 +1875,7 @@ impl Parser {
 		}
 
 		if self.get_current()? != Token::Operator(">") {
-			return Err(self.err(CMNErrorCode::UnexpectedToken));
+			return self.err(ComuneErrCode::UnexpectedToken);
 		}
 
 		// consume closing angle bracket
@@ -1885,11 +1884,11 @@ impl Parser {
 		Ok(result)
 	}
 
-	fn parse_tuple_type(&self, immediate_resolve: bool) -> ParseResult<(TupleKind, Vec<Type>)> {
+	fn parse_tuple_type(&self, immediate_resolve: bool) -> ComuneResult<(TupleKind, Vec<Type>)> {
 		let mut types = vec![];
 
 		if self.get_current()? != Token::Operator("(") {
-			return Err(self.err(CMNErrorCode::UnexpectedToken));
+			return self.err(ComuneErrCode::UnexpectedToken);
 		}
 
 		self.get_next()?;
@@ -1903,7 +1902,7 @@ impl Parser {
 				Token::Other(',') => {
 					// Check if tuple kind is consistent
 					if matches!(kind, Some(TupleKind::Sum)) {
-						return Err(self.err(CMNErrorCode::UnexpectedToken));
+						return self.err(ComuneErrCode::UnexpectedToken);
 					}
 
 					kind = Some(TupleKind::Product);
@@ -1912,7 +1911,7 @@ impl Parser {
 				Token::Operator("|") => {
 					// Ditto
 					if matches!(kind, Some(TupleKind::Product)) {
-						return Err(self.err(CMNErrorCode::UnexpectedToken));
+						return self.err(ComuneErrCode::UnexpectedToken);
 					}
 
 					kind = Some(TupleKind::Sum);
@@ -1921,7 +1920,7 @@ impl Parser {
 				Token::Operator(")") => break,
 
 				_ => {
-					return Err(self.err(CMNErrorCode::UnexpectedToken));
+					return self.err(ComuneErrCode::UnexpectedToken);
 				}
 			}
 

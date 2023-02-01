@@ -22,7 +22,6 @@ use crate::lexer::SrcSpan;
 use crate::{
 	ast::{expression::Operator, namespace::Identifier},
 	cir::analyze::lifeline::LivenessState,
-	parser::Parser,
 };
 
 lazy_static! {
@@ -30,17 +29,19 @@ lazy_static! {
 }
 
 #[derive(Debug, Clone)]
-pub struct CMNError {
-	pub code: CMNErrorCode,
+pub struct ComuneError {
+	pub code: ComuneErrCode,
+	pub span: SrcSpan,
 	pub origin: Backtrace,
 	pub notes: Vec<(Option<SrcSpan>, String)>,
 }
 
-impl CMNError {
-	pub fn new(code: CMNErrorCode) -> Self {
+impl ComuneError {
+	pub fn new(code: ComuneErrCode, span: SrcSpan) -> Self {
 		ERROR_COUNT.fetch_add(1, Ordering::Relaxed);
-		CMNError {
+		ComuneError {
 			code,
+			span,
 			origin: Backtrace::new(),
 			notes: vec![],
 		}
@@ -50,26 +51,17 @@ impl CMNError {
 		self.notes.push((location, note));
 		self
 	}
-
-	pub fn new_with_parser(code: CMNErrorCode, _parser: &Parser) -> Self {
-		ERROR_COUNT.fetch_add(1, Ordering::Relaxed);
-		CMNError {
-			code,
-			origin: Backtrace::new(),
-			notes: vec![],
-		}
-	}
 }
 
 #[derive(Debug, Clone)]
-pub enum CMNMessage {
-	Error(CMNError),
+pub enum ComuneMessage {
+	Error(ComuneError),
 	Warning(CMNWarning),
 }
 
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
-pub enum CMNErrorCode {
+pub enum ComuneErrCode {
 	// Not really used in Results but i don't want an error code 0
 	OK,
 
@@ -148,7 +140,7 @@ pub enum CMNErrorCode {
 	},
 
 	// Packaged-up collection of errors as a single Err
-	Pack(Vec<CMNError>),
+	Pack(Vec<ComuneError>),
 
 	// Misc
 	Custom(String),
@@ -164,61 +156,61 @@ pub enum CMNWarning {
 	CharPtrNoNull,
 }
 
-impl Display for CMNMessage {
+impl Display for ComuneMessage {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match self {
-			CMNMessage::Error(e) => e.code.fmt(f),
-			CMNMessage::Warning(w) => w.fmt(f),
+			ComuneMessage::Error(e) => e.code.fmt(f),
+			ComuneMessage::Warning(w) => w.fmt(f),
 		}
 	}
 }
 
-impl Display for CMNErrorCode {
+impl Display for ComuneErrCode {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match self {
-			CMNErrorCode::OK => write!(f, "ok (how did you trigger this error???)"),
-			CMNErrorCode::UnexpectedEOF => write!(f, "unexpected end of file"),
-			CMNErrorCode::UnexpectedToken => write!(f, "unexpected token"),
-			CMNErrorCode::UnexpectedKeyword => write!(f, "unexpected keyword"),
-			CMNErrorCode::ExpectedIdentifier => write!(f, "expected identifier"),
-			CMNErrorCode::InvalidSuffix => write!(f, "invalid suffix"),
+			ComuneErrCode::OK => write!(f, "ok (how did you trigger this error???)"),
+			ComuneErrCode::UnexpectedEOF => write!(f, "unexpected end of file"),
+			ComuneErrCode::UnexpectedToken => write!(f, "unexpected token"),
+			ComuneErrCode::UnexpectedKeyword => write!(f, "unexpected keyword"),
+			ComuneErrCode::ExpectedIdentifier => write!(f, "expected identifier"),
+			ComuneErrCode::InvalidSuffix => write!(f, "invalid suffix"),
 
-			CMNErrorCode::UndeclaredIdentifier(id) => write!(f, "undeclared identifier `{id}`"),
-			CMNErrorCode::UnresolvedTypename(id) => write!(f, "unresolved typename `{id}`"),
-			CMNErrorCode::ExprTypeMismatch(a, b, op) => write!(
+			ComuneErrCode::UndeclaredIdentifier(id) => write!(f, "undeclared identifier `{id}`"),
+			ComuneErrCode::UnresolvedTypename(id) => write!(f, "unresolved typename `{id}`"),
+			ComuneErrCode::ExprTypeMismatch(a, b, op) => write!(
 				f,
 				"type mismatch; cannot apply operator {op:?} to {a} and {b}"
 			),
-			CMNErrorCode::AssignTypeMismatch { expr, to } => write!(
+			ComuneErrCode::AssignTypeMismatch { expr, to } => write!(
 				f,
 				"cannot assign value of type {expr} to variable of type {to}"
 			),
-			CMNErrorCode::InvalidCast { from, to } => {
+			ComuneErrCode::InvalidCast { from, to } => {
 				write!(f, "cannot cast from {} to {}", from, to)
 			}
-			CMNErrorCode::InvalidCoercion { from, to } => {
+			ComuneErrCode::InvalidCoercion { from, to } => {
 				write!(f, "cannot coerce from {} to {}", from, to)
 			}
-			CMNErrorCode::InvalidLValue => write!(f, "invalid lvalue"),
-			CMNErrorCode::InvalidSubscriptLHS { t } => write!(f, "can't index into type {t}"),
-			CMNErrorCode::InvalidSubscriptRHS { t } => {
+			ComuneErrCode::InvalidLValue => write!(f, "invalid lvalue"),
+			ComuneErrCode::InvalidSubscriptLHS { t } => write!(f, "can't index into type {t}"),
+			ComuneErrCode::InvalidSubscriptRHS { t } => {
 				write!(f, "can't index into array with index type {t}")
 			}
-			CMNErrorCode::ReturnTypeMismatch { expected, got } => {
+			ComuneErrCode::ReturnTypeMismatch { expected, got } => {
 				write!(f, "return type mismatch; expected {expected}, got {got}")
 			}
-			CMNErrorCode::ParamCountMismatch { expected, got } => write!(
+			ComuneErrCode::ParamCountMismatch { expected, got } => write!(
 				f,
 				"parameter count mismatch; expected {expected}, got {got}",
 			),
-			CMNErrorCode::InvalidMemberAccess { t, idx } => {
+			ComuneErrCode::InvalidMemberAccess { t, idx } => {
 				write!(f, "variable of type {t} has no member '{idx}'")
 			}
-			CMNErrorCode::NotCallable(id) => write!(f, "{id} is not callable"),
-			CMNErrorCode::InvalidDeref(ty) => write!(f, "can't dereference value of type {ty}"),
-			CMNErrorCode::InfiniteSizeType => write!(f, "cyclical type dependency found"),
-			CMNErrorCode::UnstableFeature(feat) => write!(f, "feature `{feat}` is unstable"),
-			CMNErrorCode::NoCandidateFound {
+			ComuneErrCode::NotCallable(id) => write!(f, "{id} is not callable"),
+			ComuneErrCode::InvalidDeref(ty) => write!(f, "can't dereference value of type {ty}"),
+			ComuneErrCode::InfiniteSizeType => write!(f, "cyclical type dependency found"),
+			ComuneErrCode::UnstableFeature(feat) => write!(f, "feature `{feat}` is unstable"),
+			ComuneErrCode::NoCandidateFound {
 				name,
 				args,
 				type_args,
@@ -246,7 +238,7 @@ impl Display for CMNErrorCode {
 				write!(f, ")")
 			}
 
-			CMNErrorCode::MissingInitializers { ty, members } => {
+			ComuneErrCode::MissingInitializers { ty, members } => {
 				let mut iter = members.iter();
 				write!(
 					f,
@@ -261,11 +253,11 @@ impl Display for CMNErrorCode {
 				Ok(())
 			}
 
-			CMNErrorCode::ModuleNotFound(m) => write!(f, "module not found: {m:#?}"),
-			CMNErrorCode::DependencyError => write!(f, "a dependency failed to compile"),
-			CMNErrorCode::LLVMError => write!(f, "an internal compiler error occurred"),
+			ComuneErrCode::ModuleNotFound(m) => write!(f, "module not found: {m:#?}"),
+			ComuneErrCode::DependencyError => write!(f, "a dependency failed to compile"),
+			ComuneErrCode::LLVMError => write!(f, "an internal compiler error occurred"),
 
-			CMNErrorCode::InvalidUse { variable, state } => {
+			ComuneErrCode::InvalidUse { variable, state } => {
 				write!(
 					f,
 					"use of {} variable {variable}",
@@ -280,22 +272,22 @@ impl Display for CMNErrorCode {
 				)
 			}
 
-			CMNErrorCode::ImmutVarMutation { variable } => {
+			ComuneErrCode::ImmutVarMutation { variable } => {
 				write!(
 					f,
 					"cannot mutate {variable}, as it is not declared as mutable"
 				)
 			}
 
-			CMNErrorCode::AmbiguousCall => {
+			ComuneErrCode::AmbiguousCall => {
 				write!(f, "ambiguous call")
 			}
 
-			CMNErrorCode::Pack(vec) => write!(f, "encountered {} errors", vec.len()),
+			ComuneErrCode::Pack(vec) => write!(f, "encountered {} errors", vec.len()),
 
-			CMNErrorCode::Custom(text) => write!(f, "{text}"),
-			CMNErrorCode::Unimplemented => write!(f, "not yet implemented"),
-			CMNErrorCode::Other => write!(f, "an unknown error occurred"),
+			ComuneErrCode::Custom(text) => write!(f, "{text}"),
+			ComuneErrCode::Unimplemented => write!(f, "not yet implemented"),
+			ComuneErrCode::Other => write!(f, "an unknown error occurred"),
 		}
 	}
 }
@@ -312,18 +304,18 @@ impl Display for CMNWarning {
 	}
 }
 
-impl CMNMessage {
+impl ComuneMessage {
 	pub fn get_notes(&self) -> &Vec<(Option<SrcSpan>, String)> {
 		match self {
-			CMNMessage::Error(e) => &e.notes,
-			CMNMessage::Warning(_) => todo!(), // CMNError and CMNWarning are probably gonna get merged into one enum
+			ComuneMessage::Error(e) => &e.notes,
+			ComuneMessage::Warning(_) => todo!(), // CMNError and CMNWarning are probably gonna get merged into one enum
 		}
 	}
 }
 
 pub enum CMNMessageLog {
 	Annotated {
-		msg: CMNMessage,
+		msg: ComuneMessage,
 		filename: String,
 
 		lines_text: Vec<String>,
@@ -333,7 +325,7 @@ pub enum CMNMessageLog {
 	},
 
 	Plain {
-		msg: CMNMessage,
+		msg: ComuneMessage,
 		filename: String,
 	},
 
@@ -359,7 +351,7 @@ pub fn spawn_logger(backtrace_on_error: bool) -> Sender<CMNMessageLog> {
 
 					// Print message
 					match msg {
-						CMNMessage::Error(_) => {
+						ComuneMessage::Error(_) => {
 							write!(
 								out,
 								"\n{}: {}",
@@ -368,7 +360,7 @@ pub fn spawn_logger(backtrace_on_error: bool) -> Sender<CMNMessageLog> {
 							)
 							.unwrap();
 						}
-						CMNMessage::Warning(_) => {
+						ComuneMessage::Warning(_) => {
 							write!(
 								out,
 								"\n{}: {}",
@@ -474,7 +466,7 @@ pub fn spawn_logger(backtrace_on_error: bool) -> Sender<CMNMessageLog> {
 					}
 
 					// Print compiler backtrace
-					if let CMNMessage::Error(err) = &msg {
+					if let ComuneMessage::Error(err) = &msg {
 						if backtrace_on_error {
 							writeln!(out, "\ncompiler backtrace:\n\n{:?}", err.origin).unwrap();
 						}
