@@ -1,5 +1,7 @@
 import module_test;
 
+module submodule_test;
+
 using module_test::{fib, foo};
 
 @no_mangle
@@ -80,6 +82,8 @@ TestSumType sum_type_test() {
 }
 
 int main() {
+	submodule_test::bar();
+
 	mut int i;
 
 	if true {

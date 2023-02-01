@@ -323,21 +323,6 @@ impl Parser {
 					);
 				}
 
-				Token::Keyword("namespace") => {
-					let Token::Name(namespace_name) = self.get_next()? else {
-						return Err(self.err(CMNErrorCode::ExpectedIdentifier));
-					};
-
-					self.get_next()?; // Consume name
-					self.consume(&Token::Other('{'))?; // Consume brace
-
-					self.current_scope.path.push(namespace_name);
-
-					let scope = self.current_scope.clone();
-					self.parse_namespace(&scope)?;
-					self.current_scope.path.pop();
-				}
-
 				Token::Keyword("impl") => {
 					self.get_next()?;
 
@@ -481,6 +466,30 @@ impl Parser {
 						}
 						self.check_semicolon()?;
 					}
+				}
+
+				Token::Keyword("module") => {
+					let Token::Name(module) = self.get_next()? else {
+						return Err(self.err(CMNErrorCode::UnexpectedToken))
+					};
+
+					match self.get_next()? {
+						Token::Other(';') => {
+							// TODO: Add submodule to import list
+							self.get_next()?;
+						}
+
+						Token::Other('{') => {
+							self.current_scope.path.push(module);
+
+							let scope = self.current_scope.clone();
+							self.parse_namespace(&scope)?;
+							self.current_scope.path.pop();
+						}
+
+						_ => return Err(self.err(CMNErrorCode::UnexpectedToken))
+					}
+					
 				}
 
 				Token::Keyword(_) => {
