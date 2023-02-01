@@ -13,7 +13,7 @@ use rayon::prelude::*;
 use crate::{
 	ast::{
 		self,
-		namespace::{Identifier, Namespace},
+		namespace::{Identifier, Namespace, ModuleImportKind},
 	},
 	cir::{
 		analyze::{lifeline::VarInitCheck, verify, CIRPassManager, DataFlowPass},
@@ -113,12 +113,17 @@ pub fn launch_module_compilation(
 	);
 
 	// Resolve module imports
-	let module_names = parser.namespace.referenced_modules.clone();
+	let module_names = parser.namespace.import_names.clone();
 	let sender_lock = Mutex::new(error_sender.clone());
 	let imports: Result<_, _> = module_names
 		.into_par_iter()
 		.map(|name| {
-			let import_path = get_module_source_path(&state, src_path.clone(), &name).unwrap();
+			let (import_name, fs_name) = match name {
+				ModuleImportKind::Child(name) => (name.clone(), Identifier::from_parent(&module_name, name)),
+				ModuleImportKind::Other(name) => (name.name().clone(), name),
+			};
+
+			let import_path = get_module_source_path(&state, src_path.clone(), &fs_name).unwrap();
 
 			let error_sender = sender_lock.lock().unwrap().clone();
 
@@ -134,7 +139,7 @@ pub fn launch_module_compilation(
 					None => launch_module_compilation(
 						state.clone(),
 						import_path.clone(),
-						name.clone(),
+						fs_name.clone(),
 						error_sender.clone(),
 						s,
 					)?,
@@ -151,7 +156,7 @@ pub fn launch_module_compilation(
 					Some(
 						ModuleState::InterfaceUntyped(interface)
 						| ModuleState::InterfaceComplete(interface),
-					) => return Ok((name, interface.clone())),
+					) => return Ok((import_name, interface.clone())),
 				}
 			}
 		})
@@ -181,12 +186,16 @@ pub fn launch_module_compilation(
 
 	s.spawn(move |_s| {
 		// Wait for all module interfaces to be finalized
-		let mut imports_left = parser
-			.namespace
-			.imported
-			.keys()
-			.cloned()
-			.collect::<Vec<_>>();
+		let module_names = parser.namespace.import_names.clone();
+
+		let mut imports_left = module_names
+			.into_iter()
+			.map(|name| {
+				match name {
+					ModuleImportKind::Child(name) => Identifier::from_parent(&module_name, name),
+					ModuleImportKind::Other(name) => name,
+				}
+			}).collect::<Vec<_>>();
 
 		while let Some(import_name) = imports_left.first() {
 			let import_path =
@@ -204,7 +213,7 @@ pub fn launch_module_compilation(
 					parser
 						.namespace
 						.imported
-						.insert(import_name.clone(), complete);
+						.insert(import_name.name().clone(), complete);
 					imports_left.remove(0);
 				}
 
@@ -262,6 +271,13 @@ pub fn get_module_source_path(
 	mut current_path: PathBuf,
 	module: &Identifier,
 ) -> Option<PathBuf> {
+
+	current_path.set_extension("");
+
+	for i in 0..module.path.len() - 1 {
+		current_path.push(&*module.path[i]);
+	}
+
 	current_path.set_file_name(&**module.name());
 
 	let extensions = ["co", "cpp", "c"];

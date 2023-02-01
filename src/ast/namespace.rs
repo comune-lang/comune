@@ -24,11 +24,18 @@ pub type Name = String;
 #[cfg(not(debug_assertions))]
 pub type Name = Arc<str>;
 
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum ModuleImportKind {
+	Child(Name),
+	Other(Identifier),
+} 
+
 #[derive(Default, Clone, Debug)]
 pub struct Namespace {
 	pub path: Identifier,
-	pub referenced_modules: HashSet<Identifier>,
-	pub imported: HashMap<Identifier, Namespace>,
+	pub import_names: HashSet<ModuleImportKind>,
+	pub child_modules: HashSet<Identifier>,
+	pub imported: HashMap<Name, Namespace>,
 	pub children: HashMap<Identifier, NamespaceItem>,
 	pub trait_solver: TraitSolver,
 }
@@ -47,7 +54,8 @@ impl Namespace {
 			// Initialize root namespace with basic types
 			path,
 			children: HashMap::new(),
-			referenced_modules: HashSet::new(),
+			import_names: HashSet::new(),
+			child_modules: HashSet::new(),
 			imported: HashMap::new(),
 			trait_solver: TraitSolver::new(),
 		}
@@ -66,10 +74,7 @@ impl Namespace {
 			Some(item) => Some((id.clone(), item)),
 
 			None => {
-				if let Some(import) = self
-					.imported
-					.get(&Identifier::from_name(id.path[0].clone(), false))
-				{
+				if let Some(import) = self.imported.get(&id.path[0]) {
 					if id.path.len() > 1 {
 						let mut id_sub = id.clone();
 						id_sub.path.remove(0);
@@ -132,7 +137,7 @@ impl Namespace {
 			_ => {
 				if let Some(imported) = self
 					.imported
-					.get(&Identifier::from_name(id.path[0].clone(), true))
+					.get(&id.path[0])
 				{
 					let mut id_sub = id.clone();
 					id_sub.path.remove(0);
@@ -184,13 +189,13 @@ impl Namespace {
 			} else {
 				Some(closure(absolute_lookup, &id))
 			}
-		} else if let Some(imported) = self.imported.iter().find(|(item, _imported)| {
-			id.path.len() > item.path.len() && &id.path[0..item.path.len()] == item.path.as_slice()
+		} else if let Some(imported) = self.imported.iter().find(|(import_name, _)| {
+			&id.path[0] == *import_name
 		}) {
 			// Found an imported namespace that's a prefix of `id`!
 			// TODO: Figure out how this works for submodules
 			let mut id_relative = id.clone();
-			id_relative.path = id_relative.path[imported.0.path.len()..].to_vec();
+			id_relative.path.remove(0);
 
 			imported.1.with_item(&id_relative, scope, closure)
 		} else {

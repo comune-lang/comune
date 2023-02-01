@@ -11,7 +11,7 @@ use ast::{namespace::Identifier, types};
 use clap::Parser;
 use colored::Colorize;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{PathBuf, Path};
 use std::process::Command;
 use std::sync::RwLock;
 use std::{
@@ -98,7 +98,7 @@ fn main() -> color_eyre::eyre::Result<()> {
 		for input_file in &args.input_files {
 			let input_file = fs::canonicalize(input_file).unwrap();
 			let module_name = Identifier::from_name(
-				input_file.file_name().unwrap().to_str().unwrap().into(),
+				get_file_suffix(&input_file).unwrap(),
 				true,
 			);
 
@@ -199,4 +199,11 @@ fn main() -> color_eyre::eyre::Result<()> {
 	let _ = std::io::stdout().lock();
 
 	Ok(())
+}
+
+fn get_file_suffix(path: &Path) -> Option<String> {
+	let mut name = path.file_name()?.to_string_lossy().to_string();
+	name.truncate(name.rfind('.').unwrap_or(name.len()));
+	
+	Some(name)
 }

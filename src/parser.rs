@@ -10,7 +10,7 @@ use crate::lexer::{Lexer, SrcSpan, Token};
 use crate::ast::controlflow::ControlFlow;
 use crate::ast::expression::{Atom, Expr, FnRef, NodeData, Operator};
 use crate::ast::namespace::{
-	Identifier, ItemRef, Name, Namespace, NamespaceASTElem, NamespaceItem,
+	Identifier, ItemRef, Name, Namespace, NamespaceASTElem, NamespaceItem, ModuleImportKind,
 };
 use crate::ast::statement::Stmt;
 use crate::ast::traits::{Impl, TraitDef, TraitRef};
@@ -408,8 +408,8 @@ impl Parser {
 
 					if self.is_at_identifier_token()? {
 						self.namespace
-							.referenced_modules
-							.insert(self.parse_identifier()?);
+							.import_names
+							.insert(ModuleImportKind::Other(self.parse_identifier()?));
 						self.check_semicolon()?;
 					} else {
 						return self.err(ComuneErrCode::ExpectedIdentifier);
@@ -475,6 +475,7 @@ impl Parser {
 					match self.get_next()? {
 						Token::Other(';') => {
 							// TODO: Add submodule to import list
+							self.namespace.import_names.insert(ModuleImportKind::Child(module));
 							self.get_next()?;
 						}
 
