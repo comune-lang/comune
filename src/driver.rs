@@ -121,6 +121,7 @@ pub fn launch_module_compilation(
 	while let Some(name) = module_names.first().cloned() {
 		let (import_name, fs_name) = match name {
 			ModuleImportKind::Child(name) => (name.clone(), Identifier::from_parent(&module_name, name)),
+			ModuleImportKind::Language(name) => (name.clone(), Identifier::from_name(name, true)),
 			ModuleImportKind::Other(name) => (name.name().clone(), name),
 		};
 
@@ -208,6 +209,7 @@ pub fn launch_module_compilation(
 			.map(|name| {
 				match name {
 					ModuleImportKind::Child(name) => Identifier::from_parent(&module_name, name),
+					ModuleImportKind::Language(name) => Identifier::from_name(name, true),
 					ModuleImportKind::Other(name) => name,
 				}
 			}).collect::<Vec<_>>();
@@ -290,6 +292,19 @@ pub fn get_module_source_path(
 	mut current_path: PathBuf,
 	module: &Identifier,
 ) -> Option<PathBuf> {
+
+	// Resolve built-in library paths. This is currently hard-coded, but 
+	// there's probably a more elegant solution to be written down the line
+	if module.absolute && matches!(module.path[0].as_str(), "core" | "std") {
+		let mut current_path = PathBuf::from(state.libcomune_dir.clone());
+
+		current_path.push(module.path[0].clone());
+		current_path.push("src");
+		current_path.push("lib");
+		current_path.set_extension("co");
+		
+		return Some(current_path);
+	}
 
 	current_path.set_extension("");
 

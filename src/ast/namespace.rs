@@ -27,6 +27,7 @@ pub type Name = Arc<str>;
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum ModuleImportKind {
 	Child(Name),
+	Language(Name),
 	Other(Identifier),
 } 
 
@@ -54,7 +55,7 @@ impl Namespace {
 			// Initialize root namespace with basic types
 			path,
 			children: HashMap::new(),
-			import_names: HashSet::new(),
+			import_names: HashSet::from([ModuleImportKind::Language("core".into())]),
 			child_modules: HashSet::new(),
 			imported: HashMap::new(),
 			trait_solver: TraitSolver::new(),
