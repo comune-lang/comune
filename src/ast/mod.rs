@@ -713,7 +713,11 @@ pub fn resolve_namespace_types(namespace: &Namespace) -> ComuneResult<()> {
 				resolve_type_def(&mut t.write().unwrap(), attributes, namespace, &vec![])?
 			}
 
-			NamespaceItem::Alias(_) | NamespaceItem::TypeAlias(_) => {}
+			NamespaceItem::TypeAlias(ty) => {
+				resolve_type(&mut *ty.write().unwrap(), namespace, &vec![])?
+			}
+
+			NamespaceItem::Alias(_) => {}
 
 			NamespaceItem::Trait(tr, _) => {
 				let TraitDef {

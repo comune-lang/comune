@@ -12,6 +12,15 @@ use super::{
 	types::Type,
 };
 
+pub enum LangTrait {
+	Sized,
+	Copy,
+	Clone,
+	Drop,
+	Send,
+	Sync,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct TraitRef {
 	pub def: Weak<RwLock<TraitDef>>,
@@ -110,10 +119,6 @@ impl TraitSolver {
 	}
 
 	pub fn register_impl(&mut self, ty: Type, im: Arc<RwLock<Impl>>) {
-		if let Some(cache) = self.answer_cache.get_mut(&ty) {
-			cache.clear();
-		}
-
 		self.local_impls.push((RwLock::new(ty), im));
 	}
 
