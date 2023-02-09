@@ -10,7 +10,7 @@ use crate::lexer::{Lexer, SrcSpan, Token};
 use crate::ast::controlflow::ControlFlow;
 use crate::ast::expression::{Atom, Expr, FnRef, NodeData, Operator};
 use crate::ast::namespace::{
-	Identifier, ItemRef, Name, ModuleImpl, NamespaceASTElem, ModuleItem, ModuleImportKind,
+	Identifier, ItemRef, Name, ModuleImpl, ModuleASTElem, ModuleItem, ModuleImportKind,
 };
 use crate::ast::statement::Stmt;
 use crate::ast::traits::{Impl, TraitDef, TraitRef};
@@ -112,10 +112,10 @@ impl Parser {
 					for (_, ast, _) in fns {
 						let mut elem = ast.borrow_mut();
 
-						if let NamespaceASTElem::Unparsed(idx) = *elem {
+						if let ModuleASTElem::Unparsed(idx) = *elem {
 							// Parse function block
 							self.lexer.borrow_mut().seek_token_idx(idx);
-							*elem = NamespaceASTElem::Parsed(self.parse_block()?)
+							*elem = ModuleASTElem::Parsed(self.parse_block()?)
 						}
 					}
 				}
@@ -137,10 +137,10 @@ impl Parser {
 				for (_, ast, _) in fns {
 					let mut elem = ast.borrow_mut();
 
-					if let NamespaceASTElem::Unparsed(idx) = *elem {
+					if let ModuleASTElem::Unparsed(idx) = *elem {
 						// Parse method block
 						self.lexer.borrow_mut().seek_token_idx(idx);
-						*elem = NamespaceASTElem::Parsed(self.parse_block()?)
+						*elem = ModuleASTElem::Parsed(self.parse_block()?)
 					}
 				}
 			}
@@ -366,7 +366,7 @@ impl Parser {
 
 						let params = self.parse_parameter_list()?;
 
-						let ast = NamespaceASTElem::Unparsed(self.get_current_token_index());
+						let ast = ModuleASTElem::Unparsed(self.get_current_token_index());
 
 						self.skip_block()?;
 
@@ -683,12 +683,12 @@ impl Parser {
 
 					match self.get_current()? {
 						Token::Other('{') => {
-							ast_elem = NamespaceASTElem::Unparsed(self.get_current_token_index());
+							ast_elem = ModuleASTElem::Unparsed(self.get_current_token_index());
 							self.skip_block()?;
 						}
 
 						Token::Other(';') => {
-							ast_elem = NamespaceASTElem::NoElem;
+							ast_elem = ModuleASTElem::NoElem;
 							self.get_next()?;
 						}
 
@@ -725,7 +725,7 @@ impl Parser {
 				}
 			}
 		} else {
-			item = ModuleItem::Variable(t, RefCell::new(NamespaceASTElem::NoElem));
+			item = ModuleItem::Variable(t, RefCell::new(ModuleASTElem::NoElem));
 			self.check_semicolon()?;
 		}
 

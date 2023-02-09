@@ -26,7 +26,7 @@ pub type Name = Arc<str>;
 
 pub type FnOverloadList = Vec<(
 	Arc<RwLock<FnPrototype>>,
-	RefCell<NamespaceASTElem>,
+	RefCell<ModuleASTElem>,
 	Vec<Attribute>,
 )>;
 
@@ -78,7 +78,7 @@ pub enum ModuleItem {
 	Type(Arc<RwLock<TypeDef>>, Vec<Attribute>),
 	Trait(Arc<RwLock<TraitDef>>, Vec<Attribute>),
 	Functions(FnOverloadList), // Plural in order to support function overloads
-	Variable(Type, RefCell<NamespaceASTElem>),
+	Variable(Type, RefCell<ModuleASTElem>),
 	Alias(Identifier),
 	TypeAlias(Arc<RwLock<Type>>),
 }
@@ -369,7 +369,7 @@ impl Display for Identifier {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum NamespaceASTElem {
+pub enum ModuleASTElem {
 	Parsed(Expr),
 	Unparsed(usize), // Token index
 	NoElem,

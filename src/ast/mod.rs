@@ -17,7 +17,7 @@ use crate::{
 use self::{
 	controlflow::ControlFlow,
 	expression::{Atom, Expr, FnRef, NodeData, OnceAtom, Operator},
-	namespace::{Identifier, ItemRef, Name, ModuleImpl, NamespaceASTElem, ModuleItem},
+	namespace::{Identifier, ItemRef, Name, ModuleImpl, ModuleASTElem, ModuleItem},
 	pattern::Binding,
 	statement::Stmt,
 	traits::{TraitDef, TraitRef},
@@ -125,7 +125,7 @@ impl<'ctx> FnScope<'ctx> {
 pub fn validate_function(
 	scope: Identifier,
 	func: &mut FnPrototype,
-	elem: &RefCell<NamespaceASTElem>,
+	elem: &RefCell<ModuleASTElem>,
 	namespace: &ModuleImpl,
 ) -> ComuneResult<()> {
 	let mut scope = FnScope::new(namespace, scope, func.ret.clone());
@@ -135,7 +135,7 @@ pub fn validate_function(
 		scope.add_variable(param.clone(), name.clone().unwrap(), *props)
 	}
 
-	if let NamespaceASTElem::Parsed(elem) = &mut *elem.borrow_mut() {
+	if let ModuleASTElem::Parsed(elem) = &mut *elem.borrow_mut() {
 		let elem_node_data = elem.get_node_data().clone();
 
 		// Validate function block & get return type, make sure it matches the signature

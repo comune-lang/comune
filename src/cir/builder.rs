@@ -4,7 +4,7 @@ use crate::{
 	ast::{
 		controlflow::ControlFlow,
 		expression::{Atom, Expr, FnRef, OnceAtom, Operator},
-		namespace::{Identifier, ItemRef, Name, ModuleImpl, NamespaceASTElem, ModuleItem},
+		namespace::{Identifier, ItemRef, Name, ModuleImpl, ModuleASTElem, ModuleItem},
 		pattern::{Binding, Pattern},
 		statement::Stmt,
 		types::{Basic, BindingProps, FnPrototype, TupleKind, Type, TypeDef, TypeParamList, TypeRef},
@@ -96,7 +96,7 @@ impl CIRModuleBuilder {
 
 			for (name, fns) in &im.items {
 				for (func, ast, _) in fns {
-					if let NamespaceASTElem::Parsed(ast) = &*ast.borrow() {
+					if let ModuleASTElem::Parsed(ast) = &*ast.borrow() {
 						let proto = self.get_prototype(
 							Identifier::from_parent(&im.canonical_root, name.clone()),
 							&func.read().unwrap(),
@@ -112,7 +112,7 @@ impl CIRModuleBuilder {
 				for (func, ast, _) in fns {
 					let proto = self.get_prototype(name.clone(), &func.read().unwrap());
 
-					if let NamespaceASTElem::Parsed(ast) = &*ast.borrow() {
+					if let ModuleASTElem::Parsed(ast) = &*ast.borrow() {
 						self.generate_function(proto, ast);
 					}
 				}
