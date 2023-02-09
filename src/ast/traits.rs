@@ -5,7 +5,7 @@ use std::{
 	sync::{Arc, RwLock, Weak},
 };
 
-use super::namespace::{FnOverloadList, ItemRef, Namespace};
+use super::namespace::{FnOverloadList, ItemRef, ModuleImpl};
 use super::types::{TypeParam, TypeParamList};
 use super::{
 	namespace::{Identifier, Name},
@@ -157,7 +157,7 @@ impl TraitSolver {
 		im: &Impl,
 		ty: Type,
 		type_params: &TypeParamList,
-		root: &Namespace,
+		root: &ModuleImpl,
 	) -> Option<TraitDeduction> {
 		// for a given impl, test if it applies
 

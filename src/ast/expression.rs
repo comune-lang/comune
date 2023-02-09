@@ -11,7 +11,7 @@ use super::{
 	controlflow::ControlFlow,
 	namespace::{Identifier, Name},
 	statement::Stmt,
-	types::{Basic, FnDef, Type},
+	types::{Basic, FnPrototype, Type},
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -433,7 +433,7 @@ pub enum Atom {
 #[derive(Clone, Debug)]
 pub enum FnRef {
 	None,
-	Direct(Arc<RwLock<FnDef>>),
+	Direct(Arc<RwLock<FnPrototype>>),
 	Indirect(Identifier, Type),
 }
 

@@ -14,7 +14,7 @@ use crate::{
 use super::{
 	expression::Expr,
 	traits::{TraitDef, TraitRef, TraitSolver},
-	types::{Basic, FnDef, Type, TypeDef, TypeRef},
+	types::{Basic, FnPrototype, Type, TypeDef, TypeRef},
 	Attribute,
 };
 
@@ -24,6 +24,12 @@ pub type Name = String;
 #[cfg(not(debug_assertions))]
 pub type Name = Arc<str>;
 
+pub type FnOverloadList = Vec<(
+	Arc<RwLock<FnPrototype>>,
+	RefCell<NamespaceASTElem>,
+	Vec<Attribute>,
+)>;
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum ModuleImportKind {
 	Child(Name),
@@ -31,14 +37,58 @@ pub enum ModuleImportKind {
 	Other(Identifier),
 } 
 
+// Struct representing an un-typechecked module interface. This 
+// stage of AST construction does not parse any function or 
+// expression bodies, only the prototypes of namespace items.
+// This is quick to construct, and downstream modules depend on 
+// this stage for expression parsing. 
+//
+// The full module dependency system is complex, as the compiler is
+// designed to have as few parallelization bottlenecks as possible.
+// Rust's concurrency features may have driven me a bit mad with power. 
 #[derive(Default, Clone, Debug)]
-pub struct Namespace {
+pub struct ModuleInterface {
+	pub import_names: HashSet<ModuleImportKind>,
+	pub children: HashMap<Identifier, ModuleItemKind>,
+}
+
+#[derive(Copy, Clone, Debug)]
+pub enum ModuleItemKind {
+	Type,
+	Trait,
+	Function,
+	Item,
+	Alias,
+	TypeAlias
+}
+
+// Struct representing a module's implementation.
+#[derive(Default, Clone, Debug)]
+pub struct ModuleImpl {
 	pub path: Identifier,
 	pub import_names: HashSet<ModuleImportKind>,
 	pub child_modules: HashSet<Identifier>,
-	pub imported: HashMap<Name, Namespace>,
-	pub children: HashMap<Identifier, NamespaceItem>,
+	pub imported: HashMap<Name, ModuleImpl>,
+	pub children: HashMap<Identifier, ModuleItem>,
 	pub trait_solver: TraitSolver,
+}
+
+#[derive(Clone, Debug)]
+pub enum ModuleItem {
+	Type(Arc<RwLock<TypeDef>>, Vec<Attribute>),
+	Trait(Arc<RwLock<TraitDef>>, Vec<Attribute>),
+	Functions(FnOverloadList), // Plural in order to support function overloads
+	Variable(Type, RefCell<NamespaceASTElem>),
+	Alias(Identifier),
+	TypeAlias(Arc<RwLock<Type>>),
+}
+
+pub enum Module {
+	None,
+	UntypedInterface(ModuleInterface),
+	TypedInterface(ModuleInterface),
+	UntypedImpl(ModuleInterface, ModuleImpl),
+	Complete(ModuleInterface, ModuleImpl)
 }
 
 // Safety: function bodies are storied in RefCells. These
@@ -46,12 +96,12 @@ pub struct Namespace {
 // their owning modules, because any downstream modules
 // only care about the function signatures.
 // Sketchy, I know. Remind me to fix this sometime.
-unsafe impl Send for Namespace {}
-unsafe impl Sync for Namespace {}
+unsafe impl Send for ModuleImpl {}
+unsafe impl Sync for ModuleImpl {}
 
-impl Namespace {
+impl ModuleImpl {
 	pub fn new(path: Identifier) -> Self {
-		Namespace {
+		ModuleImpl {
 			// Initialize root namespace with basic types
 			path,
 			children: HashMap::new(),
@@ -66,11 +116,11 @@ impl Namespace {
 		self.clone() // TODO: Actually implement
 	}
 
-	pub fn get_item<'a>(&'a self, id: &Identifier) -> Option<(Identifier, &'a NamespaceItem)> {
+	pub fn get_item<'a>(&'a self, id: &Identifier) -> Option<(Identifier, &'a ModuleItem)> {
 		assert!(id.absolute, "argument to get_item should be absolute!");
 
 		match self.children.get(id) {
-			Some(NamespaceItem::Alias(alias)) => self.get_item(alias),
+			Some(ModuleItem::Alias(alias)) => self.get_item(alias),
 
 			Some(item) => Some((id.clone(), item)),
 
@@ -121,7 +171,7 @@ impl Namespace {
 		}
 
 		match found {
-			Some((id, NamespaceItem::Type(ty, _))) => {
+			Some((id, ModuleItem::Type(ty, _))) => {
 				Some(Type::TypeRef(ItemRef::Resolved(TypeRef {
 					def: Arc::downgrade(ty),
 					name: id,
@@ -129,11 +179,11 @@ impl Namespace {
 				})))
 			}
 
-			Some((_, NamespaceItem::Alias(alias))) => {
+			Some((_, ModuleItem::Alias(alias))) => {
 				self.resolve_type(alias, &Identifier::new(true))
 			}
 
-			Some((_, NamespaceItem::TypeAlias(alias))) => Some(alias.read().unwrap().clone()),
+			Some((_, ModuleItem::TypeAlias(alias))) => Some(alias.read().unwrap().clone()),
 
 			_ => {
 				if let Some(imported) = self
@@ -155,7 +205,7 @@ impl Namespace {
 		&self,
 		id: &Identifier,
 		scope: &Identifier,
-		mut closure: impl FnMut(&NamespaceItem, &Identifier) -> Ret,
+		mut closure: impl FnMut(&ModuleItem, &Identifier) -> Ret,
 	) -> Option<Ret> {
 		if !id.absolute {
 			let mut scope_unwind = scope.clone();
@@ -166,7 +216,7 @@ impl Namespace {
 				scope_combined.path.append(&mut id.clone().path);
 
 				if let Some(found_item) = self.children.get(&scope_combined) {
-					if let NamespaceItem::Alias(alias) = found_item {
+					if let ModuleItem::Alias(alias) = found_item {
 						return self.with_item(alias, scope, closure);
 					} else {
 						return Some(closure(found_item, &scope_combined));
@@ -185,7 +235,7 @@ impl Namespace {
 		if let Some(absolute_lookup) = self.children.get(&id) {
 			// Found a match for the absolute path in this namespace!
 
-			if let NamespaceItem::Alias(alias) = absolute_lookup {
+			if let ModuleItem::Alias(alias) = absolute_lookup {
 				self.with_item(alias, scope, closure)
 			} else {
 				Some(closure(absolute_lookup, &id))
@@ -206,26 +256,26 @@ impl Namespace {
 	}
 }
 
-impl Display for Namespace {
+impl Display for ModuleImpl {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		for (name, item) in &self.children {
 			match item {
-				NamespaceItem::Alias(id) => writeln!(f, "\t[alias] {id}")?,
-				NamespaceItem::TypeAlias(ty) => writeln!(f, "\t[alias] {}", &ty.read().unwrap())?,
-				NamespaceItem::Type(t, _) => {
+				ModuleItem::Alias(id) => writeln!(f, "\t[alias] {id}")?,
+				ModuleItem::TypeAlias(ty) => writeln!(f, "\t[alias] {}", &ty.read().unwrap())?,
+				ModuleItem::Type(t, _) => {
 					writeln!(f, "\t[type] {}: {}", name, t.read().unwrap())?
 				}
-				NamespaceItem::Trait(t, _) => {
+				ModuleItem::Trait(t, _) => {
 					writeln!(f, "\t[trait] {}: {:?}", name, t.read().unwrap())?
 				}
 
-				NamespaceItem::Functions(fs) => {
+				ModuleItem::Functions(fs) => {
 					for (t, ..) in fs {
 						writeln!(f, "\t[func] {}: {}", name, t.read().unwrap())?
 					}
 				}
 
-				NamespaceItem::Variable(_, _) => todo!(),
+				ModuleItem::Variable(_, _) => todo!(),
 			}
 		}
 		Ok(())
@@ -323,22 +373,6 @@ pub enum NamespaceASTElem {
 	Parsed(Expr),
 	Unparsed(usize), // Token index
 	NoElem,
-}
-
-pub type FnOverloadList = Vec<(
-	Arc<RwLock<FnDef>>,
-	RefCell<NamespaceASTElem>,
-	Vec<Attribute>,
-)>;
-
-#[derive(Clone, Debug)]
-pub enum NamespaceItem {
-	Type(Arc<RwLock<TypeDef>>, Vec<Attribute>),
-	Trait(Arc<RwLock<TraitDef>>, Vec<Attribute>),
-	Functions(FnOverloadList), // Plural in order to support function overloads
-	Variable(Type, RefCell<NamespaceASTElem>),
-	Alias(Identifier),
-	TypeAlias(Arc<RwLock<Type>>),
 }
 
 #[derive(Clone)]

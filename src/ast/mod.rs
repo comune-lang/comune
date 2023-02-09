@@ -17,11 +17,11 @@ use crate::{
 use self::{
 	controlflow::ControlFlow,
 	expression::{Atom, Expr, FnRef, NodeData, OnceAtom, Operator},
-	namespace::{Identifier, ItemRef, Name, Namespace, NamespaceASTElem, NamespaceItem},
+	namespace::{Identifier, ItemRef, Name, ModuleImpl, NamespaceASTElem, ModuleItem},
 	pattern::Binding,
 	statement::Stmt,
 	traits::{TraitDef, TraitRef},
-	types::{AlgebraicDef, BindingProps, FnDef, TupleKind, TypeParamList, TypeRef},
+	types::{AlgebraicDef, BindingProps, FnPrototype, TupleKind, TypeParamList, TypeRef},
 };
 
 pub mod controlflow;
@@ -47,7 +47,7 @@ pub fn get_attribute<'a>(attributes: &'a [Attribute], attr_name: &str) -> Option
 }
 
 pub struct FnScope<'ctx> {
-	context: &'ctx Namespace,
+	context: &'ctx ModuleImpl,
 	scope: Identifier,
 	parent: Option<&'ctx FnScope<'ctx>>,
 	fn_return_type: Type,
@@ -65,7 +65,7 @@ impl<'ctx> FnScope<'ctx> {
 		}
 	}
 
-	pub fn new(context: &'ctx Namespace, scope: Identifier, return_type: Type) -> Self {
+	pub fn new(context: &'ctx ModuleImpl, scope: Identifier, return_type: Type) -> Self {
 		FnScope {
 			context,
 			scope,
@@ -105,7 +105,7 @@ impl<'ctx> FnScope<'ctx> {
 		if result.is_none() && search_namespace {
 			// Look for it in the namespace tree
 			self.context.with_item(id, &self.scope, |item, id| {
-				if let NamespaceItem::Functions(fns) = item {
+				if let ModuleItem::Functions(fns) = item {
 					result = Some((
 						id.clone(),
 						todo!(), // Implement function types
@@ -124,9 +124,9 @@ impl<'ctx> FnScope<'ctx> {
 
 pub fn validate_function(
 	scope: Identifier,
-	func: &mut FnDef,
+	func: &mut FnPrototype,
 	elem: &RefCell<NamespaceASTElem>,
-	namespace: &Namespace,
+	namespace: &ModuleImpl,
 ) -> ComuneResult<()> {
 	let mut scope = FnScope::new(namespace, scope, func.ret.clone());
 
@@ -205,7 +205,7 @@ pub fn validate_function(
 pub fn is_candidate_viable(
 	args: &Vec<Expr>,
 	type_args: &Vec<Type>,
-	candidate: &Arc<RwLock<FnDef>>,
+	candidate: &Arc<RwLock<FnPrototype>>,
 ) -> bool {
 	let func = candidate.read().unwrap();
 	let params = &func.params.params;
@@ -235,8 +235,8 @@ pub fn is_candidate_viable(
 
 fn candidate_compare(
 	args: &[Expr],
-	l: &Arc<RwLock<FnDef>>,
-	r: &Arc<RwLock<FnDef>>,
+	l: &Arc<RwLock<FnPrototype>>,
+	r: &Arc<RwLock<FnPrototype>>,
 	scope: &FnScope,
 ) -> Ordering {
 	// Rank candidates
@@ -323,7 +323,7 @@ pub fn validate_fn_call(
 		}
 
 		loop {
-			if let Some((name, NamespaceItem::Functions(fns))) = scope.context.get_item(&name_unwrap) {
+			if let Some((name, ModuleItem::Functions(fns))) = scope.context.get_item(&name_unwrap) {
 				for func in fns {
 					candidates.push((name.clone(), func));
 				}
@@ -528,9 +528,9 @@ fn validate_arg_list(
 	Ok(())
 }
 
-pub fn validate_namespace(namespace: &mut Namespace) -> ComuneResult<()> {
+pub fn validate_namespace(namespace: &mut ModuleImpl) -> ComuneResult<()> {
 	for (id, child) in &namespace.children {
-		if let NamespaceItem::Functions(fns) = child {
+		if let ModuleItem::Functions(fns) = child {
 			for (func, elem, _) in fns {
 				let mut scope = id.clone();
 				scope.path.pop();
@@ -560,7 +560,7 @@ pub fn validate_namespace(namespace: &mut Namespace) -> ComuneResult<()> {
 
 pub fn resolve_type(
 	ty: &mut Type,
-	namespace: &Namespace,
+	namespace: &ModuleImpl,
 	generics: &TypeParamList,
 ) -> ComuneResult<()> {
 	match ty {
@@ -628,7 +628,7 @@ pub fn resolve_type(
 pub fn resolve_algebraic_def(
 	agg: &mut AlgebraicDef,
 	attributes: &[Attribute],
-	namespace: &Namespace,
+	namespace: &ModuleImpl,
 	base_generics: &TypeParamList,
 ) -> ComuneResult<()> {
 	let mut generics = base_generics.clone();
@@ -672,7 +672,7 @@ pub fn resolve_algebraic_def(
 pub fn resolve_type_def(
 	ty: &mut TypeDef,
 	attributes: &[Attribute],
-	namespace: &Namespace,
+	namespace: &ModuleImpl,
 	base_generics: &TypeParamList,
 ) -> ComuneResult<()> {
 	match ty {
@@ -682,20 +682,20 @@ pub fn resolve_type_def(
 	}
 }
 
-pub fn resolve_namespace_types(namespace: &Namespace) -> ComuneResult<()> {
+pub fn resolve_namespace_types(namespace: &ModuleImpl) -> ComuneResult<()> {
 	// Resolve types
 
 	for child in namespace.children.values() {
-		if let NamespaceItem::TypeAlias(alias) = child {
+		if let ModuleItem::TypeAlias(alias) = child {
 			resolve_type(&mut alias.write().unwrap(), namespace, &vec![])?;
 		}
 	}
 
 	for child in namespace.children.values() {
 		match &child {
-			NamespaceItem::Functions(fns) => {
+			ModuleItem::Functions(fns) => {
 				for (func, ..) in fns {
-					let FnDef {
+					let FnPrototype {
 						ret,
 						params,
 						type_params: generics,
@@ -709,17 +709,17 @@ pub fn resolve_namespace_types(namespace: &Namespace) -> ComuneResult<()> {
 				}
 			}
 
-			NamespaceItem::Type(t, attributes) => {
+			ModuleItem::Type(t, attributes) => {
 				resolve_type_def(&mut t.write().unwrap(), attributes, namespace, &vec![])?
 			}
 
-			NamespaceItem::TypeAlias(ty) => {
+			ModuleItem::TypeAlias(ty) => {
 				resolve_type(&mut *ty.write().unwrap(), namespace, &vec![])?
 			}
 
-			NamespaceItem::Alias(_) => {}
+			ModuleItem::Alias(_) => {}
 
-			NamespaceItem::Trait(tr, _) => {
+			ModuleItem::Trait(tr, _) => {
 				let TraitDef {
 					items,
 					supers: _,
@@ -728,7 +728,7 @@ pub fn resolve_namespace_types(namespace: &Namespace) -> ComuneResult<()> {
 
 				for fns in items.values_mut() {
 					for (func, ..) in fns {
-						let FnDef {
+						let FnPrototype {
 							ret,
 							params,
 							type_params: generics,
@@ -761,7 +761,7 @@ pub fn resolve_namespace_types(namespace: &Namespace) -> ComuneResult<()> {
 		}) = &im.read().unwrap().implements
 		{
 			namespace.with_item(&name, &scope, |item, name| match item {
-				NamespaceItem::Trait(tr, _) => Box::new(ItemRef::Resolved(TraitRef {
+				ModuleItem::Trait(tr, _) => Box::new(ItemRef::Resolved(TraitRef {
 					def: Arc::downgrade(tr),
 					name: name.clone(),
 					args: type_args.clone(),
@@ -778,7 +778,7 @@ pub fn resolve_namespace_types(namespace: &Namespace) -> ComuneResult<()> {
 
 		for fns in im.write().unwrap().items.values_mut() {
 			for (func, ..) in fns {
-				let FnDef {
+				let FnPrototype {
 					ret,
 					params,
 					type_params: generics,
@@ -821,9 +821,9 @@ pub fn check_cyclical_deps(
 	Ok(())
 }
 
-pub fn check_namespace_cyclical_deps(namespace: &Namespace) -> ComuneResult<()> {
+pub fn check_namespace_cyclical_deps(namespace: &ModuleImpl) -> ComuneResult<()> {
 	for item in namespace.children.values() {
-		if let NamespaceItem::Type(ty, _) = item {
+		if let ModuleItem::Type(ty, _) = item {
 			check_cyclical_deps(ty, &mut vec![])?
 		}
 	}

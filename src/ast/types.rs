@@ -61,7 +61,7 @@ pub struct FnParamList {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FnDef {
+pub struct FnPrototype {
 	pub ret: Type,
 	pub params: FnParamList,
 	pub type_params: TypeParamList,
@@ -602,7 +602,7 @@ impl Display for TypeDef {
 	}
 }
 
-impl Display for FnDef {
+impl Display for FnPrototype {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		write!(f, "{}(", self.ret)?;
 

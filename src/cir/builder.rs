@@ -4,10 +4,10 @@ use crate::{
 	ast::{
 		controlflow::ControlFlow,
 		expression::{Atom, Expr, FnRef, OnceAtom, Operator},
-		namespace::{Identifier, ItemRef, Name, Namespace, NamespaceASTElem, NamespaceItem},
+		namespace::{Identifier, ItemRef, Name, ModuleImpl, NamespaceASTElem, ModuleItem},
 		pattern::{Binding, Pattern},
 		statement::Stmt,
-		types::{Basic, BindingProps, FnDef, TupleKind, Type, TypeDef, TypeParamList, TypeRef},
+		types::{Basic, BindingProps, FnPrototype, TupleKind, Type, TypeDef, TypeParamList, TypeRef},
 		Attribute,
 	},
 	constexpr::{ConstExpr, ConstValue},
@@ -48,13 +48,13 @@ impl CIRModuleBuilder {
 			current_block: 0,
 		};
 
-		result.register_namespace(&ast.namespace);
-		result.generate_namespace(&ast.namespace);
+		result.register_namespace(&ast.module);
+		result.generate_namespace(&ast.module);
 
 		result
 	}
 
-	fn register_namespace(&mut self, namespace: &Namespace) {
+	fn register_namespace(&mut self, namespace: &ModuleImpl) {
 		for (_, im) in namespace.trait_solver.get_local_impls() {
 			let im = im.read().unwrap();
 
@@ -76,7 +76,7 @@ impl CIRModuleBuilder {
 		}
 
 		for (name, elem) in &namespace.children {
-			if let NamespaceItem::Functions(fns) = elem {
+			if let ModuleItem::Functions(fns) = elem {
 				for (func, _, attribs) in fns {
 					let (proto, cir_fn) = self.generate_prototype(
 						name.clone(),
@@ -90,7 +90,7 @@ impl CIRModuleBuilder {
 		}
 	}
 
-	fn generate_namespace(&mut self, namespace: &Namespace) {
+	fn generate_namespace(&mut self, namespace: &ModuleImpl) {
 		for (_, im) in namespace.trait_solver.get_local_impls() {
 			let im = im.read().unwrap();
 
@@ -108,7 +108,7 @@ impl CIRModuleBuilder {
 		}
 
 		for (name, item) in &namespace.children {
-			if let NamespaceItem::Functions(fns) = item {
+			if let ModuleItem::Functions(fns) = item {
 				for (func, ast, _) in fns {
 					let proto = self.get_prototype(name.clone(), &func.read().unwrap());
 
@@ -216,7 +216,7 @@ impl CIRModuleBuilder {
 }
 
 impl CIRModuleBuilder {
-	pub fn get_prototype(&mut self, name: Identifier, func: &FnDef) -> CIRFnPrototype {
+	pub fn get_prototype(&mut self, name: Identifier, func: &FnPrototype) -> CIRFnPrototype {
 		let ret = self.convert_type(&func.ret);
 		let params = func
 			.params
@@ -236,7 +236,7 @@ impl CIRModuleBuilder {
 	pub fn generate_prototype(
 		&mut self,
 		name: Identifier,
-		func: &FnDef,
+		func: &FnPrototype,
 		attributes: Vec<Attribute>,
 	) -> (CIRFnPrototype, CIRFunction) {
 		let proto = self.get_prototype(name, func);

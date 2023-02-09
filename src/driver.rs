@@ -7,13 +7,12 @@ use std::{
 };
 
 use colored::Colorize;
-use inkwell::{context::Context, module::Module, passes::PassManager, targets::FileType};
-use rayon::prelude::*;
+use inkwell::{context::Context, passes::PassManager, targets::FileType};
 
 use crate::{
 	ast::{
 		self,
-		namespace::{Identifier, Namespace, ModuleImportKind},
+		namespace::{Identifier, ModuleImpl, ModuleImportKind},
 	},
 	cir::{
 		analyze::{lifeline::VarInitCheck, verify, CIRPassManager, DataFlowPass},
@@ -41,8 +40,8 @@ pub struct ManagerState {
 pub enum ModuleState {
 	Parsing,
 	ParsingFailed,
-	InterfaceUntyped(Namespace),
-	InterfaceComplete(Namespace),
+	InterfaceUntyped(ModuleImpl),
+	InterfaceComplete(ModuleImpl),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -109,11 +108,11 @@ pub fn launch_module_compilation(
 
 	state.module_states.write().unwrap().insert(
 		src_path.clone(),
-		ModuleState::InterfaceUntyped(parser.namespace.get_interface()),
+		ModuleState::InterfaceUntyped(parser.module.get_interface()),
 	);
 
 	// Resolve module imports
-	let mut module_names: Vec<_> = parser.namespace.import_names.clone().into_iter().collect();
+	let mut module_names: Vec<_> = parser.module.import_names.clone().into_iter().collect();
 	let sender_lock = Mutex::new(error_sender.clone());
 
 	let mut imports = HashMap::new();
@@ -173,7 +172,7 @@ pub fn launch_module_compilation(
 	}
 
 	// Return early if any import failed
-	parser.namespace.imported = imports;
+	parser.module.imported = imports;
 
 	match resolve_types(&state, &mut parser) {
 		Ok(_) => {}
@@ -195,14 +194,14 @@ pub fn launch_module_compilation(
 	// Update the module database with the fully-typed version of the interface
 	state.module_states.write().unwrap().insert(
 		src_path.clone(),
-		ModuleState::InterfaceComplete(parser.namespace.get_interface()),
+		ModuleState::InterfaceComplete(parser.module.get_interface()),
 	);
 
 	// The rest of the module's compilation happens in a worker thread
 
 	s.spawn(move |_s| {
 		// Wait for all module interfaces to be finalized
-		let module_names = parser.namespace.import_names.clone();
+		let module_names = parser.module.import_names.clone();
 
 		let mut imports_left = module_names
 			.into_iter()
@@ -228,7 +227,7 @@ pub fn launch_module_compilation(
 			match import_state {
 				ModuleState::InterfaceComplete(complete) => {
 					parser
-						.namespace
+						.module
 						.imported
 						.insert(import_name.name().clone(), complete);
 					imports_left.remove(0);
@@ -406,14 +405,14 @@ pub fn parse_interface(
 
 pub fn resolve_types(state: &Arc<ManagerState>, parser: &mut Parser) -> ComuneResult<()> {
 	// At this point, all imports have been resolved, so validate namespace-level types
-	ast::resolve_namespace_types(&mut parser.namespace)?;
+	ast::resolve_namespace_types(&mut parser.module)?;
 
 	// Check for cyclical dependencies without indirection
 	// TODO: Nice error reporting for this
-	ast::check_namespace_cyclical_deps(&mut parser.namespace)?;
+	ast::check_namespace_cyclical_deps(&mut parser.module)?;
 
 	if state.verbose_output {
-		println!("\ntype resolution output:\n\n{}", &mut parser.namespace);
+		println!("\ntype resolution output:\n\n{}", &mut parser.module);
 	}
 
 	Ok(())
@@ -442,7 +441,7 @@ pub fn generate_code<'ctx>(
 
 	// Validate code
 
-	match ast::validate_namespace(&mut parser.namespace) {
+	match ast::validate_namespace(&mut parser.module) {
 		Ok(()) => {
 			if state.verbose_output {
 				println!("generating code...");
@@ -556,7 +555,7 @@ pub fn generate_code<'ctx>(
 	}
 
 	// Optimization passes
-	let mpm = PassManager::<Module>::create(());
+	let mpm = PassManager::create(());
 
 	mpm.add_instruction_combining_pass();
 	mpm.add_reassociate_pass();
