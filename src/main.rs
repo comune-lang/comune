@@ -7,7 +7,7 @@ mod lexer;
 mod llvm;
 mod parser;
 
-use ast::{namespace::Identifier, types};
+use ast::{module::Identifier, types};
 use clap::Parser;
 use colored::Colorize;
 use std::fs;

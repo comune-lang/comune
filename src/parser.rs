@@ -9,11 +9,11 @@ use crate::lexer::{Lexer, SrcSpan, Token};
 
 use crate::ast::controlflow::ControlFlow;
 use crate::ast::expression::{Atom, Expr, FnRef, NodeData, Operator};
-use crate::ast::namespace::{
-	Identifier, ItemRef, Name, ModuleImpl, ModuleASTElem, ModuleItem, ModuleImportKind,
+use crate::ast::module::{
+	Identifier, ItemRef, Name, ModuleImpl, ModuleASTElem, ModuleItemImpl, ModuleImportKind, ModuleItemInterface, ModuleInterface, ModuleItemOpaque,
 };
 use crate::ast::statement::Stmt;
-use crate::ast::traits::{Impl, TraitDef, TraitRef};
+use crate::ast::traits::{ImplBlockInterface, TraitInterface, TraitRef};
 use crate::ast::types::{
 	AlgebraicDef, Basic, BindingProps, FnPrototype, FnParamList, TupleKind, Type, TypeDef, TypeParamList,
 	TypeRef, Visibility,
@@ -33,8 +33,10 @@ fn token_compare(token: &Token, text: &str) -> bool {
 pub type ComuneResult<T> = Result<T, ComuneError>;
 
 pub struct Parser {
-	pub module: ModuleImpl,
+	pub interface: Arc<ModuleInterface>,
+	pub module_impl: ModuleImpl,
 	pub lexer: RefCell<Lexer>,
+	pub imports_opaque: HashMap<Name, HashMap<Identifier, ModuleItemOpaque>>,
 	current_scope: Identifier,
 	verbose: bool,
 }
@@ -42,9 +44,11 @@ pub struct Parser {
 impl Parser {
 	pub fn new(lexer: Lexer, verbose: bool) -> Parser {
 		Parser {
-			module: ModuleImpl::new(Identifier::new(true)),
+			interface: Arc::new(ModuleInterface::new(Identifier::new(true))),
+			module_impl: ModuleImpl::new(),
 			current_scope: Identifier::new(true),
 			lexer: RefCell::new(lexer),
+			imports_opaque: HashMap::new(),
 			verbose,
 		}
 	}
@@ -90,60 +94,75 @@ impl Parser {
 		self.lexer.borrow().current_token_index()
 	}
 
-	pub fn parse_module(&mut self) -> ComuneResult<&ModuleImpl> {
+	pub fn parse_interface(&mut self) -> ComuneResult<&ModuleInterface> {
 		self.lexer.borrow_mut().tokenize_file().unwrap();
 
 		match self.parse_namespace(&Identifier::new(true)) {
 			Ok(()) => {
 				if self.verbose {
-					println!("\ngenerated namespace info:\n\n{}", &self.module);
+					todo!()
+					//println!("\ngenerated namespace info:\n\n{}", &self.interface);
 				}
 
-				Ok(&self.module)
+				Ok(&self.interface)
 			}
 			Err(e) => Err(e),
 		}
 	}
 
 	pub fn generate_ast(&mut self) -> ComuneResult<()> {
-		for child in self.module.children.values() {
-			match child {
-				ModuleItem::Functions(fns) => {
-					for (_, ast, _) in fns {
-						let mut elem = ast.borrow_mut();
+		let mut children_bodies = HashMap::new();
 
-						if let ModuleASTElem::Unparsed(idx) = *elem {
-							// Parse function block
-							self.lexer.borrow_mut().seek_token_idx(idx);
-							*elem = ModuleASTElem::Parsed(self.parse_block()?)
+		for (name, child) in &self.module_impl.children {
+			match child {
+				ModuleItemImpl::Functions(fns) => {
+					let mut fn_bodies = vec![];
+
+					for elem in fns {
+						// Parse function block
+						if let ModuleASTElem::Unparsed(idx) = elem {
+							self.lexer.borrow_mut().seek_token_idx(*idx);
+
+							fn_bodies.push(ModuleASTElem::Parsed(self.parse_block()?));
 						}
 					}
-				}
 
-				ModuleItem::Type(..)
-				| ModuleItem::Alias(_)
-				| ModuleItem::TypeAlias(_)
-				| ModuleItem::Trait(..) => {}
+					children_bodies.insert(name.clone(), ModuleItemImpl::Functions(fn_bodies));
+				}
 
 				_ => todo!(),
 			}
 		}
 
-		for (_, im) in self.module.trait_solver.get_local_impls() {
+		for (name, body) in children_bodies {
+			self.module_impl.children.insert(name, body);
+		}
+
+		let mut impl_bodies = HashMap::new();
+
+		for (im_ty, im_name, im) in &self.module_impl.impl_bodies {
+			let mut im_body = HashMap::new();
+
 			// Generate impl function bodies
-			let im = im.read().unwrap();
+			for (fn_name, fns) in im {
+				let mut fn_bodies = vec![];
 
-			for fns in im.items.values() {
-				for (_, ast, _) in fns {
-					let mut elem = ast.borrow_mut();
-
-					if let ModuleASTElem::Unparsed(idx) = *elem {
+				for ast in fns {
+					if let ModuleASTElem::Unparsed(idx) = *ast {
 						// Parse method block
 						self.lexer.borrow_mut().seek_token_idx(idx);
-						*elem = ModuleASTElem::Parsed(self.parse_block()?)
+						fn_bodies.push(ModuleASTElem::Parsed(self.parse_block()?));
 					}
 				}
+
+				im_body.insert(fn_name.clone(), fn_bodies);
 			}
+
+			impl_bodies.insert((im_ty.clone(), im_name.clone()), im_body);
+		}
+
+		for ((ty, name), body) in impl_bodies {
+			self.module_impl.impl_bodies.push((ty, name, body));
 		}
 
 		Ok(())
@@ -198,11 +217,11 @@ impl Parser {
 
 					self.get_next()?; // Consume closing brace
 
-					let aggregate = TypeDef::Algebraic(aggregate);
+					aggregate.attributes = current_attributes;
 
-					self.module.children.insert(
+					Arc::get_mut(&mut self.interface).unwrap().children.insert(
 						Identifier::from_parent(scope, name),
-						ModuleItem::Type(Arc::new(RwLock::new(aggregate)), current_attributes),
+						ModuleItemInterface::Type(Arc::new(RwLock::new(TypeDef::Algebraic(aggregate)))),
 					);
 				}
 
@@ -233,7 +252,7 @@ impl Parser {
 								current_attributes = vec![];
 
 								match result.1 {
-									ModuleItem::Variable(t, _) => aggregate.members.push((
+									ModuleItemInterface::Variable(t) => aggregate.members.push((
 										result.0,
 										t,
 										current_visibility.clone(),
@@ -268,11 +287,11 @@ impl Parser {
 
 					self.get_next()?; // Consume closing brace
 
-					let aggregate = TypeDef::Algebraic(aggregate);
+					aggregate.attributes = current_attributes;
 
-					self.module.children.insert(
+					Arc::get_mut(&mut self.interface).unwrap().children.insert(
 						Identifier::from_parent(scope, name),
-						ModuleItem::Type(Arc::new(RwLock::new(aggregate)), current_attributes),
+						ModuleItemInterface::Type(Arc::new(RwLock::new(TypeDef::Algebraic(aggregate)))),
 					);
 				}
 
@@ -281,10 +300,11 @@ impl Parser {
 						return self.err(ComuneErrCode::UnexpectedToken);
 					};
 
-					let mut this_trait = TraitDef {
+					let mut this_trait = TraitInterface {
 						items: HashMap::new(),
 						types: HashMap::new(),
 						supers: vec![],
+						attributes: current_attributes,
 					};
 
 					let mut next = self.get_next()?;
@@ -297,14 +317,18 @@ impl Parser {
 
 					while !token_compare(&next, "}") {
 						let func_attributes = self.parse_attributes()?;
-						let (name, item) = self.parse_namespace_declaration(func_attributes)?;
+						let (name, interface, im) = self.parse_namespace_declaration(func_attributes)?;
 
-						match item {
-							ModuleItem::Functions(mut parsed) => {
+						match (interface, im) {
+							(ModuleItemInterface::Functions(mut funcs), ModuleItemImpl::Functions(mut parsed)) => {
 								if let Some(fns) = this_trait.items.get_mut(&name) {
-									fns.append(&mut parsed);
+									fns.append(&mut funcs);
 								} else {
-									this_trait.items.insert(name.clone(), parsed);
+									this_trait.items.insert(name.clone(), funcs);
+								}
+
+								if !parsed.is_empty() {
+									panic!("default impls in trait definitions are not yet supported");
 								}
 							}
 
@@ -316,9 +340,9 @@ impl Parser {
 
 					self.get_next()?; // Consume closing brace
 
-					self.module.children.insert(
+					Arc::get_mut(&mut self.interface).unwrap().children.insert(
 						Identifier::from_parent(scope, name),
-						ModuleItem::Trait(Arc::new(RwLock::new(this_trait)), current_attributes),
+						ModuleItemInterface::Trait(Arc::new(RwLock::new(this_trait))),
 					);
 				}
 
@@ -352,6 +376,7 @@ impl Parser {
 
 					// Parse functions
 					let mut functions = HashMap::new();
+					let mut asts = HashMap::new();
 
 					while self.get_current()? != Token::Other('}') {
 						let func_attributes = self.parse_attributes()?;
@@ -365,28 +390,25 @@ impl Parser {
 						self.get_next()?;
 
 						let params = self.parse_parameter_list()?;
-
 						let ast = ModuleASTElem::Unparsed(self.get_current_token_index());
 
 						self.skip_block()?;
 
-						let current_impl = vec![(
-							Arc::new(RwLock::new(FnPrototype {
-								ret,
-								params,
-								type_params: vec![],
-							})),
-							RefCell::new(ast),
-							func_attributes,
-						)];
+						// TODO: Proper overload handling here
+						functions.insert(fn_name.clone(), vec![Arc::new(RwLock::new(FnPrototype {
+							ret,
+							params,
+							type_params: vec![],
+							attributes: func_attributes,
+						}))]);
 
-						functions.insert(fn_name, current_impl);
+						asts.insert(fn_name, ast);
 					}
 
 					// Register impl to solver
-					let im = Arc::new(RwLock::new(Impl {
+					Arc::get_mut(&mut self.interface).unwrap().trait_solver.register_impl(impl_ty.clone(), ImplBlockInterface {
 						implements: trait_name.clone(),
-						items: functions,
+						functions,
 						types: HashMap::new(),
 						scope: self.current_scope.clone(),
 
@@ -395,9 +417,7 @@ impl Parser {
 							path: vec![],
 							absolute: true,
 						},
-					}));
-
-					self.module.trait_solver.register_impl(impl_ty, im);
+					});
 
 					self.consume(&Token::Other('}'))?;
 				}
@@ -407,9 +427,12 @@ impl Parser {
 					self.get_next()?;
 
 					if self.is_at_identifier_token()? {
-						self.module
+						let import = ModuleImportKind::Extern(self.parse_identifier()?);
+
+						Arc::get_mut(&mut self.interface).unwrap()
 							.import_names
-							.insert(ModuleImportKind::Other(self.parse_identifier()?));
+							.insert(import);
+
 						self.check_semicolon()?;
 					} else {
 						return self.err(ComuneErrCode::ExpectedIdentifier);
@@ -431,17 +454,21 @@ impl Parser {
 							if self.is_at_type_token(false)? {
 								let ty = self.parse_type(false)?;
 
-								self.module.children.insert(
-									Identifier::from_parent(scope, name),
-									ModuleItem::TypeAlias(Arc::new(RwLock::new(ty))),
-								);
+								Arc::get_mut(&mut self.interface).unwrap()
+									.children
+									.insert(
+										Identifier::from_parent(scope, name),
+										ModuleItemInterface::TypeAlias(Arc::new(RwLock::new(ty))),
+									);
 							} else {
 								let aliased = self.parse_identifier()?;
 
-								self.module.children.insert(
-									Identifier::from_parent(scope, name),
-									ModuleItem::Alias(aliased),
-								);
+								Arc::get_mut(&mut self.interface).unwrap()
+									.children
+									.insert(
+										Identifier::from_parent(scope, name),
+										ModuleItemInterface::Alias(aliased),
+									);
 							}
 
 							self.check_semicolon()?;
@@ -449,20 +476,25 @@ impl Parser {
 							// No '=' token, just bring the name into scope
 							let name = names.remove(0);
 
-							self.module.children.insert(
-								Identifier::from_parent(scope, name.path.last().unwrap().clone()),
-								ModuleItem::Alias(name),
-							);
+							Arc::get_mut(&mut self.interface).unwrap()
+								.children
+								.insert(
+									Identifier::from_parent(scope, name.path.last().unwrap().clone()),
+									ModuleItemInterface::Alias(name),
+								);
 
 							self.check_semicolon()?;
 						}
 					} else {
 						for name in names {
-							self.module.children.insert(
-								Identifier::from_parent(scope, name.name().clone()),
-								ModuleItem::Alias(name),
-							);
+							Arc::get_mut(&mut self.interface).unwrap()
+								.children
+								.insert(
+									Identifier::from_parent(scope, name.name().clone()),
+									ModuleItemInterface::Alias(name),
+								);
 						}
+
 						self.check_semicolon()?;
 					}
 				}
@@ -475,7 +507,7 @@ impl Parser {
 					match self.get_next()? {
 						Token::Other(';') => {
 							// TODO: Add submodule to import list
-							self.module.import_names.insert(ModuleImportKind::Child(module));
+							Arc::get_mut(&mut self.interface).unwrap().import_names.insert(ModuleImportKind::Child(module));
 							self.get_next()?;
 						}
 
@@ -498,19 +530,31 @@ impl Parser {
 
 				_ => {
 					// Parse declaration/definition
-					let (name, mut result) =
+					let (name, mut protos, mut defs) =
 						self.parse_namespace_declaration(current_attributes)?;
 
 					let id = Identifier::from_parent(scope, name);
+					
+					match (&mut protos, &mut defs) {
 
-					match &mut result {
-						ModuleItem::Functions(fns) => {
-							if let Some(ModuleItem::Functions(existing)) =
-								self.module.children.get_mut(&id)
+						(ModuleItemInterface::Functions(fns), ModuleItemImpl::Functions(asts)) => {
+
+							let module_interface = Arc::get_mut(&mut self.interface).unwrap();
+		
+							if let Some(ModuleItemInterface::Functions(existing)) =
+								module_interface.children.get_mut(&id)
 							{
 								existing.append(fns);
 							} else {
-								self.module.children.insert(id, result);
+								module_interface.children.insert(id.clone(), protos);
+							}
+
+							if let Some(ModuleItemImpl::Functions(existing)) =
+								self.module_impl.children.get_mut(&id)
+							{
+								existing.append(asts);
+							} else {
+								self.module_impl.children.insert(id, defs);
 							}
 						}
 
@@ -653,8 +697,9 @@ impl Parser {
 	fn parse_namespace_declaration(
 		&self,
 		attributes: Vec<Attribute>,
-	) -> ComuneResult<(Name, ModuleItem)> {
+	) -> ComuneResult<(Name, ModuleItemInterface, ModuleItemImpl)> {
 		let t = self.parse_type(false)?;
+		let interface;
 		let item;
 
 		let Token::Name(name) = self.get_current()? else {
@@ -675,6 +720,7 @@ impl Parser {
 						ret: t,
 						params: self.parse_parameter_list()?,
 						type_params,
+						attributes,
 					};
 
 					// Past the parameter list, check if we're at a function body or not
@@ -695,11 +741,8 @@ impl Parser {
 						_ => return self.err(ComuneErrCode::UnexpectedToken),
 					}
 
-					item = ModuleItem::Functions(vec![(
-						Arc::new(RwLock::new(t)),
-						RefCell::new(ast_elem),
-						attributes,
-					)]);
+					interface = ModuleItemInterface::Functions(vec![Arc::new(RwLock::new(t))]);
+					item = ModuleItemImpl::Functions(vec![ast_elem]);
 				}
 
 				"=" => {
@@ -725,11 +768,12 @@ impl Parser {
 				}
 			}
 		} else {
-			item = ModuleItem::Variable(t, RefCell::new(ModuleASTElem::NoElem));
+			interface = ModuleItemInterface::Variable(t);
+			item = todo!();
 			self.check_semicolon()?;
 		}
 
-		Ok((name, item))
+		Ok((name, interface, item))
 	}
 
 	fn parse_binding_props(&self) -> ComuneResult<Option<BindingProps>> {
@@ -1094,9 +1138,9 @@ impl Parser {
 					if self.get_current()? == Token::Operator("<") {
 						let mut is_function = false;
 
-						self.module
+						self.interface
 							.with_item(&id, &self.current_scope, |item, _| {
-								is_function = matches!(item, ModuleItem::Functions(..));
+								is_function = matches!(item, ModuleItemInterface::Functions(..));
 							});
 
 						if is_function {
@@ -1377,7 +1421,7 @@ impl Parser {
 	}
 
 	fn find_type(&self, typename: &Identifier) -> Option<Type> {
-		self.module.resolve_type(typename, &self.current_scope)
+		self.interface.resolve_type(typename, &self.current_scope)
 	}
 
 	// Returns true if the current token is the start of a Type.
@@ -1399,7 +1443,7 @@ impl Parser {
 				self.lexer.borrow_mut().seek_token_idx(current_idx);
 
 				Ok(self
-					.module
+					.interface
 					.resolve_type(&typename, &self.current_scope)
 					.is_some())
 			} else {
@@ -1639,7 +1683,7 @@ impl Parser {
 			let typename = self.parse_identifier()?;
 
 			if immediate_resolve {
-				if let Some(ty) = self.module.resolve_type(&typename, &self.current_scope) {
+				if let Some(ty) = self.interface.resolve_type(&typename, &self.current_scope) {
 					result = ty;
 				} else {
 					return self.err(ComuneErrCode::UnresolvedTypename(typename.to_string()));

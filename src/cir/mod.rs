@@ -5,7 +5,7 @@ use std::{collections::HashMap, ffi::CString, hash::Hash};
 use crate::{
 	ast::{
 		expression::Operator,
-		namespace::{Identifier, Name},
+		module::{Identifier, Name},
 		types::{Basic, BindingProps, DataLayout, TupleKind, TypeParam},
 		Attribute,
 	},

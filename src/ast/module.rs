@@ -1,5 +1,4 @@
 use std::{
-	cell::RefCell,
 	collections::{HashMap, HashSet},
 	fmt::{Debug, Display},
 	hash::Hash,
@@ -13,9 +12,8 @@ use crate::{
 
 use super::{
 	expression::Expr,
-	traits::{TraitDef, TraitRef, TraitSolver},
+	traits::{TraitInterface, TraitRef, ImplSolver},
 	types::{Basic, FnPrototype, Type, TypeDef, TypeRef},
-	Attribute,
 };
 
 // String plays nicer with debuggers
@@ -24,103 +22,121 @@ pub type Name = String;
 #[cfg(not(debug_assertions))]
 pub type Name = Arc<str>;
 
-pub type FnOverloadList = Vec<(
-	Arc<RwLock<FnPrototype>>,
-	RefCell<ModuleASTElem>,
-	Vec<Attribute>,
-)>;
+pub type FnOverloadBodies = Vec<ModuleASTElem>;
+
+pub type TokenIndex = usize;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum ModuleImportKind {
 	Child(Name),
 	Language(Name),
-	Other(Identifier),
+	Extern(Identifier),
 } 
 
-// Struct representing an un-typechecked module interface. This 
+// The full module dependency system is complex, as the compiler is
+// designed to have as few parallelization bottlenecks as possible.
+// Rust's concurrency features may have driven me a bit mad with power.
+#[derive(Debug)]
+pub struct Module {
+	module_interface: ModuleInterface,
+	module_impl: ModuleImpl, 
+}
+
+// Struct representing a possibly-typechecked module interface. This 
 // stage of AST construction does not parse any function or 
 // expression bodies, only the prototypes of namespace items.
 // This is quick to construct, and downstream modules depend on 
 // this stage for expression parsing. 
-//
-// The full module dependency system is complex, as the compiler is
-// designed to have as few parallelization bottlenecks as possible.
-// Rust's concurrency features may have driven me a bit mad with power. 
 #[derive(Default, Clone, Debug)]
 pub struct ModuleInterface {
+	pub path: Identifier,
+	pub children: HashMap<Identifier, ModuleItemInterface>,
 	pub import_names: HashSet<ModuleImportKind>,
-	pub children: HashMap<Identifier, ModuleItemKind>,
+	pub imported: HashMap<Name, Arc<ModuleInterface>>,
+	pub trait_solver: ImplSolver,
 }
 
-#[derive(Copy, Clone, Debug)]
-pub enum ModuleItemKind {
-	Type,
-	Trait,
-	Function,
-	Item,
-	Alias,
-	TypeAlias
-}
+pub type ModuleInterfaceOpaque = HashMap<Identifier, ModuleItemOpaque>;
 
 // Struct representing a module's implementation.
 #[derive(Default, Clone, Debug)]
 pub struct ModuleImpl {
-	pub path: Identifier,
-	pub import_names: HashSet<ModuleImportKind>,
-	pub child_modules: HashSet<Identifier>,
-	pub imported: HashMap<Name, ModuleImpl>,
-	pub children: HashMap<Identifier, ModuleItem>,
-	pub trait_solver: TraitSolver,
+	pub children: HashMap<Identifier, ModuleItemImpl>,
+	pub impl_bodies: Vec<(Type, Identifier, HashMap<String, FnOverloadBodies>)>
 }
 
 #[derive(Clone, Debug)]
-pub enum ModuleItem {
-	Type(Arc<RwLock<TypeDef>>, Vec<Attribute>),
-	Trait(Arc<RwLock<TraitDef>>, Vec<Attribute>),
-	Functions(FnOverloadList), // Plural in order to support function overloads
-	Variable(Type, RefCell<ModuleASTElem>),
+pub enum ModuleItemOpaque {
+	Type,
+	Trait,
+	Function,
+	Variable,
+	Alias,
+	TypeAlias
+}
+
+// I HATE RWLOCKS I HATE RWLOCKS I HATE RWLOCKS I HATE RWLOCKS I
+#[derive(Clone, Debug)]
+pub enum ModuleItemInterface {
+	Type(Arc<RwLock<TypeDef>>),
+	Trait(Arc<RwLock<TraitInterface>>),
+	Functions(Vec<Arc<RwLock<FnPrototype>>>),
+	Variable(Type),
 	Alias(Identifier),
 	TypeAlias(Arc<RwLock<Type>>),
 }
 
-pub enum Module {
-	None,
-	UntypedInterface(ModuleInterface),
-	TypedInterface(ModuleInterface),
-	UntypedImpl(ModuleInterface, ModuleImpl),
-	Complete(ModuleInterface, ModuleImpl)
+#[derive(Clone, Debug)]
+pub enum ModuleItemImpl {
+	//Type(Arc<RwLock<TypeDef>>),
+	//Trait(Arc<RwLock<TraitDef>>),
+	Functions(FnOverloadBodies),
+	Variable(ModuleASTElem),
+	//Alias(Identifier),
+	//TypeAlias(Arc<RwLock<Type>>),
 }
 
-// Safety: function bodies are storied in RefCells. These
-// bodies should (read: MUST) only ever be accessed by
-// their owning modules, because any downstream modules
-// only care about the function signatures.
-// Sketchy, I know. Remind me to fix this sometime.
-unsafe impl Send for ModuleImpl {}
-unsafe impl Sync for ModuleImpl {}
-
 impl ModuleImpl {
+	pub fn new() -> Self {
+		ModuleImpl { 
+			children: HashMap::new(),
+			impl_bodies: vec![]
+		}
+	}
+}
+
+impl ModuleInterface {
 	pub fn new(path: Identifier) -> Self {
-		ModuleImpl {
-			// Initialize root namespace with basic types
+		ModuleInterface {
 			path,
 			children: HashMap::new(),
 			import_names: HashSet::from([ModuleImportKind::Language("core".into())]),
-			child_modules: HashSet::new(),
 			imported: HashMap::new(),
-			trait_solver: TraitSolver::new(),
+			trait_solver: ImplSolver::new(),
 		}
 	}
 
-	pub fn get_interface(&self) -> Self {
-		self.clone() // TODO: Actually implement
+	pub fn get_opaque(&self) -> ModuleInterfaceOpaque {
+		self.children.iter().map(
+			|(id, child)| (
+				id.clone(), 
+				match child {
+					ModuleItemInterface::Type(_) => ModuleItemOpaque::Type,
+					ModuleItemInterface::Trait(_) => ModuleItemOpaque::Trait,
+					ModuleItemInterface::Functions(_) => ModuleItemOpaque::Function,
+					ModuleItemInterface::Variable(_) => ModuleItemOpaque::Variable,
+					ModuleItemInterface::Alias(_) => ModuleItemOpaque::Alias,
+					ModuleItemInterface::TypeAlias(_) => ModuleItemOpaque::TypeAlias,
+				}
+			)
+		).collect()
 	}
 
-	pub fn get_item<'a>(&'a self, id: &Identifier) -> Option<(Identifier, &'a ModuleItem)> {
+	pub fn get_item<'a>(&'a self, id: &Identifier) -> Option<(Identifier, &'a ModuleItemInterface)> {
 		assert!(id.absolute, "argument to get_item should be absolute!");
 
 		match self.children.get(id) {
-			Some(ModuleItem::Alias(alias)) => self.get_item(alias),
+			Some(ModuleItemInterface::Alias(alias)) => self.get_item(alias),
 
 			Some(item) => Some((id.clone(), item)),
 
@@ -171,7 +187,7 @@ impl ModuleImpl {
 		}
 
 		match found {
-			Some((id, ModuleItem::Type(ty, _))) => {
+			Some((id, ModuleItemInterface::Type(ty))) => {
 				Some(Type::TypeRef(ItemRef::Resolved(TypeRef {
 					def: Arc::downgrade(ty),
 					name: id,
@@ -179,11 +195,11 @@ impl ModuleImpl {
 				})))
 			}
 
-			Some((_, ModuleItem::Alias(alias))) => {
+			Some((_, ModuleItemInterface::Alias(alias))) => {
 				self.resolve_type(alias, &Identifier::new(true))
 			}
 
-			Some((_, ModuleItem::TypeAlias(alias))) => Some(alias.read().unwrap().clone()),
+			Some((_, ModuleItemInterface::TypeAlias(alias))) => Some(alias.read().unwrap().clone()),
 
 			_ => {
 				if let Some(imported) = self
@@ -205,7 +221,7 @@ impl ModuleImpl {
 		&self,
 		id: &Identifier,
 		scope: &Identifier,
-		mut closure: impl FnMut(&ModuleItem, &Identifier) -> Ret,
+		mut closure: impl FnMut(&ModuleItemInterface, &Identifier) -> Ret,
 	) -> Option<Ret> {
 		if !id.absolute {
 			let mut scope_unwind = scope.clone();
@@ -216,7 +232,7 @@ impl ModuleImpl {
 				scope_combined.path.append(&mut id.clone().path);
 
 				if let Some(found_item) = self.children.get(&scope_combined) {
-					if let ModuleItem::Alias(alias) = found_item {
+					if let ModuleItemInterface::Alias(alias) = found_item {
 						return self.with_item(alias, scope, closure);
 					} else {
 						return Some(closure(found_item, &scope_combined));
@@ -235,7 +251,7 @@ impl ModuleImpl {
 		if let Some(absolute_lookup) = self.children.get(&id) {
 			// Found a match for the absolute path in this namespace!
 
-			if let ModuleItem::Alias(alias) = absolute_lookup {
+			if let ModuleItemInterface::Alias(alias) = absolute_lookup {
 				self.with_item(alias, scope, closure)
 			} else {
 				Some(closure(absolute_lookup, &id))
@@ -253,32 +269,6 @@ impl ModuleImpl {
 			// Nada
 			None
 		}
-	}
-}
-
-impl Display for ModuleImpl {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		for (name, item) in &self.children {
-			match item {
-				ModuleItem::Alias(id) => writeln!(f, "\t[alias] {id}")?,
-				ModuleItem::TypeAlias(ty) => writeln!(f, "\t[alias] {}", &ty.read().unwrap())?,
-				ModuleItem::Type(t, _) => {
-					writeln!(f, "\t[type] {}: {}", name, t.read().unwrap())?
-				}
-				ModuleItem::Trait(t, _) => {
-					writeln!(f, "\t[trait] {}: {:?}", name, t.read().unwrap())?
-				}
-
-				ModuleItem::Functions(fs) => {
-					for (t, ..) in fs {
-						writeln!(f, "\t[func] {}: {}", name, t.read().unwrap())?
-					}
-				}
-
-				ModuleItem::Variable(_, _) => todo!(),
-			}
-		}
-		Ok(())
 	}
 }
 
@@ -371,7 +361,7 @@ impl Display for Identifier {
 #[derive(Clone, Debug, PartialEq)]
 pub enum ModuleASTElem {
 	Parsed(Expr),
-	Unparsed(usize), // Token index
+	Unparsed(TokenIndex),
 	NoElem,
 }
 

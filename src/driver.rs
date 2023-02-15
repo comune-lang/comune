@@ -12,7 +12,7 @@ use inkwell::{context::Context, passes::PassManager, targets::FileType};
 use crate::{
 	ast::{
 		self,
-		namespace::{Identifier, ModuleImpl, ModuleImportKind},
+		module::{Identifier, ModuleImportKind, ModuleInterfaceOpaque, ModuleInterface},
 	},
 	cir::{
 		analyze::{lifeline::VarInitCheck, verify, CIRPassManager, DataFlowPass},
@@ -40,8 +40,8 @@ pub struct ManagerState {
 pub enum ModuleState {
 	Parsing,
 	ParsingFailed,
-	InterfaceUntyped(ModuleImpl),
-	InterfaceComplete(ModuleImpl),
+	InterfaceUntyped(ModuleInterfaceOpaque),
+	InterfaceComplete(Arc<ModuleInterface>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -108,11 +108,11 @@ pub fn launch_module_compilation(
 
 	state.module_states.write().unwrap().insert(
 		src_path.clone(),
-		ModuleState::InterfaceUntyped(parser.module.get_interface()),
+		ModuleState::InterfaceUntyped(parser.interface.get_opaque()),
 	);
 
 	// Resolve module imports
-	let mut module_names: Vec<_> = parser.module.import_names.clone().into_iter().collect();
+	let mut module_names: Vec<_> = parser.interface.import_names.clone().into_iter().collect();
 	let sender_lock = Mutex::new(error_sender.clone());
 
 	let mut imports = HashMap::new();
@@ -121,7 +121,7 @@ pub fn launch_module_compilation(
 		let (import_name, fs_name) = match name {
 			ModuleImportKind::Child(name) => (name.clone(), Identifier::from_parent(&module_name, name)),
 			ModuleImportKind::Language(name) => (name.clone(), Identifier::from_name(name, true)),
-			ModuleImportKind::Other(name) => (name.name().clone(), name),
+			ModuleImportKind::Extern(name) => (name.name().clone(), name),
 		};
 
 		let import_path = get_module_source_path(&state, src_path.clone(), &fs_name).unwrap();
@@ -159,11 +159,14 @@ pub fn launch_module_compilation(
 					return Err(ComuneError::new(ComuneErrCode::DependencyError, SrcSpan::new()))
 				}
 
-				Some(
-					ModuleState::InterfaceUntyped(interface)
-					| ModuleState::InterfaceComplete(interface),
-				) => {
+				Some(ModuleState::InterfaceUntyped(interface)) => {
 					imports.insert(import_name, interface.clone());
+					module_names.remove(0);
+					break
+				}
+
+				Some(ModuleState::InterfaceComplete(interface)) => {
+					imports.insert(import_name, interface.get_opaque());
 					module_names.remove(0);
 					break
 				}
@@ -172,7 +175,7 @@ pub fn launch_module_compilation(
 	}
 
 	// Return early if any import failed
-	parser.module.imported = imports;
+	parser.imports_opaque = imports;
 
 	match resolve_types(&state, &mut parser) {
 		Ok(_) => {}
@@ -194,14 +197,14 @@ pub fn launch_module_compilation(
 	// Update the module database with the fully-typed version of the interface
 	state.module_states.write().unwrap().insert(
 		src_path.clone(),
-		ModuleState::InterfaceComplete(parser.module.get_interface()),
+		ModuleState::InterfaceComplete(parser.interface.clone()),
 	);
 
 	// The rest of the module's compilation happens in a worker thread
 
 	s.spawn(move |_s| {
 		// Wait for all module interfaces to be finalized
-		let module_names = parser.module.import_names.clone();
+		let module_names = parser.interface.import_names.clone();
 
 		let mut imports_left = module_names
 			.into_iter()
@@ -209,7 +212,7 @@ pub fn launch_module_compilation(
 				match name {
 					ModuleImportKind::Child(name) => Identifier::from_parent(&module_name, name),
 					ModuleImportKind::Language(name) => Identifier::from_name(name, true),
-					ModuleImportKind::Other(name) => name,
+					ModuleImportKind::Extern(name) => name,
 				}
 			}).collect::<Vec<_>>();
 
@@ -226,8 +229,8 @@ pub fn launch_module_compilation(
 
 			match import_state {
 				ModuleState::InterfaceComplete(complete) => {
-					parser
-						.module
+					Arc::get_mut(&mut parser.interface)
+						.unwrap()
 						.imported
 						.insert(import_name.name().clone(), complete);
 					imports_left.remove(0);
@@ -391,7 +394,7 @@ pub fn parse_interface(
 
 	// Parse namespace level
 
-	return match mod_state.parse_module() {
+	return match mod_state.parse_interface() {
 		Ok(_) => Ok(mod_state),
 		Err(e) => {
 			mod_state
@@ -405,14 +408,15 @@ pub fn parse_interface(
 
 pub fn resolve_types(state: &Arc<ManagerState>, parser: &mut Parser) -> ComuneResult<()> {
 	// At this point, all imports have been resolved, so validate namespace-level types
-	ast::resolve_namespace_types(&mut parser.module)?;
+	ast::resolve_namespace_types(&mut parser.interface)?;
 
 	// Check for cyclical dependencies without indirection
 	// TODO: Nice error reporting for this
-	ast::check_namespace_cyclical_deps(&mut parser.module)?;
+	ast::check_module_cyclical_deps(&mut parser.interface)?;
 
 	if state.verbose_output {
-		println!("\ntype resolution output:\n\n{}", &mut parser.module);
+		todo!()
+		//println!("\ntype resolution output:\n\n{}", parser.interface);
 	}
 
 	Ok(())
@@ -441,7 +445,7 @@ pub fn generate_code<'ctx>(
 
 	// Validate code
 
-	match ast::validate_namespace(&mut parser.module) {
+	match ast::validate_module_impl(&parser.interface, &mut parser.module_impl) {
 		Ok(()) => {
 			if state.verbose_output {
 				println!("generating code...");

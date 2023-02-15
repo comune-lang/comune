@@ -5,10 +5,11 @@ use std::{
 	sync::{Arc, RwLock, Weak},
 };
 
-use super::namespace::{FnOverloadList, ItemRef, ModuleImpl};
-use super::types::{TypeParam, TypeParamList};
+use super::Attribute;
+use super::module::{ItemRef, ModuleImpl};
+use super::types::{TypeParam, TypeParamList, FnPrototype};
 use super::{
-	namespace::{Identifier, Name},
+	module::{Identifier, Name},
 	types::Type,
 };
 
@@ -23,22 +24,23 @@ pub enum LangTrait {
 
 #[derive(Debug, Clone, Default)]
 pub struct TraitRef {
-	pub def: Weak<RwLock<TraitDef>>,
+	pub def: Weak<RwLock<TraitInterface>>,
 	pub name: Identifier,
 	pub args: Vec<Type>,
 }
 
 #[derive(Debug)]
-pub struct TraitDef {
-	pub items: HashMap<Name, FnOverloadList>,
+pub struct TraitInterface {
+	pub items: HashMap<Name, Vec<Arc<RwLock<FnPrototype>>>>,
 	pub types: HashMap<Name, TypeParam>, // Associated types
 	pub supers: Vec<Identifier>,
+	pub attributes: Vec<Attribute>,
 }
 
 #[derive(Debug, Clone)]
-pub struct Impl {
+pub struct ImplBlockInterface {
 	pub implements: Option<ItemRef<TraitRef>>,
-	pub items: HashMap<Name, FnOverloadList>,
+	pub functions: HashMap<Name, Vec<Arc<RwLock<FnPrototype>>>>,
 	pub types: HashMap<Name, Type>,
 	pub scope: Identifier, // The scope used for name resolution within the impl
 	pub canonical_root: Identifier, // The root of the canonical names used by items in this impl
@@ -71,7 +73,7 @@ impl Hash for TraitRef {
 // The result of a trait obligation resolution
 #[derive(Clone, Debug, Default)]
 pub enum TraitDeduction {
-	Impl(Arc<RwLock<Impl>>),
+	Impl(Arc<RwLock<ImplBlockInterface>>),
 	Inherent,
 	Opaque,
 
@@ -79,33 +81,14 @@ pub enum TraitDeduction {
 	None,
 }
 
-#[derive(Debug, Default)]
-pub struct TraitSolver {
-	impls: Vec<(Type, Arc<RwLock<Impl>>)>,
-	local_impls: Vec<(RwLock<Type>, Arc<RwLock<Impl>>)>,
+#[derive(Clone, Debug, Default)]
+pub struct ImplSolver {
+	impls: Vec<(Type, Arc<ImplBlockInterface>)>,
+	pub local_impls: Vec<(Arc<RwLock<Type>>, Arc<RwLock<ImplBlockInterface>>)>,
 	answer_cache: HashMap<Type, HashMap<TraitRef, TraitDeduction>>,
 }
 
-impl Clone for TraitSolver {
-	fn clone(&self) -> Self {
-		let mut result = TraitSolver {
-			local_impls: vec![],
-			impls: self.impls.clone(),
-			answer_cache: self.answer_cache.clone(),
-		};
-
-		// Move local_impls into impls
-		result.impls.extend(
-			self.local_impls
-				.iter()
-				.map(|(ty, im)| (ty.read().unwrap().clone(), im.clone())),
-		);
-
-		result
-	}
-}
-
-impl TraitSolver {
+impl ImplSolver {
 	pub fn new() -> Self {
 		Self {
 			impls: vec![],
@@ -114,12 +97,15 @@ impl TraitSolver {
 		}
 	}
 
-	pub fn get_local_impls(&self) -> &Vec<(RwLock<Type>, Arc<RwLock<Impl>>)> {
-		&self.local_impls
+	pub fn finalize(&mut self) {
+		// Move local_impls into impls
+		self.impls.extend(self.local_impls
+			.iter()
+			.map(|(ty, im)| (ty.read().unwrap().clone(), Arc::new(im.read().unwrap().clone()))));
 	}
 
-	pub fn register_impl(&mut self, ty: Type, im: Arc<RwLock<Impl>>) {
-		self.local_impls.push((RwLock::new(ty), im));
+	pub fn register_impl(&mut self, ty: Type, im: ImplBlockInterface) {
+		self.local_impls.push((Arc::new(RwLock::new(ty)), Arc::new(RwLock::new(im))));
 	}
 
 	pub fn type_implements_trait(
@@ -154,7 +140,7 @@ impl TraitSolver {
 
 	pub fn is_impl_applicable(
 		&mut self,
-		im: &Impl,
+		im: &ImplBlockInterface,
 		ty: Type,
 		type_params: &TypeParamList,
 		root: &ModuleImpl,

@@ -1,5 +1,5 @@
 use super::{
-	namespace::Name,
+	module::Name,
 	types::{BindingProps, Type},
 };
 

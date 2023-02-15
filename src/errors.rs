@@ -17,10 +17,10 @@ use backtrace::Backtrace;
 use lazy_static::lazy_static;
 
 use super::types::Type;
-use crate::ast::namespace::Name;
+use crate::ast::module::Name;
 use crate::lexer::SrcSpan;
 use crate::{
-	ast::{expression::Operator, namespace::Identifier},
+	ast::{expression::Operator, module::Identifier},
 	cir::analyze::lifeline::LivenessState,
 };
 

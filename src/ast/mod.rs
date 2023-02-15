@@ -17,16 +17,16 @@ use crate::{
 use self::{
 	controlflow::ControlFlow,
 	expression::{Atom, Expr, FnRef, NodeData, OnceAtom, Operator},
-	namespace::{Identifier, ItemRef, Name, ModuleImpl, ModuleASTElem, ModuleItem},
+	module::{Identifier, ItemRef, Name, ModuleImpl, ModuleASTElem, ModuleItemImpl, ModuleInterface, ModuleItemInterface},
 	pattern::Binding,
 	statement::Stmt,
-	traits::{TraitDef, TraitRef},
+	traits::{TraitInterface, TraitRef},
 	types::{AlgebraicDef, BindingProps, FnPrototype, TupleKind, TypeParamList, TypeRef},
 };
 
 pub mod controlflow;
 pub mod expression;
-pub mod namespace;
+pub mod module;
 pub mod pattern;
 pub mod statement;
 pub mod traits;
@@ -47,7 +47,7 @@ pub fn get_attribute<'a>(attributes: &'a [Attribute], attr_name: &str) -> Option
 }
 
 pub struct FnScope<'ctx> {
-	context: &'ctx ModuleImpl,
+	context: &'ctx ModuleInterface,
 	scope: Identifier,
 	parent: Option<&'ctx FnScope<'ctx>>,
 	fn_return_type: Type,
@@ -65,7 +65,7 @@ impl<'ctx> FnScope<'ctx> {
 		}
 	}
 
-	pub fn new(context: &'ctx ModuleImpl, scope: Identifier, return_type: Type) -> Self {
+	pub fn new(context: &'ctx ModuleInterface, scope: Identifier, return_type: Type) -> Self {
 		FnScope {
 			context,
 			scope,
@@ -105,7 +105,7 @@ impl<'ctx> FnScope<'ctx> {
 		if result.is_none() && search_namespace {
 			// Look for it in the namespace tree
 			self.context.with_item(id, &self.scope, |item, id| {
-				if let ModuleItem::Functions(fns) = item {
+				if let ModuleItemInterface::Functions(fns) = item {
 					result = Some((
 						id.clone(),
 						todo!(), // Implement function types
@@ -122,20 +122,19 @@ impl<'ctx> FnScope<'ctx> {
 	}
 }
 
-pub fn validate_function(
+pub fn validate_function_body(
 	scope: Identifier,
-	func: &mut FnPrototype,
-	elem: &RefCell<ModuleASTElem>,
-	namespace: &ModuleImpl,
+	func: &FnPrototype,
+	elem: &mut ModuleASTElem,
+	namespace: &ModuleInterface,
 ) -> ComuneResult<()> {
 	let mut scope = FnScope::new(namespace, scope, func.ret.clone());
 
-	for (param, name, props) in &mut func.params.params {
-		param.validate(&scope)?;
+	for (param, name, props) in &func.params.params {
 		scope.add_variable(param.clone(), name.clone().unwrap(), *props)
 	}
 
-	if let ModuleASTElem::Parsed(elem) = &mut *elem.borrow_mut() {
+	if let ModuleASTElem::Parsed(elem) = elem {
 		let elem_node_data = elem.get_node_data().clone();
 
 		// Validate function block & get return type, make sure it matches the signature
@@ -205,9 +204,8 @@ pub fn validate_function(
 pub fn is_candidate_viable(
 	args: &Vec<Expr>,
 	type_args: &Vec<Type>,
-	candidate: &Arc<RwLock<FnPrototype>>,
+	func: &FnPrototype,
 ) -> bool {
-	let func = candidate.read().unwrap();
 	let params = &func.params.params;
 
 	if args.len() < params.len() || (args.len() > params.len() && !func.params.variadic) {
@@ -235,13 +233,11 @@ pub fn is_candidate_viable(
 
 fn candidate_compare(
 	args: &[Expr],
-	l: &Arc<RwLock<FnPrototype>>,
-	r: &Arc<RwLock<FnPrototype>>,
+	l: &FnPrototype,
+	r: &FnPrototype,
 	scope: &FnScope,
 ) -> Ordering {
 	// Rank candidates
-	let l = l.read().unwrap();
-	let r = r.read().unwrap();
 
 	let mut l_coerces = 0;
 	let mut l_casts = 0;
@@ -323,8 +319,8 @@ pub fn validate_fn_call(
 		}
 
 		loop {
-			if let Some((name, ModuleItem::Functions(fns))) = scope.context.get_item(&name_unwrap) {
-				for func in fns {
+			if let Some((name, ModuleItemInterface::Functions(fns))) = scope.context.get_item(&name_unwrap) {
+				for func in fns.iter() {
 					candidates.push((name.clone(), func));
 				}
 			}
@@ -351,10 +347,10 @@ pub fn validate_fn_call(
 
 	let mut candidates: Vec<_> = candidates
 		.into_iter()
-		.filter(|(_, (func, ..))| is_candidate_viable(args, type_args, func))
+		.filter(|(_, func)| is_candidate_viable(args, type_args, &*func.read().unwrap()))
 		.collect();
 
-	let (selected_name, (selected_candidate, ..)) = match candidates.len() {
+	let (selected_name, selected_candidate) = match candidates.len() {
 		0 => {
 			return Err(ComuneError::new(
 				ComuneErrCode::NoCandidateFound {
@@ -371,11 +367,11 @@ pub fn validate_fn_call(
 		// More than one viable candidate
 		_ => {
 			// Sort candidates by cost
-			candidates.sort_unstable_by(|(_, (l, ..)), (_, (r, ..))| {
-				candidate_compare(args, l, r, scope)
+			candidates.sort_unstable_by(|(_, l), (_, r)| {
+				candidate_compare(args, &*l.read().unwrap(), &*r.read().unwrap(), scope)
 			});
 
-			match candidate_compare(args, &candidates[0].1 .0, &candidates[1].1 .0, scope) {
+			match candidate_compare(args, &*candidates[0].1.read().unwrap(), &*candidates[1].1.read().unwrap(), scope) {
 				Ordering::Less => candidates[0].clone(),
 
 				Ordering::Equal => {
@@ -388,7 +384,6 @@ pub fn validate_fn_call(
 	};
 
 	let func = &*selected_candidate.read().unwrap();
-
 	validate_arg_list(args, &func.params.params, type_args, scope)?;
 
 	*resolved = FnRef::Direct(selected_candidate.clone());
@@ -425,15 +420,14 @@ fn resolve_method_call(
 	let mut candidates = vec![];
 
 	// Go through all the impls in scope and find method candidates
-	for (ty, im) in scope.context.trait_solver.get_local_impls() {
-		let im = im.read().unwrap();
+	for (ty, im) in &scope.context.trait_solver.local_impls {
 		let name = name.expect_scopeless().unwrap();
+		
+		let im = &*im.read().unwrap();
 
-		if let Some(fns) = im.items.get(name) {
-			let ty = &*ty.read().unwrap();
-
-			if receiver.fits_generic(ty) {
-				for (func, ..) in fns {
+		if let Some(fns) = im.functions.get(name) {
+			if receiver.fits_generic(&*ty.read().unwrap()) {
+				for func in fns {
 					candidates.push((
 						ty.clone(),
 						Identifier::from_parent(&im.canonical_root, name.clone()),
@@ -446,7 +440,7 @@ fn resolve_method_call(
 
 	let mut candidates: Vec<_> = candidates
 		.into_iter()
-		.filter(|(_, _, func)| is_candidate_viable(args, type_args, func))
+		.filter(|(_, _, func)| is_candidate_viable(args, type_args, &*func.read().unwrap()))
 		.collect();
 
 	let (_, selected_name, selected_candidate) = match candidates.len() {
@@ -458,10 +452,10 @@ fn resolve_method_call(
 		_ => {
 			// Sort candidates by cost
 			candidates
-				.sort_unstable_by(|(_, _, l), (_, _, r)| candidate_compare(args, l, r, scope));
+				.sort_unstable_by(|(_, _, l), (_, _, r)| candidate_compare(args, &*l.read().unwrap(), &*r.read().unwrap(), scope));
 
 			// Compare the top two candidates
-			match candidate_compare(args, &candidates[0].2, &candidates[1].2, scope) {
+			match candidate_compare(args, &*candidates[0].2.read().unwrap(), &*candidates[1].2.read().unwrap(), scope) {
 				Ordering::Less => candidates[0].clone(),
 
 				Ordering::Equal => {
@@ -528,29 +522,32 @@ fn validate_arg_list(
 	Ok(())
 }
 
-pub fn validate_namespace(namespace: &mut ModuleImpl) -> ComuneResult<()> {
-	for (id, child) in &namespace.children {
-		if let ModuleItem::Functions(fns) = child {
-			for (func, elem, _) in fns {
-				let mut scope = id.clone();
-				scope.path.pop();
+pub fn validate_module_impl(interface: &ModuleInterface, module_impl: &mut ModuleImpl) -> ComuneResult<()> {
+	for (id, child) in &mut module_impl.children {
+		if let ModuleItemImpl::Functions(fns) = child {
+			let mut scope = id.clone();
+			scope.path.pop();
 
-				validate_function(scope, &mut func.write().unwrap(), &elem, namespace)?
+			let ModuleItemInterface::Functions(protos) = interface.children.get(id).unwrap() else {
+				panic!()
+			};
+		
+			for (ast, func) in fns.iter_mut().zip(protos.iter()) {
+				validate_function_body(scope.clone(), &*func.read().unwrap(), ast, interface)?
 			}
 		}
 	}
 
-	for (_, im) in namespace.trait_solver.get_local_impls() {
-		let im = im.read().unwrap();
+	let protos = interface.trait_solver.local_impls.iter();
+	
+	for ((ty, scope, im_impl), (_, im_interface)) in module_impl.impl_bodies.iter_mut().zip(protos) {
 
-		for fns in im.items.values() {
-			for (func, elem, _) in fns {
-				validate_function(
-					im.scope.clone(),
-					&mut func.write().unwrap(),
-					elem,
-					namespace,
-				)?
+		// Iterate over every set of overloads in the impl block
+		for ((l, protos), (r, asts)) in im_interface.read().unwrap().functions.iter().zip(im_impl.iter_mut()) {
+			assert!(l == r); // This is sketchy as hell im so sorry
+
+			for (proto, ast) in protos.iter().zip(asts.iter_mut()) {
+				validate_function_body(scope.clone(), &*proto.read().unwrap(), ast, interface)?
 			}
 		}
 	}
@@ -560,7 +557,7 @@ pub fn validate_namespace(namespace: &mut ModuleImpl) -> ComuneResult<()> {
 
 pub fn resolve_type(
 	ty: &mut Type,
-	namespace: &ModuleImpl,
+	namespace: &ModuleInterface,
 	generics: &TypeParamList,
 ) -> ComuneResult<()> {
 	match ty {
@@ -627,22 +624,21 @@ pub fn resolve_type(
 
 pub fn resolve_algebraic_def(
 	agg: &mut AlgebraicDef,
-	attributes: &[Attribute],
-	namespace: &ModuleImpl,
+	namespace: &ModuleInterface,
 	base_generics: &TypeParamList,
 ) -> ComuneResult<()> {
 	let mut generics = base_generics.clone();
 	generics.extend(agg.params.clone());
 
 	for (_, variant) in &mut agg.variants {
-		resolve_algebraic_def(variant, attributes, namespace, base_generics)?;
+		resolve_algebraic_def(variant, namespace, base_generics)?;
 	}
 
 	for (_, ty, _) in &mut agg.members {
 		resolve_type(ty, namespace, &generics)?;
 	}
 
-	if let Some(layout) = get_attribute(attributes, "layout") {
+	if let Some(layout) = get_attribute(&agg.attributes, "layout") {
 		if layout.args.len() != 1 {
 			return Err(ComuneError::new(ComuneErrCode::ParamCountMismatch {
 				expected: 1,
@@ -671,75 +667,77 @@ pub fn resolve_algebraic_def(
 
 pub fn resolve_type_def(
 	ty: &mut TypeDef,
-	attributes: &[Attribute],
-	namespace: &ModuleImpl,
+	namespace: &ModuleInterface,
 	base_generics: &TypeParamList,
 ) -> ComuneResult<()> {
 	match ty {
-		TypeDef::Algebraic(agg) => resolve_algebraic_def(agg, attributes, namespace, base_generics),
+		TypeDef::Algebraic(agg) => resolve_algebraic_def(agg, namespace, base_generics),
 
 		_ => todo!(),
 	}
 }
 
-pub fn resolve_namespace_types(namespace: &ModuleImpl) -> ComuneResult<()> {
+pub fn resolve_namespace_types(interface: &ModuleInterface) -> ComuneResult<()> {
 	// Resolve types
 
-	for child in namespace.children.values() {
-		if let ModuleItem::TypeAlias(alias) = child {
-			resolve_type(&mut alias.write().unwrap(), namespace, &vec![])?;
+	for child in interface.children.values() {
+		if let ModuleItemInterface::TypeAlias(alias) = child {
+			resolve_type(&mut *alias.write().unwrap(), interface, &vec![])?;
 		}
 	}
 
-	for child in namespace.children.values() {
-		match &child {
-			ModuleItem::Functions(fns) => {
-				for (func, ..) in fns {
+	for child in interface.children.values() {
+		match child {
+			ModuleItemInterface::Functions(fns) => {
+				for func in fns.iter() {
 					let FnPrototype {
 						ret,
 						params,
 						type_params: generics,
+						attributes: _,
 					} = &mut *func.write().unwrap();
 
-					resolve_type(ret, namespace, generics)?;
+					resolve_type(ret, interface, generics)?;
 
 					for param in &mut params.params {
-						resolve_type(&mut param.0, namespace, generics)?;
+						resolve_type(&mut param.0, interface, generics)?;
 					}
 				}
 			}
 
-			ModuleItem::Type(t, attributes) => {
-				resolve_type_def(&mut t.write().unwrap(), attributes, namespace, &vec![])?
+			ModuleItemInterface::Type(t) => {
+				resolve_type_def(&mut *t.write().unwrap(), interface, &vec![])?
 			}
 
-			ModuleItem::TypeAlias(ty) => {
-				resolve_type(&mut *ty.write().unwrap(), namespace, &vec![])?
+			ModuleItemInterface::TypeAlias(ty) => {
+				resolve_type(&mut *ty.write().unwrap(), interface, &vec![])?
 			}
 
-			ModuleItem::Alias(_) => {}
+			ModuleItemInterface::Alias(_) => {}
 
-			ModuleItem::Trait(tr, _) => {
-				let TraitDef {
+			ModuleItemInterface::Trait(tr) => {
+				let TraitInterface {
 					items,
 					supers: _,
 					types: _,
+					attributes: _
 				} = &mut *tr.write().unwrap();
 
 				for fns in items.values_mut() {
-					for (func, ..) in fns {
+					for func in fns {
 						let FnPrototype {
 							ret,
 							params,
 							type_params: generics,
+							attributes: _
 						} = &mut *func.write().unwrap();
 
 						generics.insert(0, ("Self".into(), vec![], None));
 
-						resolve_type(ret, namespace, generics)?;
+						resolve_type(ret, interface, generics)?;
 
 						for param in &mut params.params {
-							resolve_type(&mut param.0, namespace, generics)?;
+							resolve_type(&mut param.0, interface, generics)?;
 						}
 					}
 				}
@@ -749,8 +747,8 @@ pub fn resolve_namespace_types(namespace: &ModuleImpl) -> ComuneResult<()> {
 		};
 	}
 
-	for (ty, im) in namespace.trait_solver.get_local_impls() {
-		resolve_type(&mut ty.write().unwrap(), namespace, &vec![])?;
+	for (ty, im) in &interface.trait_solver.local_impls {
+		resolve_type(&mut *ty.write().unwrap(), interface, &vec![])?;
 
 		// Resolve item references in canonical root
 
@@ -760,8 +758,8 @@ pub fn resolve_namespace_types(namespace: &ModuleImpl) -> ComuneResult<()> {
 			type_args,
 		}) = &im.read().unwrap().implements
 		{
-			namespace.with_item(&name, &scope, |item, name| match item {
-				ModuleItem::Trait(tr, _) => Box::new(ItemRef::Resolved(TraitRef {
+			interface.with_item(&name, &scope, |item, name| match item {
+				ModuleItemInterface::Trait(tr) => Box::new(ItemRef::Resolved(TraitRef {
 					def: Arc::downgrade(tr),
 					name: name.clone(),
 					args: type_args.clone(),
@@ -773,23 +771,23 @@ pub fn resolve_namespace_types(namespace: &ModuleImpl) -> ComuneResult<()> {
 			None
 		};
 
-		im.write().unwrap().canonical_root.qualifier =
-			(Some(Box::new(ty.read().unwrap().clone())), resolved_trait);
+		im.write().unwrap().canonical_root.qualifier = (Some(Box::new(ty.read().unwrap().clone())), resolved_trait);
 
-		for fns in im.write().unwrap().items.values_mut() {
-			for (func, ..) in fns {
+		for fns in im.read().unwrap().functions.values() {
+			for func in fns {
 				let FnPrototype {
 					ret,
 					params,
 					type_params: generics,
+					attributes: _
 				} = &mut *func.write().unwrap();
 
 				generics.insert(0, ("Self".into(), vec![], None));
 
-				resolve_type(ret, namespace, generics)?;
+				resolve_type(ret, interface, generics)?;
 
 				for param in &mut params.params {
-					resolve_type(&mut param.0, namespace, generics)?;
+					resolve_type(&mut param.0, interface, generics)?;
 				}
 			}
 		}
@@ -798,20 +796,19 @@ pub fn resolve_namespace_types(namespace: &ModuleImpl) -> ComuneResult<()> {
 	Ok(())
 }
 
-pub fn check_cyclical_deps(
-	ty: &Arc<RwLock<TypeDef>>,
-	parent_types: &mut Vec<Arc<RwLock<TypeDef>>>,
-) -> ComuneResult<()> {
-	if let TypeDef::Algebraic(agg) = &*ty.as_ref().read().unwrap() {
+pub fn check_cyclical_deps(ty: &Arc<RwLock<TypeDef>>, parent_types: &mut Vec<Arc<RwLock<TypeDef>>>) -> ComuneResult<()> {
+	if let TypeDef::Algebraic(agg) = &*ty.read().unwrap() {
 		for member in agg.members.iter() {
 			if let Type::TypeRef(ItemRef::Resolved(TypeRef { def: ref_t, .. })) = &member.1 {
+				// Member is of a user-defined type
+				
 				if parent_types
 					.iter()
 					.any(|elem| Arc::ptr_eq(elem, &ref_t.upgrade().unwrap()))
 				{
 					return Err(ComuneError::new(ComuneErrCode::InfiniteSizeType, SrcSpan::new()));
 				}
-
+				
 				parent_types.push(ty.clone());
 				check_cyclical_deps(&ref_t.upgrade().unwrap(), parent_types)?;
 				parent_types.pop();
@@ -821,9 +818,9 @@ pub fn check_cyclical_deps(
 	Ok(())
 }
 
-pub fn check_namespace_cyclical_deps(namespace: &ModuleImpl) -> ComuneResult<()> {
-	for item in namespace.children.values() {
-		if let ModuleItem::Type(ty, _) = item {
+pub fn check_module_cyclical_deps(module: &ModuleInterface) -> ComuneResult<()> {
+	for item in module.children.values() {
+		if let ModuleItemInterface::Type(ty) = item {
 			check_cyclical_deps(ty, &mut vec![])?
 		}
 	}

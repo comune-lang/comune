@@ -3,7 +3,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::{
-	ast::{get_attribute, namespace::Identifier, types::Basic},
+	ast::{get_attribute, module::Identifier, types::Basic},
 	lexer::Token,
 };
 

@@ -8,7 +8,7 @@ use crate::{
 
 use super::{
 	expression::{Atom, Expr, NodeData},
-	namespace::Name,
+	module::Name,
 	types::{BindingProps, Type},
 	FnScope,
 };

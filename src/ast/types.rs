@@ -3,19 +3,19 @@ use std::hash::{Hash, Hasher};
 use std::ptr;
 use std::sync::{Arc, RwLock, Weak};
 
-use super::namespace::{Identifier, ItemRef, Name};
+use super::Attribute;
+use super::module::{Identifier, ItemRef, Name};
 use super::traits::TraitRef;
 use crate::constexpr::ConstExpr;
 
-pub type BoxedType = Box<Type>;
 pub type TypeParam = Vec<ItemRef<TraitRef>>; // Generic type parameter, with trait bounds
 pub type TypeParamList = Vec<(Name, TypeParam, Option<Type>)>;
 
 #[derive(Clone)]
 pub enum Type {
 	Basic(Basic),                                  // Fundamental type
-	Pointer(BoxedType),                            // Pointer-to-<BoxedType>
-	Array(BoxedType, Arc<RwLock<Vec<ConstExpr>>>), // N-dimensional array with constant expression for size
+	Pointer(Box<Type>),                            // Pointer-to-<BoxedType>
+	Array(Box<Type>, Arc<RwLock<Vec<ConstExpr>>>), // N-dimensional array with constant expression for size
 	TypeRef(ItemRef<TypeRef>),                     // Reference to user-defined type
 	TypeParam(usize),                              // Reference to an in-scope type parameter
 	Tuple(TupleKind, Vec<Type>),                   // Sum/product tuple
@@ -65,6 +65,7 @@ pub struct FnPrototype {
 	pub ret: Type,
 	pub params: FnParamList,
 	pub type_params: TypeParamList,
+	pub attributes: Vec<Attribute>,
 }
 
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
@@ -84,6 +85,7 @@ pub struct AlgebraicDef {
 	pub variants: Vec<(Name, AlgebraicDef)>,
 	pub layout: DataLayout,
 	pub params: TypeParamList,
+	pub attributes: Vec<Attribute>,
 }
 
 #[derive(Clone, Debug)]
@@ -107,6 +109,7 @@ impl AlgebraicDef {
 			members: vec![],
 			variants: vec![],
 			params: vec![],
+			attributes: vec![],
 		}
 	}
 

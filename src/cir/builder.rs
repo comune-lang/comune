@@ -4,7 +4,7 @@ use crate::{
 	ast::{
 		controlflow::ControlFlow,
 		expression::{Atom, Expr, FnRef, OnceAtom, Operator},
-		namespace::{Identifier, ItemRef, Name, ModuleImpl, ModuleASTElem, ModuleItem},
+		module::{Identifier, ItemRef, Name, ModuleImpl, ModuleASTElem, ModuleItemImpl, ModuleInterface, ModuleItemInterface},
 		pattern::{Binding, Pattern},
 		statement::Stmt,
 		types::{Basic, BindingProps, FnPrototype, TupleKind, Type, TypeDef, TypeParamList, TypeRef},
@@ -48,22 +48,21 @@ impl CIRModuleBuilder {
 			current_block: 0,
 		};
 
-		result.register_namespace(&ast.module);
-		result.generate_namespace(&ast.module);
+		result.register_module(&ast.interface);
+		result.generate_namespace(&ast.interface, &ast.module_impl);
 
 		result
 	}
 
-	fn register_namespace(&mut self, namespace: &ModuleImpl) {
-		for (_, im) in namespace.trait_solver.get_local_impls() {
-			let im = im.read().unwrap();
-
-			for (name, fns) in &im.items {
-				for (func, ..) in fns {
+	fn register_module(&mut self, module: &ModuleInterface) {
+		for (_, im) in &module.trait_solver.local_impls {
+			let im = &*im.read().unwrap();
+			
+			for (name, fns) in &im.functions {
+				for func in fns {
 					let (proto, cir_fn) = self.generate_prototype(
 						Identifier::from_parent(&im.canonical_root, name.clone()),
-						&func.read().unwrap(),
-						vec![],
+						&*func.read().unwrap(),
 					);
 
 					self.module.functions.insert(proto, cir_fn);
@@ -71,17 +70,16 @@ impl CIRModuleBuilder {
 			}
 		}
 
-		for import in namespace.imported.values() {
-			self.register_namespace(import);
+		for import in module.imported.values() {
+			self.register_module(import);
 		}
 
-		for (name, elem) in &namespace.children {
-			if let ModuleItem::Functions(fns) = elem {
-				for (func, _, attribs) in fns {
+		for (name, elem) in &module.children {
+			if let ModuleItemInterface::Functions(fns) = elem {
+				for func in fns {
 					let (proto, cir_fn) = self.generate_prototype(
 						name.clone(),
-						&func.read().unwrap(),
-						attribs.clone(),
+						&*func.read().unwrap()
 					);
 
 					self.module.functions.insert(proto, cir_fn);
@@ -90,31 +88,40 @@ impl CIRModuleBuilder {
 		}
 	}
 
-	fn generate_namespace(&mut self, namespace: &ModuleImpl) {
-		for (_, im) in namespace.trait_solver.get_local_impls() {
-			let im = im.read().unwrap();
+	fn generate_namespace(&mut self, interface: &ModuleInterface, module_impl: &ModuleImpl) {
+		for ((ty, im_interface), (.., im_impl)) in interface.trait_solver.local_impls.iter().zip(module_impl.impl_bodies.iter()) {
+			let im_interface = &*im_interface.read().unwrap();
+			
+			// Iterate every set of function overloads
+			for ((name, fns), (_, asts)) in im_interface.functions.iter().zip(im_impl.iter()) {
+				// God this is bullshit. I'm sorry women
+				for (func, ast) in fns.iter().zip(asts.iter()) {
+					let ModuleASTElem::Parsed(ast) = ast else { panic!() };
+					
+					let proto = self.get_prototype(
+						Identifier::from_parent(&im_interface.canonical_root, name.clone()),
+						&*func.read().unwrap(),
+					);
 
-			for (name, fns) in &im.items {
-				for (func, ast, _) in fns {
-					if let ModuleASTElem::Parsed(ast) = &*ast.borrow() {
-						let proto = self.get_prototype(
-							Identifier::from_parent(&im.canonical_root, name.clone()),
-							&func.read().unwrap(),
-						);
-						self.generate_function(proto, ast);
-					}
+					self.generate_function(proto, ast);
 				}
 			}
 		}
 
-		for (name, item) in &namespace.children {
-			if let ModuleItem::Functions(fns) = item {
-				for (func, ast, _) in fns {
+		for (name, item) in &module_impl.children {
+			if let ModuleItemImpl::Functions(fns) = item {
+				let Some(ModuleItemInterface::Functions(protos)) = interface.children.get(name) else {
+					panic!()
+				};
+
+				for (func, ast) in protos.iter().zip(fns.iter()) {
 					let proto = self.get_prototype(name.clone(), &func.read().unwrap());
 
-					if let ModuleASTElem::Parsed(ast) = &*ast.borrow() {
-						self.generate_function(proto, ast);
-					}
+					let ModuleASTElem::Parsed(ast) = ast else {
+						panic!();
+					};
+					
+					self.generate_function(proto, ast);
 				}
 			}
 		}
@@ -237,7 +244,6 @@ impl CIRModuleBuilder {
 		&mut self,
 		name: Identifier,
 		func: &FnPrototype,
-		attributes: Vec<Attribute>,
 	) -> (CIRFnPrototype, CIRFunction) {
 		let proto = self.get_prototype(name, func);
 
@@ -247,7 +253,7 @@ impl CIRModuleBuilder {
 			ret: proto.ret.clone(),
 			arg_count: func.params.params.len(),
 			type_params: self.convert_type_param_list(func.type_params.clone()),
-			attributes,
+			attributes: func.attributes.clone(),
 			is_extern: true,
 			is_variadic: func.params.variadic,
 			mangled_name: None,
@@ -1233,7 +1239,7 @@ impl CIRModuleBuilder {
 			Some(self.insert_variable(None, BindingProps::default(), ret.clone()))
 		};
 
-		let id = self.get_prototype(name, &resolved.read().unwrap());
+		let id = self.get_prototype(name, &*resolved.read().unwrap());
 
 		self.write(CIRStmt::FnCall {
 			id,

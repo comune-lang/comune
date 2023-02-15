@@ -9,7 +9,7 @@ use crate::lexer::SrcSpan;
 
 use super::{
 	controlflow::ControlFlow,
-	namespace::{Identifier, Name},
+	module::{Identifier, Name},
 	statement::Stmt,
 	types::{Basic, FnPrototype, Type},
 };
@@ -482,9 +482,7 @@ impl PartialEq for Atom {
 			) => {
 				l_name == r_name && l_args == r_args && l_type_args == r_type_args && {
 					match (l_res, r_res) {
-						(FnRef::Direct(l), FnRef::Direct(r)) => {
-							*l.read().unwrap() == *r.read().unwrap()
-						}
+						(FnRef::Direct(l), FnRef::Direct(r)) => &*l.read().unwrap() == &*r.read().unwrap(),
 						(FnRef::Indirect(l0, l1), FnRef::Indirect(r0, r1)) => l0 == r0 && l1 == r1,
 						(FnRef::None, FnRef::None) => true,
 						_ => false,
