@@ -539,7 +539,7 @@ impl Parser {
 
 						(ModuleItemInterface::Functions(fns), ModuleItemImpl::Functions(asts)) => {
 
-							let module_interface = self.interface;
+							let module_interface = &mut self.interface;
 		
 							if let Some(ModuleItemInterface::Functions(existing)) =
 								module_interface.children.get_mut(&id)
