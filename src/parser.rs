@@ -33,7 +33,7 @@ fn token_compare(token: &Token, text: &str) -> bool {
 pub type ComuneResult<T> = Result<T, ComuneError>;
 
 pub struct Parser {
-	pub interface: Arc<ModuleInterface>,
+	pub interface: ModuleInterface,
 	pub module_impl: ModuleImpl,
 	pub lexer: RefCell<Lexer>,
 	pub imports_opaque: HashMap<Name, HashMap<Identifier, ModuleItemOpaque>>,
@@ -44,7 +44,7 @@ pub struct Parser {
 impl Parser {
 	pub fn new(lexer: Lexer, verbose: bool) -> Parser {
 		Parser {
-			interface: Arc::new(ModuleInterface::new(Identifier::new(true))),
+			interface: ModuleInterface::new(Identifier::new(true)),
 			module_impl: ModuleImpl::new(),
 			current_scope: Identifier::new(true),
 			lexer: RefCell::new(lexer),
@@ -219,7 +219,7 @@ impl Parser {
 
 					aggregate.attributes = current_attributes;
 
-					Arc::get_mut(&mut self.interface).unwrap().children.insert(
+					self.interface.children.insert(
 						Identifier::from_parent(scope, name),
 						ModuleItemInterface::Type(Arc::new(RwLock::new(TypeDef::Algebraic(aggregate)))),
 					);
@@ -289,7 +289,7 @@ impl Parser {
 
 					aggregate.attributes = current_attributes;
 
-					Arc::get_mut(&mut self.interface).unwrap().children.insert(
+					self.interface.children.insert(
 						Identifier::from_parent(scope, name),
 						ModuleItemInterface::Type(Arc::new(RwLock::new(TypeDef::Algebraic(aggregate)))),
 					);
@@ -320,14 +320,14 @@ impl Parser {
 						let (name, interface, im) = self.parse_namespace_declaration(func_attributes)?;
 
 						match (interface, im) {
-							(ModuleItemInterface::Functions(mut funcs), ModuleItemImpl::Functions(mut parsed)) => {
+							(ModuleItemInterface::Functions(mut funcs), ModuleItemImpl::Functions(parsed)) => {
 								if let Some(fns) = this_trait.items.get_mut(&name) {
 									fns.append(&mut funcs);
 								} else {
 									this_trait.items.insert(name.clone(), funcs);
 								}
 
-								if !parsed.is_empty() {
+								if parsed.iter().any(|elem| *elem != ModuleASTElem::NoElem) {
 									panic!("default impls in trait definitions are not yet supported");
 								}
 							}
@@ -340,7 +340,7 @@ impl Parser {
 
 					self.get_next()?; // Consume closing brace
 
-					Arc::get_mut(&mut self.interface).unwrap().children.insert(
+					self.interface.children.insert(
 						Identifier::from_parent(scope, name),
 						ModuleItemInterface::Trait(Arc::new(RwLock::new(this_trait))),
 					);
@@ -406,7 +406,7 @@ impl Parser {
 					}
 
 					// Register impl to solver
-					Arc::get_mut(&mut self.interface).unwrap().trait_solver.register_impl(impl_ty.clone(), ImplBlockInterface {
+					self.interface.trait_solver.register_impl(impl_ty.clone(), ImplBlockInterface {
 						implements: trait_name.clone(),
 						functions,
 						types: HashMap::new(),
@@ -429,7 +429,7 @@ impl Parser {
 					if self.is_at_identifier_token()? {
 						let import = ModuleImportKind::Extern(self.parse_identifier()?);
 
-						Arc::get_mut(&mut self.interface).unwrap()
+						self.interface
 							.import_names
 							.insert(import);
 
@@ -454,7 +454,7 @@ impl Parser {
 							if self.is_at_type_token(false)? {
 								let ty = self.parse_type(false)?;
 
-								Arc::get_mut(&mut self.interface).unwrap()
+								self.interface
 									.children
 									.insert(
 										Identifier::from_parent(scope, name),
@@ -463,7 +463,7 @@ impl Parser {
 							} else {
 								let aliased = self.parse_identifier()?;
 
-								Arc::get_mut(&mut self.interface).unwrap()
+								self.interface
 									.children
 									.insert(
 										Identifier::from_parent(scope, name),
@@ -476,7 +476,7 @@ impl Parser {
 							// No '=' token, just bring the name into scope
 							let name = names.remove(0);
 
-							Arc::get_mut(&mut self.interface).unwrap()
+							self.interface
 								.children
 								.insert(
 									Identifier::from_parent(scope, name.path.last().unwrap().clone()),
@@ -487,7 +487,7 @@ impl Parser {
 						}
 					} else {
 						for name in names {
-							Arc::get_mut(&mut self.interface).unwrap()
+							self.interface
 								.children
 								.insert(
 									Identifier::from_parent(scope, name.name().clone()),
@@ -507,7 +507,7 @@ impl Parser {
 					match self.get_next()? {
 						Token::Other(';') => {
 							// TODO: Add submodule to import list
-							Arc::get_mut(&mut self.interface).unwrap().import_names.insert(ModuleImportKind::Child(module));
+							self.interface.import_names.insert(ModuleImportKind::Child(module));
 							self.get_next()?;
 						}
 
@@ -539,7 +539,7 @@ impl Parser {
 
 						(ModuleItemInterface::Functions(fns), ModuleItemImpl::Functions(asts)) => {
 
-							let module_interface = Arc::get_mut(&mut self.interface).unwrap();
+							let module_interface = self.interface;
 		
 							if let Some(ModuleItemInterface::Functions(existing)) =
 								module_interface.children.get_mut(&id)
@@ -769,7 +769,7 @@ impl Parser {
 			}
 		} else {
 			interface = ModuleItemInterface::Variable(t);
-			item = todo!();
+			item = ModuleItemImpl::Variable(ModuleASTElem::NoElem);
 			self.check_semicolon()?;
 		}
 
@@ -1328,10 +1328,13 @@ impl Parser {
 						if token_compare(&self.get_current()?, "else") {
 							self.get_next()?;
 
-							if token_compare(&self.get_current()?, "{") {
-								else_body = Some(self.parse_block()?);
-							} else {
-								return self.err(ComuneErrCode::UnexpectedToken);
+							match self.get_current()? {
+								Token::Other('{') => else_body = Some(self.parse_block()?),
+
+								// Bit of a hack to get `else if` working
+								Token::Keyword("if") => else_body = Some(self.parse_expression()?),
+
+								_ => return self.err(ComuneErrCode::UnexpectedToken),
 							}
 						}
 

@@ -195,9 +195,10 @@ pub fn launch_module_compilation(
 	};
 
 	// Update the module database with the fully-typed version of the interface
+
 	state.module_states.write().unwrap().insert(
 		src_path.clone(),
-		ModuleState::InterfaceComplete(parser.interface.clone()),
+		ModuleState::InterfaceComplete(Arc::new(parser.interface.clone())),
 	);
 
 	// The rest of the module's compilation happens in a worker thread
@@ -216,9 +217,13 @@ pub fn launch_module_compilation(
 				}
 			}).collect::<Vec<_>>();
 
+		// Loop over remaining pending imports
 		while let Some(import_name) = imports_left.first() {
 			let import_path =
 				get_module_source_path(&state, src_path.clone(), import_name).unwrap();
+			
+			// Get the current import's compilation state
+			
 			let import_state = state
 				.module_states
 				.read()
@@ -227,10 +232,13 @@ pub fn launch_module_compilation(
 				.cloned()
 				.unwrap();
 
+			// If the imported module is ready, remove it from the list.
+			// If not, push it to the end of the list so we get a chance
+			// to check up on the other imports in the meantime 
+
 			match import_state {
 				ModuleState::InterfaceComplete(complete) => {
-					Arc::get_mut(&mut parser.interface)
-						.unwrap()
+					parser.interface
 						.imported
 						.insert(import_name.name().clone(), complete);
 					imports_left.remove(0);
@@ -250,6 +258,10 @@ pub fn launch_module_compilation(
 
 		let context = Context::create();
 		let src_name = src_path.file_name().unwrap().to_str().unwrap();
+
+		// generate_code() is a bit of a misleading name; this function takes care of
+		// everything from AST parsing, to type checking, to cIR generation and validation,
+		// to LLVM codegen. should be broken up into discrete functions at some point honestly
 
 		let result = match generate_code(&state, &mut parser, &context, &src_path, &module_name) {
 			Ok(res) => res,

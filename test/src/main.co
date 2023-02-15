@@ -110,6 +110,16 @@ int main() {
 		}
 	}
 
+	// `else if` syntax test
+	
+	if i == 12 {
+		printf(c"i is 12!\n");
+	} else if i == 13 {
+		printf(c"i is 13!\n");
+	} else {
+		printf(c"i is something else!\n");
+	}
+
 	impl_test();
 
 	overload_test(12i32);
