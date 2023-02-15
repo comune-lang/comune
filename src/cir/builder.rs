@@ -4,10 +4,15 @@ use crate::{
 	ast::{
 		controlflow::ControlFlow,
 		expression::{Atom, Expr, FnRef, OnceAtom, Operator},
-		module::{Identifier, ItemRef, Name, ModuleImpl, ModuleASTElem, ModuleItemImpl, ModuleInterface, ModuleItemInterface},
+		module::{
+			Identifier, ItemRef, ModuleASTElem, ModuleImpl, ModuleInterface, ModuleItemImpl,
+			ModuleItemInterface, Name,
+		},
 		pattern::{Binding, Pattern},
 		statement::Stmt,
-		types::{Basic, BindingProps, FnPrototype, TupleKind, Type, TypeDef, TypeParamList, TypeRef},
+		types::{
+			Basic, BindingProps, FnPrototype, TupleKind, Type, TypeDef, TypeParamList, TypeRef,
+		},
 		Attribute,
 	},
 	constexpr::{ConstExpr, ConstValue},
@@ -57,7 +62,7 @@ impl CIRModuleBuilder {
 	fn register_module(&mut self, module: &ModuleInterface) {
 		for (_, im) in &module.trait_solver.local_impls {
 			let im = &*im.read().unwrap();
-			
+
 			for (name, fns) in &im.functions {
 				for func in fns {
 					let (proto, cir_fn) = self.generate_prototype(
@@ -77,10 +82,8 @@ impl CIRModuleBuilder {
 		for (name, elem) in &module.children {
 			if let ModuleItemInterface::Functions(fns) = elem {
 				for func in fns {
-					let (proto, cir_fn) = self.generate_prototype(
-						name.clone(),
-						&*func.read().unwrap()
-					);
+					let (proto, cir_fn) =
+						self.generate_prototype(name.clone(), &*func.read().unwrap());
 
 					self.module.functions.insert(proto, cir_fn);
 				}
@@ -89,15 +92,20 @@ impl CIRModuleBuilder {
 	}
 
 	fn generate_namespace(&mut self, interface: &ModuleInterface, module_impl: &ModuleImpl) {
-		for ((ty, im_interface), (.., im_impl)) in interface.trait_solver.local_impls.iter().zip(module_impl.impl_bodies.iter()) {
+		for ((ty, im_interface), (.., im_impl)) in interface
+			.trait_solver
+			.local_impls
+			.iter()
+			.zip(module_impl.impl_bodies.iter())
+		{
 			let im_interface = &*im_interface.read().unwrap();
-			
+
 			// Iterate every set of function overloads
 			for ((name, fns), (_, asts)) in im_interface.functions.iter().zip(im_impl.iter()) {
 				// God this is bullshit. I'm sorry women
 				for (func, ast) in fns.iter().zip(asts.iter()) {
 					let ModuleASTElem::Parsed(ast) = ast else { panic!() };
-					
+
 					let proto = self.get_prototype(
 						Identifier::from_parent(&im_interface.canonical_root, name.clone()),
 						&*func.read().unwrap(),
@@ -120,7 +128,7 @@ impl CIRModuleBuilder {
 					let ModuleASTElem::Parsed(ast) = ast else {
 						panic!();
 					};
-					
+
 					self.generate_function(proto, ast);
 				}
 			}

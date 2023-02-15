@@ -3,9 +3,9 @@ use std::hash::{Hash, Hasher};
 use std::ptr;
 use std::sync::{Arc, RwLock, Weak};
 
-use super::Attribute;
 use super::module::{Identifier, ItemRef, Name};
 use super::traits::TraitRef;
+use super::Attribute;
 use crate::constexpr::ConstExpr;
 
 pub type TypeParam = Vec<ItemRef<TraitRef>>; // Generic type parameter, with trait bounds

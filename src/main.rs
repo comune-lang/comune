@@ -11,7 +11,7 @@ use ast::{module::Identifier, types};
 use clap::Parser;
 use colored::Colorize;
 use std::fs;
-use std::path::{PathBuf, Path};
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::RwLock;
 use std::{
@@ -97,10 +97,7 @@ fn main() -> color_eyre::eyre::Result<()> {
 	rayon::in_place_scope(|s| {
 		for input_file in &args.input_files {
 			let input_file = fs::canonicalize(input_file).unwrap();
-			let module_name = Identifier::from_name(
-				get_file_suffix(&input_file).unwrap(),
-				true,
-			);
+			let module_name = Identifier::from_name(get_file_suffix(&input_file).unwrap(), true);
 
 			let _ = driver::launch_module_compilation(
 				manager_state.clone(),
@@ -204,6 +201,6 @@ fn main() -> color_eyre::eyre::Result<()> {
 fn get_file_suffix(path: &Path) -> Option<String> {
 	let mut name = path.file_name()?.to_string_lossy().to_string();
 	name.truncate(name.rfind('.').unwrap_or(name.len()));
-	
+
 	Some(name)
 }

@@ -1,7 +1,7 @@
 use std::fmt::Display;
 
 use crate::{
-	errors::{ComuneError, ComuneErrCode},
+	errors::{ComuneErrCode, ComuneError},
 	lexer::SrcSpan,
 	parser::ComuneResult,
 };
@@ -39,8 +39,8 @@ impl Stmt {
 						if expr_ty.is_subtype_of(&binding_ty) {
 							expr.wrap_in_cast(binding_ty.clone());
 						} else {
-							return Err(
-								ComuneError::new(ComuneErrCode::AssignTypeMismatch {
+							return Err(ComuneError::new(
+								ComuneErrCode::AssignTypeMismatch {
 									expr: expr_ty,
 									to: binding_ty,
 								},

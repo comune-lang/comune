@@ -9,15 +9,18 @@ use types::{Basic, Type, TypeDef};
 
 use crate::{
 	constexpr::{ConstEval, ConstExpr, ConstValue},
-	errors::{ComuneError, ComuneErrCode},
-	lexer::{Token, SrcSpan},
+	errors::{ComuneErrCode, ComuneError},
+	lexer::{SrcSpan, Token},
 	parser::ComuneResult,
 };
 
 use self::{
 	controlflow::ControlFlow,
 	expression::{Atom, Expr, FnRef, NodeData, OnceAtom, Operator},
-	module::{Identifier, ItemRef, Name, ModuleImpl, ModuleASTElem, ModuleItemImpl, ModuleInterface, ModuleItemInterface},
+	module::{
+		Identifier, ItemRef, ModuleASTElem, ModuleImpl, ModuleInterface, ModuleItemImpl,
+		ModuleItemInterface, Name,
+	},
 	pattern::Binding,
 	statement::Stmt,
 	traits::{TraitInterface, TraitRef},
@@ -201,11 +204,7 @@ pub fn validate_function_body(
 	Ok(())
 }
 
-pub fn is_candidate_viable(
-	args: &Vec<Expr>,
-	type_args: &Vec<Type>,
-	func: &FnPrototype,
-) -> bool {
+pub fn is_candidate_viable(args: &Vec<Expr>, type_args: &Vec<Type>, func: &FnPrototype) -> bool {
 	let params = &func.params.params;
 
 	if args.len() < params.len() || (args.len() > params.len() && !func.params.variadic) {
@@ -231,12 +230,7 @@ pub fn is_candidate_viable(
 	true
 }
 
-fn candidate_compare(
-	args: &[Expr],
-	l: &FnPrototype,
-	r: &FnPrototype,
-	scope: &FnScope,
-) -> Ordering {
+fn candidate_compare(args: &[Expr], l: &FnPrototype, r: &FnPrototype, scope: &FnScope) -> Ordering {
 	// Rank candidates
 
 	let mut l_coerces = 0;
@@ -313,13 +307,15 @@ pub fn validate_fn_call(
 		name_unwrap.absolute = true;
 
 		let mut scope_len = scope.scope.path.len();
-		
+
 		for (i, elem) in scope.scope.path.iter().enumerate() {
 			name_unwrap.path.insert(i, elem.clone());
 		}
 
 		loop {
-			if let Some((name, ModuleItemInterface::Functions(fns))) = scope.context.get_item(&name_unwrap) {
+			if let Some((name, ModuleItemInterface::Functions(fns))) =
+				scope.context.get_item(&name_unwrap)
+			{
 				for func in fns.iter() {
 					candidates.push((name.clone(), func));
 				}
@@ -341,8 +337,8 @@ pub fn validate_fn_call(
 	if candidates.is_empty() {
 		return Err(ComuneError::new(
 			ComuneErrCode::UndeclaredIdentifier(name.to_string()),
-			node_data.tk
-		))
+			node_data.tk,
+		));
 	}
 
 	let mut candidates: Vec<_> = candidates
@@ -357,7 +353,7 @@ pub fn validate_fn_call(
 					args: args.iter().map(|arg| arg.get_type().clone()).collect(),
 					type_args: type_args.clone(),
 					name: name.clone(),
-				}, 
+				},
 				node_data.tk,
 			))
 		} // No viable candidate
@@ -371,7 +367,12 @@ pub fn validate_fn_call(
 				candidate_compare(args, &*l.read().unwrap(), &*r.read().unwrap(), scope)
 			});
 
-			match candidate_compare(args, &*candidates[0].1.read().unwrap(), &*candidates[1].1.read().unwrap(), scope) {
+			match candidate_compare(
+				args,
+				&*candidates[0].1.read().unwrap(),
+				&*candidates[1].1.read().unwrap(),
+				scope,
+			) {
 				Ordering::Less => candidates[0].clone(),
 
 				Ordering::Equal => {
@@ -422,7 +423,7 @@ fn resolve_method_call(
 	// Go through all the impls in scope and find method candidates
 	for (ty, im) in &scope.context.trait_solver.local_impls {
 		let name = name.expect_scopeless().unwrap();
-		
+
 		let im = &*im.read().unwrap();
 
 		if let Some(fns) = im.functions.get(name) {
@@ -451,15 +452,24 @@ fn resolve_method_call(
 		// More than one viable candidate
 		_ => {
 			// Sort candidates by cost
-			candidates
-				.sort_unstable_by(|(_, _, l), (_, _, r)| candidate_compare(args, &*l.read().unwrap(), &*r.read().unwrap(), scope));
+			candidates.sort_unstable_by(|(_, _, l), (_, _, r)| {
+				candidate_compare(args, &*l.read().unwrap(), &*r.read().unwrap(), scope)
+			});
 
 			// Compare the top two candidates
-			match candidate_compare(args, &*candidates[0].2.read().unwrap(), &*candidates[1].2.read().unwrap(), scope) {
+			match candidate_compare(
+				args,
+				&*candidates[0].2.read().unwrap(),
+				&*candidates[1].2.read().unwrap(),
+				scope,
+			) {
 				Ordering::Less => candidates[0].clone(),
 
 				Ordering::Equal => {
-					return Err(ComuneError::new(ComuneErrCode::AmbiguousCall, lhs.get_node_data().tk))
+					return Err(ComuneError::new(
+						ComuneErrCode::AmbiguousCall,
+						lhs.get_node_data().tk,
+					))
 				} // Ambiguous call
 
 				_ => unreachable!(), // Not possible
@@ -493,8 +503,8 @@ fn validate_arg_list(
 			let arg_type = arg.validate(scope)?;
 
 			if !arg.coercable_to(&arg_type, &param_concrete, scope) {
-				return Err(
-					ComuneError::new(ComuneErrCode::InvalidCoercion {
+				return Err(ComuneError::new(
+					ComuneErrCode::InvalidCoercion {
 						from: arg_type,
 						to: param_concrete,
 					},
@@ -522,7 +532,10 @@ fn validate_arg_list(
 	Ok(())
 }
 
-pub fn validate_module_impl(interface: &ModuleInterface, module_impl: &mut ModuleImpl) -> ComuneResult<()> {
+pub fn validate_module_impl(
+	interface: &ModuleInterface,
+	module_impl: &mut ModuleImpl,
+) -> ComuneResult<()> {
 	for (id, child) in &mut module_impl.children {
 		if let ModuleItemImpl::Functions(fns) = child {
 			let mut scope = id.clone();
@@ -531,7 +544,7 @@ pub fn validate_module_impl(interface: &ModuleInterface, module_impl: &mut Modul
 			let ModuleItemInterface::Functions(protos) = interface.children.get(id).unwrap() else {
 				panic!()
 			};
-		
+
 			for (ast, func) in fns.iter_mut().zip(protos.iter()) {
 				validate_function_body(scope.clone(), &*func.read().unwrap(), ast, interface)?
 			}
@@ -539,11 +552,17 @@ pub fn validate_module_impl(interface: &ModuleInterface, module_impl: &mut Modul
 	}
 
 	let protos = interface.trait_solver.local_impls.iter();
-	
-	for ((ty, scope, im_impl), (_, im_interface)) in module_impl.impl_bodies.iter_mut().zip(protos) {
 
+	for ((ty, scope, im_impl), (_, im_interface)) in module_impl.impl_bodies.iter_mut().zip(protos)
+	{
 		// Iterate over every set of overloads in the impl block
-		for ((l, protos), (r, asts)) in im_interface.read().unwrap().functions.iter().zip(im_impl.iter_mut()) {
+		for ((l, protos), (r, asts)) in im_interface
+			.read()
+			.unwrap()
+			.functions
+			.iter()
+			.zip(im_impl.iter_mut())
+		{
 			assert!(l == r); // This is sketchy as hell im so sorry
 
 			for (proto, ast) in protos.iter().zip(asts.iter_mut()) {
@@ -595,7 +614,7 @@ pub fn resolve_type(
 			} else {
 				Err(ComuneError::new(
 					ComuneErrCode::UnresolvedTypename(id.to_string()),
-					SrcSpan::new()
+					SrcSpan::new(),
 				))
 			}
 		}
@@ -640,16 +659,22 @@ pub fn resolve_algebraic_def(
 
 	if let Some(layout) = get_attribute(&agg.attributes, "layout") {
 		if layout.args.len() != 1 {
-			return Err(ComuneError::new(ComuneErrCode::ParamCountMismatch {
-				expected: 1,
-				got: layout.args.len(),
-			}, SrcSpan::new()));
+			return Err(ComuneError::new(
+				ComuneErrCode::ParamCountMismatch {
+					expected: 1,
+					got: layout.args.len(),
+				},
+				SrcSpan::new(),
+			));
 		}
 		if layout.args[0].len() != 1 {
-			return Err(ComuneError::new(ComuneErrCode::ParamCountMismatch {
-				expected: 1,
-				got: layout.args[0].len(),
-			}, SrcSpan::new()));
+			return Err(ComuneError::new(
+				ComuneErrCode::ParamCountMismatch {
+					expected: 1,
+					got: layout.args[0].len(),
+				},
+				SrcSpan::new(),
+			));
 		}
 
 		if let Token::Name(layout_name) = &layout.args[0][0] {
@@ -657,7 +682,12 @@ pub fn resolve_algebraic_def(
 				"declared" => types::DataLayout::Declared,
 				"optimized" => types::DataLayout::Optimized,
 				"packed" => types::DataLayout::Packed,
-				_ => return Err(ComuneError::new(ComuneErrCode::UnexpectedToken, SrcSpan::new())),
+				_ => {
+					return Err(ComuneError::new(
+						ComuneErrCode::UnexpectedToken,
+						SrcSpan::new(),
+					))
+				}
 			}
 		}
 	}
@@ -720,7 +750,7 @@ pub fn resolve_namespace_types(interface: &ModuleInterface) -> ComuneResult<()> 
 					items,
 					supers: _,
 					types: _,
-					attributes: _
+					attributes: _,
 				} = &mut *tr.write().unwrap();
 
 				for fns in items.values_mut() {
@@ -729,7 +759,7 @@ pub fn resolve_namespace_types(interface: &ModuleInterface) -> ComuneResult<()> 
 							ret,
 							params,
 							type_params: generics,
-							attributes: _
+							attributes: _,
 						} = &mut *func.write().unwrap();
 
 						generics.insert(0, ("Self".into(), vec![], None));
@@ -771,7 +801,8 @@ pub fn resolve_namespace_types(interface: &ModuleInterface) -> ComuneResult<()> 
 			None
 		};
 
-		im.write().unwrap().canonical_root.qualifier = (Some(Box::new(ty.read().unwrap().clone())), resolved_trait);
+		im.write().unwrap().canonical_root.qualifier =
+			(Some(Box::new(ty.read().unwrap().clone())), resolved_trait);
 
 		for fns in im.read().unwrap().functions.values() {
 			for func in fns {
@@ -779,7 +810,7 @@ pub fn resolve_namespace_types(interface: &ModuleInterface) -> ComuneResult<()> 
 					ret,
 					params,
 					type_params: generics,
-					attributes: _
+					attributes: _,
 				} = &mut *func.write().unwrap();
 
 				generics.insert(0, ("Self".into(), vec![], None));
@@ -796,19 +827,25 @@ pub fn resolve_namespace_types(interface: &ModuleInterface) -> ComuneResult<()> 
 	Ok(())
 }
 
-pub fn check_cyclical_deps(ty: &Arc<RwLock<TypeDef>>, parent_types: &mut Vec<Arc<RwLock<TypeDef>>>) -> ComuneResult<()> {
+pub fn check_cyclical_deps(
+	ty: &Arc<RwLock<TypeDef>>,
+	parent_types: &mut Vec<Arc<RwLock<TypeDef>>>,
+) -> ComuneResult<()> {
 	if let TypeDef::Algebraic(agg) = &*ty.read().unwrap() {
 		for member in agg.members.iter() {
 			if let Type::TypeRef(ItemRef::Resolved(TypeRef { def: ref_t, .. })) = &member.1 {
 				// Member is of a user-defined type
-				
+
 				if parent_types
 					.iter()
 					.any(|elem| Arc::ptr_eq(elem, &ref_t.upgrade().unwrap()))
 				{
-					return Err(ComuneError::new(ComuneErrCode::InfiniteSizeType, SrcSpan::new()));
+					return Err(ComuneError::new(
+						ComuneErrCode::InfiniteSizeType,
+						SrcSpan::new(),
+					));
 				}
-				
+
 				parent_types.push(ty.clone());
 				check_cyclical_deps(&ref_t.upgrade().unwrap(), parent_types)?;
 				parent_types.pop();
@@ -863,10 +900,8 @@ impl Expr {
 								if rhs.coercable_to(&second_t, &idx_type, scope) {
 									rhs.wrap_in_cast(idx_type);
 								} else {
-									return Err(
-										ComuneError::new(ComuneErrCode::InvalidSubscriptRHS {
-											t: second_t,
-										},
+									return Err(ComuneError::new(
+										ComuneErrCode::InvalidSubscriptRHS { t: second_t },
 										meta.tk,
 									));
 								}
@@ -895,11 +930,7 @@ impl Expr {
 								rhs.wrap_in_cast(first_t.clone());
 							} else {
 								return Err(ComuneError::new(
-									ComuneErrCode::ExprTypeMismatch(
-										first_t,
-										second_t,
-										op.clone(),
-									),
+									ComuneErrCode::ExprTypeMismatch(first_t, second_t, op.clone()),
 									meta.tk,
 								));
 							}
@@ -931,7 +962,10 @@ impl Expr {
 					Operator::Deref => match expr_ty {
 						Type::Pointer(t) => Ok(*t),
 
-						_ => Err(ComuneError::new(ComuneErrCode::InvalidDeref(expr_ty), meta.tk)),
+						_ => Err(ComuneError::new(
+							ComuneErrCode::InvalidDeref(expr_ty),
+							meta.tk,
+						)),
 					},
 
 					_ => Ok(expr_ty),

@@ -5,9 +5,9 @@ use std::{
 	sync::{Arc, RwLock, Weak},
 };
 
-use super::Attribute;
 use super::module::{ItemRef, ModuleImpl};
-use super::types::{TypeParam, TypeParamList, FnPrototype};
+use super::types::{FnPrototype, TypeParam, TypeParamList};
+use super::Attribute;
 use super::{
 	module::{Identifier, Name},
 	types::Type,
@@ -99,13 +99,17 @@ impl ImplSolver {
 
 	pub fn finalize(&mut self) {
 		// Move local_impls into impls
-		self.impls.extend(self.local_impls
-			.iter()
-			.map(|(ty, im)| (ty.read().unwrap().clone(), Arc::new(im.read().unwrap().clone()))));
+		self.impls.extend(self.local_impls.iter().map(|(ty, im)| {
+			(
+				ty.read().unwrap().clone(),
+				Arc::new(im.read().unwrap().clone()),
+			)
+		}));
 	}
 
 	pub fn register_impl(&mut self, ty: Type, im: ImplBlockInterface) {
-		self.local_impls.push((Arc::new(RwLock::new(ty)), Arc::new(RwLock::new(im))));
+		self.local_impls
+			.push((Arc::new(RwLock::new(ty)), Arc::new(RwLock::new(im))));
 	}
 
 	pub fn type_implements_trait(

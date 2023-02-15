@@ -5,7 +5,7 @@ use std::io::{self, Error, Read};
 use std::path::Path;
 use std::sync::mpsc::Sender;
 
-use crate::errors::{ComuneMessage, CMNMessageLog};
+use crate::errors::{CMNMessageLog, ComuneMessage};
 
 use crate::ast::module::Name;
 

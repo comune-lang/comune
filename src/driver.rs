@@ -12,13 +12,13 @@ use inkwell::{context::Context, passes::PassManager, targets::FileType};
 use crate::{
 	ast::{
 		self,
-		module::{Identifier, ModuleImportKind, ModuleInterfaceOpaque, ModuleInterface},
+		module::{Identifier, ModuleImportKind, ModuleInterface, ModuleInterfaceOpaque},
 	},
 	cir::{
 		analyze::{lifeline::VarInitCheck, verify, CIRPassManager, DataFlowPass},
 		builder::CIRModuleBuilder,
 	},
-	errors::{ComuneError, ComuneErrCode, ComuneMessage, CMNMessageLog},
+	errors::{CMNMessageLog, ComuneErrCode, ComuneError, ComuneMessage},
 	lexer::{self, Lexer, SrcSpan},
 	llvm::{self, LLVMBackend},
 	parser::{ComuneResult, Parser},
@@ -116,10 +116,12 @@ pub fn launch_module_compilation(
 	let sender_lock = Mutex::new(error_sender.clone());
 
 	let mut imports = HashMap::new();
-	
+
 	while let Some(name) = module_names.first().cloned() {
 		let (import_name, fs_name) = match name {
-			ModuleImportKind::Child(name) => (name.clone(), Identifier::from_parent(&module_name, name)),
+			ModuleImportKind::Child(name) => {
+				(name.clone(), Identifier::from_parent(&module_name, name))
+			}
 			ModuleImportKind::Language(name) => (name.clone(), Identifier::from_name(name, true)),
 			ModuleImportKind::Extern(name) => (name.name().clone(), name),
 		};
@@ -151,24 +153,28 @@ pub fn launch_module_compilation(
 				}
 
 				Some(ModuleState::ParsingFailed) => {
-					state.module_states.write().unwrap().insert(
-						src_path.clone(),
-						ModuleState::ParsingFailed
-					);
+					state
+						.module_states
+						.write()
+						.unwrap()
+						.insert(src_path.clone(), ModuleState::ParsingFailed);
 
-					return Err(ComuneError::new(ComuneErrCode::DependencyError, SrcSpan::new()))
+					return Err(ComuneError::new(
+						ComuneErrCode::DependencyError,
+						SrcSpan::new(),
+					));
 				}
 
 				Some(ModuleState::InterfaceUntyped(interface)) => {
 					imports.insert(import_name, interface.clone());
 					module_names.remove(0);
-					break
+					break;
 				}
 
 				Some(ModuleState::InterfaceComplete(interface)) => {
 					imports.insert(import_name, interface.get_opaque());
 					module_names.remove(0);
-					break
+					break;
 				}
 			}
 		}
@@ -184,13 +190,14 @@ pub fn launch_module_compilation(
 				.lexer
 				.borrow()
 				.log_msg_at(SrcSpan::new(), ComuneMessage::Error(e.clone()));
-			
-			state.module_states.write().unwrap().insert(
-				src_path.clone(),
-				ModuleState::ParsingFailed
-			);
-			
-			return Err(e)
+
+			state
+				.module_states
+				.write()
+				.unwrap()
+				.insert(src_path.clone(), ModuleState::ParsingFailed);
+
+			return Err(e);
 		}
 	};
 
@@ -209,21 +216,20 @@ pub fn launch_module_compilation(
 
 		let mut imports_left = module_names
 			.into_iter()
-			.map(|name| {
-				match name {
-					ModuleImportKind::Child(name) => Identifier::from_parent(&module_name, name),
-					ModuleImportKind::Language(name) => Identifier::from_name(name, true),
-					ModuleImportKind::Extern(name) => name,
-				}
-			}).collect::<Vec<_>>();
+			.map(|name| match name {
+				ModuleImportKind::Child(name) => Identifier::from_parent(&module_name, name),
+				ModuleImportKind::Language(name) => Identifier::from_name(name, true),
+				ModuleImportKind::Extern(name) => name,
+			})
+			.collect::<Vec<_>>();
 
 		// Loop over remaining pending imports
 		while let Some(import_name) = imports_left.first() {
 			let import_path =
 				get_module_source_path(&state, src_path.clone(), import_name).unwrap();
-			
+
 			// Get the current import's compilation state
-			
+
 			let import_state = state
 				.module_states
 				.read()
@@ -234,11 +240,12 @@ pub fn launch_module_compilation(
 
 			// If the imported module is ready, remove it from the list.
 			// If not, push it to the end of the list so we get a chance
-			// to check up on the other imports in the meantime 
+			// to check up on the other imports in the meantime
 
 			match import_state {
 				ModuleState::InterfaceComplete(complete) => {
-					parser.interface
+					parser
+						.interface
 						.imported
 						.insert(import_name.name().clone(), complete);
 					imports_left.remove(0);
@@ -247,7 +254,7 @@ pub fn launch_module_compilation(
 				ModuleState::InterfaceUntyped(_) => {
 					let first = imports_left.remove(0);
 					imports_left.push(first);
-					continue
+					continue;
 				}
 
 				_ => panic!(),
@@ -306,8 +313,7 @@ pub fn get_module_source_path(
 	mut current_path: PathBuf,
 	module: &Identifier,
 ) -> Option<PathBuf> {
-
-	// Resolve built-in library paths. This is currently hard-coded, but 
+	// Resolve built-in library paths. This is currently hard-coded, but
 	// there's probably a more elegant solution to be written down the line
 	if module.absolute && matches!(module.path[0].as_str(), "core" | "std") {
 		let mut current_path = PathBuf::from(state.libcomune_dir.clone());
@@ -316,7 +322,7 @@ pub fn get_module_source_path(
 		current_path.push("src");
 		current_path.push("lib");
 		current_path.set_extension("co");
-		
+
 		return Some(current_path);
 	}
 
@@ -384,10 +390,8 @@ pub fn parse_interface(
 					e
 				);
 				return Err(ComuneError::new(
-					ComuneErrCode::ModuleNotFound(OsString::from(
-						path.file_name().unwrap()
-					)),				
-					SrcSpan::new()
+					ComuneErrCode::ModuleNotFound(OsString::from(path.file_name().unwrap())),
+					SrcSpan::new(),
 				));
 			}
 		},
@@ -450,7 +454,10 @@ pub fn generate_code<'ctx>(
 			}
 		}
 		Err(e) => {
-			parser.lexer.borrow().log_msg(ComuneMessage::Error(e.clone()));
+			parser
+				.lexer
+				.borrow()
+				.log_msg(ComuneMessage::Error(e.clone()));
 			return Err(e);
 		}
 	};
@@ -514,7 +521,10 @@ pub fn generate_code<'ctx>(
 				.log_msg_at(error.span, ComuneMessage::Error(error));
 		}
 
-		return Err(ComuneError::new(ComuneErrCode::Pack(return_errors), SrcSpan::new()));
+		return Err(ComuneError::new(
+			ComuneErrCode::Pack(return_errors),
+			SrcSpan::new(),
+		));
 	}
 
 	let module_mono = cir_module.monoize();

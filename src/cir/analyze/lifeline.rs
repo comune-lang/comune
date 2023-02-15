@@ -8,7 +8,7 @@ use super::{
 };
 use crate::{
 	cir::{CIRFunction, CIRStmt, CIRType, LValue, Operand, PlaceElem, RValue},
-	errors::{ComuneError, ComuneErrCode},
+	errors::{ComuneErrCode, ComuneError},
 	lexer::SrcSpan,
 };
 

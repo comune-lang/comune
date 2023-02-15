@@ -6,13 +6,14 @@ use std::{
 };
 
 use crate::{
-	errors::{ComuneError, ComuneErrCode},
-	parser::ComuneResult, lexer::SrcSpan,
+	errors::{ComuneErrCode, ComuneError},
+	lexer::SrcSpan,
+	parser::ComuneResult,
 };
 
 use super::{
 	expression::Expr,
-	traits::{TraitInterface, TraitRef, ImplSolver},
+	traits::{ImplSolver, TraitInterface, TraitRef},
 	types::{Basic, FnPrototype, Type, TypeDef, TypeRef},
 };
 
@@ -31,7 +32,7 @@ pub enum ModuleImportKind {
 	Child(Name),
 	Language(Name),
 	Extern(Identifier),
-} 
+}
 
 // The full module dependency system is complex, as the compiler is
 // designed to have as few parallelization bottlenecks as possible.
@@ -39,14 +40,14 @@ pub enum ModuleImportKind {
 #[derive(Debug)]
 pub struct Module {
 	module_interface: ModuleInterface,
-	module_impl: ModuleImpl, 
+	module_impl: ModuleImpl,
 }
 
-// Struct representing a possibly-typechecked module interface. This 
-// stage of AST construction does not parse any function or 
+// Struct representing a possibly-typechecked module interface. This
+// stage of AST construction does not parse any function or
 // expression bodies, only the prototypes of namespace items.
-// This is quick to construct, and downstream modules depend on 
-// this stage for expression parsing. 
+// This is quick to construct, and downstream modules depend on
+// this stage for expression parsing.
 #[derive(Default, Clone, Debug)]
 pub struct ModuleInterface {
 	pub path: Identifier,
@@ -62,7 +63,7 @@ pub type ModuleInterfaceOpaque = HashMap<Identifier, ModuleItemOpaque>;
 #[derive(Default, Clone, Debug)]
 pub struct ModuleImpl {
 	pub children: HashMap<Identifier, ModuleItemImpl>,
-	pub impl_bodies: Vec<(Type, Identifier, HashMap<String, FnOverloadBodies>)>
+	pub impl_bodies: Vec<(Type, Identifier, HashMap<String, FnOverloadBodies>)>,
 }
 
 #[derive(Clone, Debug)]
@@ -72,7 +73,7 @@ pub enum ModuleItemOpaque {
 	Function,
 	Variable,
 	Alias,
-	TypeAlias
+	TypeAlias,
 }
 
 // I HATE RWLOCKS I HATE RWLOCKS I HATE RWLOCKS I HATE RWLOCKS I
@@ -98,9 +99,9 @@ pub enum ModuleItemImpl {
 
 impl ModuleImpl {
 	pub fn new() -> Self {
-		ModuleImpl { 
+		ModuleImpl {
 			children: HashMap::new(),
-			impl_bodies: vec![]
+			impl_bodies: vec![],
 		}
 	}
 }
@@ -117,22 +118,28 @@ impl ModuleInterface {
 	}
 
 	pub fn get_opaque(&self) -> ModuleInterfaceOpaque {
-		self.children.iter().map(
-			|(id, child)| (
-				id.clone(), 
-				match child {
-					ModuleItemInterface::Type(_) => ModuleItemOpaque::Type,
-					ModuleItemInterface::Trait(_) => ModuleItemOpaque::Trait,
-					ModuleItemInterface::Functions(_) => ModuleItemOpaque::Function,
-					ModuleItemInterface::Variable(_) => ModuleItemOpaque::Variable,
-					ModuleItemInterface::Alias(_) => ModuleItemOpaque::Alias,
-					ModuleItemInterface::TypeAlias(_) => ModuleItemOpaque::TypeAlias,
-				}
-			)
-		).collect()
+		self.children
+			.iter()
+			.map(|(id, child)| {
+				(
+					id.clone(),
+					match child {
+						ModuleItemInterface::Type(_) => ModuleItemOpaque::Type,
+						ModuleItemInterface::Trait(_) => ModuleItemOpaque::Trait,
+						ModuleItemInterface::Functions(_) => ModuleItemOpaque::Function,
+						ModuleItemInterface::Variable(_) => ModuleItemOpaque::Variable,
+						ModuleItemInterface::Alias(_) => ModuleItemOpaque::Alias,
+						ModuleItemInterface::TypeAlias(_) => ModuleItemOpaque::TypeAlias,
+					},
+				)
+			})
+			.collect()
 	}
 
-	pub fn get_item<'a>(&'a self, id: &Identifier) -> Option<(Identifier, &'a ModuleItemInterface)> {
+	pub fn get_item<'a>(
+		&'a self,
+		id: &Identifier,
+	) -> Option<(Identifier, &'a ModuleItemInterface)> {
 		assert!(id.absolute, "argument to get_item should be absolute!");
 
 		match self.children.get(id) {
@@ -202,10 +209,7 @@ impl ModuleInterface {
 			Some((_, ModuleItemInterface::TypeAlias(alias))) => Some(alias.read().unwrap().clone()),
 
 			_ => {
-				if let Some(imported) = self
-					.imported
-					.get(&id.path[0])
-				{
+				if let Some(imported) = self.imported.get(&id.path[0]) {
 					let mut id_sub = id.clone();
 					id_sub.path.remove(0);
 
@@ -256,9 +260,11 @@ impl ModuleInterface {
 			} else {
 				Some(closure(absolute_lookup, &id))
 			}
-		} else if let Some(imported) = self.imported.iter().find(|(import_name, _)| {
-			&id.path[0] == *import_name
-		}) {
+		} else if let Some(imported) = self
+			.imported
+			.iter()
+			.find(|(import_name, _)| &id.path[0] == *import_name)
+		{
 			// Found an imported namespace that's a prefix of `id`!
 			// TODO: Figure out how this works for submodules
 			let mut id_relative = id.clone();
@@ -314,7 +320,10 @@ impl Identifier {
 		if self.path.len() == 1 && !self.absolute {
 			Ok(self.path.last().unwrap())
 		} else {
-			Err(ComuneError::new(ComuneErrCode::ExpectedIdentifier, SrcSpan::new())) // TODO: Give appropriate error
+			Err(ComuneError::new(
+				ComuneErrCode::ExpectedIdentifier,
+				SrcSpan::new(),
+			)) // TODO: Give appropriate error
 		}
 	}
 }

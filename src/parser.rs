@@ -4,19 +4,20 @@ use std::sync::{Arc, RwLock};
 
 use crate::ast::pattern::{Binding, Pattern};
 use crate::constexpr::ConstExpr;
-use crate::errors::{ComuneError, ComuneErrCode};
+use crate::errors::{ComuneErrCode, ComuneError};
 use crate::lexer::{Lexer, SrcSpan, Token};
 
 use crate::ast::controlflow::ControlFlow;
 use crate::ast::expression::{Atom, Expr, FnRef, NodeData, Operator};
 use crate::ast::module::{
-	Identifier, ItemRef, Name, ModuleImpl, ModuleASTElem, ModuleItemImpl, ModuleImportKind, ModuleItemInterface, ModuleInterface, ModuleItemOpaque,
+	Identifier, ItemRef, ModuleASTElem, ModuleImpl, ModuleImportKind, ModuleInterface,
+	ModuleItemImpl, ModuleItemInterface, ModuleItemOpaque, Name,
 };
 use crate::ast::statement::Stmt;
 use crate::ast::traits::{ImplBlockInterface, TraitInterface, TraitRef};
 use crate::ast::types::{
-	AlgebraicDef, Basic, BindingProps, FnPrototype, FnParamList, TupleKind, Type, TypeDef, TypeParamList,
-	TypeRef, Visibility,
+	AlgebraicDef, Basic, BindingProps, FnParamList, FnPrototype, TupleKind, Type, TypeDef,
+	TypeParamList, TypeRef, Visibility,
 };
 use crate::ast::Attribute;
 
@@ -221,7 +222,9 @@ impl Parser {
 
 					self.interface.children.insert(
 						Identifier::from_parent(scope, name),
-						ModuleItemInterface::Type(Arc::new(RwLock::new(TypeDef::Algebraic(aggregate)))),
+						ModuleItemInterface::Type(Arc::new(RwLock::new(TypeDef::Algebraic(
+							aggregate,
+						)))),
 					);
 				}
 
@@ -291,7 +294,9 @@ impl Parser {
 
 					self.interface.children.insert(
 						Identifier::from_parent(scope, name),
-						ModuleItemInterface::Type(Arc::new(RwLock::new(TypeDef::Algebraic(aggregate)))),
+						ModuleItemInterface::Type(Arc::new(RwLock::new(TypeDef::Algebraic(
+							aggregate,
+						)))),
 					);
 				}
 
@@ -317,10 +322,14 @@ impl Parser {
 
 					while !token_compare(&next, "}") {
 						let func_attributes = self.parse_attributes()?;
-						let (name, interface, im) = self.parse_namespace_declaration(func_attributes)?;
+						let (name, interface, im) =
+							self.parse_namespace_declaration(func_attributes)?;
 
 						match (interface, im) {
-							(ModuleItemInterface::Functions(mut funcs), ModuleItemImpl::Functions(parsed)) => {
+							(
+								ModuleItemInterface::Functions(mut funcs),
+								ModuleItemImpl::Functions(parsed),
+							) => {
 								if let Some(fns) = this_trait.items.get_mut(&name) {
 									fns.append(&mut funcs);
 								} else {
@@ -328,7 +337,9 @@ impl Parser {
 								}
 
 								if parsed.iter().any(|elem| *elem != ModuleASTElem::NoElem) {
-									panic!("default impls in trait definitions are not yet supported");
+									panic!(
+										"default impls in trait definitions are not yet supported"
+									);
 								}
 							}
 
@@ -395,29 +406,38 @@ impl Parser {
 						self.skip_block()?;
 
 						// TODO: Proper overload handling here
-						functions.insert(fn_name.clone(), vec![Arc::new(RwLock::new(FnPrototype {
-							ret,
-							params,
-							type_params: vec![],
-							attributes: func_attributes,
-						}))]);
+						functions.insert(
+							fn_name.clone(),
+							vec![Arc::new(RwLock::new(FnPrototype {
+								ret,
+								params,
+								type_params: vec![],
+								attributes: func_attributes,
+							}))],
+						);
 
 						asts.insert(fn_name, ast);
 					}
 
 					// Register impl to solver
-					self.interface.trait_solver.register_impl(impl_ty.clone(), ImplBlockInterface {
-						implements: trait_name.clone(),
-						functions,
-						types: HashMap::new(),
-						scope: self.current_scope.clone(),
+					self.interface.trait_solver.register_impl(
+						impl_ty.clone(),
+						ImplBlockInterface {
+							implements: trait_name.clone(),
+							functions,
+							types: HashMap::new(),
+							scope: self.current_scope.clone(),
 
-						canonical_root: Identifier {
-							qualifier: (Some(Box::new(impl_ty.clone())), trait_name.map(Box::new)),
-							path: vec![],
-							absolute: true,
+							canonical_root: Identifier {
+								qualifier: (
+									Some(Box::new(impl_ty.clone())),
+									trait_name.map(Box::new),
+								),
+								path: vec![],
+								absolute: true,
+							},
 						},
-					});
+					);
 
 					self.consume(&Token::Other('}'))?;
 				}
@@ -429,9 +449,7 @@ impl Parser {
 					if self.is_at_identifier_token()? {
 						let import = ModuleImportKind::Extern(self.parse_identifier()?);
 
-						self.interface
-							.import_names
-							.insert(import);
+						self.interface.import_names.insert(import);
 
 						self.check_semicolon()?;
 					} else {
@@ -454,21 +472,17 @@ impl Parser {
 							if self.is_at_type_token(false)? {
 								let ty = self.parse_type(false)?;
 
-								self.interface
-									.children
-									.insert(
-										Identifier::from_parent(scope, name),
-										ModuleItemInterface::TypeAlias(Arc::new(RwLock::new(ty))),
-									);
+								self.interface.children.insert(
+									Identifier::from_parent(scope, name),
+									ModuleItemInterface::TypeAlias(Arc::new(RwLock::new(ty))),
+								);
 							} else {
 								let aliased = self.parse_identifier()?;
 
-								self.interface
-									.children
-									.insert(
-										Identifier::from_parent(scope, name),
-										ModuleItemInterface::Alias(aliased),
-									);
+								self.interface.children.insert(
+									Identifier::from_parent(scope, name),
+									ModuleItemInterface::Alias(aliased),
+								);
 							}
 
 							self.check_semicolon()?;
@@ -476,23 +490,19 @@ impl Parser {
 							// No '=' token, just bring the name into scope
 							let name = names.remove(0);
 
-							self.interface
-								.children
-								.insert(
-									Identifier::from_parent(scope, name.path.last().unwrap().clone()),
-									ModuleItemInterface::Alias(name),
-								);
+							self.interface.children.insert(
+								Identifier::from_parent(scope, name.path.last().unwrap().clone()),
+								ModuleItemInterface::Alias(name),
+							);
 
 							self.check_semicolon()?;
 						}
 					} else {
 						for name in names {
-							self.interface
-								.children
-								.insert(
-									Identifier::from_parent(scope, name.name().clone()),
-									ModuleItemInterface::Alias(name),
-								);
+							self.interface.children.insert(
+								Identifier::from_parent(scope, name.name().clone()),
+								ModuleItemInterface::Alias(name),
+							);
 						}
 
 						self.check_semicolon()?;
@@ -507,7 +517,9 @@ impl Parser {
 					match self.get_next()? {
 						Token::Other(';') => {
 							// TODO: Add submodule to import list
-							self.interface.import_names.insert(ModuleImportKind::Child(module));
+							self.interface
+								.import_names
+								.insert(ModuleImportKind::Child(module));
 							self.get_next()?;
 						}
 
@@ -519,9 +531,8 @@ impl Parser {
 							self.current_scope.path.pop();
 						}
 
-						_ => return self.err(ComuneErrCode::UnexpectedToken)
+						_ => return self.err(ComuneErrCode::UnexpectedToken),
 					}
-					
 				}
 
 				Token::Keyword(_) => {
@@ -534,13 +545,11 @@ impl Parser {
 						self.parse_namespace_declaration(current_attributes)?;
 
 					let id = Identifier::from_parent(scope, name);
-					
+
 					match (&mut protos, &mut defs) {
-
 						(ModuleItemInterface::Functions(fns), ModuleItemImpl::Functions(asts)) => {
-
 							let module_interface = &mut self.interface;
-		
+
 							if let Some(ModuleItemInterface::Functions(existing)) =
 								module_interface.children.get_mut(&id)
 							{
