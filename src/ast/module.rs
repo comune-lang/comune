@@ -63,7 +63,7 @@ pub type ModuleInterfaceOpaque = HashMap<Identifier, ModuleItemOpaque>;
 #[derive(Default, Clone, Debug)]
 pub struct ModuleImpl {
 	pub children: HashMap<Identifier, ModuleItemImpl>,
-	pub impl_bodies: Vec<(Type, Identifier, HashMap<String, FnOverloadBodies>)>,
+	pub impl_bodies: Vec<(Type, HashMap<Name, FnOverloadBodies>)>,
 }
 
 #[derive(Clone, Debug)]

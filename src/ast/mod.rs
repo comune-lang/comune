@@ -553,20 +553,26 @@ pub fn validate_module_impl(
 
 	let protos = interface.trait_solver.local_impls.iter();
 
-	for ((ty, scope, im_impl), (_, im_interface)) in module_impl.impl_bodies.iter_mut().zip(protos)
-	{
+	for ((_, im_impl), (_, im_interface)) in module_impl.impl_bodies.iter_mut().zip(protos) {
+		
+		let im_interface = &*im_interface.read().unwrap();
+
 		// Iterate over every set of overloads in the impl block
-		for ((l, protos), (r, asts)) in im_interface
-			.read()
-			.unwrap()
+		for (name, protos) in im_interface
 			.functions
 			.iter()
-			.zip(im_impl.iter_mut())
 		{
-			assert!(l == r); // This is sketchy as hell im so sorry
+			let asts = im_impl.get_mut(name).unwrap();
 
 			for (proto, ast) in protos.iter().zip(asts.iter_mut()) {
-				validate_function_body(scope.clone(), &*proto.read().unwrap(), ast, interface)?
+				
+				validate_function_body(
+					im_interface.canonical_root.clone(), 
+					&*proto.read().unwrap(), 
+					ast, 
+					interface
+				)?;
+
 			}
 		}
 	}

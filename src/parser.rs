@@ -111,6 +111,7 @@ impl Parser {
 		}
 	}
 
+
 	pub fn generate_ast(&mut self) -> ComuneResult<()> {
 		let mut children_bodies = HashMap::new();
 
@@ -141,7 +142,7 @@ impl Parser {
 
 		let mut impl_bodies = HashMap::new();
 
-		for (im_ty, im_name, im) in &self.module_impl.impl_bodies {
+		for (im_ty, im) in &self.module_impl.impl_bodies {
 			let mut im_body = HashMap::new();
 
 			// Generate impl function bodies
@@ -159,15 +160,18 @@ impl Parser {
 				im_body.insert(fn_name.clone(), fn_bodies);
 			}
 
-			impl_bodies.insert((im_ty.clone(), im_name.clone()), im_body);
+			impl_bodies.insert(im_ty.clone(), im_body);
 		}
 
-		for ((ty, name), body) in impl_bodies {
-			self.module_impl.impl_bodies.push((ty, name, body));
+		self.module_impl.impl_bodies.clear();
+
+		for (ty, body) in impl_bodies {
+			self.module_impl.impl_bodies.push((ty,  body));
 		}
 
 		Ok(())
 	}
+
 
 	pub fn parse_namespace(&mut self, scope: &Identifier) -> ComuneResult<()> {
 		while !matches!(self.get_current()?, Token::Eof | Token::Other('}')) {
@@ -416,8 +420,22 @@ impl Parser {
 							}))],
 						);
 
-						asts.insert(fn_name, ast);
+						asts.insert(fn_name, vec![ast]);
 					}
+
+					let canonical_root = Identifier {
+						qualifier: (
+							Some(Box::new(impl_ty.clone())),
+							trait_name.clone().map(Box::new),
+						),
+						path: vec![],
+						absolute: true,
+					};
+					
+					self.module_impl.impl_bodies.push((
+						impl_ty.clone(),
+						asts
+					));
 
 					// Register impl to solver
 					self.interface.trait_solver.register_impl(
@@ -428,14 +446,7 @@ impl Parser {
 							types: HashMap::new(),
 							scope: self.current_scope.clone(),
 
-							canonical_root: Identifier {
-								qualifier: (
-									Some(Box::new(impl_ty.clone())),
-									trait_name.map(Box::new),
-								),
-								path: vec![],
-								absolute: true,
-							},
+							canonical_root,
 						},
 					);
 
