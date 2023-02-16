@@ -17,8 +17,7 @@ use self::{
 	controlflow::ControlFlow,
 	expression::{Atom, Expr, FnRef, NodeData, OnceAtom, Operator},
 	module::{
-		Identifier, ItemRef, ModuleASTElem, ModuleImpl, ModuleInterface,
-		ModuleItemInterface, Name,
+		Identifier, ItemRef, ModuleASTElem, ModuleImpl, ModuleInterface, ModuleItemInterface, Name,
 	},
 	pattern::Binding,
 	statement::Stmt,
@@ -535,7 +534,6 @@ pub fn validate_module_impl(
 	interface: &ModuleInterface,
 	module_impl: &mut ModuleImpl,
 ) -> ComuneResult<()> {
-
 	for (proto, ast) in &mut module_impl.fn_impls {
 		let mut scope = proto.read().unwrap().path.clone();
 		scope.path.pop();
@@ -774,7 +772,7 @@ pub fn resolve_namespace_types(interface: &ModuleInterface) -> ComuneResult<()> 
 		} else {
 			None
 		};
-		
+
 		let trait_qualif = (Some(Box::new(ty.read().unwrap().clone())), resolved_trait);
 
 		im.write().unwrap().canonical_root.qualifier = trait_qualif.clone();

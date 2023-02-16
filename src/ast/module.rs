@@ -60,7 +60,7 @@ pub type ModuleInterfaceOpaque = HashMap<Identifier, ModuleItemOpaque>;
 // The Identifier here is the function's scope, for name resolution
 #[derive(Default, Clone, Debug)]
 pub struct ModuleImpl {
-	pub fn_impls: Vec<(Arc<RwLock<FnPrototype>>, ModuleASTElem)>
+	pub fn_impls: Vec<(Arc<RwLock<FnPrototype>>, ModuleASTElem)>,
 }
 
 #[derive(Clone, Debug)]
@@ -96,9 +96,7 @@ pub enum ModuleItemImpl {
 
 impl ModuleImpl {
 	pub fn new() -> Self {
-		ModuleImpl {
-			fn_impls: vec![],
-		}
+		ModuleImpl { fn_impls: vec![] }
 	}
 }
 

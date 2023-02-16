@@ -65,9 +65,7 @@ impl CIRModuleBuilder {
 
 			for (name, fns) in &im.functions {
 				for func in fns {
-					let (proto, cir_fn) = self.generate_prototype(
-						&*func.read().unwrap(),
-					);
+					let (proto, cir_fn) = self.generate_prototype(&*func.read().unwrap());
 
 					self.module.functions.insert(proto, cir_fn);
 				}
@@ -91,13 +89,11 @@ impl CIRModuleBuilder {
 
 	fn generate_namespace(&mut self, interface: &ModuleInterface, module_impl: &ModuleImpl) {
 		for (func, ast) in module_impl.fn_impls.iter() {
-
 			let ModuleASTElem::Parsed(ast) = ast else { panic!() };
 
 			let proto = self.get_prototype(&*func.read().unwrap());
 
 			self.generate_function(proto, ast);
-
 		}
 	}
 
@@ -214,10 +210,7 @@ impl CIRModuleBuilder {
 		}
 	}
 
-	pub fn generate_prototype(
-		&mut self,
-		func: &FnPrototype,
-	) -> (CIRFnPrototype, CIRFunction) {
+	pub fn generate_prototype(&mut self, func: &FnPrototype) -> (CIRFnPrototype, CIRFunction) {
 		let proto = self.get_prototype(func);
 
 		self.current_fn = Some(CIRFunction {
@@ -243,7 +236,10 @@ impl CIRModuleBuilder {
 		self.current_fn = if let Some(func) = self.module.functions.remove(&proto) {
 			Some(func)
 		} else {
-			panic!("failed to get cIR function {proto} from module! function list:\n\n{:?}\n", self.module.functions.keys())
+			panic!(
+				"failed to get cIR function {proto} from module! function list:\n\n{:?}\n",
+				self.module.functions.keys()
+			)
 		};
 
 		// Generate function body

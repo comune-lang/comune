@@ -99,12 +99,11 @@ impl ImplSolver {
 
 	pub fn finalize(&mut self) {
 		// Move local_impls into impls
-		self.impls.extend(self.local_impls.iter().map(|(ty, im)| {
-			(
-				ty.read().unwrap().clone(),
-				im.clone(),
-			)
-		}));
+		self.impls.extend(
+			self.local_impls
+				.iter()
+				.map(|(ty, im)| (ty.read().unwrap().clone(), im.clone())),
+		);
 	}
 
 	pub fn register_impl(&mut self, ty: Type, im: ImplBlockInterface) {

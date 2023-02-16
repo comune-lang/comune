@@ -111,7 +111,6 @@ impl Parser {
 		}
 	}
 
-
 	pub fn generate_ast(&mut self) -> ComuneResult<()> {
 		let mut fn_impls = vec![];
 
@@ -128,7 +127,6 @@ impl Parser {
 
 		Ok(())
 	}
-
 
 	pub fn parse_namespace(&mut self, scope: &Identifier) -> ComuneResult<()> {
 		while !matches!(self.get_current()?, Token::Eof | Token::Other('}')) {
@@ -297,7 +295,10 @@ impl Parser {
 									this_trait.items.insert(name.clone(), funcs);
 								}
 
-								if parsed.iter().any(|(_, elem)| *elem != ModuleASTElem::NoElem) {
+								if parsed
+									.iter()
+									.any(|(_, elem)| *elem != ModuleASTElem::NoElem)
+								{
 									panic!(
 										"default impls in trait definitions are not yet supported"
 									);
@@ -357,7 +358,7 @@ impl Parser {
 						path: vec![],
 						absolute: true,
 					};
-					
+
 					while self.get_current()? != Token::Other('}') {
 						let func_attributes = self.parse_attributes()?;
 
@@ -373,7 +374,7 @@ impl Parser {
 						let ast = ModuleASTElem::Unparsed(self.get_current_token_index());
 
 						self.skip_block()?;
-						
+
 						let proto = Arc::new(RwLock::new(FnPrototype {
 							path: Identifier::from_parent(&canonical_root, fn_name.clone()),
 							ret,
@@ -383,10 +384,7 @@ impl Parser {
 						}));
 
 						// TODO: Proper overload handling here
-						functions.insert(
-							fn_name.clone(),
-							vec![proto.clone()],
-						);
+						functions.insert(fn_name.clone(), vec![proto.clone()]);
 
 						self.module_impl.fn_impls.push((proto, ast));
 					}
@@ -523,11 +521,9 @@ impl Parser {
 								module_interface.children.insert(id.clone(), protos);
 							}
 
-							self.module_impl.fn_impls.extend(
-								asts
-									.drain(..)
-									.map(|(proto, ast)| (proto, ast))
-							);
+							self.module_impl
+								.fn_impls
+								.extend(asts.drain(..).map(|(proto, ast)| (proto, ast)));
 						}
 
 						_ => todo!(),
