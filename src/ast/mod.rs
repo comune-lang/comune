@@ -536,16 +536,16 @@ pub fn validate_module_impl(
 	interface: &ModuleInterface,
 	module_impl: &mut ModuleImpl,
 ) -> ComuneResult<()> {
-	for (id, child) in &mut module_impl.children {
-		if let ModuleItemImpl::Functions(fns) = child {
+	for (id, child) in &interface.children {
+		if let ModuleItemInterface::Functions(fns, idx) = child {
 			let mut scope = id.clone();
 			scope.path.pop();
 
-			let ModuleItemInterface::Functions(protos) = interface.children.get(id).unwrap() else {
+			let ModuleItemImpl::Functions(asts) = module_impl.item_impls.get_mut(*idx).unwrap() else {
 				panic!()
 			};
 
-			for (ast, func) in fns.iter_mut().zip(protos.iter()) {
+			for (func, ast) in fns.iter().zip(asts.iter_mut()) {
 				validate_function_body(scope.clone(), &*func.read().unwrap(), ast, interface)?
 			}
 		}
@@ -553,7 +553,7 @@ pub fn validate_module_impl(
 
 	let protos = interface.trait_solver.local_impls.iter();
 
-	for ((_, im_impl), (_, im_interface)) in module_impl.impl_bodies.iter_mut().zip(protos) {
+	for (_, im_interface) in protos {
 		
 		let im_interface = &*im_interface.read().unwrap();
 
@@ -562,7 +562,7 @@ pub fn validate_module_impl(
 			.functions
 			.iter()
 		{
-			let asts = im_impl.get_mut(name).unwrap();
+			let asts = module_impl.item_impls.get_mut(name).unwrap();
 
 			for (proto, ast) in protos.iter().zip(asts.iter_mut()) {
 				
@@ -724,7 +724,7 @@ pub fn resolve_namespace_types(interface: &ModuleInterface) -> ComuneResult<()> 
 
 	for child in interface.children.values() {
 		match child {
-			ModuleItemInterface::Functions(fns) => {
+			ModuleItemInterface::Functions(fns, _) => {
 				for func in fns.iter() {
 					let FnPrototype {
 						ret,

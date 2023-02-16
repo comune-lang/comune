@@ -59,11 +59,12 @@ pub struct ModuleInterface {
 
 pub type ModuleInterfaceOpaque = HashMap<Identifier, ModuleItemOpaque>;
 
+pub type ItemImplIndex = usize;
+
 // Struct representing a module's implementation.
 #[derive(Default, Clone, Debug)]
 pub struct ModuleImpl {
-	pub children: HashMap<Identifier, ModuleItemImpl>,
-	pub impl_bodies: Vec<(Type, HashMap<Name, FnOverloadBodies>)>,
+	pub item_impls: Vec<ModuleItemImpl>,
 }
 
 #[derive(Clone, Debug)]
@@ -81,8 +82,8 @@ pub enum ModuleItemOpaque {
 pub enum ModuleItemInterface {
 	Type(Arc<RwLock<TypeDef>>),
 	Trait(Arc<RwLock<TraitInterface>>),
-	Functions(Vec<Arc<RwLock<FnPrototype>>>),
-	Variable(Type),
+	Functions(Vec<Arc<RwLock<FnPrototype>>>, ItemImplIndex),
+	Variable(Type, ItemImplIndex),
 	Alias(Identifier),
 	TypeAlias(Arc<RwLock<Type>>),
 }
@@ -100,8 +101,7 @@ pub enum ModuleItemImpl {
 impl ModuleImpl {
 	pub fn new() -> Self {
 		ModuleImpl {
-			children: HashMap::new(),
-			impl_bodies: vec![],
+			item_impls: vec![],
 		}
 	}
 }
@@ -126,8 +126,8 @@ impl ModuleInterface {
 					match child {
 						ModuleItemInterface::Type(_) => ModuleItemOpaque::Type,
 						ModuleItemInterface::Trait(_) => ModuleItemOpaque::Trait,
-						ModuleItemInterface::Functions(_) => ModuleItemOpaque::Function,
-						ModuleItemInterface::Variable(_) => ModuleItemOpaque::Variable,
+						ModuleItemInterface::Functions(..) => ModuleItemOpaque::Function,
+						ModuleItemInterface::Variable(..) => ModuleItemOpaque::Variable,
 						ModuleItemInterface::Alias(_) => ModuleItemOpaque::Alias,
 						ModuleItemInterface::TypeAlias(_) => ModuleItemOpaque::TypeAlias,
 					},
