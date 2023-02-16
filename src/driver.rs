@@ -315,10 +315,10 @@ pub fn get_module_source_path(
 ) -> Option<PathBuf> {
 	// Resolve built-in library paths. This is currently hard-coded, but
 	// there's probably a more elegant solution to be written down the line
-	if module.absolute && matches!(module.path[0].as_str(), "core" | "std") {
+	if module.absolute && matches!(module.path[0].to_string().as_str(), "core" | "std") {
 		let mut current_path = PathBuf::from(state.libcomune_dir.clone());
 
-		current_path.push(module.path[0].clone());
+		current_path.push(module.path[0].to_string());
 		current_path.push("src");
 		current_path.push("lib");
 		current_path.set_extension("co");

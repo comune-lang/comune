@@ -7,6 +7,7 @@ mod lexer;
 mod llvm;
 mod parser;
 
+use ast::module::Name;
 use ast::{module::Identifier, types};
 use clap::Parser;
 use colored::Colorize;
@@ -198,9 +199,9 @@ fn main() -> color_eyre::eyre::Result<()> {
 	Ok(())
 }
 
-fn get_file_suffix(path: &Path) -> Option<String> {
+fn get_file_suffix(path: &Path) -> Option<Name> {
 	let mut name = path.file_name()?.to_string_lossy().to_string();
 	name.truncate(name.rfind('.').unwrap_or(name.len()));
 
-	Some(name)
+	Some(name.into())
 }
