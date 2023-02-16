@@ -83,7 +83,7 @@ pub enum TraitDeduction {
 
 #[derive(Clone, Debug, Default)]
 pub struct ImplSolver {
-	impls: Vec<(Type, Arc<ImplBlockInterface>)>,
+	impls: Vec<(Type, Arc<RwLock<ImplBlockInterface>>)>,
 	pub local_impls: Vec<(Arc<RwLock<Type>>, Arc<RwLock<ImplBlockInterface>>)>,
 	answer_cache: HashMap<Type, HashMap<TraitRef, TraitDeduction>>,
 }
@@ -102,7 +102,7 @@ impl ImplSolver {
 		self.impls.extend(self.local_impls.iter().map(|(ty, im)| {
 			(
 				ty.read().unwrap().clone(),
-				Arc::new(im.read().unwrap().clone()),
+				im.clone(),
 			)
 		}));
 	}

@@ -113,61 +113,18 @@ impl Parser {
 
 
 	pub fn generate_ast(&mut self) -> ComuneResult<()> {
-		let mut children_bodies = HashMap::new();
+		let mut fn_impls = vec![];
 
-		for (name, child) in &self.module_impl.children {
-			match child {
-				ModuleItemImpl::Functions(fns) => {
-					let mut fn_bodies = vec![];
+		for (proto, ast) in &self.module_impl.fn_impls {
+			// Parse function block
+			if let ModuleASTElem::Unparsed(idx) = ast {
+				self.lexer.borrow_mut().seek_token_idx(*idx);
 
-					for elem in fns {
-						// Parse function block
-						if let ModuleASTElem::Unparsed(idx) = elem {
-							self.lexer.borrow_mut().seek_token_idx(*idx);
-
-							fn_bodies.push(ModuleASTElem::Parsed(self.parse_block()?));
-						}
-					}
-
-					children_bodies.insert(name.clone(), ModuleItemImpl::Functions(fn_bodies));
-				}
-
-				_ => todo!(),
+				fn_impls.push((proto.clone(), ModuleASTElem::Parsed(self.parse_block()?)));
 			}
 		}
 
-		for (name, body) in children_bodies {
-			self.module_impl.children.insert(name, body);
-		}
-
-		let mut impl_bodies = HashMap::new();
-
-		for (im_ty, im) in &self.module_impl.impl_bodies {
-			let mut im_body = HashMap::new();
-
-			// Generate impl function bodies
-			for (fn_name, fns) in im {
-				let mut fn_bodies = vec![];
-
-				for ast in fns {
-					if let ModuleASTElem::Unparsed(idx) = *ast {
-						// Parse method block
-						self.lexer.borrow_mut().seek_token_idx(idx);
-						fn_bodies.push(ModuleASTElem::Parsed(self.parse_block()?));
-					}
-				}
-
-				im_body.insert(fn_name.clone(), fn_bodies);
-			}
-
-			impl_bodies.insert(im_ty.clone(), im_body);
-		}
-
-		self.module_impl.impl_bodies.clear();
-
-		for (ty, body) in impl_bodies {
-			self.module_impl.impl_bodies.push((ty,  body));
-		}
+		self.module_impl.fn_impls = fn_impls;
 
 		Ok(())
 	}
@@ -340,7 +297,7 @@ impl Parser {
 									this_trait.items.insert(name.clone(), funcs);
 								}
 
-								if parsed.iter().any(|elem| *elem != ModuleASTElem::NoElem) {
+								if parsed.iter().any(|(_, elem)| *elem != ModuleASTElem::NoElem) {
 									panic!(
 										"default impls in trait definitions are not yet supported"
 									);
@@ -391,8 +348,16 @@ impl Parser {
 
 					// Parse functions
 					let mut functions = HashMap::new();
-					let mut asts = HashMap::new();
 
+					let canonical_root = Identifier {
+						qualifier: (
+							Some(Box::new(impl_ty.clone())),
+							trait_name.clone().map(Box::new),
+						),
+						path: vec![],
+						absolute: true,
+					};
+					
 					while self.get_current()? != Token::Other('}') {
 						let func_attributes = self.parse_attributes()?;
 
@@ -408,34 +373,23 @@ impl Parser {
 						let ast = ModuleASTElem::Unparsed(self.get_current_token_index());
 
 						self.skip_block()?;
+						
+						let proto = Arc::new(RwLock::new(FnPrototype {
+							path: Identifier::from_parent(&canonical_root, fn_name.clone()),
+							ret,
+							params,
+							type_params: vec![],
+							attributes: func_attributes,
+						}));
 
 						// TODO: Proper overload handling here
 						functions.insert(
 							fn_name.clone(),
-							vec![Arc::new(RwLock::new(FnPrototype {
-								ret,
-								params,
-								type_params: vec![],
-								attributes: func_attributes,
-							}))],
+							vec![proto.clone()],
 						);
 
-						asts.insert(fn_name, vec![ast]);
+						self.module_impl.fn_impls.push((proto, ast));
 					}
-
-					let canonical_root = Identifier {
-						qualifier: (
-							Some(Box::new(impl_ty.clone())),
-							trait_name.clone().map(Box::new),
-						),
-						path: vec![],
-						absolute: true,
-					};
-					
-					self.module_impl.impl_bodies.push((
-						impl_ty.clone(),
-						asts
-					));
 
 					// Register impl to solver
 					self.interface.trait_solver.register_impl(
@@ -569,13 +523,11 @@ impl Parser {
 								module_interface.children.insert(id.clone(), protos);
 							}
 
-							if let Some(ModuleItemImpl::Functions(existing)) =
-								self.module_impl.children.get_mut(&id)
-							{
-								existing.append(asts);
-							} else {
-								self.module_impl.children.insert(id, defs);
-							}
+							self.module_impl.fn_impls.extend(
+								asts
+									.drain(..)
+									.map(|(proto, ast)| (proto, ast))
+							);
 						}
 
 						_ => todo!(),
@@ -737,6 +689,7 @@ impl Parser {
 					}
 
 					let t = FnPrototype {
+						path: Identifier::from_parent(&self.current_scope, name.clone()),
 						ret: t,
 						params: self.parse_parameter_list()?,
 						type_params,
@@ -761,8 +714,10 @@ impl Parser {
 						_ => return self.err(ComuneErrCode::UnexpectedToken),
 					}
 
-					interface = ModuleItemInterface::Functions(vec![Arc::new(RwLock::new(t))]);
-					item = ModuleItemImpl::Functions(vec![ast_elem]);
+					let proto = Arc::new(RwLock::new(t));
+
+					interface = ModuleItemInterface::Functions(vec![proto.clone()]);
+					item = ModuleItemImpl::Functions(vec![(proto, ast_elem)]);
 				}
 
 				"=" => {

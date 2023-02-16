@@ -1,5 +1,4 @@
 use std::{
-	cell::RefCell,
 	cmp::Ordering,
 	collections::HashMap,
 	sync::{Arc, RwLock},
@@ -18,7 +17,7 @@ use self::{
 	controlflow::ControlFlow,
 	expression::{Atom, Expr, FnRef, NodeData, OnceAtom, Operator},
 	module::{
-		Identifier, ItemRef, ModuleASTElem, ModuleImpl, ModuleInterface, ModuleItemImpl,
+		Identifier, ItemRef, ModuleASTElem, ModuleImpl, ModuleInterface,
 		ModuleItemInterface, Name,
 	},
 	pattern::Binding,
@@ -536,45 +535,12 @@ pub fn validate_module_impl(
 	interface: &ModuleInterface,
 	module_impl: &mut ModuleImpl,
 ) -> ComuneResult<()> {
-	for (id, child) in &interface.children {
-		if let ModuleItemInterface::Functions(fns, idx) = child {
-			let mut scope = id.clone();
-			scope.path.pop();
 
-			let ModuleItemImpl::Functions(asts) = module_impl.item_impls.get_mut(*idx).unwrap() else {
-				panic!()
-			};
+	for (proto, ast) in &mut module_impl.fn_impls {
+		let mut scope = proto.read().unwrap().path.clone();
+		scope.path.pop();
 
-			for (func, ast) in fns.iter().zip(asts.iter_mut()) {
-				validate_function_body(scope.clone(), &*func.read().unwrap(), ast, interface)?
-			}
-		}
-	}
-
-	let protos = interface.trait_solver.local_impls.iter();
-
-	for (_, im_interface) in protos {
-		
-		let im_interface = &*im_interface.read().unwrap();
-
-		// Iterate over every set of overloads in the impl block
-		for (name, protos) in im_interface
-			.functions
-			.iter()
-		{
-			let asts = module_impl.item_impls.get_mut(name).unwrap();
-
-			for (proto, ast) in protos.iter().zip(asts.iter_mut()) {
-				
-				validate_function_body(
-					im_interface.canonical_root.clone(), 
-					&*proto.read().unwrap(), 
-					ast, 
-					interface
-				)?;
-
-			}
-		}
+		validate_function_body(scope.clone(), &*proto.read().unwrap(), ast, interface)?
 	}
 
 	Ok(())
@@ -724,12 +690,13 @@ pub fn resolve_namespace_types(interface: &ModuleInterface) -> ComuneResult<()> 
 
 	for child in interface.children.values() {
 		match child {
-			ModuleItemInterface::Functions(fns, _) => {
+			ModuleItemInterface::Functions(fns) => {
 				for func in fns.iter() {
 					let FnPrototype {
 						ret,
 						params,
 						type_params: generics,
+						path: _,
 						attributes: _,
 					} = &mut *func.write().unwrap();
 
@@ -765,6 +732,7 @@ pub fn resolve_namespace_types(interface: &ModuleInterface) -> ComuneResult<()> 
 							ret,
 							params,
 							type_params: generics,
+							path: _,
 							attributes: _,
 						} = &mut *func.write().unwrap();
 
@@ -806,9 +774,10 @@ pub fn resolve_namespace_types(interface: &ModuleInterface) -> ComuneResult<()> 
 		} else {
 			None
 		};
+		
+		let trait_qualif = (Some(Box::new(ty.read().unwrap().clone())), resolved_trait);
 
-		im.write().unwrap().canonical_root.qualifier =
-			(Some(Box::new(ty.read().unwrap().clone())), resolved_trait);
+		im.write().unwrap().canonical_root.qualifier = trait_qualif.clone();
 
 		for fns in im.read().unwrap().functions.values() {
 			for func in fns {
@@ -816,8 +785,11 @@ pub fn resolve_namespace_types(interface: &ModuleInterface) -> ComuneResult<()> 
 					ret,
 					params,
 					type_params: generics,
+					path,
 					attributes: _,
 				} = &mut *func.write().unwrap();
+
+				path.qualifier = trait_qualif.clone();
 
 				generics.insert(0, ("Self".into(), vec![], None));
 

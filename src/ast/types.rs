@@ -62,6 +62,7 @@ pub struct FnParamList {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FnPrototype {
+	pub path: Identifier,
 	pub ret: Type,
 	pub params: FnParamList,
 	pub type_params: TypeParamList,

@@ -66,7 +66,6 @@ impl CIRModuleBuilder {
 			for (name, fns) in &im.functions {
 				for func in fns {
 					let (proto, cir_fn) = self.generate_prototype(
-						Identifier::from_parent(&im.canonical_root, name.clone()),
 						&*func.read().unwrap(),
 					);
 
@@ -82,8 +81,7 @@ impl CIRModuleBuilder {
 		for (name, elem) in &module.children {
 			if let ModuleItemInterface::Functions(fns) = elem {
 				for func in fns {
-					let (proto, cir_fn) =
-						self.generate_prototype(name.clone(), &*func.read().unwrap());
+					let (proto, cir_fn) = self.generate_prototype(&*func.read().unwrap());
 
 					self.module.functions.insert(proto, cir_fn);
 				}
@@ -92,47 +90,14 @@ impl CIRModuleBuilder {
 	}
 
 	fn generate_namespace(&mut self, interface: &ModuleInterface, module_impl: &ModuleImpl) {
-		for ((ty, im_interface), (.., im_impl)) in interface
-			.trait_solver
-			.local_impls
-			.iter()
-			.zip(module_impl.impl_bodies.iter())
-		{
-			let im_interface = &*im_interface.read().unwrap();
+		for (func, ast) in module_impl.fn_impls.iter() {
 
-			// Iterate every set of function overloads
-			for ((name, fns), (_, asts)) in im_interface.functions.iter().zip(im_impl.iter()) {
-				
-				// God this is bullshit. I'm sorry women
-				for (func, ast) in fns.iter().zip(asts.iter()) {
-					let ModuleASTElem::Parsed(ast) = ast else { panic!() };
+			let ModuleASTElem::Parsed(ast) = ast else { panic!() };
 
-					let proto = self.get_prototype(
-						Identifier::from_parent(&im_interface.canonical_root, name.clone()),
-						&*func.read().unwrap(),
-					);
+			let proto = self.get_prototype(&*func.read().unwrap());
 
-					self.generate_function(proto, ast);
-				}
-			}
-		}
+			self.generate_function(proto, ast);
 
-		for (name, item) in &module_impl.children {
-			if let ModuleItemImpl::Functions(fns) = item {
-				let Some(ModuleItemInterface::Functions(protos)) = interface.children.get(name) else {
-					panic!()
-				};
-
-				for (func, ast) in protos.iter().zip(fns.iter()) {
-					let proto = self.get_prototype(name.clone(), &func.read().unwrap());
-
-					let ModuleASTElem::Parsed(ast) = ast else {
-						panic!();
-					};
-
-					self.generate_function(proto, ast);
-				}
-			}
 		}
 	}
 
@@ -232,7 +197,7 @@ impl CIRModuleBuilder {
 }
 
 impl CIRModuleBuilder {
-	pub fn get_prototype(&mut self, name: Identifier, func: &FnPrototype) -> CIRFnPrototype {
+	pub fn get_prototype(&mut self, func: &FnPrototype) -> CIRFnPrototype {
 		let ret = self.convert_type(&func.ret);
 		let params = func
 			.params
@@ -242,7 +207,7 @@ impl CIRModuleBuilder {
 			.collect();
 
 		CIRFnPrototype {
-			name,
+			name: func.path.clone(),
 			ret,
 			params,
 			type_params: self.convert_type_param_list(func.type_params.clone()),
@@ -251,10 +216,9 @@ impl CIRModuleBuilder {
 
 	pub fn generate_prototype(
 		&mut self,
-		name: Identifier,
 		func: &FnPrototype,
 	) -> (CIRFnPrototype, CIRFunction) {
-		let proto = self.get_prototype(name, func);
+		let proto = self.get_prototype(func);
 
 		self.current_fn = Some(CIRFunction {
 			variables: vec![],
@@ -276,7 +240,11 @@ impl CIRModuleBuilder {
 	}
 
 	pub fn generate_function(&mut self, proto: CIRFnPrototype, fn_block: &Expr) {
-		self.current_fn = self.module.functions.remove(&proto);
+		self.current_fn = if let Some(func) = self.module.functions.remove(&proto) {
+			Some(func)
+		} else {
+			panic!("failed to get cIR function {proto} from module! function list:\n\n{:?}\n", self.module.functions.keys())
+		};
 
 		// Generate function body
 		self.append_block();
@@ -1234,9 +1202,6 @@ impl CIRModuleBuilder {
 		let cir_type_args = type_args.iter().map(|arg| self.convert_type(arg)).collect();
 
 		let ret = &resolved.read().unwrap().ret;
-		let mut name = name.clone();
-		name.absolute = true;
-
 		let current_block = self.current_block;
 		let next = self.append_block();
 		self.current_block = current_block;
@@ -1248,7 +1213,7 @@ impl CIRModuleBuilder {
 			Some(self.insert_variable(None, BindingProps::default(), ret.clone()))
 		};
 
-		let id = self.get_prototype(name, &*resolved.read().unwrap());
+		let id = self.get_prototype(&*resolved.read().unwrap());
 
 		self.write(CIRStmt::FnCall {
 			id,

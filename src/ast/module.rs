@@ -23,7 +23,7 @@ pub type Name = String;
 #[cfg(not(debug_assertions))]
 pub type Name = Arc<str>;
 
-pub type FnOverloadBodies = Vec<ModuleASTElem>;
+pub type FnOverloadImpls = Vec<(Arc<RwLock<FnPrototype>>, ModuleASTElem)>;
 
 pub type TokenIndex = usize;
 
@@ -37,11 +37,6 @@ pub enum ModuleImportKind {
 // The full module dependency system is complex, as the compiler is
 // designed to have as few parallelization bottlenecks as possible.
 // Rust's concurrency features may have driven me a bit mad with power.
-#[derive(Debug)]
-pub struct Module {
-	module_interface: ModuleInterface,
-	module_impl: ModuleImpl,
-}
 
 // Struct representing a possibly-typechecked module interface. This
 // stage of AST construction does not parse any function or
@@ -59,12 +54,13 @@ pub struct ModuleInterface {
 
 pub type ModuleInterfaceOpaque = HashMap<Identifier, ModuleItemOpaque>;
 
-pub type ItemImplIndex = usize;
-
 // Struct representing a module's implementation.
+// Using Vec because Arc<RwLock<T>> is not Hash for T: Hash, and
+// i do not want to start doing newtype bullshit right now
+// The Identifier here is the function's scope, for name resolution
 #[derive(Default, Clone, Debug)]
 pub struct ModuleImpl {
-	pub item_impls: Vec<ModuleItemImpl>,
+	pub fn_impls: Vec<(Arc<RwLock<FnPrototype>>, ModuleASTElem)>
 }
 
 #[derive(Clone, Debug)]
@@ -82,8 +78,8 @@ pub enum ModuleItemOpaque {
 pub enum ModuleItemInterface {
 	Type(Arc<RwLock<TypeDef>>),
 	Trait(Arc<RwLock<TraitInterface>>),
-	Functions(Vec<Arc<RwLock<FnPrototype>>>, ItemImplIndex),
-	Variable(Type, ItemImplIndex),
+	Functions(Vec<Arc<RwLock<FnPrototype>>>),
+	Variable(Type),
 	Alias(Identifier),
 	TypeAlias(Arc<RwLock<Type>>),
 }
@@ -92,7 +88,7 @@ pub enum ModuleItemInterface {
 pub enum ModuleItemImpl {
 	//Type(Arc<RwLock<TypeDef>>),
 	//Trait(Arc<RwLock<TraitDef>>),
-	Functions(FnOverloadBodies),
+	Functions(FnOverloadImpls),
 	Variable(ModuleASTElem),
 	//Alias(Identifier),
 	//TypeAlias(Arc<RwLock<Type>>),
@@ -101,7 +97,7 @@ pub enum ModuleItemImpl {
 impl ModuleImpl {
 	pub fn new() -> Self {
 		ModuleImpl {
-			item_impls: vec![],
+			fn_impls: vec![],
 		}
 	}
 }
