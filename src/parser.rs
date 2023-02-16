@@ -287,7 +287,7 @@ impl Parser {
 						match (interface, im) {
 							(
 								ModuleItemInterface::Functions(mut funcs),
-								ModuleItemImpl::Functions(parsed),
+								ModuleItemImpl::Function(_, ast),
 							) => {
 								if let Some(fns) = this_trait.items.get_mut(&name) {
 									fns.append(&mut funcs);
@@ -295,10 +295,7 @@ impl Parser {
 									this_trait.items.insert(name.clone(), funcs);
 								}
 
-								if parsed
-									.iter()
-									.any(|(_, elem)| *elem != ModuleASTElem::NoElem)
-								{
+								if ast != ModuleASTElem::NoElem {
 									panic!(
 										"default impls in trait definitions are not yet supported"
 									);
@@ -504,13 +501,13 @@ impl Parser {
 
 				_ => {
 					// Parse declaration/definition
-					let (name, mut protos, mut defs) =
+					let (name, mut protos, defs) =
 						self.parse_namespace_declaration(current_attributes)?;
 
 					let id = Identifier::from_parent(scope, name);
 
-					match (&mut protos, &mut defs) {
-						(ModuleItemInterface::Functions(fns), ModuleItemImpl::Functions(asts)) => {
+					match (&mut protos, defs) {
+						(ModuleItemInterface::Functions(fns), ModuleItemImpl::Function(proto, ast)) => {
 							let module_interface = &mut self.interface;
 
 							if let Some(ModuleItemInterface::Functions(existing)) =
@@ -523,7 +520,7 @@ impl Parser {
 
 							self.module_impl
 								.fn_impls
-								.extend(asts.drain(..).map(|(proto, ast)| (proto, ast)));
+								.push((proto, ast))
 						}
 
 						_ => todo!(),
@@ -713,7 +710,7 @@ impl Parser {
 					let proto = Arc::new(RwLock::new(t));
 
 					interface = ModuleItemInterface::Functions(vec![proto.clone()]);
-					item = ModuleItemImpl::Functions(vec![(proto, ast_elem)]);
+					item = ModuleItemImpl::Function(proto, ast_elem);
 				}
 
 				"=" => {

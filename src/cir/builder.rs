@@ -5,7 +5,7 @@ use crate::{
 		controlflow::ControlFlow,
 		expression::{Atom, Expr, FnRef, OnceAtom, Operator},
 		module::{
-			Identifier, ItemRef, ModuleASTElem, ModuleImpl, ModuleInterface, ModuleItemImpl,
+			ItemRef, ModuleASTElem, ModuleImpl, ModuleInterface,
 			ModuleItemInterface, Name,
 		},
 		pattern::{Binding, Pattern},
@@ -13,10 +13,8 @@ use crate::{
 		types::{
 			Basic, BindingProps, FnPrototype, TupleKind, Type, TypeDef, TypeParamList, TypeRef,
 		},
-		Attribute,
 	},
 	constexpr::{ConstExpr, ConstValue},
-	driver::ModuleState,
 	lexer::SrcSpan,
 	parser::Parser,
 };
@@ -54,7 +52,7 @@ impl CIRModuleBuilder {
 		};
 
 		result.register_module(&ast.interface);
-		result.generate_namespace(&ast.interface, &ast.module_impl);
+		result.generate_namespace(&ast.module_impl);
 
 		result
 	}
@@ -63,7 +61,7 @@ impl CIRModuleBuilder {
 		for (_, im) in &module.trait_solver.local_impls {
 			let im = &*im.read().unwrap();
 
-			for (name, fns) in &im.functions {
+			for (_, fns) in &im.functions {
 				for func in fns {
 					let (proto, cir_fn) = self.generate_prototype(&*func.read().unwrap());
 
@@ -76,7 +74,7 @@ impl CIRModuleBuilder {
 			self.register_module(import);
 		}
 
-		for (name, elem) in &module.children {
+		for (_, elem) in &module.children {
 			if let ModuleItemInterface::Functions(fns) = elem {
 				for func in fns {
 					let (proto, cir_fn) = self.generate_prototype(&*func.read().unwrap());
@@ -87,7 +85,7 @@ impl CIRModuleBuilder {
 		}
 	}
 
-	fn generate_namespace(&mut self, interface: &ModuleInterface, module_impl: &ModuleImpl) {
+	fn generate_namespace(&mut self, module_impl: &ModuleImpl) {
 		for (func, ast) in module_impl.fn_impls.iter() {
 			let ModuleASTElem::Parsed(ast) = ast else { panic!() };
 
@@ -1170,7 +1168,7 @@ impl CIRModuleBuilder {
 
 	fn generate_fn_call(&mut self, call: &Atom, span: SrcSpan) -> Option<RValue> {
 		let Atom::FnCall {
-			name,
+			name: _,
 			args,
 			type_args,
 			resolved: FnRef::Direct(resolved),

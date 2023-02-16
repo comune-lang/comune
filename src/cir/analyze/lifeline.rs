@@ -9,7 +9,6 @@ use super::{
 use crate::{
 	cir::{CIRFunction, CIRStmt, CIRType, LValue, Operand, PlaceElem, RValue},
 	errors::{ComuneErrCode, ComuneError},
-	lexer::SrcSpan,
 };
 
 pub struct BorrowCheck;
@@ -115,14 +114,13 @@ impl LiveVarCheckState {
 		})
 	}
 
-	fn eval_rvalue(&mut self, rval: &RValue) -> Result<(), (LValue, LivenessState, SrcSpan)> {
+	fn eval_rvalue(&mut self, rval: &RValue) {
 		match rval {
 			RValue::Atom(ty, _, op, _) => self.eval_operand(ty, op),
 
 			RValue::Cons(_, [(lty, lhs), (rty, rhs)], ..) => {
-				self.eval_operand(lty, lhs)?;
-				self.eval_operand(rty, rhs)?;
-				Ok(())
+				self.eval_operand(lty, lhs);
+				self.eval_operand(rty, rhs);
 			}
 
 			RValue::Cast { from, val, .. } => self.eval_operand(from, val),
@@ -133,31 +131,22 @@ impl LiveVarCheckState {
 		&mut self,
 		_ty: &CIRType,
 		op: &Operand,
-	) -> Result<(), (LValue, LivenessState, SrcSpan)> {
+	) {
 		match op {
-			Operand::LValue(lval, span) => self.eval_lvalue(_ty, lval, *span)?,
+			Operand::LValue(lval, _) => self.eval_lvalue(_ty, lval),
 
 			_ => {}
 		}
-		Ok(())
 	}
 
 	fn eval_lvalue(
 		&mut self,
 		_ty: &CIRType,
 		lval: &LValue,
-		span: SrcSpan,
-	) -> Result<(), (LValue, LivenessState, SrcSpan)> {
-		let sub_liveness = self.get_liveness(lval);
-
+	) {
 		// TODO: Check for `Copy` types? Might be handled earlier
 
-		if sub_liveness == LivenessState::Live {
-			self.set_liveness(lval, LivenessState::Moved);
-			Ok(())
-		} else {
-			Err((lval.clone(), sub_liveness, span))
-		}
+		self.set_liveness(lval, LivenessState::Moved);
 	}
 }
 
@@ -246,7 +235,7 @@ impl Analysis for VarInitCheck {
 	fn apply_effect(
 		&self,
 		stmt: &CIRStmt,
-		position: (crate::cir::BlockIndex, crate::cir::StmtIndex),
+		_position: (crate::cir::BlockIndex, crate::cir::StmtIndex),
 		state: &mut Self::Domain,
 	) {
 		match stmt {

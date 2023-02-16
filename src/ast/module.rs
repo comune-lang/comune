@@ -23,8 +23,6 @@ pub type Name = String;
 #[cfg(not(debug_assertions))]
 pub type Name = Arc<str>;
 
-pub type FnOverloadImpls = Vec<(Arc<RwLock<FnPrototype>>, ModuleASTElem)>;
-
 pub type TokenIndex = usize;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -86,12 +84,8 @@ pub enum ModuleItemInterface {
 
 #[derive(Clone, Debug)]
 pub enum ModuleItemImpl {
-	//Type(Arc<RwLock<TypeDef>>),
-	//Trait(Arc<RwLock<TraitDef>>),
-	Functions(FnOverloadImpls),
+	Function(Arc<RwLock<FnPrototype>>, ModuleASTElem),
 	Variable(ModuleASTElem),
-	//Alias(Identifier),
-	//TypeAlias(Arc<RwLock<Type>>),
 }
 
 impl ModuleImpl {

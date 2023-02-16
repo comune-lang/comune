@@ -71,7 +71,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 		let module = context.create_module(module_name);
 		let builder = context.create_builder();
 
-		let (di_builder, compile_unit) = if debug {
+		let (di_builder, _compile_unit) = if debug {
 			// jesus christ
 
 			let (di_builder, compile_unit) = module.create_debug_info_builder(

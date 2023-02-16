@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 
 use rayon::prelude::{IntoParallelRefIterator, ParallelIterator};
 
-use crate::{errors::ComuneError, lexer::SrcSpan};
+use crate::errors::ComuneError;
 
 use super::{BlockIndex, CIRFunction, CIRModule, CIRStmt, StmtIndex};
 
