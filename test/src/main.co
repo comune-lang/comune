@@ -35,7 +35,7 @@ impl Test {
 }
 
 trait Hello {
-	void hello(Self self);
+	void hello(&Self self);
 }
 
 impl Hello for Test {
@@ -50,7 +50,7 @@ void impl_test() {
 	printf(c"The sum of a and b is %i!\n", test.sum());
 }
 
-void ref_test(&i32 test) {
+void ref_test(&mut i32 test) {
 	test++;
 }
 
