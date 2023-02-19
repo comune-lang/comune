@@ -182,13 +182,7 @@ impl JoinSemiLattice for LiveVarCheckState {
 			if liveness != &own_liveness {
 				changed = true;
 
-				match (*liveness, own_liveness) {
-					(LivenessState::Live, _) | (_, LivenessState::Live) => {
-						self.set_liveness(lval, LivenessState::MaybeUninit)
-					}
-
-					_ => {}
-				}
+				self.set_liveness(lval, LivenessState::MaybeUninit)
 			}
 		}
 

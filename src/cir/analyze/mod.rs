@@ -204,18 +204,20 @@ where
 	T: AnalysisResultHandler + Send + Sync,
 {
 	fn on_function(&self, func: &CIRFunction) -> Vec<ComuneError> {
-		let mut state = self.analysis.bottom_value(func);
+		let mut entry_state  = self.analysis.bottom_value(func);
 
 		let mut in_states = vec![];
 		let mut out_states = vec![];
 
-		self.analysis.initialize_start_block(func, &mut state);
+		self.analysis.initialize_start_block(func, &mut entry_state);
+
+		let entry_state = entry_state;
 
 		// Initialize blocks
 		for (i, block) in func.blocks.iter().enumerate() {
-			in_states.push(state.clone());
+			in_states.push(entry_state.clone());
 
-			let mut block_state = state.clone();
+			let mut block_state = entry_state.clone();
 
 			for (j, stmt) in block.items.iter().enumerate() {
 				self.analysis.apply_effect(stmt, (i, j), &mut block_state);
@@ -239,25 +241,30 @@ where
 
 			if !block.preds.is_empty() {
 				let mut preds = block.preds.iter();
+
 				let mut in_state = out_states[*preds.next().unwrap()].clone();
 
 				for pred in preds {
 					changed |= in_state.join(&out_states[*pred]);
 				}
-
+				
+				// check if in_state is different from in_states[i]
 				if in_state.clone().join(&in_states[i]) {
-					// in_state is different from in_states[i]
 					in_states[i] = in_state;
 					changed = true;
 				}
 			}
 
 			if changed {
+				let mut block_state = in_states[i].clone();
+
 				for (j, stmt) in block.items.iter().enumerate() {
-					self.analysis.apply_effect(stmt, (i, j), &mut state);
+					self.analysis.apply_effect(stmt, (i, j), &mut block_state);
 				}
 
-				out_states[i] = state.clone();
+				if out_states[i].clone().join(&block_state) {
+					out_states[i] = block_state.clone();
+				}
 
 				work_list.extend(block.succs.clone().into_iter());
 			}
