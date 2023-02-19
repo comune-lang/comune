@@ -1018,6 +1018,17 @@ impl<'ctx> LLVMBackend<'ctx> {
 						.context
 						.struct_type(&types_mapped, false)
 						.as_any_type_enum(),
+					
+					// For the purposes of codegen, a newtype is
+					// identical to the type it wraps around
+					TupleKind::Newtype => {
+						assert!(types.len() == 1);
+						self.get_llvm_type(&types[0])
+					}
+
+					// The unit type has exactly one value, but
+					// we might as well use an i8 in codegen
+					TupleKind::Empty => self.context.i8_type().as_any_type_enum(),
 
 					TupleKind::Sum => {
 						let discriminant = self.context.i32_type(); // TODO: Adapt to variant count

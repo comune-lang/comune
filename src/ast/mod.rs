@@ -53,16 +53,18 @@ pub struct FnScope<'ctx> {
 	parent: Option<&'ctx FnScope<'ctx>>,
 	fn_return_type: Type,
 	variables: HashMap<Name, (Type, BindingProps)>,
+	is_inside_loop: bool,
 }
 
 impl<'ctx> FnScope<'ctx> {
-	pub fn from_parent(parent: &'ctx FnScope) -> Self {
+	pub fn from_parent(parent: &'ctx FnScope, is_loop_block: bool) -> Self {
 		FnScope {
 			context: parent.context,
 			scope: parent.scope.clone(),
 			parent: Some(parent),
 			fn_return_type: parent.fn_return_type.clone(),
 			variables: HashMap::new(),
+			is_inside_loop: is_loop_block | parent.is_inside_loop
 		}
 	}
 
@@ -73,6 +75,7 @@ impl<'ctx> FnScope<'ctx> {
 			parent: None,
 			fn_return_type: return_type,
 			variables: HashMap::new(),
+			is_inside_loop: false,
 		}
 	}
 
@@ -619,8 +622,10 @@ pub fn resolve_algebraic_def(
 	let mut generics = base_generics.clone();
 	generics.extend(agg.params.clone());
 
-	for (_, variant) in &mut agg.variants {
-		resolve_algebraic_def(variant, namespace, base_generics)?;
+	for (_, types) in &mut agg.variants {
+		for ty in types {
+			resolve_type(ty, namespace, base_generics)?;
+		}
 	}
 
 	for (_, ty, _) in &mut agg.members {
@@ -1265,7 +1270,7 @@ impl Atom {
 			}
 
 			Atom::Block { items, result } => {
-				let mut subscope = FnScope::from_parent(scope);
+				let mut subscope = FnScope::from_parent(scope, false);
 
 				for item in items {
 					item.validate(&mut subscope)?;
@@ -1285,7 +1290,7 @@ impl Atom {
 					else_body,
 				} => {
 					let bool_ty = Type::Basic(Basic::Bool);
-					let mut subscope = FnScope::from_parent(scope);
+					let mut subscope = FnScope::from_parent(scope, false);
 
 					let cond_ty = cond.validate(&mut subscope)?;
 
@@ -1314,7 +1319,7 @@ impl Atom {
 
 				ControlFlow::While { cond, body } => {
 					let bool_ty = Type::Basic(Basic::Bool);
-					let mut subscope = FnScope::from_parent(scope);
+					let mut subscope = FnScope::from_parent(scope, true);
 
 					let cond_ty = cond.validate(&mut subscope)?;
 
@@ -1336,7 +1341,7 @@ impl Atom {
 					body,
 				} => {
 					let bool_ty = Type::Basic(Basic::Bool);
-					let mut subscope = FnScope::from_parent(scope);
+					let mut subscope = FnScope::from_parent(scope, true);
 
 					if let Some(init) = init {
 						init.validate(&mut subscope)?;
@@ -1392,8 +1397,17 @@ impl Atom {
 					}
 				}
 
-				ControlFlow::Break => todo!(),
-				ControlFlow::Continue => todo!(),
+				ControlFlow::Break | ControlFlow::Continue => 
+					if scope.is_inside_loop {
+						Ok(Type::Never)
+					} else {
+						Err(ComuneError::new(
+							ComuneErrCode::LoopCtrlOutsideLoop(
+								if **ctrl == ControlFlow::Break { "break" } else { "continue" }
+							), 
+							meta.tk
+						))
+					},
 
 				ControlFlow::Match {
 					scrutinee,
@@ -1407,7 +1421,7 @@ impl Atom {
 					let scrutinee_type = scrutinee.validate(scope)?;
 
 					for branch in branches {
-						let mut subscope = FnScope::from_parent(scope);
+						let mut subscope = FnScope::from_parent(scope, false);
 
 						for binding in branch.0.get_bindings() {
 							if let Binding {

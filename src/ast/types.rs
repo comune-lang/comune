@@ -73,6 +73,8 @@ pub struct FnPrototype {
 pub enum TupleKind {
 	Product,
 	Sum,
+	Newtype,
+	Empty,
 }
 
 // The internal representation of algebraic types, like structs, enums, and (shocker) struct enums
@@ -83,7 +85,7 @@ pub enum TupleKind {
 #[derive(Debug, Clone)]
 pub struct AlgebraicDef {
 	pub members: Vec<(Name, Type, Visibility)>,
-	pub variants: Vec<(Name, AlgebraicDef)>,
+	pub variants: Vec<(Name, Vec<Type>)>,
 	pub layout: DataLayout,
 	pub params: TypeParamList,
 	pub attributes: Vec<Attribute>,

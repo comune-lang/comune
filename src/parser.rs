@@ -157,12 +157,19 @@ impl Parser {
 					// TODO: Actually finish this
 
 					while !token_compare(&next, "}") {
-						let Token::Name(_variant_name) = next else { return self.err(ComuneErrCode::UnexpectedToken) };
+						let Token::Name(variant_name) = next else { return self.err(ComuneErrCode::UnexpectedToken) };
 
-						self.get_next()?;
+						let (tuple_kind, tuple_types) = if self.get_next()? == Token::Operator("(") {
+							self.parse_tuple_type(false)?
+						} else {
+							(TupleKind::Product, vec![])
+						};
 
-						let _tuple = self.parse_tuple_type(false)?;
-						//aggregate.variants.push((variant_name, tuple));
+						if tuple_kind != TupleKind::Product {
+							todo!("enum variants with data of sum type are not supported!")
+						}
+						
+						aggregate.variants.push((variant_name, tuple_types));
 
 						next = self.get_current()?;
 
@@ -1907,40 +1914,44 @@ impl Parser {
 			return self.err(ComuneErrCode::UnexpectedToken);
 		}
 
-		self.get_next()?;
-
 		let mut kind = None;
+		
+		if self.get_next()? == Token::Operator(")") {
+		
+			kind = Some(TupleKind::Empty);
 
-		loop {
-			types.push(self.parse_type(immediate_resolve)?);
+		} else {
+			loop {
+				types.push(self.parse_type(immediate_resolve)?);
 
-			match self.get_current()? {
-				Token::Other(',') => {
-					// Check if tuple kind is consistent
-					if matches!(kind, Some(TupleKind::Sum)) {
-						return self.err(ComuneErrCode::UnexpectedToken);
+				match self.get_current()? {
+					Token::Other(',') => {
+						// Check if tuple kind is consistent
+						if matches!(kind, Some(TupleKind::Sum)) {
+							return self.err(ComuneErrCode::UnexpectedToken);
+						}
+
+						kind = Some(TupleKind::Product);
 					}
 
-					kind = Some(TupleKind::Product);
-				}
+					Token::Operator("|") => {
+						// Ditto
+						if matches!(kind, Some(TupleKind::Product)) {
+							return self.err(ComuneErrCode::UnexpectedToken);
+						}
 
-				Token::Operator("|") => {
-					// Ditto
-					if matches!(kind, Some(TupleKind::Product)) {
-						return self.err(ComuneErrCode::UnexpectedToken);
+						kind = Some(TupleKind::Sum);
 					}
 
-					kind = Some(TupleKind::Sum);
+					Token::Operator(")") => break,
+
+					_ => {
+						return self.err(ComuneErrCode::UnexpectedToken);
+					}
 				}
 
-				Token::Operator(")") => break,
-
-				_ => {
-					return self.err(ComuneErrCode::UnexpectedToken);
-				}
+				self.get_next()?;
 			}
-
-			self.get_next()?;
 		}
 
 		self.get_next()?;
@@ -1948,7 +1959,7 @@ impl Parser {
 		match kind {
 			Some(kind) => Ok((kind, types)),
 
-			None => Ok((TupleKind::Product, types)),
+			None => Ok((TupleKind::Newtype, types)),
 		}
 	}
 }

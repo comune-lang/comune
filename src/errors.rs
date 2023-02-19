@@ -122,6 +122,8 @@ pub enum ComuneErrCode {
 		members: Vec<Name>,
 	},
 
+	LoopCtrlOutsideLoop(&'static str),
+
 	// Resolution errors
 	ModuleNotFound(OsString),
 	DependencyError,
@@ -254,6 +256,8 @@ impl Display for ComuneErrCode {
 
 				Ok(())
 			}
+
+			ComuneErrCode::LoopCtrlOutsideLoop(name) => write!(f, "{name} outside of loop"),
 
 			ComuneErrCode::ModuleNotFound(m) => write!(f, "module not found: {m:#?}"),
 			ComuneErrCode::DependencyError => write!(f, "a dependency failed to compile"),
@@ -449,6 +453,10 @@ pub fn spawn_logger(backtrace_on_error: bool) -> Sender<CMNMessageLog> {
 									// Print squiggle
 									write!(out, "{: <1$}", "", column).unwrap();
 									writeln!(out, "{}", format!("{:~<1$}", "", len).red()).unwrap();
+								}
+
+								if length_left == 0 {
+									break
 								}
 							}
 						}

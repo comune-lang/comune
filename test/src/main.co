@@ -27,6 +27,11 @@ struct Vector<T> {
 	usize capacity;
 }
 
+enum EnumTest {
+	VariantA,
+	VariantB,
+}
+
 impl Test {
 	int sum(&mut Test self) {
 		printf(c"This is a method call!\n");
@@ -107,6 +112,18 @@ int main() {
 
 		float float_result => {
 			printf(c"It's a float! %f\n", float_result)
+		}
+	}
+
+	mut int loop_count = 0;
+	
+	while true {
+		printf(c"Loop number %i!\n", loop_count);
+		
+		loop_count += 1;
+		
+		if loop_count > 100 {
+			break;
 		}
 	}
 

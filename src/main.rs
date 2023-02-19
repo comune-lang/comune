@@ -202,6 +202,6 @@ fn main() -> color_eyre::eyre::Result<()> {
 fn get_file_suffix(path: &Path) -> Option<Name> {
 	let mut name = path.file_name()?.to_string_lossy().to_string();
 	name.truncate(name.rfind('.').unwrap_or(name.len()));
-
+	
 	Some(name.into())
 }
