@@ -15,7 +15,7 @@ use crate::{
 		module::{Identifier, ModuleImportKind, ModuleInterface, ModuleInterfaceOpaque},
 	},
 	cir::{
-		analyze::{lifeline::VarInitCheck, verify, CIRPassManager, DataFlowPass},
+		analyze::{lifeline::VarInitCheck, verify, CIRPassManager, DataFlowPass, cleanup},
 		builder::CIRModuleBuilder,
 	},
 	errors::{CMNMessageLog, ComuneErrCode, ComuneError, ComuneMessage},
@@ -503,7 +503,8 @@ pub fn generate_code<'ctx>(
 	let mut cir_man = CIRPassManager::new();
 
 	cir_man.add_pass(verify::Verify);
-
+	
+	cir_man.add_mut_pass(cleanup::SimplifyCFG);
 	cir_man.add_mut_pass(DataFlowPass::new(VarInitCheck {}));
 
 	cir_man.add_pass(verify::Verify);
