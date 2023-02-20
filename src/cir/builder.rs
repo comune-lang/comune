@@ -239,13 +239,18 @@ impl CIRModuleBuilder {
 		};
 		
 		self.name_map_stack.clear();
-		self.name_map_stack.push(HashMap::new());
 		self.current_block = 0;
 		self.loop_stack.clear();
 
-		for (ty, props, name) in self.current_fn.as_ref().unwrap().variables.clone() {
-			self.insert_variable(name, props, ty);
+		let mut params_map = HashMap::new();
+
+		for (i, (.., name)) in self.current_fn.as_ref().unwrap().variables.iter().enumerate() {
+			if let Some(name) = name {
+				params_map.insert(name.clone(), i);
+			}
 		}
+		
+		self.name_map_stack.push(params_map);
 
 		// Generate function body
 		self.append_block();
