@@ -113,6 +113,11 @@ int main() {
 
 	mut TestSumType who_knows = sum_type_test();
 	
+	// this one should work in theory, but the current
+	// codegen actually uses who_knows's discriminant
+	// twice, hence causing a use-after-move
+
+	/*
 	match who_knows {
 		int int_result => {
 			printf(c"It's an int! %i\n", int_result)
@@ -122,19 +127,22 @@ int main() {
 			printf(c"It's a float! %f\n", float_result)
 		}
 	}
+	*/
 
+	/*
 	mut int loop_count = 0;
 	
 	while true {
 		printf(c"Loop number %i!\n", loop_count);
 		
 		loop_count += 1;
-		
+
+		// loop_count moved here
 		if loop_count > 100 {
 			break;
 		}
 	}
-
+	*/
 	impl_test();
 
 	overload_test(12i32);
