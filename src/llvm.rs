@@ -195,7 +195,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 		for (i, (ty, props, _)) in t.variables.iter().enumerate() {
 			let mut ty = Self::to_basic_type(self.get_llvm_type(ty));
 
-			if props.is_ref {
+			if self.pass_by_ptr(&ty, props) {
 				ty = ty.ptr_type(AddressSpace::Generic).as_basic_type_enum();
 			}
 
@@ -303,7 +303,9 @@ impl<'ctx> LLVMBackend<'ctx> {
 								.iter()
 								.enumerate()
 								.map(|(i, x)| {
-									if id.params[i].0.is_ref {
+									let (props, ty) = &id.params[i];
+									
+									if self.pass_by_ptr(&Self::to_basic_type(self.get_llvm_type(ty)), props) {
 										self.generate_lvalue(x).as_basic_value_enum()
 									} else {
 										self.builder
@@ -325,8 +327,8 @@ impl<'ctx> LLVMBackend<'ctx> {
 								.iter()
 								.enumerate()
 								.map(|(i, x)| {
-									let is_ref = if let Some(param) = id.params.get(i) {
-										param.0.is_ref
+									let is_ref = if let Some((props, ty)) = id.params.get(i) {
+										self.pass_by_ptr(&Self::to_basic_type(self.get_llvm_type(ty)), props)
 									} else {
 										false
 									};
@@ -819,7 +821,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 	fn generate_lvalue(&self, expr: &LValue) -> PointerValue<'ctx> {
 		let (mut local, props) = self.variables[expr.local];
 
-		if props.is_ref {
+		if self.pass_by_ptr(&Self::to_basic_type(local.get_type().get_element_type()), &props) {
 			local = self
 				.builder
 				.build_load(local, "deref")
@@ -860,10 +862,12 @@ impl<'ctx> LLVMBackend<'ctx> {
 	fn generate_prototype(&mut self, t: &CIRFunction) -> LLVMResult<FunctionType<'ctx>> {
 		let types_mapped: Vec<_> = t.variables[0..t.arg_count]
 			.iter()
-			.map(|t| {
-				if t.1.is_ref {
+			.map(|(ty, props, _)| {
+				let ty = self.get_llvm_type(ty);
+
+				if self.pass_by_ptr(&Self::to_basic_type(ty), props) {
 					Self::to_basic_metadata_type(
-						match self.get_llvm_type(&t.0).as_any_type_enum() {
+						match ty.as_any_type_enum() {
 							AnyTypeEnum::ArrayType(a) => a.ptr_type(AddressSpace::Generic),
 							AnyTypeEnum::FloatType(f) => f.ptr_type(AddressSpace::Generic),
 							AnyTypeEnum::IntType(i) => i.ptr_type(AddressSpace::Generic),
@@ -875,7 +879,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 						.as_any_type_enum(),
 					)
 				} else {
-					Self::to_basic_metadata_type(self.get_llvm_type(&t.0))
+					Self::to_basic_metadata_type(ty)
 				}
 			})
 			.collect();
@@ -1123,5 +1127,25 @@ impl<'ctx> LLVMBackend<'ctx> {
 	fn get_attribute(&self, name: &str) -> Attribute {
 		self.context
 			.create_enum_attribute(Attribute::get_named_enum_kind_id(name), 0)
+	}
+
+	fn pass_by_ptr(&self, ty: &BasicTypeEnum<'ctx>, props: &BindingProps) -> bool {
+		// don't pass by pointer if binding is not a reference, or if it's unsafe
+		if !props.is_ref || props.is_unsafe {
+			return false
+		}
+
+		// mutable references are passed by pointer
+		if props.is_mut {
+			return true
+		}
+
+		let target_data = get_target_machine().get_target_data();
+		let store_size = target_data.get_store_size(ty);
+
+		// determine how shared reference should be passed
+		// if the data is bigger than the equivalent pointer, 
+		// we pass-by-pointer. else, we pass-by-value.
+		store_size > target_data.get_store_size(&ty.ptr_type(AddressSpace::Generic))
 	}
 }
