@@ -117,7 +117,7 @@ int main() {
 	// codegen actually uses who_knows's discriminant
 	// twice, hence causing a use-after-move
 
-	/*
+	
 	match who_knows {
 		int int_result => {
 			printf(c"It's an int! %i\n", int_result)
@@ -127,7 +127,7 @@ int main() {
 			printf(c"It's a float! %f\n", float_result)
 		}
 	}
-	*/
+	
 
 	/*
 	mut int loop_count = 0;
