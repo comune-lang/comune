@@ -263,10 +263,23 @@ impl AnalysisResultHandler for VarInitCheck {
 				// Check for uses of uninit/moved lvalues
 				match stmt {
 					CIRStmt::Assignment(_, RValue::Atom(_, _, Operand::LValue(lval, _), span))
-					| CIRStmt::Assignment(_, RValue::Cons(_, [(_, Operand::LValue(lval, span)), _], ..))
-					| CIRStmt::Assignment(_, RValue::Cons(_, [_, (_, Operand::LValue(lval, span))], ..))
 					| CIRStmt::Switch(Operand::LValue(lval, span), ..)
-					| CIRStmt::Return(Some(Operand::LValue(lval, span))) => {
+					| CIRStmt::Return(Some(Operand::LValue(lval, span)))
+					
+					// these represent expressions that use built-in operators. any overloaded
+					// operators are resolved into plain function calls in the AST. 
+					//
+					// these are commented out because built-in operators are currently defined
+					// to take their arguments by reference. this is a fairly inconsequential
+					// implementation detail, since all built-in types are also defined to be Copy.
+					//
+					// however, at time of writing, Copy doesn't exist yet. hence the reasoning
+					// behind this choice.
+					//
+					// | CIRStmt::Assignment(_, RValue::Cons(_, [(_, Operand::LValue(lval, span)), _], ..))
+					// | CIRStmt::Assignment(_, RValue::Cons(_, [_, (_, Operand::LValue(lval, span))], ..))
+					
+					=> {
 						let liveness = state.get_liveness(lval);
 
 						match liveness {
@@ -279,6 +292,24 @@ impl AnalysisResultHandler for VarInitCheck {
 								},
 								*span,
 							)),
+						}
+					}
+
+					CIRStmt::FnCall { args, .. } => {
+						for (lval, span) in args {
+							let liveness = state.get_liveness(lval);
+							
+							match liveness {
+								LivenessState::Live => {}
+
+								_ => errors.push(ComuneError::new(
+									ComuneErrCode::InvalidUse {
+										variable: func.get_variable_name(lval.local),
+										state: liveness,
+									}, *span
+								))
+							}
+						
 						}
 					}
 

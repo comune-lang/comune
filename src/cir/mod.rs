@@ -136,7 +136,7 @@ pub enum CIRStmt {
 	Return(Option<Operand>),
 	FnCall {
 		id: FuncID,
-		args: Vec<LValue>,
+		args: Vec<(LValue, SrcSpan)>,
 		type_args: Vec<CIRType>,
 		result: Option<LValue>,
 		next: BlockIndex,

@@ -250,7 +250,6 @@ impl<'ctx> LLVMBackend<'ctx> {
 								}),
 								cond,
 							)
-							.unwrap()
 							.as_basic_value_enum()
 							.into_int_value();
 
@@ -258,7 +257,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 							.iter()
 							.map(|(ty, val, branch)| {
 								(
-									self.generate_operand(ty, val).unwrap().into_int_value(),
+									self.generate_operand(ty, val).into_int_value(),
 									self.blocks[*branch],
 								)
 							})
@@ -270,11 +269,8 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 					CIRStmt::Return(expr) => {
 						if let Some(expr) = expr {
-							if let Some(result) = self.generate_operand(&t.ret, expr) {
-								self.builder.build_return(Some(&result));
-							} else {
-								self.builder.build_return(None);
-							}
+							self.builder.build_return(Some(&self.generate_operand(&t.ret, expr)));
+							
 						} else {
 							self.builder.build_return(None);
 						}
@@ -302,7 +298,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 							let args_mapped: Vec<_> = args
 								.iter()
 								.enumerate()
-								.map(|(i, x)| {
+								.map(|(i, (x, _))| {
 									let (props, ty) = &id.params[i];
 									
 									if self.pass_by_ptr(&Self::to_basic_type(self.get_llvm_type(ty)), props) {
@@ -326,7 +322,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 							let args_mapped: Vec<_> = args
 								.iter()
 								.enumerate()
-								.map(|(i, x)| {
+								.map(|(i, (x, _))| {
 									let is_ref = if let Some((props, ty)) = id.params.get(i) {
 										self.pass_by_ptr(&Self::to_basic_type(self.get_llvm_type(ty)), props)
 									} else {
@@ -372,7 +368,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 				match op_opt {
 					Some(Operator::Deref) => {
 						let atom_ir = Self::to_basic_value(
-							self.generate_operand(ty, atom).unwrap().as_any_value_enum(),
+							self.generate_operand(ty, atom).as_any_value_enum(),
 						);
 
 						self.builder.build_store(
@@ -400,7 +396,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 					// TODO: Unary minus, logical NOT, etc
 					None => self
 						.builder
-						.build_store(store, self.generate_operand(ty, atom).unwrap()),
+						.build_store(store, self.generate_operand(ty, atom)),
 
 					_ => panic!(),
 				}
@@ -409,13 +405,11 @@ impl<'ctx> LLVMBackend<'ctx> {
 			RValue::Cons(expr_ty, [(lhs_ty, lhs), (rhs_ty, rhs)], op, _) => {
 				let lhs_v = Self::to_basic_value(
 					self.generate_operand(lhs_ty, lhs)
-						.unwrap()
 						.as_any_value_enum(),
 				)
 				.as_basic_value_enum();
 				let rhs_v = Self::to_basic_value(
 					self.generate_operand(rhs_ty, rhs)
-						.unwrap()
 						.as_any_value_enum(),
 				)
 				.as_basic_value_enum();
@@ -498,7 +492,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 			} => {
 				match to {
 					CIRType::Tuple(TupleKind::Sum, types) => {
-						let val = self.generate_operand(from, val).unwrap();
+						let val = self.generate_operand(from, val);
 						let idx = types.iter().position(|ty| ty == from).unwrap();
 
 						let discriminant = self
@@ -526,7 +520,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 					_ => match from {
 						CIRType::Basic(b) => {
 							if from.is_integral() || from.is_floating_point() {
-								let val = self.generate_operand(from, val).unwrap();
+								let val = self.generate_operand(from, val);
 
 								match val {
 									BasicValueEnum::IntValue(i) => match &to {
@@ -619,7 +613,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 											panic!()
 										};
 										// Cast from `str` to char*
-										let val = self.generate_operand(from, val).unwrap();
+										let val = self.generate_operand(from, val);
 
 										match val {
 											BasicValueEnum::StructValue(struct_val) => {
@@ -654,7 +648,6 @@ impl<'ctx> LLVMBackend<'ctx> {
 										if let CIRType::Basic(Basic::Integral { signed, .. }) = to {
 											let val = self
 												.generate_operand(from, val)
-												.unwrap()
 												.as_basic_value_enum()
 												.into_int_value();
 											self.builder.build_store(
@@ -679,7 +672,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 						}
 
 						CIRType::Pointer(_) => {
-							let val = self.generate_operand(from, val).unwrap();
+							let val = self.generate_operand(from, val);
 							let to_ir = self.get_llvm_type(to);
 							self.builder.build_store(
 								store,
@@ -695,7 +688,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 						CIRType::Tuple(TupleKind::Sum, _) => {
 							// Tuple downcast, aka just indexing into the data field
-							let val = self.generate_operand(from, val).unwrap();
+							let val = self.generate_operand(from, val);
 							let tmp = self.builder.build_alloca(val.get_type(), "tmp");
 
 							self.builder.build_store(tmp, val);
@@ -727,7 +720,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 		}
 	}
 
-	fn generate_operand(&self, ty: &CIRType, expr: &Operand) -> Option<BasicValueEnum<'ctx>> {
+	fn generate_operand(&self, ty: &CIRType, expr: &Operand) -> BasicValueEnum<'ctx> {
 		match expr {
 			Operand::StringLit(s, _) => {
 				let len = s.as_bytes().len().try_into().unwrap();
@@ -743,17 +736,17 @@ impl<'ctx> LLVMBackend<'ctx> {
 				val.set_unnamed_addr(true);
 				val.set_initializer(&literal);
 
-				Some(
-					self.slice_type(&self.context.i8_type())
-						.const_named_struct(&[
-							val.as_pointer_value().as_basic_value_enum(),
-							self.context
-								.i64_type()
-								.const_int(len.into(), false)
-								.as_basic_value_enum(),
-						])
-						.as_basic_value_enum(),
-				)
+				
+				self.slice_type(&self.context.i8_type())
+					.const_named_struct(&[
+						val.as_pointer_value().as_basic_value_enum(),
+						self.context
+							.i64_type()
+							.const_int(len.into(), false)
+							.as_basic_value_enum(),
+					])
+					.as_basic_value_enum()
+				
 			}
 
 			Operand::CStringLit(s, _) => {
@@ -776,45 +769,45 @@ impl<'ctx> LLVMBackend<'ctx> {
 				val.set_unnamed_addr(true);
 				val.set_initializer(&literal);
 
-				Some(
-					self.builder
-						.build_address_space_cast(
-							self.builder
-								.build_bitcast(
-									val.as_pointer_value(),
-									self.context.i8_type().ptr_type(AddressSpace::Const),
-									"cstrcast",
-								)
-								.into_pointer_value(),
-							self.context.i8_type().ptr_type(AddressSpace::Generic),
-							"caddrcast",
-						)
-						.as_basic_value_enum(),
-				)
+				
+				self.builder
+					.build_address_space_cast(
+						self.builder
+							.build_bitcast(
+								val.as_pointer_value(),
+								self.context.i8_type().ptr_type(AddressSpace::Const),
+								"cstrcast",
+							)
+							.into_pointer_value(),
+						self.context.i8_type().ptr_type(AddressSpace::Generic),
+						"caddrcast",
+					)
+					.as_basic_value_enum()
+				
 			}
 
-			Operand::IntegerLit(i, _) => Some(
+			Operand::IntegerLit(i, _) => 
 				Self::to_basic_type(self.get_llvm_type(ty))
 					.into_int_type()
 					.const_int(*i as u64, true)
 					.as_basic_value_enum(),
-			),
-			Operand::FloatLit(f, _) => Some(
+			
+			Operand::FloatLit(f, _) => 
 				Self::to_basic_type(self.get_llvm_type(ty))
 					.into_float_type()
 					.const_float(*f)
 					.as_basic_value_enum(),
-			),
-			Operand::BoolLit(b, _) => Some(
+			
+			Operand::BoolLit(b, _) => 
 				self.context
 					.bool_type()
 					.const_int(u64::from(*b), false)
 					.as_basic_value_enum(),
-			),
+			
 			Operand::LValue(l, _) => {
-				Some(self.builder.build_load(self.generate_lvalue(l), "lread"))
+				self.builder.build_load(self.generate_lvalue(l), "lread")
 			}
-			Operand::Undef => Some(self.get_undef(&Self::to_basic_type(self.get_llvm_type(ty)))),
+			Operand::Undef => self.get_undef(&Self::to_basic_type(self.get_llvm_type(ty))),
 		}
 	}
 
@@ -846,7 +839,6 @@ impl<'ctx> LLVMBackend<'ctx> {
 						&[
 							self.context.i32_type().const_zero(),
 							self.generate_operand(index_ty, expr)
-								.unwrap()
 								.as_basic_value_enum()
 								.into_int_value(),
 						],

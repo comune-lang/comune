@@ -158,9 +158,9 @@ impl Display for CIRStmt {
 
 				if !args.is_empty() {
 					let mut args_iter = args.iter();
-					write!(f, "({}", args_iter.next().unwrap())?;
+					write!(f, "({}", args_iter.next().unwrap().0)?;
 
-					for arg in args_iter {
+					for (arg, _) in args_iter {
 						write!(f, ", {arg}")?;
 					}
 

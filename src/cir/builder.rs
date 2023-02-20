@@ -1220,9 +1220,9 @@ impl CIRModuleBuilder {
 				let cir_expr = self.generate_expr(arg)?;
 
 				if let RValue::Atom(_, None, Operand::LValue(lval, _), _) = cir_expr {
-					Some(lval)
+					Some((lval, arg.get_node_data().tk))
 				} else {
-					Some(self.insert_temporary(cir_ty, cir_expr))
+					Some((self.insert_temporary(cir_ty, cir_expr), arg.get_node_data().tk))
 				}
 			})
 			.collect();
