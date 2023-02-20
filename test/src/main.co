@@ -1,8 +1,165 @@
+import module_test;
+
+module submodule_test;
+
+using module_test::{fib, foo};
+
+@no_mangle
+void* malloc(usize size);
+
+@no_mangle
+void free(void* ptr);
+
+using ascii = u8;
+
+@no_mangle
+void printf(ascii* fmt, ...);
+
+@layout(packed)
+struct Test {
+	int a;
+	int b;
+}
+
+struct Vector<T> {
+	T* data;
+	usize len;
+	usize capacity;
+}
+
+enum EnumTest {
+	VariantA,
+	VariantB,
+}
+
+impl Test {
+	int sum(&mut Test self) {
+		printf(c"This is a method call!\n");
+		self.a + self.b
+	}
+}
+
+trait Hello {
+	void hello(&Self self);
+}
+
+impl Hello for Test {
+	void hello(&mut Self self) {
+		printf(c"Hello Test!\n");
+	}
+}
+
+void impl_test() {
+	Test test = Test { a: 413, b: 612, };
+	test.hello();
+	printf(c"The sum of a and b is %i!\n", test.sum());
+}
 
 void ref_test(&mut i32 test) {
 	test++;
 }
 
+//void fn_pointer_test(fn<void(int)> callback) {
+//	callback(12);
+//}
+
+
+void overload_test(i32 a) {
+	printf(c"i32 overload called!\n");
+}
+
+void overload_test(i64 a) {
+	printf(c"i64 overload called!\n");
+}
+
+Vector<i32> generic_ret() {
+	return Vector<i32> { 
+		data: malloc(4) as i32*,
+		len: 1,
+		capacity: 1,
+	};
+}
+
+using TestSumType = (i32 | f32);
+
+TestSumType sum_type_test() {
+	return 322;
+}
+
 int main() {
-	ref_test(12);
+	submodule_test::bar();
+
+	mut int i;
+
+	if true {
+		i = 12;
+	} else {
+		i = 12;
+	}
+
+	int j = i;
+
+	i = 12;
+
+	// `else if` syntax test
+	
+	if i == 12 {
+		printf(c"i is 12!\n");
+	} else if i == 13 {
+		printf(c"i is 13!\n");
+	} else {
+		printf(c"i is something else!\n");
+	}
+
+	mut TestSumType who_knows = sum_type_test();
+	
+	match who_knows {
+		int int_result => {
+			printf(c"It's an int! %i\n", int_result)
+		}
+
+		float float_result => {
+			printf(c"It's a float! %f\n", float_result)
+		}
+	}
+
+	mut int loop_count;
+	
+	while true {
+		printf(c"Loop number %i!\n", loop_count);
+		
+		loop_count += 1;
+		
+		if loop_count > 100 {
+			break;
+		}
+	}
+
+	impl_test();
+
+	overload_test(12i32);
+
+	int int_ref_test = 12;
+	ref_test(int_ref_test);
+	printf(c"int_ref_test: %i\n", int_ref_test);
+
+	printf(c"Temporary->lvalue promotion: %i\n", Test { a: 23, b: 35 }.sum());
+
+	mut Vector<int> my_cool_generic;
+	
+	my_cool_generic.data = malloc(4) as int*;
+
+	*my_cool_generic.data = if true {
+		printf(c"True!\n");
+		69
+	} else {
+		printf(c"False!\n");
+		42
+	};
+	
+	i32 generic_get = *my_cool_generic.data;
+	
+	free(my_cool_generic.data as void*);
+
+	return module_test::foo();
 }

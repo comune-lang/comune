@@ -1,0 +1,25 @@
+// comune core library - traits module
+//
+// this module contains traits that are fundamental to the type system.
+
+@lang(traits, Copy)
+trait Copy { }
+
+@lang(traits, Clone)
+trait Clone {
+	Self clone(&Self self);
+}
+
+@lang(traits, Drop)
+trait Drop {
+	void drop(&mut Self self);
+}
+
+@lang(traits, Sized)
+trait Sized {}
+
+@lang(traits, Send)
+trait Send {}
+
+@lang(traits, Sync)
+trait Sync {}

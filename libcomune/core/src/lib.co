@@ -1,0 +1,9 @@
+// the comune core library - main file
+//
+// the actual library is defined in the submodules below,
+// and contains the most fundamental library features of
+// the language. things like built-in trait definitions,
+// primitive type impls, that sorta thing
+
+import traits;
+import ops;

@@ -1,0 +1,11 @@
+// this module contains manual bindings to important libc functions.
+// after basic C++ integration is implemented, this should become obsolete, as we can just import the C standard library directly on applicable platforms.
+
+@no_mangle
+int printf(char* fmt);
+
+@no_mangle
+void* malloc(usize size);
+
+@no_mangle
+void free(void* ptr);

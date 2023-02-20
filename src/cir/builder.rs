@@ -214,7 +214,7 @@ impl CIRModuleBuilder {
 		let proto = self.get_prototype(func);
 
 		self.current_fn = Some(CIRFunction {
-			variables: vec![],
+			variables: func.params.params.iter().map(|(ty, name, props)| (self.convert_type(ty), *props, name.clone())).collect(),
 			blocks: vec![],
 			ret: proto.ret.clone(),
 			arg_count: func.params.params.len(),
@@ -224,10 +224,6 @@ impl CIRModuleBuilder {
 			is_variadic: func.params.variadic,
 			mangled_name: None,
 		});
-
-		for (ty, name, props) in &func.params.params {
-			self.insert_variable(name.clone(), *props, ty.clone());
-		}
 
 		(proto, self.current_fn.take().unwrap())
 	}
@@ -241,6 +237,15 @@ impl CIRModuleBuilder {
 				self.module.functions.keys()
 			)
 		};
+		
+		self.name_map_stack.clear();
+		self.name_map_stack.push(HashMap::new());
+		self.current_block = 0;
+		self.loop_stack.clear();
+
+		for (ty, props, name) in self.current_fn.as_ref().unwrap().variables.clone() {
+			self.insert_variable(name, props, ty);
+		}
 
 		// Generate function body
 		self.append_block();
@@ -344,7 +349,8 @@ impl CIRModuleBuilder {
 					None
 				};
 
-				let var = self.insert_variable(Some(name.clone()), *props, ty.clone());
+				let cir_ty = self.convert_type(ty);
+				let var = self.insert_variable(Some(name.clone()), *props, cir_ty);
 
 				if let Some(val) = val {
 					self.write(CIRStmt::Assignment((var.clone(), *tk), val));
@@ -1232,7 +1238,8 @@ impl CIRModuleBuilder {
 			None
 		} else {
 			// TODO: BindingProps for return type
-			Some(self.insert_variable(None, BindingProps::default(), ret.clone()))
+			let cir_ret = self.convert_type(ret);
+			Some(self.insert_variable(None, BindingProps::default(), cir_ret))
 		};
 
 		let id = self.get_prototype(&*resolved.read().unwrap());
@@ -1396,8 +1403,7 @@ impl CIRModuleBuilder {
 		None
 	}
 
-	fn insert_variable(&mut self, name: Option<Name>, props: BindingProps, ty: Type) -> LValue {
-		let cir_ty = self.convert_type(&ty);
+	fn insert_variable(&mut self, name: Option<Name>, props: BindingProps, ty: CIRType) -> LValue {
 		let idx = self.get_fn().variables.len();
 
 		if let Some(name) = &name {
@@ -1407,7 +1413,7 @@ impl CIRModuleBuilder {
 				.insert(name.clone(), idx);
 		}
 
-		self.get_fn_mut().variables.push((cir_ty, props, name));
+		self.get_fn_mut().variables.push((ty, props, name));
 
 		LValue {
 			local: idx,

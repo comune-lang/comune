@@ -1,0 +1,8 @@
+// comune core library - ops module
+//
+// this module contains trait definitions for various operators,
+// allowing the user to override them for their own types.
+
+trait Add {
+	
+}
