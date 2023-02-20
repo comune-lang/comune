@@ -129,20 +129,17 @@ int main() {
 	}
 	
 
-	/*
+	
 	mut int loop_count = 0;
 	
-	while true {
-		printf(c"Loop number %i!\n", loop_count);
-		
+	while true {		
 		loop_count += 1;
 
-		// loop_count moved here
 		if loop_count > 100 {
 			break;
 		}
 	}
-	*/
+	
 	impl_test();
 
 	overload_test(12i32);
