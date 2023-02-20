@@ -115,7 +115,7 @@ int main() {
 		}
 	}
 
-	mut int loop_count = 0;
+	mut int loop_count;
 	
 	while true {
 		printf(c"Loop number %i!\n", loop_count);

@@ -46,10 +46,6 @@ pub struct ImplBlockInterface {
 	pub canonical_root: Identifier, // The root of the canonical names used by items in this impl
 }
 
-// Safety: see super::namespace.
-unsafe impl Send for TraitRef {}
-unsafe impl Sync for TraitRef {}
-
 impl PartialEq for TraitRef {
 	fn eq(&self, other: &Self) -> bool {
 		Arc::ptr_eq(&self.def.upgrade().unwrap(), &other.def.upgrade().unwrap())
