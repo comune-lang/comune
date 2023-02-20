@@ -504,9 +504,10 @@ pub fn generate_code<'ctx>(
 
 	cir_man.add_pass(verify::Verify);
 	
-	cir_man.add_mut_pass(cleanup::SimplifyCFG);
+	// broken, don't use rn
+	//cir_man.add_mut_pass(cleanup::SimplifyCFG);
+	
 	cir_man.add_mut_pass(DataFlowPass::new(VarInitCheck {}));
-
 	cir_man.add_pass(verify::Verify);
 
 	let cir_errors = cir_man.run_on_module(&mut cir_module);
