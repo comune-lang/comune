@@ -2,3 +2,7 @@
 void ref_test(&mut i32 test) {
 	test++;
 }
+
+int main() {
+	ref_test(12);
+}

@@ -223,7 +223,7 @@ impl Lexer {
 	}
 
 	pub fn get_line(&self, line: usize) -> &str {
-		self.file_buffer.lines().nth(line).unwrap()
+		self.file_buffer.lines().nth(line).unwrap_or("")
 	}
 
 	pub fn current(&self) -> Option<&(SrcSpan, Token)> {
