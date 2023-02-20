@@ -40,26 +40,26 @@ impl CIRModule {
 		// by traversing the function list. And because Rust makes us write code that's
 		// "correct" and "responsible" and "halfway decent", we have to clone the function
 		// list here so we can mutate the clone. And yes, I *am* grumpy about it.
-		let function_names: Vec<_> = self.functions.keys().cloned().collect();
+		let function_protos: Vec<_> = self.functions.keys().cloned().collect();
 
-		for name in function_names {
+		for proto in function_protos {
 			// We can't monomorphize a generic function without its type parameters, only plain functions
 			// Those plain functions call generic functions, which are then monoized from the call site
-			if !self.functions[&name].type_params.is_empty() {
+			if !self.functions[&proto].type_params.is_empty() {
 				continue;
 			}
-
+			
 			let function_monoized = Self::monoize_function(
 				&self.functions,
 				&mut functions_mono,
-				&self.functions[&name],
+				&self.functions[&proto],
 				&mut self.types,
 				&vec![],
 				&mut ty_instances,
 				&mut fn_instances,
 			);
 
-			functions_mono.insert(name, function_monoized);
+			functions_mono.insert(proto, function_monoized);
 		}
 
 		// Remove generic types

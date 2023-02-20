@@ -44,7 +44,7 @@ trait Hello {
 }
 
 impl Hello for Test {
-	void hello(&mut Self self) {
+	void hello(&mut Test self) {
 		printf(c"Hello Test!\n");
 	}
 }
@@ -82,8 +82,8 @@ Vector<i32> generic_ret() {
 
 using TestSumType = (i32 | f32);
 
-TestSumType sum_type_test() {
-	return 322;
+TestSumType sum_type_test(&i32 value) {
+	return value;
 }
 
 int main() {
@@ -111,7 +111,7 @@ int main() {
 		printf(c"i is something else!\n");
 	}
 
-	mut TestSumType who_knows = sum_type_test();
+	mut TestSumType who_knows = sum_type_test(322);
 	
 	// this one should work in theory, but the current
 	// codegen actually uses who_knows's discriminant
