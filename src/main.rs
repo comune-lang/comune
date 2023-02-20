@@ -10,10 +10,11 @@ mod parser;
 use ast::module::Name;
 use ast::{module::Identifier, types};
 use clap::Parser;
+use color_eyre::Report;
 use colored::Colorize;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, ExitStatus, abort};
 use std::sync::RwLock;
 use std::{
 	ffi::OsString,
@@ -147,6 +148,8 @@ fn main() -> color_eyre::eyre::Result<()> {
 	// invoke linker for all EmitTypes that need it
 	// We use clang here because fuck dude i don't know how to use ld manually
 
+	let mut link_errors = 0;
+
 	for emit_type in &manager_state.emit_types {
 		if let EmitType::Binary | EmitType::DynamicLib | EmitType::StaticLib = emit_type {
 			let mut output = Command::new("clang");
@@ -172,15 +175,23 @@ fn main() -> color_eyre::eyre::Result<()> {
 
 			let output_result = output.output().expect("fatal: failed to invoke linker");
 
-			io::stdout().write_all(&output_result.stdout).unwrap();
-			io::stderr().write_all(&output_result.stderr).unwrap();
+			if !output_result.status.success() {
+				link_errors += 1;
+
+				io::stdout().write_all(&output_result.stdout).unwrap();
+				io::stderr().write_all(&output_result.stderr).unwrap();
+			}
 		}
 	}
-
+	
 	if !manager_state.emit_types.contains(&EmitType::Object) {
 		for module in &*manager_state.output_modules.lock().unwrap() {
 			fs::remove_file(module).unwrap();
 		}
+	}
+	
+	if link_errors > 0 {
+		std::process::exit(1);
 	}
 
 	let link_time = build_time.elapsed() - compile_time;

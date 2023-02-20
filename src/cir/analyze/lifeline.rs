@@ -263,6 +263,8 @@ impl AnalysisResultHandler for VarInitCheck {
 				// Check for uses of uninit/moved lvalues
 				match stmt {
 					CIRStmt::Assignment(_, RValue::Atom(_, _, Operand::LValue(lval, _), span))
+					| CIRStmt::Assignment(_, RValue::Cons(_, [(_, Operand::LValue(lval, span)), _], ..))
+					| CIRStmt::Assignment(_, RValue::Cons(_, [_, (_, Operand::LValue(lval, span))], ..))
 					| CIRStmt::Switch(Operand::LValue(lval, span), ..)
 					| CIRStmt::Return(Some(Operand::LValue(lval, span))) => {
 						let liveness = state.get_liveness(lval);

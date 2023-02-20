@@ -17,3 +17,7 @@ bit-set = "0.5.3"
 llvm12 = ["inkwell/llvm12-0"]
 llvm13 = ["inkwell/llvm13-0"]
 llvm14 = ["inkwell/llvm14-0"]
+
+# color-eyre's backtrace perfors horribly on debug, so we compile it with optimizations
+[profile.dev.package.backtrace]
+opt-level = 3
