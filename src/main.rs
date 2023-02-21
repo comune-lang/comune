@@ -92,6 +92,10 @@ fn main() -> color_eyre::eyre::Result<()> {
 		module_states: RwLock::default(),
 	});
 
+	if manager_state.backtrace_on_error {
+		 unsafe { errors::CAPTURE_BACKTRACE = true; }
+	}
+
 	// Launch multithreaded compilation
 
 	let error_sender = errors::spawn_logger(args.backtrace);

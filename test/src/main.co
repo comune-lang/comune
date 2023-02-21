@@ -139,6 +139,8 @@ int main() {
 			break;
 		}
 	}
+
+	printf(c"Loop count after loop: %i", loop_count);
 	
 	impl_test();
 
