@@ -104,7 +104,7 @@ fn main() -> color_eyre::eyre::Result<()> {
 			let input_file = fs::canonicalize(input_file).unwrap();
 			let module_name = Identifier::from_name(get_file_suffix(&input_file).unwrap(), true);
 
-			let _ = driver::launch_module_compilation(
+			let _ = driver::compile_comune_module(
 				manager_state.clone(),
 				input_file,
 				module_name,

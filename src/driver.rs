@@ -12,7 +12,7 @@ use inkwell::{context::Context, passes::PassManager, targets::FileType};
 use crate::{
 	ast::{
 		self,
-		module::{Identifier, ModuleImportKind, ModuleInterface, ModuleInterfaceOpaque},
+		module::{Identifier, ModuleImportKind, ModuleInterface, ModuleInterfaceOpaque, ModuleItemOpaque},
 	},
 	cir::{
 		analyze::{lifeline::VarInitCheck, verify, CIRPassManager, DataFlowPass},
@@ -72,7 +72,7 @@ impl EmitType {
 	}
 }
 
-pub fn launch_module_compilation(
+pub fn compile_comune_module(
 	state: Arc<ManagerState>,
 	src_path: PathBuf,
 	module_name: Identifier,
@@ -81,6 +81,16 @@ pub fn launch_module_compilation(
 ) -> Result<(), ComuneError> {
 	if state.module_states.read().unwrap().contains_key(&src_path) {
 		return Ok(());
+	}
+
+	let ext = src_path.extension().unwrap();
+
+	if ext == "cpp" {
+
+	} else if ext == "co" {
+
+	} else {
+		todo!()
 	}
 
 	let out_path = get_module_out_path(&state, &module_name);
@@ -112,97 +122,16 @@ pub fn launch_module_compilation(
 	);
 
 	// Resolve module imports
-	let mut module_names: Vec<_> = parser.interface.import_names.clone().into_iter().collect();
+	let modules: Vec<_> = parser.interface.import_names.clone().into_iter().collect();
 
-	let mut imports = HashMap::new();
-
-	while let Some(name) = module_names.first().cloned() {
-		let (import_name, fs_name) = match name {
-			ModuleImportKind::Child(name) => {
-				(name.clone(), Identifier::from_parent(&module_name, name))
-			}
-			ModuleImportKind::Language(name) => (name.clone(), Identifier::from_name(name, true)),
-			ModuleImportKind::Extern(name) => (name.name().clone(), name),
-		};
-
-		let import_path = get_module_source_path(&state, src_path.clone(), &fs_name).unwrap();
-
-		let error_sender = error_sender.clone();
-
-		// Query module interface, blocking this thread until it's ready
-		loop {
-			let import_state = state
-				.module_states
-				.read()
-				.unwrap()
-				.get(&import_path)
-				.cloned();
-
-			match import_state {
-				None => match launch_module_compilation(
-					state.clone(),
-					import_path.clone(),
-					fs_name.clone(),
-					error_sender.clone(),
-					s,
-				) {
-					Ok(()) => {},
-					Err(e) => {
-						state
-							.module_states
-							.write()
-							.unwrap()
-							.insert(src_path.clone(), ModuleState::ParsingFailed);
-						
-						let import_name = import_path.file_name().unwrap().to_str().unwrap();
-						
-						error_sender
-							.send(CMNMessageLog::Raw(format!(
-								"\n{:>10} compiling {}\n",
-								"failed".bold().red(),
-								import_name.bold()
-							)))
-							.unwrap();
-		
-						return Err(e);
-					}
-				}
-
-				// Sleep for some short duration, so we don't hog the CPU
-				Some(ModuleState::Parsing) => {
-					std::thread::sleep(std::time::Duration::from_millis(1))
-				}
-
-				Some(ModuleState::ParsingFailed) => {
-					state
-						.module_states
-						.write()
-						.unwrap()
-						.insert(src_path.clone(), ModuleState::ParsingFailed);
-
-					return Err(ComuneError::new(
-						ComuneErrCode::DependencyError,
-						SrcSpan::new(),
-					));
-				}
-
-				Some(ModuleState::InterfaceUntyped(interface)) => {
-					imports.insert(import_name, interface.clone());
-					module_names.remove(0);
-					break;
-				}
-
-				Some(ModuleState::InterfaceComplete(interface)) => {
-					imports.insert(import_name, interface.get_opaque());
-					module_names.remove(0);
-					break;
-				}
-			}
-		}
-	}
-
-	// Return early if any import failed
-	parser.imports_opaque = imports;
+	parser.imports_opaque = await_imports_ready(
+		&state,
+		&src_path,
+		&module_name,
+		modules, 
+		error_sender.clone(),
+		s
+	)?;
 
 	match resolve_types(&state, &mut parser) {
 		Ok(_) => {}
@@ -331,70 +260,6 @@ pub fn launch_module_compilation(
 	Ok(())
 }
 
-// TODO: Add proper module searching support, based on a list of module search dirs, as well as support for .co, .h, .hpp etc
-pub fn get_module_source_path(
-	state: &Arc<ManagerState>,
-	mut current_path: PathBuf,
-	module: &Identifier,
-) -> Option<PathBuf> {
-	// Resolve built-in library paths. This is currently hard-coded, but
-	// there's probably a more elegant solution to be written down the line
-	if module.absolute && matches!(module.path[0].to_string().as_str(), "core" | "std") {
-		let mut current_path = PathBuf::from(state.libcomune_dir.clone());
-
-		current_path.push(module.path[0].to_string());
-		current_path.push("src");
-		current_path.push("lib");
-		current_path.set_extension("co");
-
-		return Some(current_path);
-	}
-
-	current_path.set_extension("");
-
-	for i in 0..module.path.len() - 1 {
-		current_path.push(&*module.path[i]);
-	}
-
-	current_path.set_file_name(&**module.name());
-
-	let extensions = ["co", "cpp", "c"];
-
-	for extension in extensions {
-		current_path.set_extension(extension);
-
-		if current_path.exists() {
-			return Some(current_path);
-		}
-	}
-
-	for dir in &state.import_paths {
-		let mut current_path = PathBuf::from(dir);
-		current_path.push(&**module.name());
-
-		for extension in extensions {
-			current_path.set_extension(extension);
-			if current_path.exists() {
-				return Some(current_path);
-			}
-		}
-	}
-
-	None
-}
-
-pub fn get_module_out_path(state: &Arc<ManagerState>, module: &Identifier) -> PathBuf {
-	let mut result = PathBuf::from(&state.output_dir);
-
-	for scope in &module.path {
-		result.push(&**scope);
-	}
-
-	fs::create_dir_all(result.parent().unwrap()).unwrap();
-	result.set_extension("o");
-	result
-}
-
 pub fn parse_interface(
 	state: &Arc<ManagerState>,
 	path: &Path,
@@ -460,6 +325,105 @@ pub fn resolve_types(state: &Arc<ManagerState>, parser: &mut Parser) -> ComuneRe
 	}
 
 	Ok(())
+}
+
+pub fn await_imports_ready(
+	state: &Arc<ManagerState>,
+	src_path: &PathBuf,
+	module_name: &Identifier,
+	mut modules: Vec<ModuleImportKind>,	
+	error_sender: Sender<CMNMessageLog>,
+	s: &rayon::Scope,
+) -> ComuneResult<HashMap<String, HashMap<Identifier, ModuleItemOpaque>>> {
+	
+	let mut imports = HashMap::new();
+
+	while let Some(name) = modules.first().cloned() {
+		let (import_name, fs_name) = match name {
+			ModuleImportKind::Child(name) => {
+				(name.clone(), Identifier::from_parent(module_name, name))
+			}
+			ModuleImportKind::Language(name) => (name.clone(), Identifier::from_name(name, true)),
+			ModuleImportKind::Extern(name) => (name.name().clone(), name),
+		};
+
+		let import_path = get_module_source_path(&state, src_path.clone(), &fs_name).unwrap();
+
+		let error_sender = error_sender.clone();
+
+		// Query module interface, blocking this thread until it's ready
+		loop {
+			let import_state = state
+				.module_states
+				.read()
+				.unwrap()
+				.get(&import_path)
+				.cloned();
+
+			match import_state {
+				None => match compile_comune_module(
+					state.clone(),
+					import_path.clone(),
+					fs_name.clone(),
+					error_sender.clone(),
+					s,
+				) {
+					Ok(()) => {},
+					Err(e) => {
+						state
+							.module_states
+							.write()
+							.unwrap()
+							.insert(src_path.clone(), ModuleState::ParsingFailed);
+						
+						let import_name = import_path.file_name().unwrap().to_str().unwrap();
+						
+						error_sender
+							.send(CMNMessageLog::Raw(format!(
+								"\n{:>10} compiling {}\n",
+								"failed".bold().red(),
+								import_name.bold()
+							)))
+							.unwrap();
+		
+						return Err(e);
+					}
+				}
+
+				// Sleep for some short duration, so we don't hog the CPU
+				Some(ModuleState::Parsing) => {
+					std::thread::sleep(std::time::Duration::from_millis(1))
+				}
+
+				Some(ModuleState::ParsingFailed) => {
+					state
+						.module_states
+						.write()
+						.unwrap()
+						.insert(src_path.clone(), ModuleState::ParsingFailed);
+
+					return Err(ComuneError::new(
+						ComuneErrCode::DependencyError,
+						SrcSpan::new(),
+					));
+				}
+
+				Some(ModuleState::InterfaceUntyped(interface)) => {
+					imports.insert(import_name, interface.clone());
+					modules.remove(0);
+					break;
+				}
+
+				Some(ModuleState::InterfaceComplete(interface)) => {
+					imports.insert(import_name, interface.get_opaque());
+					modules.remove(0);
+					break;
+				}
+			}
+		}
+	}
+
+	Ok(imports)
 }
 
 pub fn generate_code<'ctx>(
@@ -621,4 +585,68 @@ pub fn generate_code<'ctx>(
 	mpm.run_on(&backend.module);
 
 	Ok(backend)
+}
+
+// TODO: Add proper module searching support, based on a list of module search dirs, as well as support for .co, .h, .hpp etc
+pub fn get_module_source_path(
+	state: &Arc<ManagerState>,
+	mut current_path: PathBuf,
+	module: &Identifier,
+) -> Option<PathBuf> {
+	// Resolve built-in library paths. This is currently hard-coded, but
+	// there's probably a more elegant solution to be written down the line
+	if module.absolute && matches!(module.path[0].to_string().as_str(), "core" | "std") {
+		let mut current_path = PathBuf::from(state.libcomune_dir.clone());
+
+		current_path.push(module.path[0].to_string());
+		current_path.push("src");
+		current_path.push("lib");
+		current_path.set_extension("co");
+
+		return Some(current_path);
+	}
+
+	current_path.set_extension("");
+
+	for i in 0..module.path.len() - 1 {
+		current_path.push(&*module.path[i]);
+	}
+
+	current_path.set_file_name(&**module.name());
+
+	let extensions = ["co", "cpp", "c"];
+
+	for extension in extensions {
+		current_path.set_extension(extension);
+
+		if current_path.exists() {
+			return Some(current_path);
+		}
+	}
+
+	for dir in &state.import_paths {
+		let mut current_path = PathBuf::from(dir);
+		current_path.push(&**module.name());
+
+		for extension in extensions {
+			current_path.set_extension(extension);
+			if current_path.exists() {
+				return Some(current_path);
+			}
+		}
+	}
+
+	None
+}
+
+pub fn get_module_out_path(state: &Arc<ManagerState>, module: &Identifier) -> PathBuf {
+	let mut result = PathBuf::from(&state.output_dir);
+
+	for scope in &module.path {
+		result.push(&**scope);
+	}
+
+	fs::create_dir_all(result.parent().unwrap()).unwrap();
+	result.set_extension("o");
+	result
 }
