@@ -1,15 +1,15 @@
 import main;
 
 u64 fib(u64 n) {
-	mut u64 a = 0;
-	mut u64 b = 1;
-	mut u64 c = 0;
+	u64 mut a = 0;
+	u64 mut b = 1;
+	u64 mut c = 0;
 
-	//for (mut u64 i = 1; i < n; i++) {
+	//for (u64 mut i = 1; i < n; i++) {
 	//	c = a + b;
 	//	a = b;
 	//	b = c;
-	//	printf(c"Loop!\n");
+	//	main::printf(c"Loop!\n");
 	//};
 
 	return b;

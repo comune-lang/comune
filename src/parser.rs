@@ -752,22 +752,9 @@ impl Parser {
 	}
 
 	fn parse_binding_props(&self) -> ComuneResult<Option<BindingProps>> {
-		if !matches!(
-			self.get_current()?,
-			Token::Operator("&") | Token::Keyword("mut")
-		) {
-			return Ok(None);
-		}
-
 		let mut props = BindingProps::default();
 
-		if self.get_current()? == Token::Operator("&") {
-			props.is_ref = true;
-			self.get_next()?;
-		}
-
-		// `unsafe` is only a binding property when it follows "&"
-		if self.get_current()? == Token::Keyword("unsafe") && props.is_ref {
+		if self.get_current()? == Token::Keyword("unsafe") {
 			props.is_unsafe = true;
 			self.get_next()?;
 		}
@@ -777,18 +764,22 @@ impl Parser {
 			self.get_next()?;
 		}
 
+		if self.get_current()? == Token::Operator("&") {
+			props.is_ref = true;
+			self.get_next()?;
+		}
+
 		Ok(Some(props))
 	}
 
 	fn parse_statement(&self) -> ComuneResult<Stmt> {
 		let begin = self.get_current_start_index();
 
-		let binding_props = self.parse_binding_props()?;
-
 		if self.is_at_type_token(true)? {
 			// This is a declaration
 
 			let ty = self.parse_type(true)?;
+			let binding_props = self.parse_binding_props()?;
 
 			let Token::Name(name) = self.get_current()? else {
 				return self.err(ComuneErrCode::ExpectedIdentifier)
@@ -812,9 +803,6 @@ impl Parser {
 
 			Ok(stmt_result)
 		} else {
-			// TODO: Error out if binding_props.is_ref or binding_props.is_mut is true
-			// binding_props.is_unsafe is fine because that's allowed in front of a block
-
 			// This isn't a declaration, so parse an expression
 
 			let expr = self.parse_expression()?;
@@ -824,16 +812,9 @@ impl Parser {
 	}
 
 	fn parse_pattern(&self) -> ComuneResult<Pattern> {
-		let props = self.parse_binding_props()?;
-
 		if self.is_at_type_token(true)? {
 			let pattern_ty = self.parse_type(true)?;
-
-			let is_ref = self.get_current()? == Token::Operator("&");
-
-			if is_ref {
-				self.get_next()?;
-			}
+			let props = self.parse_binding_props()?;
 
 			match self.get_current()? {
 				Token::Name(id) => {
@@ -1155,16 +1136,24 @@ impl Parser {
 				}
 			}
 		} else {
-			// Not at an identifier, parse the other kinds of Atom
-
-			let next = self.get_next()?;
-
+			// Not at an identifier, parse the other kinds of Atom			
+			
 			match current {
-				Token::StringLiteral(s) => result = Some(Atom::StringLit(s)),
+				Token::StringLiteral(s) => {
+					self.get_next()?;
 
-				Token::CStringLiteral(s) => result = Some(Atom::CStringLit(s)),
+					result = Some(Atom::StringLit(s));
+				}
+
+				Token::CStringLiteral(s) => {
+					self.get_next()?;
+
+					result = Some(Atom::CStringLit(s));
+				}
 
 				Token::NumLiteral(s, suffix) => {
+					self.get_next()?;
+					
 					let mut suffix_b = Basic::get_basic_type(suffix.as_str());
 
 					if suffix_b.is_none() && !suffix.is_empty() {
@@ -1185,10 +1174,15 @@ impl Parser {
 					result = Some(atom);
 				}
 
-				Token::BoolLiteral(b) => result = Some(Atom::BoolLit(b)),
-
+				Token::BoolLiteral(b) => {
+					self.get_next()?;
+					
+					result = Some(Atom::BoolLit(b));
+				}
+				
 				Token::Operator("[") => {
 					// Array literal
+					self.get_next()?;
 
 					let mut elements = vec![];
 
@@ -1212,6 +1206,7 @@ impl Parser {
 				Token::Keyword(keyword) => match keyword {
 					"return" => {
 						// Parse return statement
+						let next = self.get_next()?;
 
 						if next == Token::Other(';') || next == Token::Other('}') {
 							result =
@@ -1224,18 +1219,24 @@ impl Parser {
 					}
 
 					"break" => {
+						self.get_next()?;
+						
 						// TODO: Labeled break and continue
 
 						result = Some(Atom::CtrlFlow(Box::new(ControlFlow::Break)));
 					}
 
 					"continue" => {
+						self.get_next()?;
+					
 						// TODO: Labeled break and continue
 
 						result = Some(Atom::CtrlFlow(Box::new(ControlFlow::Continue)));
 					}
 
 					"match" => {
+						self.get_next()?;
+					
 						let scrutinee = self.parse_expression()?;
 						current = self.get_current()?;
 
@@ -1285,7 +1286,7 @@ impl Parser {
 					}
 
 					"if" => {
-						// Parse if statement
+						self.get_next()?;
 
 						// Parse condition
 						let cond = self.parse_expression()?;
@@ -1324,6 +1325,7 @@ impl Parser {
 
 					// Parse while loop
 					"while" => {
+						self.get_next()?;
 						let cond = self.parse_expression()?;
 						let body = self.parse_block()?;
 
@@ -1332,6 +1334,8 @@ impl Parser {
 
 					// Parse for loop
 					"for" => {
+						self.get_next()?;
+						
 						// Check opening brace
 						self.consume(&Token::Operator("("))?;
 
@@ -1590,14 +1594,8 @@ impl Parser {
 			return self.err(ComuneErrCode::UnexpectedToken);
 		}
 
-		loop {
-			let props = self.parse_binding_props()?;
-
-			if !self.is_at_type_token(false)? {
-				break;
-			}
-
-			let mut param = (self.parse_type(false)?, None, props.unwrap_or_default());
+		while self.is_at_type_token(false)? {
+			let mut param = (self.parse_type(false)?, None, self.parse_binding_props()?.unwrap_or_default());
 
 			// Check for param name
 			let mut current = self.get_current()?;
@@ -1680,10 +1678,17 @@ impl Parser {
 					while let Token::Operator("*") | Token::Keyword("mut") = self.get_current()? {
 						
 						if self.get_current()? == Token::Keyword("mut") {
-							result = Type::Pointer { pointee: Box::new(result), mutable: true };
 							
-							self.get_next()?;
-							self.consume(&Token::Operator("*"))?;
+							let current_idx = self.get_current_token_index();
+
+							if self.get_next()? == Token::Operator("*") {
+								result = Type::Pointer { pointee: Box::new(result), mutable: true };
+							
+								self.consume(&Token::Operator("*"))?;
+							} else {
+								self.lexer.borrow_mut().seek_token_idx(current_idx);
+								break;
+							}
 						} else {
 							result = Type::Pointer { pointee: Box::new(result), mutable: false };
 							

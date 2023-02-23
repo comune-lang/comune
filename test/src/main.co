@@ -1,15 +1,15 @@
 import module_test;
-import cpp_test;
+//import cpp_test;
 
 module submodule_test;
 
 using module_test::{fib, foo};
 
 @no_mangle
-void* malloc(usize size);
+void mut* malloc(usize size);
 
 @no_mangle
-void free(void* ptr);
+void free(void mut* ptr);
 
 using ascii = u8;
 
@@ -33,18 +33,19 @@ enum EnumTest {
 }
 
 impl Test {
-	int sum(&mut Test self) {
+	int sum(Test mut& self) {
 		printf(c"This is a method call!\n");
 		self.a + self.b
 	}
 }
 
+
 trait Hello {
-	void hello(&Self self);
+	void hello(Self& self);
 }
 
 impl Hello for Test {
-	void hello(&mut Self self) {
+	void hello(Test mut& self) {
 		printf(c"Hello Test!\n");
 	}
 }
@@ -55,7 +56,7 @@ void impl_test() {
 	printf(c"The sum of a and b is %i!\n", test.sum());
 }
 
-void ref_test(&mut i32 test) {
+void ref_test(i32 mut& test) {
 	test++;
 }
 
@@ -74,7 +75,7 @@ void overload_test(i64 a) {
 
 Vector<i32> generic_ret() {
 	return Vector<i32> { 
-		data: malloc(4) as i32*,
+		data: malloc(4) as i32 mut*,
 		len: 1,
 		capacity: 1,
 	};
@@ -82,14 +83,14 @@ Vector<i32> generic_ret() {
 
 using TestSumType = (i32 | f32);
 
-TestSumType sum_type_test(&i32 value) {
+TestSumType sum_type_test(i32& value) {
 	return value;
 }
 
 int main() {
 	submodule_test::bar();
 
-	mut int i;
+	int mut i;
 
 	if true {
 		i = 12;
@@ -111,7 +112,7 @@ int main() {
 		printf(c"i is something else!\n");
 	}
 
-	mut TestSumType who_knows = sum_type_test(322);
+	TestSumType mut who_knows = sum_type_test(322);
 
 	match who_knows {
 		int int_result => {
@@ -123,7 +124,7 @@ int main() {
 		}
 	}
 	
-	mut int loop_count = 0;
+	int mut loop_count = 0;
 	
 	while true {		
 		loop_count += 1;
@@ -146,9 +147,9 @@ int main() {
 
 	printf(c"Temporary->lvalue promotion: %i\n", Test { a: 23, b: 35 }.sum());
 
-	mut Vector<int> my_cool_generic;
+	Vector<int> mut my_cool_generic;
 	
-	my_cool_generic.data = malloc(4) as int*;
+	my_cool_generic.data = malloc(4) as int mut*;
 
 	*my_cool_generic.data = if true {
 		printf(c"True!\n");
@@ -160,7 +161,7 @@ int main() {
 	
 	i32 generic_get = *my_cool_generic.data;
 	
-	free(my_cool_generic.data as void*);
+	free(my_cool_generic.data as void mut*);
 
 	return module_test::foo();
 }

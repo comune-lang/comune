@@ -7,12 +7,12 @@ trait Copy { }
 
 @lang(traits, Clone)
 trait Clone {
-	Self clone(&Self self);
+	Self clone(Self& self);
 }
 
 @lang(traits, Drop)
 trait Drop {
-	void drop(&mut Self self);
+	void drop(Self mut& self);
 }
 
 @lang(traits, Sized)
