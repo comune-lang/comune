@@ -217,7 +217,7 @@ impl Parser {
 						match next {
 							Token::Name(_) => {
 								let result =
-									self.parse_namespace_declaration(current_attributes)?;
+									self.parse_namespace_declaration(current_attributes, None)?;
 								current_attributes = vec![];
 
 								match result.1 {
@@ -246,7 +246,7 @@ impl Parser {
 									}
 									_ => return self.err(ComuneErrCode::UnexpectedKeyword),
 								}
-								self.get_next()?;
+								self.consume(&Token::Other(':'))?;
 								next = self.get_next()?;
 							}
 
@@ -289,7 +289,7 @@ impl Parser {
 					while !token_compare(&next, "}") {
 						let func_attributes = self.parse_attributes()?;
 						let (name, interface, im) =
-							self.parse_namespace_declaration(func_attributes)?;
+							self.parse_namespace_declaration(func_attributes, Some(&Type::TypeParam(0)))?;
 
 						match (interface, im) {
 							(
@@ -374,7 +374,7 @@ impl Parser {
 
 						self.get_next()?;
 
-						let params = self.parse_parameter_list()?;
+						let params = self.parse_parameter_list(Some(&impl_ty))?;
 						let ast = ModuleASTElem::Unparsed(self.get_current_token_index());
 
 						self.skip_block()?;
@@ -509,7 +509,7 @@ impl Parser {
 				_ => {
 					// Parse declaration/definition
 					let (name, mut protos, defs) =
-						self.parse_namespace_declaration(current_attributes)?;
+						self.parse_namespace_declaration(current_attributes, None)?;
 
 					let id = Identifier::from_parent(scope, name);
 
@@ -669,6 +669,7 @@ impl Parser {
 	fn parse_namespace_declaration(
 		&self,
 		attributes: Vec<Attribute>,
+		self_ty: Option<&Type>,
 	) -> ComuneResult<(Name, ModuleItemInterface, ModuleItemImpl)> {
 		let t = self.parse_type(false)?;
 		let interface;
@@ -691,7 +692,7 @@ impl Parser {
 					let t = FnPrototype {
 						path: Identifier::from_parent(&self.current_scope, name.clone()),
 						ret: t,
-						params: self.parse_parameter_list()?,
+						params: self.parse_parameter_list(self_ty)?,
 						type_params,
 						attributes,
 					};
@@ -753,6 +754,10 @@ impl Parser {
 
 	fn parse_binding_props(&self) -> ComuneResult<Option<BindingProps>> {
 		let mut props = BindingProps::default();
+
+		if !matches!(self.get_current()?, Token::Keyword("unsafe" | "mut") | Token::Operator("&")) {
+			return Ok(None);
+		}
 
 		if self.get_current()? == Token::Keyword("unsafe") {
 			props.is_unsafe = true;
@@ -1335,7 +1340,7 @@ impl Parser {
 					// Parse for loop
 					"for" => {
 						self.get_next()?;
-						
+
 						// Check opening brace
 						self.consume(&Token::Operator("("))?;
 
@@ -1582,7 +1587,7 @@ impl Parser {
 		Ok(result)
 	}
 
-	fn parse_parameter_list(&self) -> ComuneResult<FnParamList> {
+	fn parse_parameter_list(&self, self_ty: Option<&Type>) -> ComuneResult<FnParamList> {
 		let mut result = FnParamList {
 			params: vec![],
 			variadic: false,
@@ -1592,6 +1597,26 @@ impl Parser {
 			self.get_next()?;
 		} else {
 			return self.err(ComuneErrCode::UnexpectedToken);
+		}
+
+		// Special case for self parameter
+		if let Some(self_ty) = self_ty {
+			if let Some(binding_props) = self.parse_binding_props()? {
+				let Token::Name(name) = self.get_current()? else {
+					return self.err(ComuneErrCode::UnexpectedToken)
+				};
+				
+				if &name != "self" {
+					return self.err(ComuneErrCode::UnexpectedToken)
+				};
+
+				result.params.push((self_ty.clone(), Some(name), binding_props));
+				
+				if self.get_next()? == Token::Other(',') {
+					self.get_next()?;
+				}
+				
+			}
 		}
 
 		while self.is_at_type_token(false)? {

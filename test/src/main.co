@@ -33,7 +33,7 @@ enum EnumTest {
 }
 
 impl Test {
-	int sum(Test mut& self) {
+	int sum(mut& self) {
 		printf(c"This is a method call!\n");
 		self.a + self.b
 	}
