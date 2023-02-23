@@ -22,7 +22,7 @@ use self::{
 	pattern::Binding,
 	statement::Stmt,
 	traits::{TraitInterface, TraitRef},
-	types::{AlgebraicDef, BindingProps, FnPrototype, TupleKind, TypeParamList, TypeRef},
+	types::{AlgebraicDef, BindingProps, FnPrototype, TupleKind, GenericParamList, TypeRef},
 };
 
 pub mod controlflow;
@@ -550,10 +550,10 @@ pub fn validate_module_impl(
 pub fn resolve_type(
 	ty: &mut Type,
 	namespace: &ModuleInterface,
-	generics: &TypeParamList,
+	generics: &GenericParamList,
 ) -> ComuneResult<()> {
 	match ty {
-		Type::Pointer(pointee) => resolve_type(pointee, namespace, generics),
+		Type::Pointer { pointee, .. } => resolve_type(pointee, namespace, generics),
 
 		Type::Array(pointee, _size) => resolve_type(pointee, namespace, generics),
 
@@ -617,7 +617,7 @@ pub fn resolve_type(
 pub fn resolve_algebraic_def(
 	agg: &mut AlgebraicDef,
 	namespace: &ModuleInterface,
-	base_generics: &TypeParamList,
+	base_generics: &GenericParamList,
 ) -> ComuneResult<()> {
 	let mut generics = base_generics.clone();
 	generics.extend(agg.params.clone());
@@ -673,7 +673,7 @@ pub fn resolve_algebraic_def(
 pub fn resolve_type_def(
 	ty: &mut TypeDef,
 	namespace: &ModuleInterface,
-	base_generics: &TypeParamList,
+	base_generics: &GenericParamList,
 ) -> ComuneResult<()> {
 	match ty {
 		TypeDef::Algebraic(agg) => resolve_algebraic_def(agg, namespace, base_generics),
@@ -938,10 +938,10 @@ impl Expr {
 				let expr_ty = expr.validate(scope)?;
 
 				match op {
-					Operator::Ref => Ok(expr_ty.ptr_type()),
+					Operator::Ref => Ok(expr_ty.ptr_type(true)),
 
 					Operator::Deref => match expr_ty {
-						Type::Pointer(t) => Ok(*t),
+						Type::Pointer { pointee, .. } => Ok(*pointee),
 
 						_ => Err(ComuneError::new(
 							ComuneErrCode::InvalidDeref(expr_ty),
@@ -998,8 +998,8 @@ impl Expr {
 					Atom::BoolLit(_) => target.is_boolean(),
 
 					Atom::CStringLit(_) => {
-						if let Type::Pointer(other_p) = &target {
-							if **other_p
+						if let Type::Pointer { pointee: other_p, mutable: other_m } = &target {
+							if !other_m && **other_p
 								== Type::Basic(Basic::Integral {
 									signed: false,
 									size_bytes: 1,
@@ -1134,10 +1134,10 @@ impl Atom {
 			Atom::BoolLit(_) => Ok(Type::Basic(Basic::Bool)),
 			Atom::StringLit(_) => Ok(Type::Basic(Basic::Str)),
 
-			Atom::CStringLit(_) => Ok(Type::Pointer(Box::new(Type::Basic(Basic::Integral {
+			Atom::CStringLit(_) => Ok(Type::Pointer { pointee: Box::new(Type::Basic(Basic::Integral {
 				signed: false,
 				size_bytes: 1,
-			})))),
+			})), mutable: false }),
 
 			Atom::Identifier(name) => {
 				if let Some((id, ty)) = scope.find_symbol(name, true) {

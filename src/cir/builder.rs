@@ -11,7 +11,7 @@ use crate::{
 		pattern::{Binding, Pattern},
 		statement::Stmt,
 		types::{
-			Basic, BindingProps, FnPrototype, TupleKind, Type, TypeDef, TypeParamList, TypeRef,
+			Basic, BindingProps, FnPrototype, TupleKind, Type, TypeDef, GenericParamList, TypeRef,
 		},
 	},
 	constexpr::{ConstExpr, ConstValue},
@@ -110,7 +110,7 @@ impl CIRModuleBuilder {
 
 			Type::TypeParam(idx) => CIRType::TypeParam(*idx),
 
-			Type::Pointer(pointee) => CIRType::Pointer(Box::new(self.convert_type(pointee))),
+			Type::Pointer { pointee, mutable } => CIRType::Pointer { pointee: Box::new(self.convert_type(pointee)), mutable: *mutable },
 
 			Type::Array(arr_ty, size) => {
 				let arr_ty_cir = Box::new(self.convert_type(arr_ty));
@@ -138,7 +138,7 @@ impl CIRModuleBuilder {
 		}
 	}
 
-	fn convert_type_param_list(&mut self, list: TypeParamList) -> CIRTypeParamList {
+	fn convert_type_param_list(&mut self, list: GenericParamList) -> CIRTypeParamList {
 		list.into_iter()
 			.map(|(name, traits, concrete)| {
 				(
@@ -547,10 +547,10 @@ impl CIRModuleBuilder {
 				)),
 
 				Atom::CStringLit(s) => Some(RValue::Atom(
-					CIRType::Pointer(Box::new(CIRType::Basic(Basic::Integral {
+					CIRType::Pointer { pointee: Box::new(CIRType::Basic(Basic::Integral {
 						signed: false,
 						size_bytes: 1,
-					}))),
+					})), mutable: false },
 					None,
 					Operand::CStringLit(s.clone(), span),
 					span,

@@ -6,7 +6,7 @@ use std::{
 };
 
 use super::module::{ItemRef, ModuleImpl};
-use super::types::{FnPrototype, TypeParam, TypeParamList};
+use super::types::{FnPrototype, TypeParam, GenericParamList};
 use super::Attribute;
 use super::{
 	module::{Identifier, Name},
@@ -111,7 +111,7 @@ impl ImplSolver {
 		&self,
 		ty: &Type,
 		tr: &TraitRef,
-		type_params: &TypeParamList,
+		type_params: &GenericParamList,
 	) -> bool {
 		match ty {
 			Type::TypeParam(idx) => {
@@ -141,7 +141,7 @@ impl ImplSolver {
 		&mut self,
 		im: &ImplBlockInterface,
 		ty: Type,
-		type_params: &TypeParamList,
+		type_params: &GenericParamList,
 		root: &ModuleImpl,
 	) -> Option<TraitDeduction> {
 		// for a given impl, test if it applies

@@ -34,7 +34,6 @@ static KEYWORDS: [&str; 32] = [
 	"true",
 	"false",
 	"unsafe",
-	"safe",
 	"import",
 	"export",
 	"compile",
@@ -42,6 +41,7 @@ static KEYWORDS: [&str; 32] = [
 	"impl",
 	"enum",
 	"match",
+	"type",
 ];
 
 static OPERATORS: [&str; 42] = [

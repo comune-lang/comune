@@ -15,7 +15,7 @@ use crate::{
 		module::{Identifier, ModuleImportKind, ModuleInterface, ModuleInterfaceOpaque},
 	},
 	cir::{
-		analyze::{lifeline::VarInitCheck, verify, CIRPassManager, DataFlowPass, cleanup},
+		analyze::{lifeline::VarInitCheck, verify, CIRPassManager, DataFlowPass},
 		builder::CIRModuleBuilder,
 	},
 	errors::{CMNMessageLog, ComuneErrCode, ComuneError, ComuneMessage},
@@ -113,7 +113,6 @@ pub fn launch_module_compilation(
 
 	// Resolve module imports
 	let mut module_names: Vec<_> = parser.interface.import_names.clone().into_iter().collect();
-	let sender_lock = Mutex::new(error_sender.clone());
 
 	let mut imports = HashMap::new();
 
@@ -128,7 +127,7 @@ pub fn launch_module_compilation(
 
 		let import_path = get_module_source_path(&state, src_path.clone(), &fs_name).unwrap();
 
-		let error_sender = sender_lock.lock().unwrap().clone();
+		let error_sender = error_sender.clone();
 
 		// Query module interface, blocking this thread until it's ready
 		loop {
@@ -138,14 +137,36 @@ pub fn launch_module_compilation(
 				.unwrap()
 				.get(&import_path)
 				.cloned();
+
 			match import_state {
-				None => launch_module_compilation(
+				None => match launch_module_compilation(
 					state.clone(),
 					import_path.clone(),
 					fs_name.clone(),
 					error_sender.clone(),
 					s,
-				)?,
+				) {
+					Ok(()) => {},
+					Err(e) => {
+						state
+							.module_states
+							.write()
+							.unwrap()
+							.insert(src_path.clone(), ModuleState::ParsingFailed);
+						
+						let import_name = import_path.file_name().unwrap().to_str().unwrap();
+						
+						error_sender
+							.send(CMNMessageLog::Raw(format!(
+								"\n{:>10} compiling {}\n",
+								"failed".bold().red(),
+								import_name.bold()
+							)))
+							.unwrap();
+		
+						return Err(e);
+					}
+				}
 
 				// Sleep for some short duration, so we don't hog the CPU
 				Some(ModuleState::Parsing) => {
@@ -257,7 +278,10 @@ pub fn launch_module_compilation(
 					continue;
 				}
 
-				_ => panic!(),
+				// Upstream parsing failed somewhere, abort
+				ModuleState::ParsingFailed => return,
+
+				ModuleState::Parsing => {}
 			};
 		}
 

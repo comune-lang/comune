@@ -105,7 +105,7 @@ pub enum Operand {
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub enum CIRType {
 	Basic(Basic),
-	Pointer(Box<CIRType>),
+	Pointer { pointee: Box<CIRType>, mutable: bool },
 	Array(Box<CIRType>, Vec<i128>),
 	Reference(Box<CIRType>),
 	TypeRef(TypeName, Vec<CIRType>), // TypeRef with zero or more type parameters

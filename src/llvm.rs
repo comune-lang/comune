@@ -606,9 +606,9 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 								match b {
 									Basic::Str => {
-										let CIRType::Pointer(other_p) = to else {
+										let CIRType::Pointer { pointee: other_p, .. } = to else {
 											panic!()
-									};
+										};
 										let CIRType::Basic(Basic::Char) = **other_p else {
 											panic!()
 										};
@@ -671,7 +671,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 							}
 						}
 
-						CIRType::Pointer(_) => {
+						CIRType::Pointer { .. } => {
 							let val = self.generate_operand(from, val);
 							let to_ir = self.get_llvm_type(to);
 							self.builder.build_store(
@@ -987,7 +987,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 				.array_type(size.iter().sum::<i128>() as u32)
 				.as_any_type_enum(),
 
-			CIRType::Pointer(pointee) | CIRType::Reference(pointee) => {
+			CIRType::Pointer { pointee, .. } | CIRType::Reference(pointee) => {
 				if let CIRType::Basic(Basic::Void) = &**pointee {
 					// void* isn't valid in LLVM, so we generate an i8* type instead
 					self.context

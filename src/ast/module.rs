@@ -305,7 +305,7 @@ impl Identifier {
 	}
 
 	pub fn expect_scopeless(&self) -> ComuneResult<&Name> {
-		if self.path.len() == 1 && !self.absolute {
+		if self.path.len() == 1 && !self.absolute && matches!(&self.qualifier, (None, None)) {
 			Ok(self.path.last().unwrap())
 		} else {
 			Err(ComuneError::new(

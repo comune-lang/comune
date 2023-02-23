@@ -242,7 +242,14 @@ impl Display for CIRType {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match self {
 			CIRType::Basic(b) => write!(f, "{}", b.as_str()),
-			CIRType::Pointer(p) => write!(f, "{p}*"),
+
+			CIRType::Pointer { pointee, mutable } => 
+				if *mutable { 
+					write!(f, "{pointee} mut*") 
+				} else { 
+					write!(f, "{pointee}*")
+				}
+			
 			CIRType::Array(t, _) => write!(f, "{t}[]"),
 			CIRType::Reference(r) => write!(f, "{r}&"),
 			CIRType::TypeRef(name, _) => write!(f, "{name}"),

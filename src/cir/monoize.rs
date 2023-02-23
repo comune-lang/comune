@@ -215,7 +215,7 @@ impl CIRModule {
 		match ty {
 			CIRType::Basic(_) => {}
 
-			CIRType::Pointer(pointee) => Self::monoize_type(types, pointee, param_map, instances),
+			CIRType::Pointer { pointee, .. } => Self::monoize_type(types, pointee, param_map, instances),
 			CIRType::Array(arr_ty, _) => Self::monoize_type(types, arr_ty, param_map, instances),
 			CIRType::Reference(refee) => Self::monoize_type(types, refee, param_map, instances),
 
@@ -343,7 +343,7 @@ impl CIRType {
 	fn mangle(&self) -> String {
 		match self {
 			CIRType::Basic(b) => String::from(b.mangle()),
-			CIRType::Pointer(p) => String::from("P") + &p.mangle(),
+			CIRType::Pointer { pointee, .. } => String::from("P") + &pointee.mangle(),
 			CIRType::Reference(r) => String::from("R") + &r.mangle(),
 			CIRType::TypeRef(_, _) => String::from("S_"),
 			_ => todo!(),

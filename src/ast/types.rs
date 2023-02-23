@@ -9,12 +9,12 @@ use super::Attribute;
 use crate::constexpr::ConstExpr;
 
 pub type TypeParam = Vec<ItemRef<TraitRef>>; // Generic type parameter, with trait bounds
-pub type TypeParamList = Vec<(Name, TypeParam, Option<Type>)>;
+pub type GenericParamList = Vec<(Name, TypeParam, Option<Type>)>;
 
 #[derive(Clone)]
 pub enum Type {
 	Basic(Basic),                                  // Fundamental type
-	Pointer(Box<Type>),                            // Pointer-to-<BoxedType>
+	Pointer { pointee: Box<Type>, mutable: bool }, // Pointer-to-<BoxedType>
 	Array(Box<Type>, Arc<RwLock<Vec<ConstExpr>>>), // N-dimensional array with constant expression for size
 	TypeRef(ItemRef<TypeRef>),                     // Reference to user-defined type
 	TypeParam(usize),                              // Reference to an in-scope type parameter
@@ -65,7 +65,7 @@ pub struct FnPrototype {
 	pub path: Identifier,
 	pub ret: Type,
 	pub params: FnParamList,
-	pub type_params: TypeParamList,
+	pub type_params: GenericParamList,
 	pub attributes: Vec<Attribute>,
 }
 
@@ -87,7 +87,7 @@ pub struct AlgebraicDef {
 	pub members: Vec<(Name, Type, Visibility)>,
 	pub variants: Vec<(Name, Vec<Type>)>,
 	pub layout: DataLayout,
-	pub params: TypeParamList,
+	pub params: GenericParamList,
 	pub attributes: Vec<Attribute>,
 }
 
@@ -269,10 +269,16 @@ impl Type {
 	pub fn get_concrete_type(&self, type_args: &Vec<Type>) -> Type {
 		match self {
 			Type::Basic(b) => Type::Basic(*b),
-			Type::Pointer(ptr) => Type::Pointer(Box::new(ptr.get_concrete_type(type_args))),
+			
+			Type::Pointer { pointee, mutable } => Type::Pointer { 
+				pointee: Box::new(pointee.get_concrete_type(type_args)), 
+				mutable: *mutable 
+			},
+
 			Type::Array(arr_ty, size) => {
 				Type::Array(Box::new(arr_ty.get_concrete_type(type_args)), size.clone())
 			}
+
 			Type::TypeRef(ty) => Type::TypeRef(ty.clone()),
 			Type::TypeParam(param) => type_args[*param].get_concrete_type(type_args),
 			Type::Never => Type::Never,
@@ -321,9 +327,9 @@ impl Type {
 					true
 				}
 
-				Type::Pointer(pointee) => {
-					if let Type::Pointer(gen_pointee) = generic_ty {
-						pointee.fits_generic(gen_pointee)
+				Type::Pointer { pointee, mutable } => {
+					if let Type::Pointer { pointee: gen_pointee, mutable: gen_mutable } = generic_ty {
+						mutable == gen_mutable && pointee.fits_generic(gen_pointee)
 					} else {
 						false
 					}
@@ -346,8 +352,8 @@ impl Type {
 		}
 	}
 
-	pub fn ptr_type(&self) -> Self {
-		Type::Pointer(Box::new(self.clone()))
+	pub fn ptr_type(&self, mutable: bool) -> Self {
+		Type::Pointer { pointee: Box::new(self.clone()), mutable }
 	}
 
 	pub fn castable_to(&self, target: &Type) -> bool {
@@ -355,8 +361,12 @@ impl Type {
 			true
 		} else if self.is_numeric() {
 			target.is_numeric() || target.is_boolean()
+		} else if let (Type::Pointer { mutable, .. }, Type::Pointer { mutable: target_mutable, .. }) = (self, target) {
+			// If self is a `T mut*`, it can be cast to a `T*`
+			// but if self is a `T*`, it can't be cast to a `T mut*`
+			*mutable || !target_mutable
 		} else {
-			matches!(self, Type::Pointer(_)) && matches!(target, Type::Pointer(_))
+			false
 		}
 	}
 
@@ -427,7 +437,7 @@ impl PartialEq for Type {
 	fn eq(&self, other: &Self) -> bool {
 		match (self, other) {
 			(Self::Basic(l0), Self::Basic(r0)) => l0 == r0,
-			(Self::Pointer(l0), Self::Pointer(r0)) => l0 == r0,
+			(Self::Pointer { pointee: l0, mutable: l1}, Self::Pointer { pointee: r0, mutable: r1 }) => l0 == r0 && l1 == r1,
 			(Self::TypeRef(l0), Self::TypeRef(r0)) => l0 == r0,
 			(Self::TypeParam(l0), Self::TypeParam(r0)) => l0 == r0,
 			(Self::Array(l0, _l1), Self::Array(r0, _r1)) => l0 == r0,
@@ -462,8 +472,9 @@ impl Hash for Type {
 	fn hash<H: Hasher>(&self, state: &mut H) {
 		match self {
 			Type::Basic(b) => b.hash(state),
-			Type::Pointer(t) => {
-				t.hash(state);
+			Type::Pointer { pointee, mutable} => {
+				pointee.hash(state);
+				mutable.hash(state);
 				"*".hash(state)
 			}
 			Type::Array(t, _s) => {
@@ -511,7 +522,12 @@ impl Display for Type {
 		match &self {
 			Type::Basic(t) => write!(f, "{t}"),
 
-			Type::Pointer(t) => write!(f, "{t}*"),
+			Type::Pointer { pointee, mutable } => 
+				if *mutable {
+					write!(f, "{pointee} mut*")
+				} else {
+					write!(f, "{pointee}*")
+				}
 
 			Type::Array(t, _s) => write!(f, "{}[]", t),
 
@@ -652,7 +668,7 @@ impl std::fmt::Debug for Type {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match self {
 			Type::Basic(arg0) => f.debug_tuple("Basic").field(arg0).finish(),
-			Type::Pointer(_) => f.debug_tuple("Pointer").finish(),
+			Type::Pointer { .. } => f.debug_tuple("Pointer").finish(),
 			Type::Array(t, _) => f.debug_tuple("Array").field(t).finish(),
 			Type::TypeRef(ItemRef::Unresolved {
 				name: arg0,

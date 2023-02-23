@@ -17,7 +17,7 @@ use crate::ast::statement::Stmt;
 use crate::ast::traits::{ImplBlockInterface, TraitInterface, TraitRef};
 use crate::ast::types::{
 	AlgebraicDef, Basic, BindingProps, FnParamList, FnPrototype, TupleKind, Type, TypeDef,
-	TypeParamList, TypeRef, Visibility,
+	GenericParamList, TypeRef, Visibility,
 };
 use crate::ast::Attribute;
 
@@ -144,7 +144,7 @@ impl Parser {
 					let mut next = self.get_next()?;
 
 					if token_compare(&next, "<") {
-						aggregate.params = self.parse_type_parameter_list()?;
+						aggregate.params = self.parse_generic_param_list()?;
 						next = self.get_current()?;
 					}
 
@@ -203,7 +203,7 @@ impl Parser {
 					let mut next = self.get_next()?;
 
 					if token_compare(&next, "<") {
-						aggregate.params = self.parse_type_parameter_list()?;
+						aggregate.params = self.parse_generic_param_list()?;
 						next = self.get_current()?;
 					}
 
@@ -685,7 +685,7 @@ impl Parser {
 					let mut type_params = vec![];
 
 					if op == "<" {
-						type_params = self.parse_type_parameter_list()?;
+						type_params = self.parse_generic_param_list()?;
 					}
 
 					let t = FnPrototype {
@@ -1674,15 +1674,22 @@ impl Parser {
 				});
 			}
 
-			let mut next = self.get_current()?;
-
-			match next {
-				Token::Operator("*") => {
+			match self.get_current()? {
+				Token::Operator("*") | Token::Keyword("mut") => {
 					// Pointer type
-
-					while token_compare(&next, "*") {
-						result = Type::Pointer(Box::new(result));
-						next = self.get_next()?;
+					while let Token::Operator("*") | Token::Keyword("mut") = self.get_current()? {
+						
+						if self.get_current()? == Token::Keyword("mut") {
+							result = Type::Pointer { pointee: Box::new(result), mutable: true };
+							
+							self.get_next()?;
+							self.consume(&Token::Operator("*"))?;
+						} else {
+							result = Type::Pointer { pointee: Box::new(result), mutable: false };
+							
+							self.get_next()?;
+						}
+						
 					}
 				}
 
@@ -1815,7 +1822,7 @@ impl Parser {
 		Ok(result)
 	}
 
-	fn parse_type_parameter_list(&self) -> ComuneResult<TypeParamList> {
+	fn parse_generic_param_list(&self) -> ComuneResult<GenericParamList> {
 		if !token_compare(&self.get_current()?, "<") {
 			return self.err(ComuneErrCode::UnexpectedToken);
 		}
@@ -1825,7 +1832,11 @@ impl Parser {
 
 		loop {
 			match current {
-				Token::Name(name) => {
+				Token::Keyword("type") => {
+					let Token::Name(name) = self.get_next()? else {
+						return self.err(ComuneErrCode::UnexpectedToken)
+					};
+
 					let mut traits = vec![];
 
 					current = self.get_next()?;
@@ -1866,6 +1877,10 @@ impl Parser {
 
 						_ => return self.err(ComuneErrCode::UnexpectedToken),
 					}
+				}
+
+				Token::Keyword("const") => {
+					todo!()
 				}
 
 				Token::Operator(">") => break,

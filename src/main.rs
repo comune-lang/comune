@@ -10,11 +10,10 @@ mod parser;
 use ast::module::Name;
 use ast::{module::Identifier, types};
 use clap::Parser;
-use color_eyre::Report;
 use colored::Colorize;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{Command, ExitStatus, abort};
+use std::process::Command;
 use std::sync::RwLock;
 use std::{
 	ffi::OsString,

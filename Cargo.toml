@@ -11,7 +11,7 @@ rayon = "1.5"
 backtrace = "0.3"
 color-eyre = "0.6"
 lazy_static = "1.4.0"
-bit-set = "0.5.3"
+clang = { version = "2.0.0", features = ["clang_10_0"] }
 
 [features]
 llvm12 = ["inkwell/llvm12-0"]
