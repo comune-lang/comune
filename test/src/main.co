@@ -33,9 +33,14 @@ enum EnumTest {
 }
 
 impl Test {
-	int sum(mut& self) {
+	int sum(Test& self) {
 		printf(c"This is a method call!\n");
 		self.a + self.b
+	}
+	
+	// the `self` parameter's type can be omitted
+	int product(&self) {
+		self.a * self.b
 	}
 }
 
