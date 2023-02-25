@@ -7,7 +7,7 @@ use crate::{
 
 use super::{
 	CIRFnPrototype, CIRFunction, CIRModule, CIRStmt, CIRType, CIRTypeDef, LValue, Operand,
-	PlaceElem, RValue,
+	PlaceElem, RValue, CIRFnCall,
 };
 
 impl Display for CIRModule {
@@ -276,6 +276,22 @@ impl Display for CIRType {
 					write!(f, ")")
 				}
 			}
+
+			CIRType::FunctionPtr { ret, args } => {
+				write!(f, "{ret}(")?;
+				
+				if !args.is_empty() {
+					let mut iter = args.iter();
+
+					write!(f, "{}", iter.next().unwrap().1);
+
+					for (_, arg) in iter {
+						write!(f, ", {arg}")?;
+					}
+				}
+
+				write!(f, ")")
+			}
 		}
 	}
 }
@@ -323,5 +339,14 @@ impl Display for DataLayout {
 				DataLayout::Packed => "pack",
 			}
 		)
+	}
+}
+
+impl Display for CIRFnCall {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		match self {
+			CIRFnCall::Direct(id) => write!(f, "{id}"),
+			CIRFnCall::Indirect { local, ret, args } => write!(f, "{ret}({args:?}) {local}")
+		}
 	}
 }

@@ -69,6 +69,10 @@ void fn_pointer_test(void(int) callback) {
 	callback(12);
 }
 
+void fn_pointer_callback(int number) {
+	printf(c"this is a callback through a function pointer! the value is %i\n", number);
+}
+
 
 void overload_test(i32 a) {
 	printf(c"i32 overload called!\n");
@@ -116,6 +120,8 @@ int main() {
 	} else {
 		printf(c"i is something else!\n");
 	}
+
+	fn_pointer_test(fn_pointer_callback);
 
 	TestSumType mut who_knows = sum_type_test(322);
 

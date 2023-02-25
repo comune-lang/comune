@@ -8,7 +8,7 @@ use crate::{
 };
 
 use super::{
-	CIRFnMap, CIRFunction, CIRModule, CIRStmt, CIRType, CIRTypeDef, FuncID, RValue, TypeName,
+	CIRFnMap, CIRFunction, CIRModule, CIRStmt, CIRType, CIRTypeDef, FuncID, RValue, TypeName, CIRFnCall,
 };
 
 // A set of requested Generic monomorphizations, with a Vec of type arguments
@@ -128,7 +128,7 @@ impl CIRModule {
 	fn monoize_call(
 		functions_in: &CIRFnMap,
 		functions_out: &mut CIRFnMap,
-		func: &mut FuncID,
+		func: &mut CIRFnCall,
 		types: &mut HashMap<TypeName, CIRTypeDef>,
 		param_map: &TypeSubstitutions,
 		ty_instances: &mut TypeInstances,
@@ -138,46 +138,49 @@ impl CIRModule {
 			return;
 		}
 
-		if !fn_instances.contains_key(func) {
-			fn_instances.insert(func.clone(), HashMap::new());
-		}
+		if let CIRFnCall::Direct(func) = func {
 
-		if fn_instances[func].contains_key(param_map) {
-			*func = fn_instances[func][param_map].clone();
-		} else {
-			let Some(fn_in) = functions_in.get(func) else {
-				let mut fail_str = format!("failed to find CIRFnPrototype {func} in functions_in map! items:\n");
-
-				for item in functions_in.keys() {
-					fail_str.push_str(&format!("\t{item}\n"));
-				}
-
-				panic!("{fail_str}")
-			};
-
-			let monoized = Self::monoize_function(
-				functions_in,
-				functions_out,
-				fn_in,
-				types,
-				param_map,
-				ty_instances,
-				fn_instances,
-			);
-
-			let mut insert_id = func.clone();
-
-			for (i, type_arg) in param_map.iter().enumerate() {
-				insert_id.type_params[i].2 = Some(type_arg.clone())
+			if !fn_instances.contains_key(func) {
+				fn_instances.insert(func.clone(), HashMap::new());
 			}
 
-			fn_instances
-				.get_mut(func)
-				.unwrap()
-				.insert(param_map.clone(), insert_id.clone());
-			functions_out.insert(insert_id.clone(), monoized);
+			if fn_instances[func].contains_key(param_map) {
+				*func = fn_instances[func][param_map].clone();
+			} else {
+				let Some(fn_in) = functions_in.get(func) else {
+					let mut fail_str = format!("failed to find CIRFnPrototype {func} in functions_in map! items:\n");
 
-			*func = insert_id;
+					for item in functions_in.keys() {
+						fail_str.push_str(&format!("\t{item}\n"));
+					}
+
+					panic!("{fail_str}")
+				};
+
+				let monoized = Self::monoize_function(
+					functions_in,
+					functions_out,
+					fn_in,
+					types,
+					param_map,
+					ty_instances,
+					fn_instances,
+				);
+
+				let mut insert_id = func.clone();
+
+				for (i, type_arg) in param_map.iter().enumerate() {
+					insert_id.type_params[i].2 = Some(type_arg.clone())
+				}
+
+				fn_instances
+					.get_mut(func)
+					.unwrap()
+					.insert(param_map.clone(), insert_id.clone());
+				functions_out.insert(insert_id.clone(), monoized);
+
+				*func = insert_id;
+			}
 		}
 	}
 
@@ -240,6 +243,14 @@ impl CIRModule {
 			CIRType::Tuple(_, tuple_types) => {
 				for ty in tuple_types {
 					Self::monoize_type(types, ty, param_map, instances)
+				}
+			}
+
+			CIRType::FunctionPtr { ret, args } => {
+				Self::monoize_type(types, ret, param_map, instances);
+
+				for (_, arg) in args {
+					Self::monoize_type(types, arg, param_map, instances)
 				}
 			}
 		}
@@ -346,7 +357,19 @@ impl CIRType {
 			CIRType::Pointer { pointee, .. } => String::from("P") + &pointee.mangle(),
 			CIRType::Reference(r) => String::from("R") + &r.mangle(),
 			CIRType::TypeRef(_, _) => String::from("S_"),
-			_ => todo!(),
+			CIRType::FunctionPtr { ret, args } => {
+				let mut result = String::from("PF");
+				
+				result.push_str(&ret.mangle());
+
+				for (_, arg) in args {
+					result.push_str(&arg.mangle())
+				}
+
+				result
+			},
+
+			_ => todo!()
 		}
 	}
 }

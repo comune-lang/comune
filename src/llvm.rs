@@ -14,7 +14,7 @@ use inkwell::{
 	},
 	values::{
 		AnyValue, AnyValueEnum, BasicMetadataValueEnum, BasicValue, BasicValueEnum, FunctionValue,
-		InstructionValue, PointerValue,
+		InstructionValue, PointerValue, CallableValue,
 	},
 	AddressSpace, FloatPredicate, GlobalVisibility, IntPredicate,
 };
@@ -26,7 +26,7 @@ use crate::{
 	},
 	cir::{
 		CIRFnPrototype, CIRFunction, CIRModule, CIRStmt, CIRType, CIRTypeDef, LValue, Operand,
-		PlaceElem, RValue,
+		PlaceElem, RValue, CIRFnCall,
 	},
 };
 
@@ -287,13 +287,25 @@ impl<'ctx> LLVMBackend<'ctx> {
 						next,
 						except,
 					} => {
-						let mangled = &self.fn_map[id];
-						let fn_v = self.module.get_function(mangled).unwrap();
-
 						assert!(
 							type_args.is_empty(),
 							"encountered un-monoized type argument in LLVM codegen!"
 						);
+						
+						let (fn_v, params) = match id { 
+							CIRFnCall::Direct(id) => {
+								let mangled = &self.fn_map[id];
+								let fn_v = self.module.get_function(mangled).unwrap();
+				
+								(fn_v.into(), &id.params)
+							}
+
+							CIRFnCall::Indirect { args, local, .. } => {
+								let ptr = self.builder.build_load(self.variables[*local].0, "fnload").into_pointer_value();
+								
+								(CallableValue::try_from(ptr).unwrap(), args)
+							}
+						};
 
 						let callsite;
 
@@ -302,7 +314,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 								.iter()
 								.enumerate()
 								.map(|(i, (x, _))| {
-									let (props, ty) = &id.params[i];
+									let (props, ty) = &params[i];
 									
 									if self.pass_by_ptr(&Self::to_basic_type(self.get_llvm_type(ty)), props) {
 										self.generate_lvalue(x).as_basic_value_enum()
@@ -326,7 +338,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 								.iter()
 								.enumerate()
 								.map(|(i, (x, _))| {
-									let is_ref = if let Some((props, ty)) = id.params.get(i) {
+									let is_ref = if let Some((props, ty)) = params.get(i) {
 										self.pass_by_ptr(&Self::to_basic_type(self.get_llvm_type(ty)), props)
 									} else {
 										false
@@ -1053,6 +1065,16 @@ impl<'ctx> LLVMBackend<'ctx> {
 							.as_any_type_enum()
 					}
 				}
+			}
+
+			CIRType::FunctionPtr { ret, args } => {
+				// TODO: vararg support
+				let args_mapped = args.iter().map(|(_, ty)| Self::to_basic_metadata_type(self.get_llvm_type(ty))).collect::<Vec<_>>();
+				
+				match self.get_llvm_type(ret) {
+					AnyTypeEnum::VoidType(ty) => ty.fn_type(&args_mapped, false),
+					ty => Self::to_basic_type(ty).fn_type(&args_mapped, false),
+				}.ptr_type(AddressSpace::Generic).as_any_type_enum()
 			}
 
 			CIRType::TypeParam(_) => panic!("unexpected TypeParam in codegen!"),

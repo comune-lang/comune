@@ -13,13 +13,13 @@ pub type GenericParamList = Vec<(Name, TypeParam, Option<Type>)>;
 
 #[derive(Clone)]
 pub enum Type {
-	Basic(Basic),                                  // Fundamental type
-	Pointer { pointee: Box<Type>, mutable: bool }, // Pointer-to-<BoxedType>
-	Array(Box<Type>, Arc<RwLock<Vec<ConstExpr>>>), // N-dimensional array with constant expression for size
-	TypeRef(ItemRef<TypeRef>),                     // Reference to user-defined type
-	TypeParam(usize),                              // Reference to an in-scope type parameter
-	Tuple(TupleKind, Vec<Type>),                   // Sum/product tuple
-	Function(Box<Type>, Vec<Type>),                // Type of a function signature
+	Basic(Basic),                                   // Fundamental type
+	Pointer { pointee: Box<Type>, mutable: bool },  // Pointer-to-<BoxedType>
+	Array(Box<Type>, Arc<RwLock<Vec<ConstExpr>>>),  // N-dimensional array with constant expression for size
+	TypeRef(ItemRef<TypeRef>),                      // Reference to user-defined type
+	TypeParam(usize),                               // Reference to an in-scope type parameter
+	Tuple(TupleKind, Vec<Type>),                    // Sum/product tuple
+	Function(Box<Type>, Vec<(BindingProps, Type)>), // Type of a function signature
 	Never, // Return type of a function that never returns, coerces to anything
 }
 
@@ -299,7 +299,7 @@ impl Type {
 			Type::Function(ret, args) => Type::Function(
 				Box::new(ret.get_concrete_type(type_args)),
 				args.iter()
-					.map(|arg| arg.get_concrete_type(type_args))
+					.map(|(props, arg)| (*props, arg.get_concrete_type(type_args)))
 					.collect(),
 			),
 		}
@@ -448,6 +448,7 @@ impl PartialEq for Type {
 			(Self::Array(l0, _l1), Self::Array(r0, _r1)) => l0 == r0,
 			(Self::Tuple(l0, l1), Self::Tuple(r0, r1)) => l0 == r0 && l1 == r1,
 			(Self::Never, Self::Never) => true,
+			(Self::Function(l0, l1), Self::Function(r0, r1)) => l0 == r0 && l1 == r1,
 			_ => false,
 		}
 	}
@@ -602,9 +603,9 @@ impl Display for Type {
 				if !args.is_empty() {
 					let mut iter = args.iter();
 
-					write!(f, "({}", iter.next().unwrap())?;
+					write!(f, "({}", iter.next().unwrap().1)?;
 
-					for arg in iter {
+					for (_, arg) in iter {
 						write!(f, ", {arg}")?;
 					}
 

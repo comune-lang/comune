@@ -499,7 +499,6 @@ impl Parser {
 						Token::Other('{') => {
 							let old_scope = self.current_scope.clone();
 							self.current_scope = Arc::new(Identifier::from_parent(&old_scope, module));
-
 							let scope = self.current_scope.clone();
 							self.parse_namespace(&scope)?;
 							self.current_scope = old_scope;
@@ -1754,7 +1753,10 @@ impl Parser {
 					let mut args = vec![];
 
 					while self.get_current()? != Token::Operator(")") {
-						args.push(self.parse_type(immediate_resolve)?);
+						let ty = self.parse_type(immediate_resolve)?;
+						let props = self.parse_binding_props()?.unwrap_or_default();
+						
+						args.push((props, ty));
 
 						match self.get_current()? {
 							Token::Other(',') => self.get_next()?,

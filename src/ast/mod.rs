@@ -110,10 +110,20 @@ impl<'ctx> FnScope<'ctx> {
 			// Look for it in the namespace tree
 			self.context.with_item(id, &self.scope, |item, id| {
 				if let ModuleItemInterface::Functions(fns) = item {
-					result = Some((
-						id.clone(),
-						todo!(), // Implement function types
-					));
+					if fns.len() == 1 {
+						let func = &*fns[0].read().unwrap();
+
+						result = Some((
+							id.clone(),
+							
+							Type::Function(
+								Box::new(func.ret.clone()), 
+								func.params.params.iter().map(|(ty, _, props)| (*props, ty.clone())).collect()
+							)
+						));
+					} else {
+						todo!("taking address of overloaded function is not yet supported")
+					}
 				}
 			});
 		}
@@ -295,8 +305,14 @@ pub fn validate_fn_call(
 
 	if let Some((local_name, local_ty)) = scope.find_symbol(name, false) {
 		// Local function pointer
-		if let Type::Function(ty_ret, ty_args) = local_ty {
+		if let Type::Function(ty_ret, ty_args) = local_ty {			
+			for (arg, (_, param)) in args.iter_mut().zip(ty_args.iter()){
+				arg.get_node_data_mut().ty = Some(param.clone());
+				arg.validate(scope)?;
+			}
+
 			*resolved = FnRef::Indirect(local_name, Type::Function(ty_ret.clone(), ty_args));
+			
 			return Ok(*ty_ret);
 		}
 	}
@@ -604,7 +620,7 @@ pub fn resolve_type(
 		Type::Function(ret, args) => {
 			resolve_type(ret, namespace, generics)?;
 
-			for arg in args {
+			for (_, arg) in args {
 				resolve_type(arg, namespace, generics)?;
 			}
 

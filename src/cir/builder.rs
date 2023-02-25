@@ -11,7 +11,7 @@ use crate::{
 		pattern::{Binding, Pattern},
 		statement::Stmt,
 		types::{
-			Basic, BindingProps, FnPrototype, TupleKind, Type, TypeDef, GenericParamList, TypeRef, TypeDefKind,
+			Basic, BindingProps, FnPrototype, TupleKind, Type, GenericParamList, TypeRef, TypeDefKind,
 		},
 	},
 	constexpr::{ConstExpr, ConstValue},
@@ -21,7 +21,7 @@ use crate::{
 
 use super::{
 	BlockIndex, CIRBlock, CIRFnPrototype, CIRFunction, CIRModule, CIRStmt, CIRType, CIRTypeDef,
-	CIRTypeParamList, LValue, Operand, PlaceElem, RValue, TypeName, VarIndex,
+	CIRTypeParamList, LValue, Operand, PlaceElem, RValue, TypeName, VarIndex, CIRFnCall,
 };
 
 pub struct CIRModuleBuilder {
@@ -137,7 +137,10 @@ impl CIRModuleBuilder {
 			Type::Never => CIRType::Basic(Basic::Void),
 
 			Type::Function(ret, params) => {
-				todo!()
+				CIRType::FunctionPtr { 
+					ret: Box::new(self.convert_type(ret)), 
+					args: params.iter().map(|(props, ty)| (*props, self.convert_type(ty))).collect()
+				}
 			}
 		}
 	}
@@ -1217,7 +1220,7 @@ impl CIRModuleBuilder {
 			name: _,
 			args,
 			type_args,
-			resolved: FnRef::Direct(resolved),
+			resolved,
 		} = call else { panic!() };
 
 		let cir_args: Vec<_> = args
@@ -1241,41 +1244,91 @@ impl CIRModuleBuilder {
 
 		let cir_type_args = type_args.iter().map(|arg| self.convert_type(arg)).collect();
 
-		let ret = &resolved.read().unwrap().ret;
-		let current_block = self.current_block;
-		let next = self.append_block();
-		self.current_block = current_block;
+		match resolved {
+			FnRef::Direct(resolved) => {
+				let ret = &resolved.read().unwrap().ret;
 
-		let result = if ret == &Type::Basic(Basic::Void) {
-			None
-		} else {
-			// TODO: BindingProps for return type
-			let cir_ret = self.convert_type(ret);
-			Some(self.insert_variable(None, BindingProps::default(), cir_ret))
-		};
+				let current_block = self.current_block;
+				let next = self.append_block();
+				self.current_block = current_block;
+		
+				let result = if ret == &Type::Basic(Basic::Void) {
+					None
+				} else {
+					// TODO: BindingProps for return type
+					let cir_ret = self.convert_type(ret);
+					Some(self.insert_variable(None, BindingProps::default(), cir_ret))
+				};
+		
+				let id = self.get_prototype(&*resolved.read().unwrap());
+		
+				self.write(CIRStmt::FnCall {
+					id: CIRFnCall::Direct(id),
+					args: cir_args,
+					type_args: cir_type_args,
+					result: result.clone(),
+					next,
+					except: None,
+				});
+		
+				self.current_block = next;
+		
+				if let Some(result) = result {
+					Some(RValue::Atom(
+						self.convert_type(&ret),
+						None,
+						Operand::LValue(result, span),
+						span,
+					))
+				} else {
+					Some(Self::get_void_rvalue())
+				}
+			}
 
-		let id = self.get_prototype(&*resolved.read().unwrap());
+			FnRef::Indirect(id, ty) => {
+				let CIRType::FunctionPtr { ret, args } = self.convert_type(ty) else { 
+					panic!()
+				};
 
-		self.write(CIRStmt::FnCall {
-			id,
-			args: cir_args,
-			type_args: cir_type_args,
-			result: result.clone(),
-			next,
-			except: None,
-		});
+				let current_block = self.current_block;
+				let next = self.append_block();
+				self.current_block = current_block;
 
-		self.current_block = next;
+				let result = if &*ret == &CIRType::Basic(Basic::Void) {
+					None
+				} else {
+					// TODO: BindingProps for return type
+					Some(self.insert_variable(None, BindingProps::default(), *ret.clone()))
+				};
 
-		if let Some(result) = result {
-			Some(RValue::Atom(
-				self.convert_type(&ret),
-				None,
-				Operand::LValue(result, span),
-				span,
-			))
-		} else {
-			Some(Self::get_void_rvalue())
+				self.write(CIRStmt::FnCall { 
+					id: CIRFnCall::Indirect { 
+						local: self.get_var_index(id.expect_scopeless().unwrap()).unwrap(), 
+						ret: *ret.clone(),
+						args, 
+					}, 
+					args: cir_args,
+					type_args: vec![], 
+					result: result.clone(),
+					next,
+					except: None 
+				});
+
+				self.current_block = next;
+
+				if let Some(result) = result {
+					Some(RValue::Atom(
+						*ret,
+						None,
+						Operand::LValue(result, span),
+						span,
+					))
+				} else {
+					Some(Self::get_void_rvalue())
+				}
+			}
+
+			_ => panic!()
 		}
 	}
 
