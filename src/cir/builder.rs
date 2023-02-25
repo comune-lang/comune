@@ -108,6 +108,8 @@ impl CIRModuleBuilder {
 				CIRType::TypeRef(idx, args_cir)
 			}
 
+			Type::TypeRef(_) => panic!("unresolved TypeRef in cIR!"),
+
 			Type::TypeParam(idx) => CIRType::TypeParam(*idx),
 
 			Type::Pointer { pointee, mutable } => CIRType::Pointer { pointee: Box::new(self.convert_type(pointee)), mutable: *mutable },
@@ -134,7 +136,9 @@ impl CIRModuleBuilder {
 
 			Type::Never => CIRType::Basic(Basic::Void),
 
-			_ => todo!(),
+			Type::Function(ret, params) => {
+				todo!()
+			}
 		}
 	}
 

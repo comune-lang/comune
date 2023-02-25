@@ -65,9 +65,9 @@ void ref_test(i32 mut& test) {
 	test++;
 }
 
-//void fn_pointer_test(fn<void(int)> callback) {
-//	callback(12);
-//}
+void fn_pointer_test(void(int) callback) {
+	callback(12);
+}
 
 
 void overload_test(i32 a) {

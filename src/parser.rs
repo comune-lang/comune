@@ -1760,7 +1760,7 @@ impl Parser {
 
 					self.get_next()?;
 
-					result = Type::Function(ret, vec![]);
+					result = Type::Function(ret, args);
 				}
 
 				Token::Operator("<") => {
