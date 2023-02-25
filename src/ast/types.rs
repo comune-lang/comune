@@ -37,12 +37,18 @@ pub enum Basic {
 #[derive(Clone, Debug, Default)]
 pub struct TypeRef {
 	pub def: Weak<RwLock<TypeDef>>,
-	pub name: Identifier,
 	pub args: Vec<Type>,
 }
 
+
 #[derive(Debug)]
-pub enum TypeDef {
+pub struct TypeDef {
+	pub def: TypeDefKind,
+	pub name: Identifier,
+}
+
+#[derive(Debug)]
+pub enum TypeDefKind {
 	Algebraic(AlgebraicDef),
 	Class, // TODO: Implement classes
 }
@@ -426,7 +432,6 @@ impl Type {
 impl PartialEq for TypeRef {
 	fn eq(&self, other: &Self) -> bool {
 		Arc::ptr_eq(&self.def.upgrade().unwrap(), &other.def.upgrade().unwrap())
-			&& self.name == other.name
 			&& self.args == other.args
 	}
 }
@@ -550,8 +555,8 @@ impl Display for Type {
 				Ok(())
 			}
 
-			Type::TypeRef(ItemRef::Resolved(TypeRef { name, args, .. })) => {
-				write!(f, "{name}")?;
+			Type::TypeRef(ItemRef::Resolved(TypeRef { def, args, .. })) => {
+				write!(f, "{}", def.upgrade().unwrap().read().unwrap().name)?;
 
 				if !args.is_empty() {
 					let mut iter = args.iter();
@@ -614,11 +619,11 @@ impl Display for Type {
 
 impl Display for TypeDef {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		match &self {
-			TypeDef::Algebraic(agg) => {
+		match &self.def {
+			TypeDefKind::Algebraic(agg) => {
 				write!(f, "{}", agg)?;
 			}
-			TypeDef::Class => todo!(),
+			TypeDefKind::Class => todo!(),
 		}
 		Ok(())
 	}

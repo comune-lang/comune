@@ -22,7 +22,7 @@ use self::{
 	pattern::Binding,
 	statement::Stmt,
 	traits::{TraitInterface, TraitRef},
-	types::{AlgebraicDef, BindingProps, FnPrototype, TupleKind, GenericParamList, TypeRef},
+	types::{AlgebraicDef, BindingProps, FnPrototype, TupleKind, GenericParamList, TypeRef, TypeDefKind},
 };
 
 pub mod controlflow;
@@ -574,12 +574,11 @@ pub fn resolve_type(
 
 			if let Some(Type::TypeRef(ItemRef::Resolved(TypeRef {
 				def,
-				name,
 				mut args,
 			}))) = result
 			{
 				args.append(type_args);
-				*ty = Type::TypeRef(ItemRef::Resolved(TypeRef { def, name, args }));
+				*ty = Type::TypeRef(ItemRef::Resolved(TypeRef { def, args }));
 				Ok(())
 			} else if let Some(resolved) = result {
 				*ty = resolved;
@@ -671,12 +670,12 @@ pub fn resolve_algebraic_def(
 }
 
 pub fn resolve_type_def(
-	ty: &mut TypeDef,
+	ty: &mut TypeDefKind,
 	namespace: &ModuleInterface,
 	base_generics: &GenericParamList,
 ) -> ComuneResult<()> {
 	match ty {
-		TypeDef::Algebraic(agg) => resolve_algebraic_def(agg, namespace, base_generics),
+		TypeDefKind::Algebraic(agg) => resolve_algebraic_def(agg, namespace, base_generics),
 
 		_ => todo!(),
 	}
@@ -712,7 +711,7 @@ pub fn resolve_namespace_types(interface: &ModuleInterface) -> ComuneResult<()> 
 			}
 
 			ModuleItemInterface::Type(t) => {
-				resolve_type_def(&mut *t.write().unwrap(), interface, &vec![])?
+				resolve_type_def(&mut t.write().unwrap().def, interface, &vec![])?
 			}
 
 			ModuleItemInterface::TypeAlias(ty) => {
@@ -812,7 +811,7 @@ pub fn check_cyclical_deps(
 	ty: &Arc<RwLock<TypeDef>>,
 	parent_types: &mut Vec<Arc<RwLock<TypeDef>>>,
 ) -> ComuneResult<()> {
-	if let TypeDef::Algebraic(agg) = &*ty.read().unwrap() {
+	if let TypeDefKind::Algebraic(agg) = &ty.read().unwrap().def {
 		for member in agg.members.iter() {
 			if let Type::TypeRef(ItemRef::Resolved(TypeRef { def: ref_t, .. })) = &member.1 {
 				// Member is of a user-defined type
@@ -1067,9 +1066,9 @@ impl Expr {
 			return Err(ComuneError::new(ComuneErrCode::InvalidSubscriptLHS { t: lhs_ty.clone() }, meta.tk));
 		};
 
-		match &*lhs_ref.def.upgrade().unwrap().read().unwrap() {
+		match &lhs_ref.def.upgrade().unwrap().read().unwrap().def {
 			// Dot operator is on an algebraic type, so check if it's a member access or method call
-			TypeDef::Algebraic(t) => match rhs {
+			TypeDefKind::Algebraic(t) => match rhs {
 				// Member access on algebraic type
 				Expr::Atom(Atom::Identifier(id), _) => {
 					if let Some((_, m)) = t.get_member(id.name(), Some(&lhs_ref.args)) {
@@ -1221,7 +1220,7 @@ impl Atom {
 
 			Atom::AlgebraicLit(ty, elems) => {
 				if let Type::TypeRef(ItemRef::Resolved(TypeRef { def, args, .. })) = ty {
-					if let TypeDef::Algebraic(alg) = &*def.upgrade().unwrap().read().unwrap() {
+					if let TypeDefKind::Algebraic(alg) = &def.upgrade().unwrap().read().unwrap().def {
 						for (name, expr) in elems.iter_mut() {
 							let member_ty = if let Some((_, ty)) = alg.get_member(name, Some(args))
 							{

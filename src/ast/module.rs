@@ -182,10 +182,9 @@ impl ModuleInterface {
 		}
 
 		match found {
-			Some((id, ModuleItemInterface::Type(ty))) => {
+			Some((_, ModuleItemInterface::Type(ty))) => {
 				Some(Type::TypeRef(ItemRef::Resolved(TypeRef {
 					def: Arc::downgrade(ty),
-					name: id,
 					args: vec![],
 				})))
 			}

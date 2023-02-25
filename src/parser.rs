@@ -17,7 +17,7 @@ use crate::ast::statement::Stmt;
 use crate::ast::traits::{ImplBlockInterface, TraitInterface, TraitRef};
 use crate::ast::types::{
 	AlgebraicDef, Basic, BindingProps, FnParamList, FnPrototype, TupleKind, Type, TypeDef,
-	GenericParamList, TypeRef, Visibility,
+	GenericParamList, TypeRef, Visibility, TypeDefKind,
 };
 use crate::ast::Attribute;
 
@@ -185,12 +185,15 @@ impl Parser {
 					self.get_next()?; // Consume closing brace
 
 					aggregate.attributes = current_attributes;
+					
+					let full_name = Identifier::from_parent(scope, name);
 
 					self.interface.children.insert(
-						Identifier::from_parent(scope, name),
-						ModuleItemInterface::Type(Arc::new(RwLock::new(TypeDef::Algebraic(
-							aggregate,
-						)))),
+						full_name.clone(),
+						ModuleItemInterface::Type(Arc::new(RwLock::new(TypeDef {
+							def: TypeDefKind::Algebraic(aggregate),
+							name: full_name
+						}))),
 					);
 				}
 
@@ -257,12 +260,15 @@ impl Parser {
 					self.get_next()?; // Consume closing brace
 
 					aggregate.attributes = current_attributes;
+					
+					let full_name = Identifier::from_parent(scope, name);
 
 					self.interface.children.insert(
-						Identifier::from_parent(scope, name),
-						ModuleItemInterface::Type(Arc::new(RwLock::new(TypeDef::Algebraic(
-							aggregate,
-						)))),
+						full_name.clone(),
+						ModuleItemInterface::Type(Arc::new(RwLock::new(TypeDef {
+							def: TypeDefKind::Algebraic(aggregate),
+							name: full_name
+						}))),
 					);
 				}
 
@@ -1046,9 +1052,9 @@ impl Parser {
 			let id = self.parse_identifier()?;
 
 			if let Some(Type::TypeRef(ItemRef::Resolved(mut found))) = self.find_type(&id) {
-				match &*found.def.upgrade().unwrap().read().unwrap() {
+				match &found.def.upgrade().unwrap().read().unwrap().def {
 					// Parse with algebraic typename
-					TypeDef::Algebraic(_) => {
+					TypeDefKind::Algebraic(_) => {
 						if let Token::Operator("<") = self.get_current()? {
 							found.args = self.parse_type_argument_list()?;
 						}
@@ -1085,7 +1091,7 @@ impl Parser {
 						}
 					}
 
-					TypeDef::Class => todo!(),
+					TypeDefKind::Class => todo!(),
 				}
 			}
 

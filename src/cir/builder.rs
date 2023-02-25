@@ -11,7 +11,7 @@ use crate::{
 		pattern::{Binding, Pattern},
 		statement::Stmt,
 		types::{
-			Basic, BindingProps, FnPrototype, TupleKind, Type, TypeDef, GenericParamList, TypeRef,
+			Basic, BindingProps, FnPrototype, TupleKind, Type, TypeDef, GenericParamList, TypeRef, TypeDefKind,
 		},
 	},
 	constexpr::{ConstExpr, ConstValue},
@@ -155,14 +155,17 @@ impl CIRModuleBuilder {
 	}
 
 	fn convert_type_def(&mut self, ty: &TypeRef) -> String {
-		let TypeRef { def, name, .. } = ty;
+		let TypeRef { def, .. } = ty;
 
 		if let Some(ty_id) = self.type_map.get(ty) {
 			ty_id.clone()
 		} else {
+			let def = def.upgrade().unwrap();
+			let def = def.read().unwrap();
+
 			// Found an unregistered TypeDef, convert it
-			let (insert_idx, cir_def) = match &*def.upgrade().unwrap().read().unwrap() {
-				TypeDef::Algebraic(alg) => {
+			let (insert_idx, cir_def) = match &def.def {
+				TypeDefKind::Algebraic(alg) => {
 					let mut members = vec![];
 					let mut members_map = HashMap::new();
 
@@ -174,7 +177,7 @@ impl CIRModuleBuilder {
 					// TODO: Variant mapping
 
 					(
-						name.to_string(),
+						def.name.to_string(),
 						CIRTypeDef::Algebraic {
 							members,
 							variants: vec![],
@@ -185,7 +188,7 @@ impl CIRModuleBuilder {
 						},
 					)
 				}
-				TypeDef::Class => todo!(),
+				TypeDefKind::Class => todo!(),
 			};
 
 			self.module.types.insert(insert_idx.clone(), cir_def);
