@@ -365,7 +365,7 @@ pub enum ModuleASTElem {
 pub enum ItemRef<T: Clone> {
 	Unresolved {
 		name: Identifier,
-		scope: Identifier,
+		scope: Arc<Identifier>,
 		type_args: Vec<Type>,
 	},
 	Resolved(T),

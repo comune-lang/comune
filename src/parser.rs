@@ -38,7 +38,7 @@ pub struct Parser {
 	pub module_impl: ModuleImpl,
 	pub lexer: RefCell<Lexer>,
 	pub imports_opaque: HashMap<Name, HashMap<Identifier, ModuleItemOpaque>>,
-	current_scope: Identifier,
+	current_scope: Arc<Identifier>,
 	verbose: bool,
 }
 
@@ -47,7 +47,7 @@ impl Parser {
 		Parser {
 			interface: ModuleInterface::new(Identifier::new(true)),
 			module_impl: ModuleImpl::new(),
-			current_scope: Identifier::new(true),
+			current_scope: Arc::new(Identifier::new(true)),
 			lexer: RefCell::new(lexer),
 			imports_opaque: HashMap::new(),
 			verbose,
@@ -497,11 +497,12 @@ impl Parser {
 						}
 
 						Token::Other('{') => {
-							self.current_scope.path.push(module);
+							let old_scope = self.current_scope.clone();
+							self.current_scope = Arc::new(Identifier::from_parent(&old_scope, module));
 
 							let scope = self.current_scope.clone();
 							self.parse_namespace(&scope)?;
-							self.current_scope.path.pop();
+							self.current_scope = old_scope;
 						}
 
 						_ => return self.err(ComuneErrCode::UnexpectedToken),
