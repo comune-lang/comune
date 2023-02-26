@@ -138,7 +138,7 @@ impl CIRModule {
 			return;
 		}
 
-		if let CIRFnCall::Direct(func) = func {
+		if let CIRFnCall::Direct(func, _) = func {
 
 			if !fn_instances.contains_key(func) {
 				fn_instances.insert(func.clone(), HashMap::new());

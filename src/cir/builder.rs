@@ -1263,7 +1263,7 @@ impl CIRModuleBuilder {
 				let id = self.get_prototype(&*resolved.read().unwrap());
 		
 				self.write(CIRStmt::FnCall {
-					id: CIRFnCall::Direct(id),
+					id: CIRFnCall::Direct(id, SrcSpan::new()),
 					args: cir_args,
 					type_args: cir_type_args,
 					result: result.clone(),
@@ -1314,7 +1314,8 @@ impl CIRModuleBuilder {
 					id: CIRFnCall::Indirect { 
 						local, 
 						ret: *ret.clone(),
-						args, 
+						args,
+						span: expr.get_node_data().tk
 					}, 
 					args: cir_args,
 					type_args: vec![], 

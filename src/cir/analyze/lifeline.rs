@@ -7,7 +7,7 @@ use super::{
 	ResultVisitor,
 };
 use crate::{
-	cir::{CIRFunction, CIRStmt, CIRType, LValue, Operand, PlaceElem, RValue},
+	cir::{CIRFunction, CIRStmt, CIRType, LValue, Operand, PlaceElem, RValue, CIRFnCall},
 	errors::{ComuneErrCode, ComuneError},
 };
 
@@ -282,6 +282,7 @@ impl AnalysisResultHandler for VarInitCheck {
 					| CIRStmt::Return(Some(Operand::LValue(lval, span)))
 					| CIRStmt::Assignment(_, RValue::Cons(_, [(_, Operand::LValue(lval, span)), _], ..))
 					| CIRStmt::Assignment(_, RValue::Cons(_, [_, (_, Operand::LValue(lval, span))], ..))
+					| CIRStmt::FnCall { id: CIRFnCall::Indirect { local: lval, span, .. }, .. }
 					
 					=> {
 						let liveness = state.get_liveness(lval);

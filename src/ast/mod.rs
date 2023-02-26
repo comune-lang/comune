@@ -319,7 +319,7 @@ pub fn validate_fn_call(
 				Atom::Identifier(local_name), 
 				NodeData { 
 					ty: Some(Type::Function(ty_ret.clone(), ty_args)), 
-					tk: SrcSpan::new(),
+					tk: node_data.tk,
 				}
 			)));
 

@@ -293,7 +293,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 						);
 						
 						let (fn_v, params) = match id { 
-							CIRFnCall::Direct(id) => {
+							CIRFnCall::Direct(id, _) => {
 								let mangled = &self.fn_map[id];
 								let fn_v = self.module.get_function(mangled).unwrap();
 				

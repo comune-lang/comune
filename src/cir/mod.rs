@@ -130,11 +130,12 @@ pub enum CIRTypeDef {
 
 #[derive(Debug, Clone)]
 pub enum CIRFnCall {
-	Direct(FuncID),
+	Direct(FuncID, SrcSpan),
 	Indirect {
 		local: LValue,
 		ret: CIRType,
 		args: Vec<(BindingProps, CIRType)>,
+		span: SrcSpan,
 	},
 }
 
