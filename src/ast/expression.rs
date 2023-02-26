@@ -434,7 +434,7 @@ pub enum Atom {
 pub enum FnRef {
 	None,
 	Direct(Arc<RwLock<FnPrototype>>),
-	Indirect(Identifier, Type),
+	Indirect(Box<Expr>),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -485,7 +485,7 @@ impl PartialEq for Atom {
 						(FnRef::Direct(l), FnRef::Direct(r)) => {
 							&*l.read().unwrap() == &*r.read().unwrap()
 						}
-						(FnRef::Indirect(l0, l1), FnRef::Indirect(r0, r1)) => l0 == r0 && l1 == r1,
+						(FnRef::Indirect(l0), FnRef::Indirect(r0)) => l0 == r0,
 						(FnRef::None, FnRef::None) => true,
 						_ => false,
 					}

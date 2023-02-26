@@ -115,7 +115,7 @@ impl<'ctx> FnScope<'ctx> {
 
 						result = Some((
 							id.clone(),
-							
+
 							Type::Function(
 								Box::new(func.ret.clone()), 
 								func.params.params.iter().map(|(ty, _, props)| (*props, ty.clone())).collect()
@@ -299,7 +299,11 @@ pub fn validate_fn_call(
 		return Ok(resolved.read().unwrap().ret.clone());
 	}
 
-	if let FnRef::Indirect(_, Type::Function(ret, _)) = resolved {
+	if let FnRef::Indirect(expr) = resolved {
+		let Some(Type::Function(ret, _)) = &expr.get_node_data().ty else {
+			panic!()
+		};
+
 		return Ok(*ret.clone());
 	}
 
@@ -311,7 +315,15 @@ pub fn validate_fn_call(
 				arg.validate(scope)?;
 			}
 
-			*resolved = FnRef::Indirect(local_name, Type::Function(ty_ret.clone(), ty_args));
+			*resolved = FnRef::Indirect(Box::new(Expr::Atom(
+				Atom::Identifier(local_name), 
+				NodeData { 
+					ty: Some(Type::Function(ty_ret.clone(), ty_args)), 
+					tk: SrcSpan::new(),
+				}
+			)));
+
+
 			
 			return Ok(*ty_ret);
 		}
@@ -423,7 +435,11 @@ fn resolve_method_call(
 		return Ok(resolved.read().unwrap().ret.clone());
 	}
 
-	if let FnRef::Indirect(_, Type::Function(ret, _)) = resolved {
+	if let FnRef::Indirect(expr) = resolved {
+		let Some(Type::Function(ret, _)) = &expr.get_node_data().ty else {
+			panic!()
+		};
+
 		return Ok(*ret.clone());
 	}
 
@@ -1033,7 +1049,11 @@ impl Expr {
 					Atom::FnCall { resolved, .. } => {
 						if let FnRef::Direct(resolved) = resolved {
 							resolved.read().unwrap().ret == *target
-						} else if let FnRef::Indirect(_, Type::Function(ret, _)) = resolved {
+						} else if let FnRef::Indirect(expr) = resolved {
+							let Some(Type::Function(ret, _)) = &expr.get_node_data().ty else {
+								panic!()
+							};
+
 							&**ret == target
 						} else {
 							false

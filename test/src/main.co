@@ -70,7 +70,7 @@ void fn_pointer_test(void(int) callback) {
 }
 
 void fn_pointer_callback(int number) {
-	printf(c"this is a callback through a function pointer! the value is %i\n", number);
+	printf(c"this is a callback! %i\n", number);
 }
 
 
@@ -121,7 +121,9 @@ int main() {
 		printf(c"i is something else!\n");
 	}
 
-	fn_pointer_test(fn_pointer_callback);
+	void(int) function;
+	//function(12);
+	//fn_pointer_test(fn_pointer_callback);
 
 	TestSumType mut who_knows = sum_type_test(322);
 

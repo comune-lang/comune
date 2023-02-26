@@ -60,14 +60,14 @@ impl LiveVarCheckState {
 		self.liveness.insert(lval.clone(), state);
 	}
 
-	pub fn get_liveness(&self, lval: &LValue) -> LivenessState {
+	pub fn get_liveness(&self, lval: &LValue) -> Option<LivenessState> {
 		if self.liveness.get(lval).is_some() {
 			// This state has a defined liveness value, so look through its children to check for partial moves
 
 			// Get all keys that are sublocations of this lvalue
 			for (_, val) in self.get_active_sublocations(lval) {
 				if *val == LivenessState::Moved {
-					return LivenessState::PartialMoved;
+					return Some(LivenessState::PartialMoved);
 				}
 			}
 		}
@@ -78,11 +78,11 @@ impl LiveVarCheckState {
 
 		loop {
 			if let Some(state) = self.liveness.get(&lval) {
-				return *state;
+				return Some(*state);
 			}
 
 			if lval.projection.is_empty() {
-				return LivenessState::Uninit;
+				return None;
 			} else {
 				lval.projection.pop();
 			}
@@ -176,16 +176,42 @@ impl JoinSemiLattice for LiveVarCheckState {
 	fn join(&mut self, other: &Self) -> bool {
 		let mut changed = false;
 
-		for (lval, liveness) in &other.liveness {
-			let own_liveness = self.get_liveness(lval);
+		let mut result = LiveVarCheckState { liveness: HashMap::new() };
 
-			if liveness != &own_liveness {
-				changed = true;
+		for lval in self.liveness.keys().chain(other.liveness.keys()) {
+			if result.liveness.contains_key(lval) {
+				continue
+			}
 
-				self.set_liveness(lval, LivenessState::MaybeUninit)
+			match (self.liveness.get(lval), other.liveness.get(lval)) {
+				(Some(own), Some(other)) => {
+					if own != other {
+						changed = true;
+
+						result.liveness.insert(lval.clone(), LivenessState::MaybeUninit);
+					} else {
+						result.liveness.insert(lval.clone(), *own);
+					}
+				}
+				
+				(Some(liveness), None) => {
+					result.liveness.insert(lval.clone(), *liveness);
+				}
+
+				(None, Some(liveness)) => {
+					changed = true;
+
+					result.liveness.insert(lval.clone(), *liveness);
+				}
+
+				(None, None) => unreachable!()
 			}
 		}
 
+		if changed {
+			*self = result;
+		}
+		
 		changed
 	}
 }
@@ -194,20 +220,9 @@ impl AnalysisDomain for VarInitCheck {
 	type Domain = LiveVarCheckState;
 	type Direction = Forward;
 
-	fn bottom_value(&self, func: &CIRFunction) -> Self::Domain {
+	fn bottom_value(&self, _func: &CIRFunction) -> Self::Domain {
 		LiveVarCheckState {
-			liveness: (0..func.variables.len())
-				.into_iter()
-				.map(|idx| {
-					(
-						LValue {
-							local: idx,
-							projection: vec![],
-						},
-						LivenessState::Uninit,
-					)
-				})
-				.collect(),
+			liveness: HashMap::new()
 		}
 	}
 
@@ -283,12 +298,12 @@ impl AnalysisResultHandler for VarInitCheck {
 						let liveness = state.get_liveness(lval);
 
 						match liveness {
-							LivenessState::Live => {}
+							Some(LivenessState::Live) => {}
 
 							_ => errors.push(ComuneError::new(
 								ComuneErrCode::InvalidUse {
 									variable: func.get_variable_name(lval.local),
-									state: liveness,
+									state: liveness.unwrap_or(LivenessState::Uninit),
 								},
 								*span,
 							)),
@@ -300,12 +315,12 @@ impl AnalysisResultHandler for VarInitCheck {
 							let liveness = state.get_liveness(lval);
 							
 							match liveness {
-								LivenessState::Live => {}
+								Some(LivenessState::Live) => {}
 
 								_ => errors.push(ComuneError::new(
 									ComuneErrCode::InvalidUse {
 										variable: func.get_variable_name(lval.local),
-										state: liveness,
+										state: liveness.unwrap_or(LivenessState::Uninit),
 									}, *span
 								))
 							}
@@ -318,7 +333,7 @@ impl AnalysisResultHandler for VarInitCheck {
 
 				// Check for mutation of immutable lvalues
 				if let CIRStmt::Assignment((lval, tk), _) = stmt {
-					if state.get_liveness(lval) != LivenessState::Uninit
+					if !matches!(state.get_liveness(lval), None | Some(LivenessState::Uninit) | Some(LivenessState::Moved))
 						&& !func.variables[lval.local].1.is_mut
 					{
 						errors.push(ComuneError::new(

@@ -132,7 +132,7 @@ pub enum CIRTypeDef {
 pub enum CIRFnCall {
 	Direct(FuncID),
 	Indirect {
-		local: VarIndex,
+		local: LValue,
 		ret: CIRType,
 		args: Vec<(BindingProps, CIRType)>,
 	},

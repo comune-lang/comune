@@ -1285,15 +1285,20 @@ impl CIRModuleBuilder {
 				}
 			}
 
-			FnRef::Indirect(id, ty) => {
-				let CIRType::FunctionPtr { ret, args } = self.convert_type(ty) else { 
-					panic!()
+			FnRef::Indirect(expr) => {
+				let fn_val_ir = self.generate_expr(expr)?;
+				let fn_val_ty = fn_val_ir.get_type().clone();
+
+				let local = if let RValue::Atom(_, None, Operand::LValue(lval, _), _) = fn_val_ir {
+					lval
+				} else {
+					self.insert_temporary(fn_val_ir.get_type().clone(), fn_val_ir.clone())
 				};
 
-				let current_block = self.current_block;
-				let next = self.append_block();
-				self.current_block = current_block;
-
+				let CIRType::FunctionPtr { ret, args } = fn_val_ty else { 
+					panic!()
+				};
+				
 				let result = if &*ret == &CIRType::Basic(Basic::Void) {
 					None
 				} else {
@@ -1301,9 +1306,13 @@ impl CIRModuleBuilder {
 					Some(self.insert_variable(None, BindingProps::default(), *ret.clone()))
 				};
 
+				let current_block = self.current_block;
+				let next = self.append_block();
+				self.current_block = current_block;
+
 				self.write(CIRStmt::FnCall { 
 					id: CIRFnCall::Indirect { 
-						local: self.get_var_index(id.expect_scopeless().unwrap()).unwrap(), 
+						local, 
 						ret: *ret.clone(),
 						args, 
 					}, 

@@ -301,7 +301,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 							}
 
 							CIRFnCall::Indirect { args, local, .. } => {
-								let ptr = self.builder.build_load(self.variables[*local].0, "fnload").into_pointer_value();
+								let ptr = self.builder.build_load(self.generate_lvalue(local), "fnload").into_pointer_value();
 								
 								(CallableValue::try_from(ptr).unwrap(), args)
 							}

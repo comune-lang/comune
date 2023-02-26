@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{VecDeque, BTreeMap};
 
 use rayon::prelude::{IntoParallelRefIterator, ParallelIterator};
 
@@ -206,69 +206,84 @@ where
 	fn on_function(&self, func: &CIRFunction) -> Vec<ComuneError> {
 		let mut entry_state  = self.analysis.bottom_value(func);
 
-		let mut in_states = vec![];
-		let mut out_states = vec![];
-
 		self.analysis.initialize_start_block(func, &mut entry_state);
 
+		// Prevent entry_state from being mutated
 		let entry_state = entry_state;
 
+		let mut in_states = BTreeMap::new();
+		let mut out_states = BTreeMap::new();
+		let mut work_list = VecDeque::new();
+
 		// Initialize blocks
-		for (i, block) in func.blocks.iter().enumerate() {
-			in_states.push(entry_state.clone());
+		
+		in_states.insert(0, entry_state.clone());
 
-			let mut block_state = entry_state.clone();
+		let mut block_state = entry_state.clone();
 
-			for (j, stmt) in block.items.iter().enumerate() {
-				self.analysis.apply_effect(stmt, (i, j), &mut block_state);
-			}
-
-			out_states.push(block_state.clone());
+		for (j, stmt) in func.blocks[0].items.iter().enumerate() {
+			self.analysis.apply_before_effect(stmt, (0, j), &mut block_state);
+			self.analysis.apply_effect(stmt, (0, j), &mut block_state);
 		}
+
+		out_states.insert(0, block_state.clone());
+
+		work_list.extend(func.blocks[0].succs.iter().cloned());
 
 		// While we haven't reached fixpoint, update blocks iteratively
 		// If a block's in-state changes, process it and its successors
 
-		let mut work_list: BTreeSet<_> = (0..func.blocks.len()).into_iter().collect();
-
-		while let Some(i) = work_list.first() {
-			let i = *i;
+		while let Some(i) = work_list.pop_front() {
 			let block = &func.blocks[i];
-
-			work_list.pop_first();
-
 			let mut changed = false;
 
 			if !block.preds.is_empty() {
 				let mut preds = block.preds.iter();
 
-				let mut in_state = out_states[*preds.next().unwrap()].clone();
+				let mut in_state = out_states[preds.next().unwrap()].clone();
 
 				for pred in preds {
-					changed |= in_state.join(&out_states[*pred]);
+					if let Some(out_state) = out_states.get(pred) {					
+						changed |= in_state.join(out_state);
+					} else {
+						println!("warning: processing block {i} without predicate {pred}");
+						changed = true;
+					}
 				}
 				
 				// check if in_state is different from in_states[i]
-				if in_state.clone().join(&in_states[i]) {
-					in_states[i] = in_state;
+				if let Some(prev_state) = in_states.get(&i) {
+					changed |= in_state.clone().join(prev_state);
+				} else {
 					changed = true;
 				}
+				
+				in_states.insert(i, in_state);
 			}
 
 			if changed {
-				let mut block_state = in_states[i].clone();
+				let block_state: &T::Domain = &in_states[&i];
+				
+				let mut block_state = block_state.clone();
 
 				for (j, stmt) in block.items.iter().enumerate() {
+					self.analysis.apply_before_effect(stmt, (i, j), &mut block_state);
 					self.analysis.apply_effect(stmt, (i, j), &mut block_state);
 				}
-
-				if out_states[i].clone().join(&block_state) {
-					out_states[i] = block_state.clone();
+				
+				if let Some(out_state) = out_states.get(&i) {
+					if out_state.clone().join(&block_state) {
+						out_states.insert(i, block_state.clone());
+						work_list.extend(block.succs.clone().into_iter());
+					}
+				} else {
+					out_states.insert(i, block_state.clone());
+					work_list.extend(block.succs.clone().into_iter());
 				}
-
-				work_list.extend(block.succs.clone().into_iter());
 			}
 		}
+
+		let in_states = in_states.into_iter().map(|(_, state)| state).collect();
 
 		T::process_result(ResultVisitor::new(func, &self.analysis, in_states), func)
 	}
@@ -307,6 +322,8 @@ where
 					.apply_before_effect(s, (block, i), &mut result);
 				self.analysis.apply_effect(s, (block, i), &mut result);
 			}
+
+			self.analysis.apply_before_effect(&self.func.blocks[block].items[stmt], (block, stmt), &mut result);
 
 			result
 		}
