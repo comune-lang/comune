@@ -1,7 +1,142 @@
+import module_test;
+//import cpp_test;
+
+module submodule_test;
+
+using module_test::{fib, foo};
+
 @no_mangle
-void printf(u8* fmt, ...);
+void mut* malloc(usize size);
+
+@no_mangle
+void free(void mut* ptr);
+
+using ascii = u8;
+
+@no_mangle
+void printf(ascii* fmt, ...);
+
+struct Test {
+	int a;
+	int b;
+}
+
+struct Vector<type T> {
+	T mut* data;
+	usize len;
+	usize capacity;
+}
+
+enum EnumTest {
+	VariantA,
+	VariantB,
+}
+
+impl Test {
+	int sum(Test& self) {
+		printf(c"This is a method call!\n");
+		self.a + self.b
+	}
+	
+	// the `self` parameter's type can be omitted
+	int product(&self) {
+		self.a * self.b
+	}
+}
+
+
+trait Hello {
+	void hello(Self& self);
+}
+
+impl Hello for Test {
+	void hello(Test mut& self) {
+		printf(c"Hello Test!\n");
+	}
+}
+
+void impl_test() {
+	Test test = Test { a: 413, b: 612, };
+	test.hello();
+	printf(c"The sum of a and b is %i!\n", test.sum());
+}
+
+void ref_test(i32 mut& test) {
+	test++;
+}
+
+void fn_pointer_test(void(int) callback) {
+	callback(12);
+}
+
+void fn_pointer_callback(int number) {
+	printf(c"this is a callback! %i\n", number);
+}
+
+
+void overload_test(i32 a) {
+	printf(c"i32 overload called!\n");
+}
+
+void overload_test(i64 a) {
+	printf(c"i64 overload called!\n");
+}
+
+Vector<i32> generic_ret() {
+	return Vector<i32> { 
+		data: malloc(4) as i32 mut*,
+		len: 1,
+		capacity: 1,
+	};
+}
+
+using TestSumType = (i32 | f32);
+
+TestSumType sum_type_test(i32& value) {
+	return value;
+}
 
 int main() {
+	submodule_test::bar();
+
+	int mut i;
+
+	if true {
+		i = 12;
+	} else {
+		i = 12;
+	}
+
+	int j = i;
+
+	i = 12;
+
+	// `else if` syntax test
+	
+	if i == 12 {
+		printf(c"i is 12!\n");
+	} else if i == 13 {
+		printf(c"i is 13!\n");
+	} else {
+		printf(c"i is something else!\n");
+	}
+
+	void(int) function;
+	//function(12);
+	//fn_pointer_test(fn_pointer_callback);
+
+	TestSumType mut who_knows = sum_type_test(322);
+
+	match who_knows {
+		int int_result => {
+			printf(c"It's an int! %i\n", int_result)
+		}
+
+		float float_result => {
+			printf(c"It's a float! %f\n", float_result)
+		}
+	}
+	
 	int mut loop_count = 0;
 	
 	while true {		
@@ -10,11 +145,36 @@ int main() {
 		if loop_count > 100 {
 			break;
 		}
-		int b = loop_count;
 	}
 
 	// liveness bug: incorrectly flagged as potentially uninitialized
 	printf(c"Loop count after loop: %i", loop_count);
 	
-	return 0;
+	impl_test();
+
+	overload_test(12i32);
+
+	int int_ref_test = 12;
+	ref_test(int_ref_test);
+	printf(c"int_ref_test: %i\n", int_ref_test);
+
+	printf(c"Temporary->lvalue promotion: %i\n", Test { a: 23, b: 35 }.sum());
+
+	Vector<int> mut my_cool_generic;
+	
+	my_cool_generic.data = malloc(4) as int mut*;
+
+	*my_cool_generic.data = if true {
+		printf(c"True!\n");
+		69
+	} else {
+		printf(c"False!\n");
+		42
+	};
+	
+	i32 generic_get = *my_cool_generic.data;
+	
+	free(my_cool_generic.data as void mut*);
+
+	return module_test::foo();
 }

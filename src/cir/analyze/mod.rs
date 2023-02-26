@@ -245,8 +245,6 @@ where
 				for pred in preds {
 					if let Some(out_state) = out_states.get(pred) {					
 						in_state.join(out_state);
-					} else {
-						println!("warning: processing block {i} without predecessor {pred}");
 					}
 				}
 				

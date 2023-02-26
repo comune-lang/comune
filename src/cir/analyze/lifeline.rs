@@ -118,7 +118,7 @@ impl LiveVarCheckState {
 		match rval {
 			RValue::Atom(ty, _, op, _) => self.eval_operand(ty, op),
 
-			RValue::Cons(_, [(lty, lhs), (rty, rhs)], ..) => {
+			RValue::Cons(_, _, ..) => {
 				//self.eval_operand(lty, lhs);
 				//self.eval_operand(rty, rhs);
 			}
