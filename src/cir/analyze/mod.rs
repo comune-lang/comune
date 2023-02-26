@@ -246,7 +246,6 @@ where
 					if let Some(out_state) = out_states.get(pred) {					
 						changed |= in_state.join(out_state);
 					} else {
-						println!("warning: processing block {i} without predicate {pred}");
 						changed = true;
 					}
 				}
