@@ -244,9 +244,9 @@ where
 
 				for pred in preds {
 					if let Some(out_state) = out_states.get(pred) {					
-						changed |= in_state.join(out_state);
+						in_state.join(out_state);
 					} else {
-						changed = true;
+						println!("warning: processing block {i} without predecessor {pred}");
 					}
 				}
 				
@@ -279,6 +279,13 @@ where
 					out_states.insert(i, block_state.clone());
 					work_list.extend(block.succs.clone().into_iter());
 				}
+			}
+		}
+
+		// Fill unreachable blocks with bottom value
+		for i in 0..func.blocks.len() {
+			if !in_states.contains_key(&i) {
+				in_states.insert(i, self.analysis.bottom_value(func));
 			}
 		}
 
