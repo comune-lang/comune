@@ -114,6 +114,8 @@ int main() {
 	// `else if` syntax test
 	
 	if i == 12 {
+		int scope_test = 15;
+		int scope_test_2 = 15;
 		printf(c"i is 12!\n");
 	} else if i == 13 {
 		printf(c"i is 13!\n");

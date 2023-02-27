@@ -388,11 +388,6 @@ impl CIRModuleBuilder {
 					self.write(CIRStmt::Assignment((var.clone(), *tk), val));
 				}
 
-				self.name_map_stack
-					.last_mut()
-					.unwrap()
-					.push((name.clone(), var.local));
-
 				Some(())
 			}
 		}
@@ -506,7 +501,7 @@ impl CIRModuleBuilder {
 			let result_type = self.convert_type(result.get_type());
 			let result_ir = self.get_as_operand(result_type.clone(), result_ir);
 
-			for (_, var) in self.name_map_stack.pop().unwrap() {
+			for (_, var) in self.name_map_stack.pop().unwrap().into_iter().rev() {
 				self.write(CIRStmt::StorageDead(var));
 			}
 
@@ -520,7 +515,7 @@ impl CIRModuleBuilder {
 				)),
 			)
 		} else {
-			for (_, var) in self.name_map_stack.pop().unwrap() {
+			for (_, var) in self.name_map_stack.pop().unwrap().into_iter().rev() {
 				self.write(CIRStmt::StorageDead(var));
 			}
 
@@ -1027,7 +1022,6 @@ impl CIRModuleBuilder {
 						for (i, (pattern, branch)) in branches.iter().enumerate() {
 							let Expr::Atom(Atom::Block { items, result }, branch_meta) = branch else { panic!() };
 
-							self.name_map_stack.push(vec![]);
 
 							let binding_idx = self.append_block();
 							self.generate_pattern_bindings(
@@ -1050,7 +1044,6 @@ impl CIRModuleBuilder {
 								has_result = true;
 							}
 
-							self.name_map_stack.pop();
 							self.current_block = cont_block;
 
 							branches_ir[i].2 = binding_idx;
