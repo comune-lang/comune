@@ -29,7 +29,7 @@ pub struct CIRModuleBuilder {
 	type_param_counter: usize, // Used to assign unique names to type parameters
 
 	current_fn: Option<CIRFunction>,
-	name_map_stack: Vec<HashMap<Name, VarIndex>>,
+	name_map_stack: Vec<Vec<(Name, VarIndex)>>,
 	current_block: BlockIndex,
 	loop_stack: Vec<(BlockIndex, BlockIndex)>, // start and end
 }
@@ -46,7 +46,7 @@ impl CIRModuleBuilder {
 			current_fn: None,
 			type_map: HashMap::new(),
 			type_param_counter: 0,
-			name_map_stack: vec![HashMap::new()],
+			name_map_stack: vec![vec![]],
 			current_block: 0,
 			loop_stack: vec![],
 		};
@@ -259,8 +259,9 @@ impl CIRModuleBuilder {
 		self.current_block = 0;
 		self.loop_stack.clear();
 
-		let mut params_map = HashMap::new();
+		let mut params_map = vec![];
 
+		// Insert function parameters into name stack
 		for (i, (.., name)) in self
 			.current_fn
 			.as_ref()
@@ -270,7 +271,7 @@ impl CIRModuleBuilder {
 			.enumerate()
 		{
 			if let Some(name) = name {
-				params_map.insert(name.clone(), i);
+				params_map.push((name.clone(), i));
 			}
 		}
 
@@ -390,7 +391,7 @@ impl CIRModuleBuilder {
 				self.name_map_stack
 					.last_mut()
 					.unwrap()
-					.insert(name.clone(), var.local);
+					.push((name.clone(), var.local));
 
 				Some(())
 			}
@@ -415,7 +416,7 @@ impl CIRModuleBuilder {
 				self.name_map_stack
 					.last_mut()
 					.unwrap()
-					.insert(name.clone(), idx);
+					.push((name.clone(), idx));
 
 				let store_place = LValue {
 					local: self.get_fn().variables.len() - 1,
@@ -464,7 +465,7 @@ impl CIRModuleBuilder {
 		self.get_fn_mut()
 			.variables
 			.push((cir_ty, props, Some(name.clone())));
-		self.name_map_stack.last_mut().unwrap().insert(name, idx);
+		self.name_map_stack.last_mut().unwrap().push((name, idx));
 
 		let lval = LValue {
 			local: self.get_fn().variables.len() - 1,
@@ -491,7 +492,7 @@ impl CIRModuleBuilder {
 			self.append_block()
 		};
 
-		self.name_map_stack.push(HashMap::new());
+		self.name_map_stack.push(vec![]);
 
 		for item in items {
 			if self.generate_stmt(item).is_none() {
@@ -1026,7 +1027,7 @@ impl CIRModuleBuilder {
 						for (i, (pattern, branch)) in branches.iter().enumerate() {
 							let Expr::Atom(Atom::Block { items, result }, branch_meta) = branch else { panic!() };
 
-							self.name_map_stack.push(HashMap::new());
+							self.name_map_stack.push(vec![]);
 
 							let binding_idx = self.append_block();
 							self.generate_pattern_bindings(
@@ -1498,7 +1499,7 @@ impl CIRModuleBuilder {
 
 	fn get_var_index(&self, name: &Name) -> Option<VarIndex> {
 		for stack_frame in self.name_map_stack.iter().rev() {
-			if let Some(idx) = stack_frame.get(name) {
+			if let Some((_, idx)) = stack_frame.iter().rev().find(|(n, _)| n == name) {
 				return Some(*idx);
 			}
 		}
@@ -1512,7 +1513,7 @@ impl CIRModuleBuilder {
 			self.name_map_stack
 				.last_mut()
 				.unwrap()
-				.insert(name.clone(), idx);
+				.push((name.clone(), idx));
 		}
 
 		self.get_fn_mut().variables.push((ty, props, name));
