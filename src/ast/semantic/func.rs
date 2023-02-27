@@ -1,7 +1,17 @@
 use std::cmp::Ordering;
 
-use crate::{ast::{module::{Identifier, ModuleASTElem, ModuleInterface, ModuleItemInterface, Name}, types::{FnPrototype, Type, Basic, BindingProps}, FnScope, expression::{Atom, Expr, NodeData, FnRef}, statement::Stmt, controlflow::ControlFlow}, parser::ComuneResult, errors::{ComuneError, ComuneErrCode}};
-
+use crate::{
+	ast::{
+		controlflow::ControlFlow,
+		expression::{Atom, Expr, FnRef, NodeData},
+		module::{Identifier, ModuleASTElem, ModuleInterface, ModuleItemInterface, Name},
+		statement::Stmt,
+		types::{Basic, BindingProps, FnPrototype, Type},
+		FnScope,
+	},
+	errors::{ComuneErrCode, ComuneError},
+	parser::ComuneResult,
+};
 
 pub fn validate_function_body(
 	scope: Identifier,
@@ -104,22 +114,20 @@ pub fn validate_fn_call(
 
 	if let Some((local_name, local_ty)) = scope.find_symbol(name, false) {
 		// Local function pointer
-		if let Type::Function(ty_ret, ty_args) = local_ty {			
-			for (arg, (_, param)) in args.iter_mut().zip(ty_args.iter()){
+		if let Type::Function(ty_ret, ty_args) = local_ty {
+			for (arg, (_, param)) in args.iter_mut().zip(ty_args.iter()) {
 				arg.get_node_data_mut().ty = Some(param.clone());
 				arg.validate(scope)?;
 			}
 
 			*resolved = FnRef::Indirect(Box::new(Expr::Atom(
-				Atom::Identifier(local_name), 
-				NodeData { 
-					ty: Some(Type::Function(ty_ret.clone(), ty_args)), 
+				Atom::Identifier(local_name),
+				NodeData {
+					ty: Some(Type::Function(ty_ret.clone(), ty_args)),
 					tk: node_data.tk,
-				}
+				},
 			)));
 
-
-			
 			return Ok(*ty_ret);
 		}
 	}

@@ -13,8 +13,8 @@ use inkwell::{
 		StructType,
 	},
 	values::{
-		AnyValue, AnyValueEnum, BasicMetadataValueEnum, BasicValue, BasicValueEnum, FunctionValue,
-		InstructionValue, PointerValue, CallableValue,
+		AnyValue, AnyValueEnum, BasicMetadataValueEnum, BasicValue, BasicValueEnum, CallableValue,
+		FunctionValue, InstructionValue, PointerValue,
 	},
 	AddressSpace, FloatPredicate, GlobalVisibility, IntPredicate,
 };
@@ -25,8 +25,8 @@ use crate::{
 		types::{Basic, BindingProps, DataLayout, TupleKind},
 	},
 	cir::{
-		CIRFnPrototype, CIRFunction, CIRModule, CIRStmt, CIRType, CIRTypeDef, LValue, Operand,
-		PlaceElem, RValue, CIRFnCall,
+		CIRFnCall, CIRFnPrototype, CIRFunction, CIRModule, CIRStmt, CIRType, CIRTypeDef, LValue,
+		Operand, PlaceElem, RValue,
 	},
 };
 
@@ -272,8 +272,8 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 					CIRStmt::Return(expr) => {
 						if let Some(expr) = expr {
-							self.builder.build_return(Some(&self.generate_operand(&t.ret, expr)));
-							
+							self.builder
+								.build_return(Some(&self.generate_operand(&t.ret, expr)));
 						} else {
 							self.builder.build_return(None);
 						}
@@ -291,18 +291,21 @@ impl<'ctx> LLVMBackend<'ctx> {
 							type_args.is_empty(),
 							"encountered un-monoized type argument in LLVM codegen!"
 						);
-						
-						let (fn_v, params) = match id { 
+
+						let (fn_v, params) = match id {
 							CIRFnCall::Direct(id, _) => {
 								let mangled = &self.fn_map[id];
 								let fn_v = self.module.get_function(mangled).unwrap();
-				
+
 								(fn_v.into(), &id.params)
 							}
 
 							CIRFnCall::Indirect { args, local, .. } => {
-								let ptr = self.builder.build_load(self.generate_lvalue(local), "fnload").into_pointer_value();
-								
+								let ptr = self
+									.builder
+									.build_load(self.generate_lvalue(local), "fnload")
+									.into_pointer_value();
+
 								(CallableValue::try_from(ptr).unwrap(), args)
 							}
 						};
@@ -315,8 +318,11 @@ impl<'ctx> LLVMBackend<'ctx> {
 								.enumerate()
 								.map(|(i, (x, _))| {
 									let (props, ty) = &params[i];
-									
-									if self.pass_by_ptr(&Self::to_basic_type(self.get_llvm_type(ty)), props) {
+
+									if self.pass_by_ptr(
+										&Self::to_basic_type(self.get_llvm_type(ty)),
+										props,
+									) {
 										self.generate_lvalue(x).as_basic_value_enum()
 									} else {
 										self.builder
@@ -339,7 +345,10 @@ impl<'ctx> LLVMBackend<'ctx> {
 								.enumerate()
 								.map(|(i, (x, _))| {
 									let is_ref = if let Some((props, ty)) = params.get(i) {
-										self.pass_by_ptr(&Self::to_basic_type(self.get_llvm_type(ty)), props)
+										self.pass_by_ptr(
+											&Self::to_basic_type(self.get_llvm_type(ty)),
+											props,
+										)
 									} else {
 										false
 									};
@@ -357,7 +366,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 							callsite = self.builder.build_call(fn_v, &args_mapped, "call");
 							self.builder.build_unconditional_branch(self.blocks[*next]);
 						}
-						
+
 						if let Some(result) = result {
 							self.builder.position_at_end(self.blocks[*next]);
 
@@ -420,16 +429,12 @@ impl<'ctx> LLVMBackend<'ctx> {
 			}
 
 			RValue::Cons(expr_ty, [(lhs_ty, lhs), (rhs_ty, rhs)], op, _) => {
-				let lhs_v = Self::to_basic_value(
-					self.generate_operand(lhs_ty, lhs)
-						.as_any_value_enum(),
-				)
-				.as_basic_value_enum();
-				let rhs_v = Self::to_basic_value(
-					self.generate_operand(rhs_ty, rhs)
-						.as_any_value_enum(),
-				)
-				.as_basic_value_enum();
+				let lhs_v =
+					Self::to_basic_value(self.generate_operand(lhs_ty, lhs).as_any_value_enum())
+						.as_basic_value_enum();
+				let rhs_v =
+					Self::to_basic_value(self.generate_operand(rhs_ty, rhs).as_any_value_enum())
+						.as_basic_value_enum();
 				let result;
 
 				if expr_ty.is_integral() {
@@ -753,7 +758,6 @@ impl<'ctx> LLVMBackend<'ctx> {
 				val.set_unnamed_addr(true);
 				val.set_initializer(&literal);
 
-				
 				self.slice_type(&self.context.i8_type())
 					.const_named_struct(&[
 						val.as_pointer_value().as_basic_value_enum(),
@@ -763,7 +767,6 @@ impl<'ctx> LLVMBackend<'ctx> {
 							.as_basic_value_enum(),
 					])
 					.as_basic_value_enum()
-				
 			}
 
 			Operand::CStringLit(s, _) => {
@@ -786,7 +789,6 @@ impl<'ctx> LLVMBackend<'ctx> {
 				val.set_unnamed_addr(true);
 				val.set_initializer(&literal);
 
-				
 				self.builder
 					.build_address_space_cast(
 						self.builder
@@ -800,30 +802,25 @@ impl<'ctx> LLVMBackend<'ctx> {
 						"caddrcast",
 					)
 					.as_basic_value_enum()
-				
 			}
 
-			Operand::IntegerLit(i, _) => 
-				Self::to_basic_type(self.get_llvm_type(ty))
-					.into_int_type()
-					.const_int(*i as u64, true)
-					.as_basic_value_enum(),
-			
-			Operand::FloatLit(f, _) => 
-				Self::to_basic_type(self.get_llvm_type(ty))
-					.into_float_type()
-					.const_float(*f)
-					.as_basic_value_enum(),
-			
-			Operand::BoolLit(b, _) => 
-				self.context
-					.bool_type()
-					.const_int(u64::from(*b), false)
-					.as_basic_value_enum(),
-			
-			Operand::LValue(l, _) => {
-				self.builder.build_load(self.generate_lvalue(l), "lread")
-			}
+			Operand::IntegerLit(i, _) => Self::to_basic_type(self.get_llvm_type(ty))
+				.into_int_type()
+				.const_int(*i as u64, true)
+				.as_basic_value_enum(),
+
+			Operand::FloatLit(f, _) => Self::to_basic_type(self.get_llvm_type(ty))
+				.into_float_type()
+				.const_float(*f)
+				.as_basic_value_enum(),
+
+			Operand::BoolLit(b, _) => self
+				.context
+				.bool_type()
+				.const_int(u64::from(*b), false)
+				.as_basic_value_enum(),
+
+			Operand::LValue(l, _) => self.builder.build_load(self.generate_lvalue(l), "lread"),
 			Operand::Undef => self.get_undef(&Self::to_basic_type(self.get_llvm_type(ty))),
 		}
 	}
@@ -831,7 +828,10 @@ impl<'ctx> LLVMBackend<'ctx> {
 	fn generate_lvalue(&self, expr: &LValue) -> PointerValue<'ctx> {
 		let (mut local, props) = self.variables[expr.local];
 
-		if self.pass_by_ptr(&Self::to_basic_type(local.get_type().get_element_type()), &props) {
+		if self.pass_by_ptr(
+			&Self::to_basic_type(local.get_type().get_element_type()),
+			&props,
+		) {
 			local = self
 				.builder
 				.build_load(local, "deref")
@@ -1031,7 +1031,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 						.context
 						.struct_type(&types_mapped, false)
 						.as_any_type_enum(),
-					
+
 					// For the purposes of codegen, a newtype is
 					// identical to the type it wraps around
 					TupleKind::Newtype => {
@@ -1071,12 +1071,17 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 			CIRType::FunctionPtr { ret, args } => {
 				// TODO: vararg support
-				let args_mapped = args.iter().map(|(_, ty)| Self::to_basic_metadata_type(self.get_llvm_type(ty))).collect::<Vec<_>>();
-				
+				let args_mapped = args
+					.iter()
+					.map(|(_, ty)| Self::to_basic_metadata_type(self.get_llvm_type(ty)))
+					.collect::<Vec<_>>();
+
 				match self.get_llvm_type(ret) {
 					AnyTypeEnum::VoidType(ty) => ty.fn_type(&args_mapped, false),
 					ty => Self::to_basic_type(ty).fn_type(&args_mapped, false),
-				}.ptr_type(AddressSpace::Generic).as_any_type_enum()
+				}
+				.ptr_type(AddressSpace::Generic)
+				.as_any_type_enum()
 			}
 
 			CIRType::TypeParam(_) => panic!("unexpected TypeParam in codegen!"),
@@ -1151,19 +1156,19 @@ impl<'ctx> LLVMBackend<'ctx> {
 	fn pass_by_ptr(&self, ty: &BasicTypeEnum<'ctx>, props: &BindingProps) -> bool {
 		// don't pass by pointer if binding is not a reference, or if it's unsafe
 		if !props.is_ref || props.is_unsafe {
-			return false
+			return false;
 		}
 
 		// mutable references are passed by pointer
 		if props.is_mut {
-			return true
+			return true;
 		}
 
 		let target_data = get_target_machine().get_target_data();
 		let store_size = target_data.get_store_size(ty);
 
 		// determine how shared reference should be passed
-		// if the data is bigger than the equivalent pointer, 
+		// if the data is bigger than the equivalent pointer,
 		// we pass-by-pointer. else, we pass-by-value.
 		store_size > target_data.get_store_size(&ty.ptr_type(AddressSpace::Generic))
 	}

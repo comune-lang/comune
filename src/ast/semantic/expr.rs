@@ -1,20 +1,21 @@
-use std::sync::{RwLock, Arc};
+use std::sync::{Arc, RwLock};
 
 use crate::{
-	constexpr::{ConstExpr, ConstValue},
-	errors::{ComuneErrCode, ComuneError},
-	parser::ComuneResult, ast::types::Type,
+	ast::types::Type,
 	ast::{
 		controlflow::ControlFlow,
 		expression::{Atom, Expr, FnRef, NodeData, OnceAtom, Operator},
 		module::ItemRef,
 		pattern::Binding,
-		types::{TupleKind, TypeRef, TypeDefKind, Basic}, FnScope
-	}
+		types::{Basic, TupleKind, TypeDefKind, TypeRef},
+		FnScope,
+	},
+	constexpr::{ConstExpr, ConstValue},
+	errors::{ComuneErrCode, ComuneError},
+	parser::ComuneResult,
 };
 
 use super::func::{resolve_method_call, validate_fn_call};
-
 
 impl Expr {
 	pub fn create_cast(expr: Expr, to: Type, meta: NodeData) -> Expr {
@@ -168,12 +169,17 @@ impl Expr {
 					Atom::BoolLit(_) => target.is_boolean(),
 
 					Atom::CStringLit(_) => {
-						if let Type::Pointer { pointee: other_p, mutable: other_m } = &target {
-							if !other_m && **other_p
-								== Type::Basic(Basic::Integral {
-									signed: false,
-									size_bytes: 1,
-								}) {
+						if let Type::Pointer {
+							pointee: other_p,
+							mutable: other_m,
+						} = &target
+						{
+							if !other_m
+								&& **other_p
+									== Type::Basic(Basic::Integral {
+										signed: false,
+										size_bytes: 1,
+									}) {
 								return true;
 							}
 						}
@@ -308,10 +314,13 @@ impl Atom {
 			Atom::BoolLit(_) => Ok(Type::Basic(Basic::Bool)),
 			Atom::StringLit(_) => Ok(Type::Basic(Basic::Str)),
 
-			Atom::CStringLit(_) => Ok(Type::Pointer { pointee: Box::new(Type::Basic(Basic::Integral {
-				signed: false,
-				size_bytes: 1,
-			})), mutable: false }),
+			Atom::CStringLit(_) => Ok(Type::Pointer {
+				pointee: Box::new(Type::Basic(Basic::Integral {
+					signed: false,
+					size_bytes: 1,
+				})),
+				mutable: false,
+			}),
 
 			Atom::Identifier(name) => {
 				if let Some((id, ty)) = scope.find_symbol(name, true) {
@@ -395,7 +404,8 @@ impl Atom {
 
 			Atom::AlgebraicLit(ty, elems) => {
 				if let Type::TypeRef(ItemRef::Resolved(TypeRef { def, args, .. })) = ty {
-					if let TypeDefKind::Algebraic(alg) = &def.upgrade().unwrap().read().unwrap().def {
+					if let TypeDefKind::Algebraic(alg) = &def.upgrade().unwrap().read().unwrap().def
+					{
 						for (name, expr) in elems.iter_mut() {
 							let member_ty = if let Some((_, ty)) = alg.get_member(name, Some(args))
 							{
@@ -571,17 +581,20 @@ impl Atom {
 					}
 				}
 
-				ControlFlow::Break | ControlFlow::Continue => 
+				ControlFlow::Break | ControlFlow::Continue => {
 					if scope.is_inside_loop {
 						Ok(Type::Never)
 					} else {
 						Err(ComuneError::new(
-							ComuneErrCode::LoopCtrlOutsideLoop(
-								if **ctrl == ControlFlow::Break { "break" } else { "continue" }
-							), 
-							meta.tk
+							ComuneErrCode::LoopCtrlOutsideLoop(if **ctrl == ControlFlow::Break {
+								"break"
+							} else {
+								"continue"
+							}),
+							meta.tk,
 						))
-					},
+					}
+				}
 
 				ControlFlow::Match {
 					scrutinee,

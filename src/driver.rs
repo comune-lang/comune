@@ -146,16 +146,16 @@ pub fn launch_module_compilation(
 					error_sender.clone(),
 					s,
 				) {
-					Ok(()) => {},
+					Ok(()) => {}
 					Err(e) => {
 						state
 							.module_states
 							.write()
 							.unwrap()
 							.insert(src_path.clone(), ModuleState::ParsingFailed);
-						
+
 						let import_name = import_path.file_name().unwrap().to_str().unwrap();
-						
+
 						error_sender
 							.send(CMNMessageLog::Raw(format!(
 								"\n{:>10} compiling {}\n",
@@ -163,10 +163,10 @@ pub fn launch_module_compilation(
 								import_name.bold()
 							)))
 							.unwrap();
-		
+
 						return Err(e);
 					}
-				}
+				},
 
 				// Sleep for some short duration, so we don't hog the CPU
 				Some(ModuleState::Parsing) => {
@@ -515,10 +515,10 @@ pub fn generate_code<'ctx>(
 	let mut cir_man = CIRPassManager::new();
 
 	cir_man.add_pass(verify::Verify);
-	
+
 	// broken, don't use rn
 	//cir_man.add_mut_pass(cleanup::SimplifyCFG);
-	
+
 	cir_man.add_mut_pass(DataFlowPass::new(VarInitCheck {}));
 	cir_man.add_pass(verify::Verify);
 

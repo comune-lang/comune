@@ -8,7 +8,8 @@ use crate::{
 };
 
 use super::{
-	CIRFnMap, CIRFunction, CIRModule, CIRStmt, CIRType, CIRTypeDef, FuncID, RValue, TypeName, CIRFnCall,
+	CIRFnCall, CIRFnMap, CIRFunction, CIRModule, CIRStmt, CIRType, CIRTypeDef, FuncID, RValue,
+	TypeName,
 };
 
 // A set of requested Generic monomorphizations, with a Vec of type arguments
@@ -48,7 +49,7 @@ impl CIRModule {
 			if !self.functions[&proto].type_params.is_empty() {
 				continue;
 			}
-			
+
 			let function_monoized = Self::monoize_function(
 				&self.functions,
 				&mut functions_mono,
@@ -139,7 +140,6 @@ impl CIRModule {
 		}
 
 		if let CIRFnCall::Direct(func, _) = func {
-
 			if !fn_instances.contains_key(func) {
 				fn_instances.insert(func.clone(), HashMap::new());
 			}
@@ -218,7 +218,9 @@ impl CIRModule {
 		match ty {
 			CIRType::Basic(_) => {}
 
-			CIRType::Pointer { pointee, .. } => Self::monoize_type(types, pointee, param_map, instances),
+			CIRType::Pointer { pointee, .. } => {
+				Self::monoize_type(types, pointee, param_map, instances)
+			}
 			CIRType::Array(arr_ty, _) => Self::monoize_type(types, arr_ty, param_map, instances),
 			CIRType::Reference(refee) => Self::monoize_type(types, refee, param_map, instances),
 
@@ -359,7 +361,7 @@ impl CIRType {
 			CIRType::TypeRef(_, _) => String::from("S_"),
 			CIRType::FunctionPtr { ret, args } => {
 				let mut result = String::from("PF");
-				
+
 				result.push_str(&ret.mangle());
 
 				for (_, arg) in args {
@@ -367,9 +369,9 @@ impl CIRType {
 				}
 
 				result
-			},
+			}
 
-			_ => todo!()
+			_ => todo!(),
 		}
 	}
 }

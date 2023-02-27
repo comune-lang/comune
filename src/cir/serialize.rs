@@ -6,8 +6,8 @@ use crate::{
 };
 
 use super::{
-	CIRFnPrototype, CIRFunction, CIRModule, CIRStmt, CIRType, CIRTypeDef, LValue, Operand,
-	PlaceElem, RValue, CIRFnCall,
+	CIRFnCall, CIRFnPrototype, CIRFunction, CIRModule, CIRStmt, CIRType, CIRTypeDef, LValue,
+	Operand, PlaceElem, RValue,
 };
 
 impl Display for CIRModule {
@@ -246,13 +246,14 @@ impl Display for CIRType {
 		match self {
 			CIRType::Basic(b) => write!(f, "{}", b.as_str()),
 
-			CIRType::Pointer { pointee, mutable } => 
-				if *mutable { 
-					write!(f, "{pointee} mut*") 
-				} else { 
+			CIRType::Pointer { pointee, mutable } => {
+				if *mutable {
+					write!(f, "{pointee} mut*")
+				} else {
 					write!(f, "{pointee}*")
 				}
-			
+			}
+
 			CIRType::Array(t, _) => write!(f, "{t}[]"),
 			CIRType::Reference(r) => write!(f, "{r}&"),
 			CIRType::TypeRef(name, _) => write!(f, "{name}"),
@@ -282,7 +283,7 @@ impl Display for CIRType {
 
 			CIRType::FunctionPtr { ret, args } => {
 				write!(f, "{ret}(")?;
-				
+
 				if !args.is_empty() {
 					let mut iter = args.iter();
 
@@ -349,7 +350,9 @@ impl Display for CIRFnCall {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match self {
 			CIRFnCall::Direct(id, _) => write!(f, "{id}"),
-			CIRFnCall::Indirect { local, ret, args, ..} => write!(f, "{ret}({args:?}) {local}")
+			CIRFnCall::Indirect {
+				local, ret, args, ..
+			} => write!(f, "{ret}({args:?}) {local}"),
 		}
 	}
 }

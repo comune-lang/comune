@@ -6,7 +6,7 @@ use std::{
 };
 
 use super::module::{ItemRef, ModuleImpl};
-use super::types::{FnPrototype, TypeParam, GenericParamList};
+use super::types::{FnPrototype, GenericParamList, TypeParam};
 use super::Attribute;
 use super::{
 	module::{Identifier, Name},

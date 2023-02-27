@@ -1,7 +1,20 @@
-use std::sync::{RwLock, Arc};
+use std::sync::{Arc, RwLock};
 
-use crate::{ast::{types::{Type, GenericParamList, TypeRef, AlgebraicDef, self, TypeDefKind, TypeDef, FnPrototype}, module::{ModuleInterface, ItemRef, ModuleItemInterface}, get_attribute, FnScope, traits::{TraitInterface, TraitRef}}, parser::ComuneResult, errors::{ComuneError, ComuneErrCode}, lexer::{SrcSpan, Token}, constexpr::{ConstExpr, ConstEval}};
-
+use crate::{
+	ast::{
+		get_attribute,
+		module::{ItemRef, ModuleInterface, ModuleItemInterface},
+		traits::{TraitInterface, TraitRef},
+		types::{
+			self, AlgebraicDef, FnPrototype, GenericParamList, Type, TypeDef, TypeDefKind, TypeRef,
+		},
+		FnScope,
+	},
+	constexpr::{ConstEval, ConstExpr},
+	errors::{ComuneErrCode, ComuneError},
+	lexer::{SrcSpan, Token},
+	parser::ComuneResult,
+};
 
 pub fn resolve_interface_types(interface: &ModuleInterface) -> ComuneResult<()> {
 	// Resolve types
@@ -154,11 +167,7 @@ pub fn resolve_type(
 				result = namespace.resolve_type(id, scope);
 			}
 
-			if let Some(Type::TypeRef(ItemRef::Resolved(TypeRef {
-				def,
-				mut args,
-			}))) = result
-			{
+			if let Some(Type::TypeRef(ItemRef::Resolved(TypeRef { def, mut args }))) = result {
 				args.append(type_args);
 				*ty = Type::TypeRef(ItemRef::Resolved(TypeRef { def, args }));
 				Ok(())

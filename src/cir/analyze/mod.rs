@@ -1,4 +1,4 @@
-use std::collections::{VecDeque, BTreeMap};
+use std::collections::{BTreeMap, VecDeque};
 
 use rayon::prelude::{IntoParallelRefIterator, ParallelIterator};
 
@@ -204,7 +204,7 @@ where
 	T: AnalysisResultHandler + Send + Sync,
 {
 	fn on_function(&self, func: &CIRFunction) -> Vec<ComuneError> {
-		let mut entry_state  = self.analysis.bottom_value(func);
+		let mut entry_state = self.analysis.bottom_value(func);
 
 		self.analysis.initialize_start_block(func, &mut entry_state);
 
@@ -216,13 +216,14 @@ where
 		let mut work_list = VecDeque::new();
 
 		// Initialize blocks
-		
+
 		in_states.insert(0, entry_state.clone());
 
 		let mut block_state = entry_state.clone();
 
 		for (j, stmt) in func.blocks[0].items.iter().enumerate() {
-			self.analysis.apply_before_effect(stmt, (0, j), &mut block_state);
+			self.analysis
+				.apply_before_effect(stmt, (0, j), &mut block_state);
 			self.analysis.apply_effect(stmt, (0, j), &mut block_state);
 		}
 
@@ -243,31 +244,32 @@ where
 				let mut in_state = out_states[preds.next().unwrap()].clone();
 
 				for pred in preds {
-					if let Some(out_state) = out_states.get(pred) {					
+					if let Some(out_state) = out_states.get(pred) {
 						in_state.join(out_state);
 					}
 				}
-				
+
 				// check if in_state is different from in_states[i]
 				if let Some(prev_state) = in_states.get(&i) {
 					changed |= in_state.clone().join(prev_state);
 				} else {
 					changed = true;
 				}
-				
+
 				in_states.insert(i, in_state);
 			}
 
 			if changed {
 				let block_state: &T::Domain = &in_states[&i];
-				
+
 				let mut block_state = block_state.clone();
 
 				for (j, stmt) in block.items.iter().enumerate() {
-					self.analysis.apply_before_effect(stmt, (i, j), &mut block_state);
+					self.analysis
+						.apply_before_effect(stmt, (i, j), &mut block_state);
 					self.analysis.apply_effect(stmt, (i, j), &mut block_state);
 				}
-				
+
 				if let Some(out_state) = out_states.get(&i) {
 					if out_state.clone().join(&block_state) {
 						out_states.insert(i, block_state.clone());
@@ -327,7 +329,11 @@ where
 				self.analysis.apply_effect(s, (block, i), &mut result);
 			}
 
-			self.analysis.apply_before_effect(&self.func.blocks[block].items[stmt], (block, stmt), &mut result);
+			self.analysis.apply_before_effect(
+				&self.func.blocks[block].items[stmt],
+				(block, stmt),
+				&mut result,
+			);
 
 			result
 		}

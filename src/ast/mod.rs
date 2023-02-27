@@ -2,14 +2,12 @@ use std::collections::HashMap;
 
 use types::Type;
 
-use crate::{
-	lexer::Token,
-	parser::ComuneResult,
-};
+use crate::{lexer::Token, parser::ComuneResult};
 
 use self::{
 	module::{Identifier, ModuleImpl, ModuleInterface, ModuleItemInterface, Name},
-	types::BindingProps, semantic::func::validate_function_body
+	semantic::func::validate_function_body,
+	types::BindingProps,
 };
 
 pub mod controlflow;
@@ -51,7 +49,7 @@ impl<'ctx> FnScope<'ctx> {
 			parent: Some(parent),
 			fn_return_type: parent.fn_return_type.clone(),
 			variables: HashMap::new(),
-			is_inside_loop: is_loop_block | parent.is_inside_loop
+			is_inside_loop: is_loop_block | parent.is_inside_loop,
 		}
 	}
 
@@ -102,11 +100,14 @@ impl<'ctx> FnScope<'ctx> {
 
 						result = Some((
 							id.clone(),
-
 							Type::Function(
-								Box::new(func.ret.clone()), 
-								func.params.params.iter().map(|(ty, _, props)| (*props, ty.clone())).collect()
-							)
+								Box::new(func.ret.clone()),
+								func.params
+									.params
+									.iter()
+									.map(|(ty, _, props)| (*props, ty.clone()))
+									.collect(),
+							),
 						));
 					} else {
 						todo!("taking address of overloaded function is not yet supported")

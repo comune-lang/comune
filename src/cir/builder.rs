@@ -4,14 +4,12 @@ use crate::{
 	ast::{
 		controlflow::ControlFlow,
 		expression::{Atom, Expr, FnRef, OnceAtom, Operator},
-		module::{
-			ItemRef, ModuleASTElem, ModuleImpl, ModuleInterface,
-			ModuleItemInterface, Name,
-		},
+		module::{ItemRef, ModuleASTElem, ModuleImpl, ModuleInterface, ModuleItemInterface, Name},
 		pattern::{Binding, Pattern},
 		statement::Stmt,
 		types::{
-			Basic, BindingProps, FnPrototype, TupleKind, Type, GenericParamList, TypeRef, TypeDefKind,
+			Basic, BindingProps, FnPrototype, GenericParamList, TupleKind, Type, TypeDefKind,
+			TypeRef,
 		},
 	},
 	constexpr::{ConstExpr, ConstValue},
@@ -20,8 +18,8 @@ use crate::{
 };
 
 use super::{
-	BlockIndex, CIRBlock, CIRFnPrototype, CIRFunction, CIRModule, CIRStmt, CIRType, CIRTypeDef,
-	CIRTypeParamList, LValue, Operand, PlaceElem, RValue, TypeName, VarIndex, CIRFnCall,
+	BlockIndex, CIRBlock, CIRFnCall, CIRFnPrototype, CIRFunction, CIRModule, CIRStmt, CIRType,
+	CIRTypeDef, CIRTypeParamList, LValue, Operand, PlaceElem, RValue, TypeName, VarIndex,
 };
 
 pub struct CIRModuleBuilder {
@@ -112,7 +110,10 @@ impl CIRModuleBuilder {
 
 			Type::TypeParam(idx) => CIRType::TypeParam(*idx),
 
-			Type::Pointer { pointee, mutable } => CIRType::Pointer { pointee: Box::new(self.convert_type(pointee)), mutable: *mutable },
+			Type::Pointer { pointee, mutable } => CIRType::Pointer {
+				pointee: Box::new(self.convert_type(pointee)),
+				mutable: *mutable,
+			},
 
 			Type::Array(arr_ty, size) => {
 				let arr_ty_cir = Box::new(self.convert_type(arr_ty));
@@ -136,12 +137,13 @@ impl CIRModuleBuilder {
 
 			Type::Never => CIRType::Basic(Basic::Void),
 
-			Type::Function(ret, params) => {
-				CIRType::FunctionPtr { 
-					ret: Box::new(self.convert_type(ret)), 
-					args: params.iter().map(|(props, ty)| (*props, self.convert_type(ty))).collect()
-				}
-			}
+			Type::Function(ret, params) => CIRType::FunctionPtr {
+				ret: Box::new(self.convert_type(ret)),
+				args: params
+					.iter()
+					.map(|(props, ty)| (*props, self.convert_type(ty)))
+					.collect(),
+			},
 		}
 	}
 
@@ -224,7 +226,12 @@ impl CIRModuleBuilder {
 		let proto = self.get_prototype(func);
 
 		self.current_fn = Some(CIRFunction {
-			variables: func.params.params.iter().map(|(ty, name, props)| (self.convert_type(ty), *props, name.clone())).collect(),
+			variables: func
+				.params
+				.params
+				.iter()
+				.map(|(ty, name, props)| (self.convert_type(ty), *props, name.clone()))
+				.collect(),
 			blocks: vec![],
 			ret: proto.ret.clone(),
 			arg_count: func.params.params.len(),
@@ -247,19 +254,26 @@ impl CIRModuleBuilder {
 				self.module.functions.keys()
 			)
 		};
-		
+
 		self.name_map_stack.clear();
 		self.current_block = 0;
 		self.loop_stack.clear();
 
 		let mut params_map = HashMap::new();
 
-		for (i, (.., name)) in self.current_fn.as_ref().unwrap().variables.iter().enumerate() {
+		for (i, (.., name)) in self
+			.current_fn
+			.as_ref()
+			.unwrap()
+			.variables
+			.iter()
+			.enumerate()
+		{
 			if let Some(name) = name {
 				params_map.insert(name.clone(), i);
 			}
 		}
-		
+
 		self.name_map_stack.push(params_map);
 
 		// Generate function body
@@ -341,7 +355,7 @@ impl CIRModuleBuilder {
 	fn generate_stmt(&mut self, stmt: &Stmt) -> Option<()> {
 		match stmt {
 			Stmt::Expr(expr) => {
-				// RValues have no side effects, so we can discard the result 
+				// RValues have no side effects, so we can discard the result
 				// of this expression. However, we still propagate whether it
 				// returns normally or not.
 				self.generate_expr(expr).map(|_| ())
@@ -377,7 +391,7 @@ impl CIRModuleBuilder {
 					.last_mut()
 					.unwrap()
 					.insert(name.clone(), var.local);
-				
+
 				Some(())
 			}
 		}
@@ -481,7 +495,7 @@ impl CIRModuleBuilder {
 
 		for item in items {
 			if self.generate_stmt(item).is_none() {
-				return (jump_idx, None)
+				return (jump_idx, None);
 			}
 		}
 
@@ -490,7 +504,7 @@ impl CIRModuleBuilder {
 			let Some(result_ir) = self.generate_expr(result) else { return (jump_idx, None); };
 			let result_type = self.convert_type(result.get_type());
 			let result_ir = self.get_as_operand(result_type.clone(), result_ir);
-			
+
 			for (_, var) in self.name_map_stack.pop().unwrap() {
 				self.write(CIRStmt::StorageDead(var));
 			}
@@ -505,11 +519,10 @@ impl CIRModuleBuilder {
 				)),
 			)
 		} else {
-
 			for (_, var) in self.name_map_stack.pop().unwrap() {
 				self.write(CIRStmt::StorageDead(var));
 			}
-			
+
 			(jump_idx, Some(Self::get_void_rvalue()))
 		}
 	}
@@ -565,10 +578,13 @@ impl CIRModuleBuilder {
 				)),
 
 				Atom::CStringLit(s) => Some(RValue::Atom(
-					CIRType::Pointer { pointee: Box::new(CIRType::Basic(Basic::Integral {
-						signed: false,
-						size_bytes: 1,
-					})), mutable: false },
+					CIRType::Pointer {
+						pointee: Box::new(CIRType::Basic(Basic::Integral {
+							signed: false,
+							size_bytes: 1,
+						})),
+						mutable: false,
+					},
 					None,
 					Operand::CStringLit(s.clone(), span),
 					span,
@@ -734,7 +750,7 @@ impl CIRModuleBuilder {
 									if_val,
 								));
 							}
-							
+
 							if cont_block.is_none() {
 								let current = self.current_block;
 								cont_block = Some(self.append_block());
@@ -768,10 +784,10 @@ impl CIRModuleBuilder {
 									cont_block = Some(self.append_block());
 									self.current_block = current;
 								}
-								
+
 								self.write(CIRStmt::Jump(cont_block.unwrap()));
 							}
-							
+
 							if let Some(cont_block) = cont_block {
 								self.current_block = start_block;
 								self.generate_branch(cond_op, if_idx, else_idx);
@@ -789,7 +805,7 @@ impl CIRModuleBuilder {
 							self.current_block = cont_block.unwrap();
 						}
 
-						if cont_block.is_some() {	
+						if cont_block.is_some() {
 							if let Some(result) = result_loc {
 								Some(RValue::Atom(
 									cir_ty,
@@ -897,14 +913,14 @@ impl CIRModuleBuilder {
 					ControlFlow::Break => {
 						let end_block = self.loop_stack.last().unwrap().1;
 						self.write(CIRStmt::Jump(end_block));
-						
+
 						None
 					}
 
 					ControlFlow::Continue => {
 						let start_block = self.loop_stack.last().unwrap().0;
 						self.write(CIRStmt::Jump(start_block));
-						
+
 						None
 					}
 
@@ -1240,7 +1256,10 @@ impl CIRModuleBuilder {
 				if let RValue::Atom(_, None, Operand::LValue(lval, _), _) = cir_expr {
 					Some((lval, arg.get_node_data().tk))
 				} else {
-					Some((self.insert_temporary(cir_ty, cir_expr), arg.get_node_data().tk))
+					Some((
+						self.insert_temporary(cir_ty, cir_expr),
+						arg.get_node_data().tk,
+					))
 				}
 			})
 			.collect();
@@ -1259,7 +1278,7 @@ impl CIRModuleBuilder {
 				let current_block = self.current_block;
 				let next = self.append_block();
 				self.current_block = current_block;
-		
+
 				let result = if ret == &Type::Basic(Basic::Void) {
 					None
 				} else {
@@ -1267,9 +1286,9 @@ impl CIRModuleBuilder {
 					let cir_ret = self.convert_type(ret);
 					Some(self.insert_variable(None, BindingProps::default(), cir_ret))
 				};
-		
+
 				let id = self.get_prototype(&*resolved.read().unwrap());
-		
+
 				self.write(CIRStmt::FnCall {
 					id: CIRFnCall::Direct(id, SrcSpan::new()),
 					args: cir_args,
@@ -1278,9 +1297,9 @@ impl CIRModuleBuilder {
 					next,
 					except: None,
 				});
-		
+
 				self.current_block = next;
-		
+
 				if let Some(result) = result {
 					Some(RValue::Atom(
 						self.convert_type(&ret),
@@ -1306,7 +1325,7 @@ impl CIRModuleBuilder {
 				let CIRType::FunctionPtr { ret, args } = fn_val_ty else { 
 					panic!()
 				};
-				
+
 				let result = if &*ret == &CIRType::Basic(Basic::Void) {
 					None
 				} else {
@@ -1318,18 +1337,18 @@ impl CIRModuleBuilder {
 				let next = self.append_block();
 				self.current_block = current_block;
 
-				self.write(CIRStmt::FnCall { 
-					id: CIRFnCall::Indirect { 
-						local, 
+				self.write(CIRStmt::FnCall {
+					id: CIRFnCall::Indirect {
+						local,
 						ret: *ret.clone(),
 						args,
-						span: expr.get_node_data().tk
-					}, 
+						span: expr.get_node_data().tk,
+					},
 					args: cir_args,
-					type_args: vec![], 
+					type_args: vec![],
 					result: result.clone(),
 					next,
-					except: None 
+					except: None,
 				});
 
 				self.current_block = next;
@@ -1346,7 +1365,7 @@ impl CIRModuleBuilder {
 				}
 			}
 
-			_ => panic!()
+			_ => panic!(),
 		}
 	}
 

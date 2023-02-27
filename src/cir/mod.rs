@@ -105,13 +105,19 @@ pub enum Operand {
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub enum CIRType {
 	Basic(Basic),
-	Pointer { pointee: Box<CIRType>, mutable: bool },
+	Pointer {
+		pointee: Box<CIRType>,
+		mutable: bool,
+	},
 	Array(Box<CIRType>, Vec<i128>),
 	Reference(Box<CIRType>),
 	TypeRef(TypeName, Vec<CIRType>), // TypeRef with zero or more type parameters
 	TypeParam(TypeParamIndex),
 	Tuple(TupleKind, Vec<CIRType>),
-	FunctionPtr { ret: Box<CIRType>, args: Vec<(BindingProps, CIRType)>, }
+	FunctionPtr {
+		ret: Box<CIRType>,
+		args: Vec<(BindingProps, CIRType)>,
+	},
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

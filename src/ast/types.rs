@@ -15,10 +15,10 @@ pub type GenericParamList = Vec<(Name, TypeParam, Option<Type>)>;
 pub enum Type {
 	Basic(Basic),                                   // Fundamental type
 	Pointer { pointee: Box<Type>, mutable: bool },  // Pointer-to-<BoxedType>
-	Array(Box<Type>, Arc<RwLock<Vec<ConstExpr>>>),  // N-dimensional array with constant expression for size
-	TypeRef(ItemRef<TypeRef>),                      // Reference to user-defined type
-	TypeParam(usize),                               // Reference to an in-scope type parameter
-	Tuple(TupleKind, Vec<Type>),                    // Sum/product tuple
+	Array(Box<Type>, Arc<RwLock<Vec<ConstExpr>>>), // N-dimensional array with constant expression for size
+	TypeRef(ItemRef<TypeRef>),                     // Reference to user-defined type
+	TypeParam(usize),                              // Reference to an in-scope type parameter
+	Tuple(TupleKind, Vec<Type>),                   // Sum/product tuple
 	Function(Box<Type>, Vec<(BindingProps, Type)>), // Type of a function signature
 	Never, // Return type of a function that never returns, coerces to anything
 }
@@ -39,7 +39,6 @@ pub struct TypeRef {
 	pub def: Weak<RwLock<TypeDef>>,
 	pub args: Vec<Type>,
 }
-
 
 #[derive(Debug)]
 pub struct TypeDef {
@@ -275,10 +274,10 @@ impl Type {
 	pub fn get_concrete_type(&self, type_args: &Vec<Type>) -> Type {
 		match self {
 			Type::Basic(b) => Type::Basic(*b),
-			
-			Type::Pointer { pointee, mutable } => Type::Pointer { 
-				pointee: Box::new(pointee.get_concrete_type(type_args)), 
-				mutable: *mutable 
+
+			Type::Pointer { pointee, mutable } => Type::Pointer {
+				pointee: Box::new(pointee.get_concrete_type(type_args)),
+				mutable: *mutable,
 			},
 
 			Type::Array(arr_ty, size) => {
@@ -334,7 +333,11 @@ impl Type {
 				}
 
 				Type::Pointer { pointee, mutable } => {
-					if let Type::Pointer { pointee: gen_pointee, mutable: gen_mutable } = generic_ty {
+					if let Type::Pointer {
+						pointee: gen_pointee,
+						mutable: gen_mutable,
+					} = generic_ty
+					{
 						mutable == gen_mutable && pointee.fits_generic(gen_pointee)
 					} else {
 						false
@@ -359,7 +362,10 @@ impl Type {
 	}
 
 	pub fn ptr_type(&self, mutable: bool) -> Self {
-		Type::Pointer { pointee: Box::new(self.clone()), mutable }
+		Type::Pointer {
+			pointee: Box::new(self.clone()),
+			mutable,
+		}
 	}
 
 	pub fn castable_to(&self, target: &Type) -> bool {
@@ -367,7 +373,14 @@ impl Type {
 			true
 		} else if self.is_numeric() {
 			target.is_numeric() || target.is_boolean()
-		} else if let (Type::Pointer { mutable, .. }, Type::Pointer { mutable: target_mutable, .. }) = (self, target) {
+		} else if let (
+			Type::Pointer { mutable, .. },
+			Type::Pointer {
+				mutable: target_mutable,
+				..
+			},
+		) = (self, target)
+		{
 			// If self is a `T mut*`, it can be cast to a `T*`
 			// but if self is a `T*`, it can't be cast to a `T mut*`
 			*mutable || !target_mutable
@@ -442,7 +455,16 @@ impl PartialEq for Type {
 	fn eq(&self, other: &Self) -> bool {
 		match (self, other) {
 			(Self::Basic(l0), Self::Basic(r0)) => l0 == r0,
-			(Self::Pointer { pointee: l0, mutable: l1}, Self::Pointer { pointee: r0, mutable: r1 }) => l0 == r0 && l1 == r1,
+			(
+				Self::Pointer {
+					pointee: l0,
+					mutable: l1,
+				},
+				Self::Pointer {
+					pointee: r0,
+					mutable: r1,
+				},
+			) => l0 == r0 && l1 == r1,
 			(Self::TypeRef(l0), Self::TypeRef(r0)) => l0 == r0,
 			(Self::TypeParam(l0), Self::TypeParam(r0)) => l0 == r0,
 			(Self::Array(l0, _l1), Self::Array(r0, _r1)) => l0 == r0,
@@ -478,7 +500,7 @@ impl Hash for Type {
 	fn hash<H: Hasher>(&self, state: &mut H) {
 		match self {
 			Type::Basic(b) => b.hash(state),
-			Type::Pointer { pointee, mutable} => {
+			Type::Pointer { pointee, mutable } => {
 				pointee.hash(state);
 				mutable.hash(state);
 				"*".hash(state)
@@ -528,12 +550,13 @@ impl Display for Type {
 		match &self {
 			Type::Basic(t) => write!(f, "{t}"),
 
-			Type::Pointer { pointee, mutable } => 
+			Type::Pointer { pointee, mutable } => {
 				if *mutable {
 					write!(f, "{pointee} mut*")
 				} else {
 					write!(f, "{pointee}*")
 				}
+			}
 
 			Type::Array(t, _s) => write!(f, "{}[]", t),
 

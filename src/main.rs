@@ -92,7 +92,9 @@ fn main() -> color_eyre::eyre::Result<()> {
 	});
 
 	if manager_state.backtrace_on_error {
-		 unsafe { errors::CAPTURE_BACKTRACE = true; }
+		unsafe {
+			errors::CAPTURE_BACKTRACE = true;
+		}
 	}
 
 	// Launch multithreaded compilation
@@ -186,13 +188,13 @@ fn main() -> color_eyre::eyre::Result<()> {
 			}
 		}
 	}
-	
+
 	if !manager_state.emit_types.contains(&EmitType::Object) {
 		for module in &*manager_state.output_modules.lock().unwrap() {
 			fs::remove_file(module).unwrap();
 		}
 	}
-	
+
 	if link_errors > 0 {
 		std::process::exit(1);
 	}
@@ -216,6 +218,6 @@ fn main() -> color_eyre::eyre::Result<()> {
 fn get_file_suffix(path: &Path) -> Option<Name> {
 	let mut name = path.file_name()?.to_string_lossy().to_string();
 	name.truncate(name.rfind('.').unwrap_or(name.len()));
-	
+
 	Some(name.into())
 }

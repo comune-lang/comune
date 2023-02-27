@@ -16,8 +16,8 @@ use crate::ast::module::{
 use crate::ast::statement::Stmt;
 use crate::ast::traits::{ImplBlockInterface, TraitInterface, TraitRef};
 use crate::ast::types::{
-	AlgebraicDef, Basic, BindingProps, FnParamList, FnPrototype, TupleKind, Type, TypeDef,
-	GenericParamList, TypeRef, Visibility, TypeDefKind,
+	AlgebraicDef, Basic, BindingProps, FnParamList, FnPrototype, GenericParamList, TupleKind, Type,
+	TypeDef, TypeDefKind, TypeRef, Visibility,
 };
 use crate::ast::Attribute;
 
@@ -159,7 +159,8 @@ impl Parser {
 					while !token_compare(&next, "}") {
 						let Token::Name(variant_name) = next else { return self.err(ComuneErrCode::UnexpectedToken) };
 
-						let (tuple_kind, tuple_types) = if self.get_next()? == Token::Operator("(") {
+						let (tuple_kind, tuple_types) = if self.get_next()? == Token::Operator("(")
+						{
 							self.parse_tuple_type(false)?
 						} else {
 							(TupleKind::Product, vec![])
@@ -168,7 +169,7 @@ impl Parser {
 						if tuple_kind != TupleKind::Product {
 							todo!("enum variants with data of sum type are not supported!")
 						}
-						
+
 						aggregate.variants.push((variant_name, tuple_types));
 
 						next = self.get_current()?;
@@ -185,14 +186,14 @@ impl Parser {
 					self.get_next()?; // Consume closing brace
 
 					aggregate.attributes = current_attributes;
-					
+
 					let full_name = Identifier::from_parent(scope, name);
 
 					self.interface.children.insert(
 						full_name.clone(),
 						ModuleItemInterface::Type(Arc::new(RwLock::new(TypeDef {
 							def: TypeDefKind::Algebraic(aggregate),
-							name: full_name
+							name: full_name,
 						}))),
 					);
 				}
@@ -260,14 +261,14 @@ impl Parser {
 					self.get_next()?; // Consume closing brace
 
 					aggregate.attributes = current_attributes;
-					
+
 					let full_name = Identifier::from_parent(scope, name);
 
 					self.interface.children.insert(
 						full_name.clone(),
 						ModuleItemInterface::Type(Arc::new(RwLock::new(TypeDef {
 							def: TypeDefKind::Algebraic(aggregate),
-							name: full_name
+							name: full_name,
 						}))),
 					);
 				}
@@ -294,8 +295,10 @@ impl Parser {
 
 					while !token_compare(&next, "}") {
 						let func_attributes = self.parse_attributes()?;
-						let (name, interface, im) =
-							self.parse_namespace_declaration(func_attributes, Some(&Type::TypeParam(0)))?;
+						let (name, interface, im) = self.parse_namespace_declaration(
+							func_attributes,
+							Some(&Type::TypeParam(0)),
+						)?;
 
 						match (interface, im) {
 							(
@@ -498,7 +501,8 @@ impl Parser {
 
 						Token::Other('{') => {
 							let old_scope = self.current_scope.clone();
-							self.current_scope = Arc::new(Identifier::from_parent(&old_scope, module));
+							self.current_scope =
+								Arc::new(Identifier::from_parent(&old_scope, module));
 							let scope = self.current_scope.clone();
 							self.parse_namespace(&scope)?;
 							self.current_scope = old_scope;
@@ -520,7 +524,10 @@ impl Parser {
 					let id = Identifier::from_parent(scope, name);
 
 					match (&mut protos, defs) {
-						(ModuleItemInterface::Functions(fns), ModuleItemImpl::Function(proto, ast)) => {
+						(
+							ModuleItemInterface::Functions(fns),
+							ModuleItemImpl::Function(proto, ast),
+						) => {
 							let module_interface = &mut self.interface;
 
 							if let Some(ModuleItemInterface::Functions(existing)) =
@@ -531,9 +538,7 @@ impl Parser {
 								module_interface.children.insert(id.clone(), protos);
 							}
 
-							self.module_impl
-								.fn_impls
-								.push((proto, ast))
+							self.module_impl.fn_impls.push((proto, ast))
 						}
 
 						_ => todo!(),
@@ -761,7 +766,10 @@ impl Parser {
 	fn parse_binding_props(&self) -> ComuneResult<Option<BindingProps>> {
 		let mut props = BindingProps::default();
 
-		if !matches!(self.get_current()?, Token::Keyword("unsafe" | "mut") | Token::Operator("&")) {
+		if !matches!(
+			self.get_current()?,
+			Token::Keyword("unsafe" | "mut") | Token::Operator("&")
+		) {
 			return Ok(None);
 		}
 
@@ -1147,8 +1155,8 @@ impl Parser {
 				}
 			}
 		} else {
-			// Not at an identifier, parse the other kinds of Atom			
-			
+			// Not at an identifier, parse the other kinds of Atom
+
 			match current {
 				Token::StringLiteral(s) => {
 					self.get_next()?;
@@ -1164,7 +1172,7 @@ impl Parser {
 
 				Token::NumLiteral(s, suffix) => {
 					self.get_next()?;
-					
+
 					let mut suffix_b = Basic::get_basic_type(suffix.as_str());
 
 					if suffix_b.is_none() && !suffix.is_empty() {
@@ -1187,10 +1195,10 @@ impl Parser {
 
 				Token::BoolLiteral(b) => {
 					self.get_next()?;
-					
+
 					result = Some(Atom::BoolLit(b));
 				}
-				
+
 				Token::Operator("[") => {
 					// Array literal
 					self.get_next()?;
@@ -1231,7 +1239,7 @@ impl Parser {
 
 					"break" => {
 						self.get_next()?;
-						
+
 						// TODO: Labeled break and continue
 
 						result = Some(Atom::CtrlFlow(Box::new(ControlFlow::Break)));
@@ -1239,7 +1247,7 @@ impl Parser {
 
 					"continue" => {
 						self.get_next()?;
-					
+
 						// TODO: Labeled break and continue
 
 						result = Some(Atom::CtrlFlow(Box::new(ControlFlow::Continue)));
@@ -1247,7 +1255,7 @@ impl Parser {
 
 					"match" => {
 						self.get_next()?;
-					
+
 						let scrutinee = self.parse_expression()?;
 						current = self.get_current()?;
 
@@ -1611,22 +1619,27 @@ impl Parser {
 				let Token::Name(name) = self.get_current()? else {
 					return self.err(ComuneErrCode::UnexpectedToken)
 				};
-				
+
 				if &name != "self" {
-					return self.err(ComuneErrCode::UnexpectedToken)
+					return self.err(ComuneErrCode::UnexpectedToken);
 				};
 
-				result.params.push((self_ty.clone(), Some(name), binding_props));
-				
+				result
+					.params
+					.push((self_ty.clone(), Some(name), binding_props));
+
 				if self.get_next()? == Token::Other(',') {
 					self.get_next()?;
 				}
-				
 			}
 		}
 
 		while self.is_at_type_token(false)? {
-			let mut param = (self.parse_type(false)?, None, self.parse_binding_props()?.unwrap_or_default());
+			let mut param = (
+				self.parse_type(false)?,
+				None,
+				self.parse_binding_props()?.unwrap_or_default(),
+			);
 
 			// Check for param name
 			let mut current = self.get_current()?;
@@ -1707,25 +1720,28 @@ impl Parser {
 				Token::Operator("*") | Token::Keyword("mut") => {
 					// Pointer type
 					while let Token::Operator("*") | Token::Keyword("mut") = self.get_current()? {
-						
 						if self.get_current()? == Token::Keyword("mut") {
-							
 							let current_idx = self.get_current_token_index();
 
 							if self.get_next()? == Token::Operator("*") {
-								result = Type::Pointer { pointee: Box::new(result), mutable: true };
-							
+								result = Type::Pointer {
+									pointee: Box::new(result),
+									mutable: true,
+								};
+
 								self.consume(&Token::Operator("*"))?;
 							} else {
 								self.lexer.borrow_mut().seek_token_idx(current_idx);
 								break;
 							}
 						} else {
-							result = Type::Pointer { pointee: Box::new(result), mutable: false };
-							
+							result = Type::Pointer {
+								pointee: Box::new(result),
+								mutable: false,
+							};
+
 							self.get_next()?;
 						}
-						
 					}
 				}
 
@@ -1755,7 +1771,7 @@ impl Parser {
 					while self.get_current()? != Token::Operator(")") {
 						let ty = self.parse_type(immediate_resolve)?;
 						let props = self.parse_binding_props()?.unwrap_or_default();
-						
+
 						args.push((props, ty));
 
 						match self.get_current()? {
@@ -1969,11 +1985,9 @@ impl Parser {
 		}
 
 		let mut kind = None;
-		
-		if self.get_next()? == Token::Operator(")") {
-		
-			kind = Some(TupleKind::Empty);
 
+		if self.get_next()? == Token::Operator(")") {
+			kind = Some(TupleKind::Empty);
 		} else {
 			loop {
 				types.push(self.parse_type(immediate_resolve)?);

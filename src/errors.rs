@@ -46,10 +46,10 @@ impl ComuneError {
 			span,
 			notes: vec![],
 
-			origin: if unsafe { CAPTURE_BACKTRACE } { 
-				Some(Backtrace::new()) 
-			} else { 
-				None 
+			origin: if unsafe { CAPTURE_BACKTRACE } {
+				Some(Backtrace::new())
+			} else {
+				None
 			},
 		}
 	}
@@ -463,7 +463,7 @@ pub fn spawn_logger(backtrace_on_error: bool) -> Sender<CMNMessageLog> {
 								}
 
 								if length_left == 0 {
-									break
+									break;
 								}
 							}
 						}
@@ -485,7 +485,12 @@ pub fn spawn_logger(backtrace_on_error: bool) -> Sender<CMNMessageLog> {
 					// Print compiler backtrace
 					if let ComuneMessage::Error(err) = &msg {
 						if backtrace_on_error {
-							writeln!(out, "\ncompiler backtrace:\n\n{:?}", err.origin.as_ref().unwrap()).unwrap();
+							writeln!(
+								out,
+								"\ncompiler backtrace:\n\n{:?}",
+								err.origin.as_ref().unwrap()
+							)
+							.unwrap();
 						}
 					}
 					out.flush().unwrap();
