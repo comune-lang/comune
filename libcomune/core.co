@@ -5,5 +5,5 @@
 // the language. things like built-in trait definitions,
 // primitive type impls, that sorta thing
 
-import traits;
-import ops;
+module traits;
+module ops;

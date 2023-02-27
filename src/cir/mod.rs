@@ -154,6 +154,8 @@ pub enum CIRStmt {
 		next: BlockIndex,
 		except: Option<BlockIndex>,
 	},
+	StorageLive(VarIndex),
+	StorageDead(VarIndex),
 }
 
 #[derive(Debug, Clone)]

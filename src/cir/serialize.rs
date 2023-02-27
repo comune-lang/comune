@@ -177,6 +177,9 @@ impl Display for CIRStmt {
 					write!(f, "];\n")
 				}
 			}
+
+			CIRStmt::StorageLive(idx) => write!(f, "StorageLive(_{idx});\n"),
+			CIRStmt::StorageDead(idx) => write!(f, "StorageDead(_{idx});\n"),
 		}
 	}
 }

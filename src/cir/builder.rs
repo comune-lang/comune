@@ -367,6 +367,8 @@ impl CIRModuleBuilder {
 				let cir_ty = self.convert_type(ty);
 				let var = self.insert_variable(Some(name.clone()), *props, cir_ty);
 
+				self.write(CIRStmt::StorageLive(var.local));
+
 				if let Some(val) = val {
 					self.write(CIRStmt::Assignment((var.clone(), *tk), val));
 				}
@@ -488,8 +490,10 @@ impl CIRModuleBuilder {
 			let Some(result_ir) = self.generate_expr(result) else { return (jump_idx, None); };
 			let result_type = self.convert_type(result.get_type());
 			let result_ir = self.get_as_operand(result_type.clone(), result_ir);
-
-			self.name_map_stack.pop();
+			
+			for (_, var) in self.name_map_stack.pop().unwrap() {
+				self.write(CIRStmt::StorageDead(var));
+			}
 
 			(
 				jump_idx,
@@ -501,7 +505,11 @@ impl CIRModuleBuilder {
 				)),
 			)
 		} else {
-			self.name_map_stack.pop();
+
+			for (_, var) in self.name_map_stack.pop().unwrap() {
+				self.write(CIRStmt::StorageDead(var));
+			}
+			
 			(jump_idx, Some(Self::get_void_rvalue()))
 		}
 	}

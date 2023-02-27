@@ -357,6 +357,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 							callsite = self.builder.build_call(fn_v, &args_mapped, "call");
 							self.builder.build_unconditional_branch(self.blocks[*next]);
 						}
+						
 						if let Some(result) = result {
 							self.builder.position_at_end(self.blocks[*next]);
 
@@ -364,9 +365,10 @@ impl<'ctx> LLVMBackend<'ctx> {
 								self.generate_lvalue(result),
 								callsite.try_as_basic_value().unwrap_left(),
 							);
-						} else {
 						}
 					}
+
+					CIRStmt::StorageLive(_) | CIRStmt::StorageDead(_) => {}
 				}
 			}
 		}

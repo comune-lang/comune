@@ -16,7 +16,7 @@ use super::{
 pub enum LangTrait {
 	Sized,
 	Copy,
-	Clone,
+	Move,
 	Drop,
 	Send,
 	Sync,

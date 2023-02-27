@@ -340,23 +340,16 @@ pub fn get_module_source_path(
 	// Resolve built-in library paths. This is currently hard-coded, but
 	// there's probably a more elegant solution to be written down the line
 	if module.absolute && matches!(module.path[0].to_string().as_str(), "core" | "std") {
-		let mut current_path = PathBuf::from(state.libcomune_dir.clone());
-
-		current_path.push(module.path[0].to_string());
-		current_path.push("src");
-		current_path.push("lib");
-		current_path.set_extension("co");
-
-		return Some(current_path);
+		current_path = PathBuf::from(state.libcomune_dir.clone());
+	} else {
+		current_path.pop();
 	}
 
 	current_path.set_extension("");
 
-	for i in 0..module.path.len() - 1 {
+	for i in 0..module.path.len() {
 		current_path.push(&*module.path[i]);
 	}
-
-	current_path.set_file_name(&**module.name());
 
 	let extensions = ["co", "cpp", "c"];
 
