@@ -21,7 +21,7 @@ use crate::{
 	errors::{CMNMessageLog, ComuneErrCode, ComuneError, ComuneMessage},
 	lexer::{self, Lexer, SrcSpan},
 	llvm::{self, LLVMBackend},
-	parser::{ComuneResult, Parser},
+	parser::Parser,
 };
 
 pub struct ManagerState {
@@ -204,7 +204,7 @@ pub fn launch_module_compilation(
 	// Return early if any import failed
 	parser.imports_opaque = imports;
 
-	match validate_interface(&state, &mut parser) {
+	match ast::semantic::validate_interface(&state, &mut parser) {
 		Ok(_) => {}
 		Err(e) => {
 			parser
@@ -439,17 +439,6 @@ pub fn parse_interface(
 	};
 }
 
-pub fn validate_interface(_state: &Arc<ManagerState>, parser: &mut Parser) -> ComuneResult<()> {
-	// At this point, all imports have been resolved, so validate namespace-level types
-	ast::semantic::ty::resolve_interface_types(&mut parser.interface)?;
-
-	// Check for cyclical dependencies without indirection
-	// TODO: Nice error reporting for this
-	ast::semantic::ty::check_module_cyclical_deps(&mut parser.interface)?;
-
-	Ok(())
-}
-
 pub fn generate_code<'ctx>(
 	state: &Arc<ManagerState>,
 	parser: &mut Parser,
@@ -476,7 +465,7 @@ pub fn generate_code<'ctx>(
 
 	// Validate code
 
-	match ast::validate_module_impl(&parser.interface, &mut parser.module_impl) {
+	match ast::semantic::validate_module_impl(&parser.interface, &mut parser.module_impl) {
 		Ok(()) => {
 			if state.verbose_output {
 				println!("generating code...");

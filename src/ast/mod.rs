@@ -2,11 +2,10 @@ use std::collections::HashMap;
 
 use types::Type;
 
-use crate::{lexer::Token, parser::ComuneResult};
+use crate::lexer::Token;
 
 use self::{
-	module::{Identifier, ModuleImpl, ModuleInterface, ModuleItemInterface, Name},
-	semantic::func::validate_function_body,
+	module::{Identifier, ModuleInterface, ModuleItemInterface, Name},
 	types::BindingProps,
 };
 
@@ -122,18 +121,4 @@ impl<'ctx> FnScope<'ctx> {
 	pub fn add_variable(&mut self, t: Type, n: Name, p: BindingProps) {
 		self.variables.insert(n, (t, p));
 	}
-}
-
-pub fn validate_module_impl(
-	interface: &ModuleInterface,
-	module_impl: &mut ModuleImpl,
-) -> ComuneResult<()> {
-	for (proto, ast) in &mut module_impl.fn_impls {
-		let mut scope = proto.read().unwrap().path.clone();
-		scope.path.pop();
-
-		validate_function_body(scope.clone(), &*proto.read().unwrap(), ast, interface)?
-	}
-
-	Ok(())
 }
