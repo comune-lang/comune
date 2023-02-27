@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use types::Type;
 
 use crate::lexer::Token;
@@ -36,7 +34,7 @@ pub struct FnScope<'ctx> {
 	scope: Identifier,
 	parent: Option<&'ctx FnScope<'ctx>>,
 	fn_return_type: Type,
-	variables: HashMap<Name, (Type, BindingProps)>,
+	variables: Vec<(Name, Type, BindingProps)>,
 	is_inside_loop: bool,
 }
 
@@ -47,7 +45,7 @@ impl<'ctx> FnScope<'ctx> {
 			scope: parent.scope.clone(),
 			parent: Some(parent),
 			fn_return_type: parent.fn_return_type.clone(),
-			variables: HashMap::new(),
+			variables: vec![],
 			is_inside_loop: is_loop_block | parent.is_inside_loop,
 		}
 	}
@@ -58,7 +56,7 @@ impl<'ctx> FnScope<'ctx> {
 			scope,
 			parent: None,
 			fn_return_type: return_type,
-			variables: HashMap::new(),
+			variables: vec![],
 			is_inside_loop: false,
 		}
 	}
@@ -74,10 +72,10 @@ impl<'ctx> FnScope<'ctx> {
 			// Unqualified name, perform scope-level lookup first
 			let local_lookup;
 
-			if self.variables.contains_key(id.name()) {
+			if let Some((_, ty, _)) = self.variables.iter().rev().find(|(name, ..)| name == id.name()) {
 				local_lookup = Some((
 					id.clone(),
-					self.variables.get(id.name()).cloned().unwrap().0,
+					ty.clone()
 				));
 			} else if let Some(parent) = self.parent {
 				local_lookup = parent.find_symbol(id, search_namespace);
@@ -119,6 +117,6 @@ impl<'ctx> FnScope<'ctx> {
 	}
 
 	pub fn add_variable(&mut self, t: Type, n: Name, p: BindingProps) {
-		self.variables.insert(n, (t, p));
+		self.variables.push((n, t, p));
 	}
 }

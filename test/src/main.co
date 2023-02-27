@@ -99,7 +99,7 @@ TestSumType sum_type_test(i32& value) {
 int main() {
 	submodule_test::bar();
 
-	int mut i;
+	int i;
 
 	if true {
 		i = 12;
@@ -107,7 +107,7 @@ int main() {
 		i = 12;
 	}
 
-	int j = i;
+	int mut i = i;
 
 	i = 12;
 
