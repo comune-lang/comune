@@ -145,6 +145,7 @@ int main() {
 		loop_count += 1;
 
 		if loop_count > 100 {
+			int loop_init_test = 12;
 			break;
 		}
 	}

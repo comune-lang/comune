@@ -255,6 +255,18 @@ impl Analysis for VarInitCheck {
 				state.set_liveness(lval, LivenessState::Live);
 			}
 
+			CIRStmt::StorageLive(local) => {
+				state.set_liveness(&LValue { local: *local, projection: vec![] }, LivenessState::Uninit);
+			}
+
+			CIRStmt::StorageDead(local) => {
+				let lval = LValue { local: *local, projection: vec![] };
+				// Clear all sublocation states
+				state.set_liveness(&lval, LivenessState::Dropped);
+			
+				state.liveness.remove(&lval);
+			}
+
 			_ => {}
 		}
 	}
