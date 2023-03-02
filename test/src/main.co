@@ -55,6 +55,7 @@ impl Hello for Test {
 	}
 }
 
+
 void impl_test() {
 	Test test = Test { a: 413, b: 612, };
 	test.hello();

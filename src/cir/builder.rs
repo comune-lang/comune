@@ -924,26 +924,20 @@ impl CIRModuleBuilder {
 						scrutinee,
 						branches,
 					} => {
-						// Generate switch discriminant calculation
+						
 						let scrutinee_ir = self.generate_expr(scrutinee)?;
 						let scrutinee_ty = self.convert_type(scrutinee.get_type());
 						let scrutinee_lval =
 							self.insert_temporary(scrutinee_ty.clone(), scrutinee_ir);
 						let cir_ty = self.convert_type(expr_ty);
 
-						let disc_ty = CIRType::Basic(scrutinee_ty.get_discriminant_type().unwrap());
-						let disc_lval = self.insert_temporary(
-							disc_ty.clone(),
-							RValue::Atom(
-								disc_ty.clone(),
-								None,
-								Operand::IntegerLit(0, SrcSpan::new()),
-								SrcSpan::new(),
-							),
-						);
-
 						let mut branches_ir = vec![];
 						let mut has_result = false;
+						
+						let disc_lval;
+						let disc_ty = CIRType::Basic(scrutinee_ty.get_discriminant_type().unwrap());
+
+						let start_block = self.current_block;
 
 						let result_loc = if cir_ty != CIRType::Basic(Basic::Void) {
 							Some(self.insert_temporary(
@@ -954,65 +948,95 @@ impl CIRModuleBuilder {
 							None
 						};
 
-						let start_block = self.current_block;
+						if Self::is_trivially_matchable(branches, scrutinee.get_type()) {
+							let mut trivial_disc_lval = scrutinee_lval.clone();
+							
+							trivial_disc_lval.projection.push(PlaceElem::Field(0));
 
-						for (i, (pattern, _)) in branches.iter().enumerate() {
-							// TODO: There is no usefulness checking here - if a value
-							// matches multiple branches, this will probably break
-							let match_expr =
-								self.generate_match_expr(pattern, &scrutinee_lval, &scrutinee_ty);
-							let match_operand =
-								self.get_as_operand(CIRType::Basic(Basic::Bool), match_expr);
+							disc_lval = trivial_disc_lval;
 
-							let cast_ir = self.get_as_operand(
-								disc_ty.clone(),
-								RValue::Cast {
-									from: CIRType::Basic(Basic::Bool),
-									to: disc_ty.clone(),
-									val: match_operand,
-									span: SrcSpan::new(),
-								},
-							);
-
-							let mult_ir = self.get_as_operand(
-								disc_ty.clone(),
-								RValue::Cons(
+							for (pattern, _) in branches.iter() {
+								branches_ir.push((
 									disc_ty.clone(),
-									[
-										(
-											disc_ty.clone(),
-											Operand::IntegerLit(i as i128 + 1, SrcSpan::new()),
-										),
-										(disc_ty.clone(), cast_ir),
-									],
-									Operator::Mul,
+									Operand::IntegerLit(
+										Self::get_trivial_match_value(pattern, scrutinee.get_type()) as i128,
+										SrcSpan::new()
+									),
+									0,
+								));
+							}
+						} else {
+							// Generate switch discriminant calculation
+							disc_lval = self.insert_temporary(
+								disc_ty.clone(),
+								RValue::Atom(
+									disc_ty.clone(),
+									None,
+									Operand::IntegerLit(0, SrcSpan::new()),
 									SrcSpan::new(),
 								),
 							);
+						
 
-							let add_ir = CIRStmt::Assignment(
-								(disc_lval.clone(), SrcSpan::new()),
-								RValue::Cons(
+
+							for (i, (pattern, _)) in branches.iter().enumerate() {
+								// TODO: There is no usefulness checking here - if a value
+								// matches multiple branches, this will probably break
+								let match_expr =
+									self.generate_match_expr(pattern, &scrutinee_lval, &scrutinee_ty);
+								let match_operand =
+									self.get_as_operand(CIRType::Basic(Basic::Bool), match_expr);
+
+								let cast_ir = self.get_as_operand(
 									disc_ty.clone(),
-									[
-										(
-											disc_ty.clone(),
-											Operand::LValue(disc_lval.clone(), SrcSpan::new()),
-										),
-										(disc_ty.clone(), mult_ir.clone()),
-									],
-									Operator::Add,
-									SrcSpan::new(),
-								),
-							);
+									RValue::Cast {
+										from: CIRType::Basic(Basic::Bool),
+										to: disc_ty.clone(),
+										val: match_operand,
+										span: SrcSpan::new(),
+									},
+								);
 
-							self.write(add_ir);
+								let mult_ir = self.get_as_operand(
+									disc_ty.clone(),
+									RValue::Cons(
+										disc_ty.clone(),
+										[
+											(
+												disc_ty.clone(),
+												Operand::IntegerLit(i as i128 + 1, SrcSpan::new()),
+											),
+											(disc_ty.clone(), cast_ir),
+										],
+										Operator::Mul,
+										SrcSpan::new(),
+									),
+								);
 
-							branches_ir.push((
-								disc_ty.clone(),
-								Operand::IntegerLit(i as i128 + 1, SrcSpan::new()),
-								0,
-							));
+								let add_ir = CIRStmt::Assignment(
+									(disc_lval.clone(), SrcSpan::new()),
+									RValue::Cons(
+										disc_ty.clone(),
+										[
+											(
+												disc_ty.clone(),
+												Operand::LValue(disc_lval.clone(), SrcSpan::new()),
+											),
+											(disc_ty.clone(), mult_ir.clone()),
+										],
+										Operator::Add,
+										SrcSpan::new(),
+									),
+								);
+
+								self.write(add_ir);
+
+								branches_ir.push((
+									disc_ty.clone(),
+									Operand::IntegerLit(i as i128 + 1, SrcSpan::new()),
+									0,
+								));
+							}
 						}
 
 						let cont_block = self.append_block();
@@ -1022,8 +1046,8 @@ impl CIRModuleBuilder {
 						for (i, (pattern, branch)) in branches.iter().enumerate() {
 							let Expr::Atom(Atom::Block { items, result }, branch_meta) = branch else { panic!() };
 
-
 							let binding_idx = self.append_block();
+
 							self.generate_pattern_bindings(
 								pattern.clone(),
 								scrutinee_lval.clone(),
@@ -1422,6 +1446,45 @@ impl CIRModuleBuilder {
 
 				_ => panic!(),
 			},
+		}
+	}
+
+	// TODO: Support for enum types in these
+	fn is_trivially_matchable(branches: &Vec<(Pattern, Expr)>, scrutinee_ty: &Type) -> bool {
+		let types = match scrutinee_ty {
+			Type::Tuple(TupleKind::Sum, types) => types.as_slice(),
+			
+			_ => panic!(),
+		};
+
+		for (branch, _) in branches {
+			match branch {
+				Pattern::Binding(Binding { ty, .. }) => {
+					if !types.iter().any(|t| t == ty) {
+						return false
+					}	
+				}
+
+				_ => return false,
+			}
+		}
+
+		true
+	}
+
+	fn get_trivial_match_value(branch: &Pattern, scrutinee_ty: &Type) -> usize {
+		let types = match scrutinee_ty {
+			Type::Tuple(TupleKind::Sum, types) => types.as_slice(),
+			
+			_ => panic!(),
+		};
+
+		match branch {
+			Pattern::Binding(Binding { ty, ..}) => {
+				types.iter().position(|t| t == ty).unwrap()
+			}
+
+			_ => panic!(),
 		}
 	}
 
