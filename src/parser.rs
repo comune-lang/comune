@@ -1618,7 +1618,7 @@ impl Parser {
 					return self.err(ComuneErrCode::UnexpectedToken)
 				};
 
-				if &name != "self" {
+				if &*name != "self" {
 					return self.err(ComuneErrCode::UnexpectedToken);
 				};
 

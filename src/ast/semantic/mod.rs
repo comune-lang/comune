@@ -57,7 +57,7 @@ fn validate_attributes(interface: &mut ModuleInterface) -> ComuneResult<()> {
 						panic!()
 					};
 
-					let lang_trait = match name.as_str() {
+					let lang_trait = match &**name {
 						"Sized" => LangTrait::Sized,
 						"Copy" => LangTrait::Copy,
 						"Clone" => LangTrait::Clone,
