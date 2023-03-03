@@ -3,18 +3,16 @@
 // this module contains traits that are fundamental to the type system.
 
 @lang(Copy)
-trait Copy {
-	Self copy(&self);
-}
+trait Copy {}
 
-@lang(Move)
-trait Move {
-	Self move(mut& self);
+@lang(Clone)
+trait Clone {
+	Self clone(&self);
 }
 
 @lang(Drop)
 trait Drop {
-	void drop(Self mut& self);
+	void drop(mut& self);
 }
 
 @lang(Sized)

@@ -99,15 +99,21 @@ pub fn resolve_interface_types(interface: &ModuleInterface) -> ComuneResult<()> 
 			type_args,
 		}) = &im.read().unwrap().implements
 		{
-			interface.with_item(&name, &scope, |item, name| match item {
-				ModuleItemInterface::Trait(tr) => Box::new(ItemRef::Resolved(TraitRef {
+			let found = interface.with_item(&name, &scope, |item, name| match item {
+				ModuleItemInterface::Trait(tr) => Some(Box::new(ItemRef::Resolved(TraitRef {
 					def: Arc::downgrade(tr),
 					name: name.clone(),
 					args: type_args.clone(),
-				})),
+				}))),
 
-				_ => panic!(),
-			})
+				_ => None,
+			});
+
+			if let Some(found) = found {
+				found
+			} else {
+				return Err(ComuneError::new(ComuneErrCode::UnresolvedTrait(name.clone()), SrcSpan::new()))
+			}
 		} else {
 			None
 		};

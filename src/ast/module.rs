@@ -49,9 +49,6 @@ pub struct ModuleInterface {
 	pub imported: HashMap<Name, Arc<ModuleInterface>>,
 	pub trait_solver: ImplSolver,
 }
-
-pub type ModuleInterfaceOpaque = HashMap<Identifier, ModuleItemOpaque>;
-
 // Struct representing a module's implementation.
 // Using Vec because Arc<RwLock<T>> is not Hash for T: Hash, and
 // i do not want to start doing newtype bullshit right now
@@ -59,16 +56,6 @@ pub type ModuleInterfaceOpaque = HashMap<Identifier, ModuleItemOpaque>;
 #[derive(Default, Clone, Debug)]
 pub struct ModuleImpl {
 	pub fn_impls: Vec<(Arc<RwLock<FnPrototype>>, ModuleASTElem)>,
-}
-
-#[derive(Clone, Debug)]
-pub enum ModuleItemOpaque {
-	Type,
-	Trait,
-	Function,
-	Variable,
-	Alias,
-	TypeAlias,
 }
 
 // I HATE RWLOCKS I HATE RWLOCKS I HATE RWLOCKS I HATE RWLOCKS I
@@ -103,25 +90,6 @@ impl ModuleInterface {
 			imported: HashMap::new(),
 			trait_solver: ImplSolver::new(),
 		}
-	}
-
-	pub fn get_opaque(&self) -> ModuleInterfaceOpaque {
-		self.children
-			.iter()
-			.map(|(id, child)| {
-				(
-					id.clone(),
-					match child {
-						ModuleItemInterface::Type(_) => ModuleItemOpaque::Type,
-						ModuleItemInterface::Trait(_) => ModuleItemOpaque::Trait,
-						ModuleItemInterface::Functions(..) => ModuleItemOpaque::Function,
-						ModuleItemInterface::Variable(..) => ModuleItemOpaque::Variable,
-						ModuleItemInterface::Alias(_) => ModuleItemOpaque::Alias,
-						ModuleItemInterface::TypeAlias(_) => ModuleItemOpaque::TypeAlias,
-					},
-				)
-			})
-			.collect()
 	}
 
 	pub fn get_item<'a>(

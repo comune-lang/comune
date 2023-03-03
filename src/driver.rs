@@ -12,7 +12,7 @@ use inkwell::{context::Context, passes::PassManager, targets::FileType};
 use crate::{
 	ast::{
 		self,
-		module::{Identifier, ModuleImportKind, ModuleInterface, ModuleInterfaceOpaque},
+		module::{Identifier, ModuleImportKind, ModuleInterface},
 	},
 	cir::{
 		analyze::{lifeline::VarInitCheck, verify, CIRPassManager, DataFlowPass},
@@ -40,7 +40,7 @@ pub struct ManagerState {
 pub enum ModuleState {
 	Parsing,
 	ParsingFailed,
-	InterfaceUntyped(ModuleInterfaceOpaque),
+	InterfaceUntyped(Arc<ModuleInterface>),
 	InterfaceComplete(Arc<ModuleInterface>),
 }
 
@@ -108,7 +108,7 @@ pub fn launch_module_compilation(
 
 	state.module_states.write().unwrap().insert(
 		src_path.clone(),
-		ModuleState::InterfaceUntyped(parser.interface.get_opaque()),
+		ModuleState::InterfaceUntyped(Arc::new(parser.interface.clone())),
 	);
 
 	// Resolve module imports
@@ -186,14 +186,8 @@ pub fn launch_module_compilation(
 					));
 				}
 
-				Some(ModuleState::InterfaceUntyped(interface)) => {
+				Some(ModuleState::InterfaceUntyped(interface) | ModuleState::InterfaceComplete(interface)) => {
 					imports.insert(import_name, interface.clone());
-					module_names.remove(0);
-					break;
-				}
-
-				Some(ModuleState::InterfaceComplete(interface)) => {
-					imports.insert(import_name, interface.get_opaque());
 					module_names.remove(0);
 					break;
 				}
@@ -202,7 +196,7 @@ pub fn launch_module_compilation(
 	}
 
 	// Return early if any import failed
-	parser.imports_opaque = imports;
+	parser.interface.imported = imports;
 
 	match ast::semantic::validate_interface(&state, &mut parser) {
 		Ok(_) => {}

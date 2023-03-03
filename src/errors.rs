@@ -128,6 +128,7 @@ pub enum ComuneErrCode {
 		ty: Type,
 		members: Vec<Name>,
 	},
+	UnresolvedTrait(Identifier),
 
 	LoopCtrlOutsideLoop(&'static str),
 
@@ -263,6 +264,7 @@ impl Display for ComuneErrCode {
 
 				Ok(())
 			}
+			ComuneErrCode::UnresolvedTrait(tr) => write!(f, "failed to resolve trait `{tr}`"),
 
 			ComuneErrCode::LoopCtrlOutsideLoop(name) => write!(f, "{name} outside of loop"),
 

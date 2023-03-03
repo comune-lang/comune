@@ -44,6 +44,17 @@ impl Test {
 	}
 }
 
+impl core::traits::Drop for Test {
+	void drop(mut& self) {
+		printf(c"This is Test's destructor!\n");
+	}
+}
+
+impl submodule_test::SubmoduleTrait for Test {
+	void foo() {
+		printf(c"This is a trait in a submodule!\n");
+	}
+}
 
 trait Hello {
 	void hello(Self& self);

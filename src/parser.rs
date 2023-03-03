@@ -11,7 +11,7 @@ use crate::ast::controlflow::ControlFlow;
 use crate::ast::expression::{Atom, Expr, FnRef, NodeData, Operator};
 use crate::ast::module::{
 	Identifier, ItemRef, ModuleASTElem, ModuleImpl, ModuleImportKind, ModuleInterface,
-	ModuleItemImpl, ModuleItemInterface, ModuleItemOpaque, Name,
+	ModuleItemImpl, ModuleItemInterface, Name,
 };
 use crate::ast::statement::Stmt;
 use crate::ast::traits::{ImplBlockInterface, TraitInterface, TraitRef};
@@ -37,7 +37,6 @@ pub struct Parser {
 	pub interface: ModuleInterface,
 	pub module_impl: ModuleImpl,
 	pub lexer: RefCell<Lexer>,
-	pub imports_opaque: HashMap<Name, HashMap<Identifier, ModuleItemOpaque>>,
 	current_scope: Arc<Identifier>,
 	verbose: bool,
 }
@@ -49,7 +48,6 @@ impl Parser {
 			module_impl: ModuleImpl::new(),
 			current_scope: Arc::new(Identifier::new(true)),
 			lexer: RefCell::new(lexer),
-			imports_opaque: HashMap::new(),
 			verbose,
 		}
 	}
