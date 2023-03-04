@@ -1,5 +1,6 @@
 mod ast;
 mod cir;
+mod clang;
 mod constexpr;
 mod driver;
 mod errors;
@@ -106,7 +107,7 @@ fn main() -> color_eyre::eyre::Result<()> {
 			let input_file = fs::canonicalize(input_file).unwrap();
 			let module_name = Identifier::from_name(get_file_suffix(&input_file).unwrap(), true);
 
-			let _ = driver::compile_comune_module(
+			let _ = driver::launch_module_compilation(
 				manager_state.clone(),
 				input_file,
 				module_name,
@@ -165,9 +166,11 @@ fn main() -> color_eyre::eyre::Result<()> {
 
 			output
 				.arg("-nodefaultlibs")
+				.arg("-lstdc++")
 				.arg("-lc")
-				.arg("-fno-rtti")
-				.arg("-fno-exceptions")
+				//.arg("-fno-rtti")
+				//.arg("-fno-exceptions")
+				.arg("-fdiagnostics-color=always")
 				.arg("-no-pie");
 
 			match emit_type {
@@ -182,16 +185,17 @@ fn main() -> color_eyre::eyre::Result<()> {
 
 			if !output_result.status.success() {
 				link_errors += 1;
-
+				println!("");
 				io::stdout().write_all(&output_result.stdout).unwrap();
 				io::stderr().write_all(&output_result.stderr).unwrap();
+				println!("");
 			}
 		}
 	}
 
 	if !manager_state.emit_types.contains(&EmitType::Object) {
 		for module in &*manager_state.output_modules.lock().unwrap() {
-			fs::remove_file(module).unwrap();
+			let _ = fs::remove_file(module);
 		}
 	}
 

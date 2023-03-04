@@ -21,7 +21,7 @@ use crate::{
 	errors::{CMNMessageLog, ComuneErrCode, ComuneError, ComuneMessage},
 	lexer::{self, Lexer, SrcSpan},
 	llvm::{self, LLVMBackend},
-	parser::{Parser, ComuneResult},
+	parser::{Parser, ComuneResult}, clang::compile_cpp_module,
 };
 
 pub struct ManagerState {
@@ -72,7 +72,7 @@ impl EmitType {
 	}
 }
 
-pub fn compile_comune_module(
+pub fn launch_module_compilation(
 	state: Arc<ManagerState>,
 	src_path: PathBuf,
 	module_name: Identifier,
@@ -83,26 +83,36 @@ pub fn compile_comune_module(
 		return Ok(());
 	}
 
-	let ext = src_path.extension().unwrap();
-
-	if ext == "cpp" {
-
-	} else if ext == "co" {
-
-	} else {
-		todo!()
-	}
-
 	let out_path = get_module_out_path(&state, &module_name);
 
 	state.output_modules.lock().unwrap().push(out_path.clone());
-
+	
 	state
 		.module_states
 		.write()
 		.unwrap()
 		.insert(src_path.clone(), ModuleState::Parsing);
 
+	let ext = src_path.extension().unwrap();
+
+	if ext == "cpp" {
+		compile_cpp_module(state, src_path, &module_name, error_sender, s)
+	} else if ext == "co" {
+		compile_comune_module(state, src_path, module_name, error_sender, s)
+	} else {
+		todo!()
+	}
+}
+
+pub fn compile_comune_module(
+	state: Arc<ManagerState>,
+	src_path: PathBuf,
+	module_name: Identifier,
+	error_sender: Sender<CMNMessageLog>,
+	s: &rayon::Scope,
+) -> Result<(), ComuneError> {
+	
+	
 	let mut parser = match parse_interface(&state, &src_path, error_sender.clone()) {
 		Ok(parser) => parser,
 
@@ -238,6 +248,7 @@ pub fn compile_comune_module(
 		};
 
 		let target_machine = llvm::get_target_machine();
+		let out_path = get_module_out_path(&state, &module_name);
 
 		if state.emit_types.contains(&EmitType::LLVMIr) {
 			let mut llvm_out_path = out_path.clone();
@@ -402,7 +413,7 @@ pub fn await_imports_ready(
 				.cloned();
 
 			match import_state {
-				None => match compile_comune_module(
+				None => match launch_module_compilation(
 					state.clone(),
 					import_path.clone(),
 					fs_name.clone(),
@@ -620,8 +631,4 @@ pub fn generate_code<'ctx>(
 	mpm.run_on(&backend.module);
 
 	Ok(backend)
-}
-
-pub fn preprocess_cpp_file(state: &Arc<ManagerState>, file: &Path) -> Option<String> {
-	None
 }
