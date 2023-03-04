@@ -1,7 +1,7 @@
 using ascii = u8;
 
 @no_mangle
-void printf(ascii* fmt, ...);
+int printf(ascii* fmt, ...);
 
 void bar() {
 	printf(c"Hello from submodule_test!\n");

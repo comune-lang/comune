@@ -1,6 +1,6 @@
 use std::{sync::{Arc, mpsc::Sender}, path::PathBuf, fs::{File, self}, fmt::Write as _, io::{Write, self, Read}, process::Command};
 
-use crate::{driver::{ManagerState, get_module_out_path, ModuleState, await_imports_ready}, ast::{module::{Identifier, ModuleImportKind, ModuleInterface, ModuleItemInterface, ItemRef}, types::{Type, Basic, TypeDefKind}}, errors::{CMNMessageLog, ComuneError}, get_file_suffix};
+use crate::{driver::{ManagerState, get_module_out_path, ModuleState, await_imports_ready}, ast::{module::{Identifier, ModuleImportKind, ModuleInterface, ModuleItemInterface, ItemRef}, types::{Type, Basic, TypeDefKind}, get_attribute}, errors::{CMNMessageLog, ComuneError}, get_file_suffix};
 
 
 pub fn compile_cpp_module(
@@ -33,7 +33,7 @@ pub fn compile_cpp_module(
 
 	for (name, interface) in interfaces {
 		let header = generate_cpp_header(&state, &interface).unwrap();
-		let mut header_out = File::create(out_path.with_file_name(&name).with_extension("hpp")).unwrap();
+		let mut header_out = File::create(out_path.with_file_name(name.to_string()).with_extension("hpp")).unwrap();
 
 		header_out.write_all(header.as_bytes()).unwrap();
 	}
@@ -47,26 +47,30 @@ pub fn compile_cpp_module(
 		.arg("-c")
 		.arg("-fdiagnostics-color=always")
 		.arg("-I./libcomune/cpp/")
-		.arg("--output")
-		.arg(out_path.with_extension("o"));
+		.arg("--output").arg(out_path.with_extension("o"));
 
 	let output_result = output.output().expect("fatal: failed to invoke clang");
 	
-	if !output_result.status.success() {
-		println!("");
-		io::stdout().write_all(&output_result.stdout).unwrap();
-		io::stderr().write_all(&output_result.stderr).unwrap();
-		println!("");
+	io::stdout().write_all(&output_result.stdout).unwrap();
+	io::stderr().write_all(&output_result.stderr).unwrap();
+
+	if output_result.status.success() {
+		// This just writes an empty comune interface for now, 
+		// leaving the C++ code not directly accessible from comune.
+		// TODO: Implement a C++->comune interface, probably using libclang
+		state
+			.module_states
+			.write()
+			.unwrap()
+			.insert(src_path, ModuleState::InterfaceComplete(Arc::default()));
+	} else {
+		state
+			.module_states
+			.write()
+			.unwrap()
+			.insert(src_path, ModuleState::ParsingFailed);
 	}
 
-	// This just writes an empty comune interface for now, 
-	// leaving the C++ code not directly accessible from comune.
-	// TODO: Implement a C++->comune interface, probably using libclang
-	state
-		.module_states
-		.write()
-		.unwrap()
-		.insert(src_path.clone(), ModuleState::InterfaceComplete(Arc::default()));
 	
 	fs::remove_file(processed_path).unwrap();
 
@@ -105,33 +109,20 @@ pub fn preprocess_cpp_file(_state: &Arc<ManagerState>, file: &PathBuf) -> io::Re
 	Ok((result, dependencies))
 }
 
+// generate a C++ header file from a comune ModuleInterface
+// 
+// this might be among the worst things i've ever written! 
+// if you can think of a less horrible approach to this
+// problem, you are MORE than welcome to give it a shot
+//
 pub fn generate_cpp_header(_state: &Arc<ManagerState>, input: &ModuleInterface) -> Result<String, std::fmt::Error> {
-	let mut result = format!("#include \"bridge/bridge.hpp\"\n\n");
+	let mut result = String::from("#pragma once\n\n#include \"bridge/bridge.hpp\"\n\n");
 
 	// Write type declarations first
 	for (name, item) in &input.children {
 		match item {
 			ModuleItemInterface::Type(def) => {
-			
-				match &def.read().unwrap().def {
-					TypeDefKind::Algebraic(alg) => {
-						if !alg.params.is_empty() {
-							let mut iter = alg.params.iter();
-
-							write!(result, "template<typename {}", iter.next().unwrap().0)?;
-							
-							for (param, ..) in iter {
-								write!(result, ", typename {param}")?;
-							}
-
-							write!(result, "> ")?;
-						}
-					}
-	
-					_ => todo!()
-				}
-
-				writeln!(result, "class {name};")?;
+				generate_cpp_type(name, &def.read().unwrap().def, &mut result, true)?;
 			}
 
 			ModuleItemInterface::TypeAlias(aliased) => {
@@ -139,7 +130,7 @@ pub fn generate_cpp_header(_state: &Arc<ManagerState>, input: &ModuleInterface) 
 				
 				aliased.read().unwrap().cpp_format(&mut result)?;
 				
-				writeln!(result, " {name};")?;
+				writeln!(result, " {name};\n")?;
 			}
 
 			_ => {}
@@ -151,8 +142,13 @@ pub fn generate_cpp_header(_state: &Arc<ManagerState>, input: &ModuleInterface) 
 			ModuleItemInterface::Functions(fns) => {
 				for func in fns {
 					let func = &*func.read().unwrap();
+
+					if get_attribute(&func.attributes, "no_mangle").is_some() {
+						write!(result, "extern \"C\" ")?;
+					}
 				
 					func.ret.cpp_format(&mut result)?;
+					
 					write!(result, " {name}")?;
 					
 					if !func.type_params.is_empty() {
@@ -192,7 +188,7 @@ pub fn generate_cpp_header(_state: &Arc<ManagerState>, input: &ModuleInterface) 
 				}
 			}
 
-			ModuleItemInterface::Type(_) => {}
+			ModuleItemInterface::Type(_) | ModuleItemInterface::TypeAlias(_) => {}
 
 			_ => {
 				write!(result, "// (unimplemented: {name})\n\n")?;
@@ -201,6 +197,47 @@ pub fn generate_cpp_header(_state: &Arc<ManagerState>, input: &ModuleInterface) 
 	}
 
 	Ok(result)
+}
+
+fn generate_cpp_type(name: &Identifier, def: &TypeDefKind, result: &mut impl std::fmt::Write, generate_body: bool) -> std::fmt::Result {
+	match def {
+					
+		TypeDefKind::Algebraic(alg) => {
+			// check if the typedef has type parameters
+			
+			if !alg.params.is_empty() {
+				let mut iter = alg.params.iter();
+
+				write!(result, "template<typename {}", iter.next().unwrap().0)?;
+				
+				for (param, ..) in iter {
+					write!(result, ", typename {param}")?;
+				}
+
+				write!(result, "> ")?;
+			}
+
+			write!(result, "class {name}")?;
+
+			if generate_body {
+				writeln!(result, " {{")?;
+				
+				for (name, ty, _) in &alg.members {
+					write!(result, "\t")?;
+
+					ty.cpp_format(result)?;
+					
+					writeln!(result, " {name};")?;
+				}
+
+				write!(result, "}}")?;
+			}
+			
+			writeln!(result, ";\n")
+		}
+
+		_ => todo!()
+	}
 }
 
 impl Type {

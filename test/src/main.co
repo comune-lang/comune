@@ -15,7 +15,7 @@ void free(void mut* ptr);
 using ascii = u8;
 
 @no_mangle
-void printf(ascii* fmt, ...);
+int printf(ascii* fmt, ...);
 
 struct Test {
 	int a;
@@ -109,7 +109,7 @@ TestSumType sum_type_test(i32& value) {
 	return value;
 }
 
-int main() {
+int comune_main() {
 	submodule_test::bar();
 
 	int i;

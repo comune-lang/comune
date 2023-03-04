@@ -12,7 +12,7 @@ use inkwell::{context::Context, passes::PassManager, targets::FileType};
 use crate::{
 	ast::{
 		self,
-		module::{Identifier, ModuleImportKind, ModuleInterface},
+		module::{Identifier, ModuleImportKind, ModuleInterface, Name},
 	},
 	cir::{
 		analyze::{lifeline::VarInitCheck, verify, CIRPassManager, DataFlowPass},
@@ -386,7 +386,7 @@ pub fn await_imports_ready(
 	mut modules: Vec<ModuleImportKind>,	
 	error_sender: Sender<CMNMessageLog>,
 	s: &rayon::Scope,
-) -> ComuneResult<HashMap<String, Arc<ModuleInterface>>> {
+) -> ComuneResult<HashMap<Name, Arc<ModuleInterface>>> {
 	
 	let mut imports = HashMap::new();
 
