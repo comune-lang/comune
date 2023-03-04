@@ -2,24 +2,24 @@
 //
 // this module contains traits that are fundamental to the type system.
 
-@lang(traits, Copy)
-trait Copy { }
+@lang(Copy)
+trait Copy {}
 
-@lang(traits, Clone)
+@lang(Clone)
 trait Clone {
-	Self clone(Self& self);
+	Self clone(&self);
 }
 
-@lang(traits, Drop)
+@lang(Drop)
 trait Drop {
-	void drop(Self mut& self);
+	void drop(mut& self);
 }
 
-@lang(traits, Sized)
+@lang(Sized)
 trait Sized {}
 
-@lang(traits, Send)
+@lang(Send)
 trait Send {}
 
-@lang(traits, Sync)
+@lang(Sync)
 trait Sync {}

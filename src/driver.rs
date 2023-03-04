@@ -12,7 +12,7 @@ use inkwell::{context::Context, passes::PassManager, targets::FileType};
 use crate::{
 	ast::{
 		self,
-		module::{Identifier, ModuleImportKind, ModuleInterface, ModuleInterfaceOpaque, ModuleItemOpaque},
+		module::{Identifier, ModuleImportKind, ModuleInterface},
 	},
 	cir::{
 		analyze::{lifeline::VarInitCheck, verify, CIRPassManager, DataFlowPass},
@@ -21,7 +21,7 @@ use crate::{
 	errors::{CMNMessageLog, ComuneErrCode, ComuneError, ComuneMessage},
 	lexer::{self, Lexer, SrcSpan},
 	llvm::{self, LLVMBackend},
-	parser::{ComuneResult, Parser},
+	parser::{Parser, ComuneResult},
 };
 
 pub struct ManagerState {
@@ -40,7 +40,7 @@ pub struct ManagerState {
 pub enum ModuleState {
 	Parsing,
 	ParsingFailed,
-	InterfaceUntyped(ModuleInterfaceOpaque),
+	InterfaceUntyped(Arc<ModuleInterface>),
 	InterfaceComplete(Arc<ModuleInterface>),
 }
 
@@ -118,13 +118,13 @@ pub fn compile_comune_module(
 
 	state.module_states.write().unwrap().insert(
 		src_path.clone(),
-		ModuleState::InterfaceUntyped(parser.interface.get_opaque()),
+		ModuleState::InterfaceUntyped(Arc::new(parser.interface.clone())),
 	);
 
 	// Resolve module imports
 	let modules: Vec<_> = parser.interface.import_names.clone().into_iter().collect();
 
-	parser.imports_opaque = await_imports_ready(
+	parser.interface.imported = await_imports_ready(
 		&state,
 		&src_path,
 		&module_name,
@@ -133,7 +133,7 @@ pub fn compile_comune_module(
 		s
 	)?;
 
-	match resolve_types(&state, &mut parser) {
+	match ast::semantic::validate_interface(&state, &mut parser) {
 		Ok(_) => {}
 		Err(e) => {
 			parser
@@ -260,6 +260,63 @@ pub fn compile_comune_module(
 	Ok(())
 }
 
+// TODO: Add proper module searching support, based on a list of module search dirs, as well as support for .co, .h, .hpp etc
+pub fn get_module_source_path(
+	state: &Arc<ManagerState>,
+	mut current_path: PathBuf,
+	module: &Identifier,
+) -> Option<PathBuf> {
+	// Resolve built-in library paths. This is currently hard-coded, but
+	// there's probably a more elegant solution to be written down the line
+	if module.absolute && matches!(module.path[0].to_string().as_str(), "core" | "std") {
+		current_path = PathBuf::from(state.libcomune_dir.clone());
+	} else {
+		current_path.pop();
+	}
+
+	current_path.set_extension("");
+
+	for i in 0..module.path.len() {
+		current_path.push(&*module.path[i]);
+	}
+
+	let extensions = ["co", "cpp", "c"];
+
+	for extension in extensions {
+		current_path.set_extension(extension);
+
+		if current_path.exists() {
+			return Some(current_path);
+		}
+	}
+
+	for dir in &state.import_paths {
+		let mut current_path = PathBuf::from(dir);
+		current_path.push(&**module.name());
+
+		for extension in extensions {
+			current_path.set_extension(extension);
+			if current_path.exists() {
+				return Some(current_path);
+			}
+		}
+	}
+
+	None
+}
+
+pub fn get_module_out_path(state: &Arc<ManagerState>, module: &Identifier) -> PathBuf {
+	let mut result = PathBuf::from(&state.output_dir);
+
+	for scope in &module.path {
+		result.push(&**scope);
+	}
+
+	fs::create_dir_all(result.parent().unwrap()).unwrap();
+	result.set_extension("o");
+	result
+}
+
 pub fn parse_interface(
 	state: &Arc<ManagerState>,
 	path: &Path,
@@ -311,22 +368,6 @@ pub fn parse_interface(
 	};
 }
 
-pub fn resolve_types(state: &Arc<ManagerState>, parser: &mut Parser) -> ComuneResult<()> {
-	// At this point, all imports have been resolved, so validate namespace-level types
-	ast::resolve_namespace_types(&mut parser.interface)?;
-
-	// Check for cyclical dependencies without indirection
-	// TODO: Nice error reporting for this
-	ast::check_module_cyclical_deps(&mut parser.interface)?;
-
-	if state.verbose_output {
-		todo!()
-		//println!("\ntype resolution output:\n\n{}", parser.interface);
-	}
-
-	Ok(())
-}
-
 pub fn await_imports_ready(
 	state: &Arc<ManagerState>,
 	src_path: &PathBuf,
@@ -334,7 +375,7 @@ pub fn await_imports_ready(
 	mut modules: Vec<ModuleImportKind>,	
 	error_sender: Sender<CMNMessageLog>,
 	s: &rayon::Scope,
-) -> ComuneResult<HashMap<String, HashMap<Identifier, ModuleItemOpaque>>> {
+) -> ComuneResult<HashMap<String, Arc<ModuleInterface>>> {
 	
 	let mut imports = HashMap::new();
 
@@ -408,14 +449,8 @@ pub fn await_imports_ready(
 					));
 				}
 
-				Some(ModuleState::InterfaceUntyped(interface)) => {
+				Some(ModuleState::InterfaceUntyped(interface) | ModuleState::InterfaceComplete(interface)) => {
 					imports.insert(import_name, interface.clone());
-					modules.remove(0);
-					break;
-				}
-
-				Some(ModuleState::InterfaceComplete(interface)) => {
-					imports.insert(import_name, interface.get_opaque());
 					modules.remove(0);
 					break;
 				}
@@ -452,7 +487,7 @@ pub fn generate_code<'ctx>(
 
 	// Validate code
 
-	match ast::validate_module_impl(&parser.interface, &mut parser.module_impl) {
+	match ast::semantic::validate_module_impl(&parser.interface, &mut parser.module_impl) {
 		Ok(()) => {
 			if state.verbose_output {
 				println!("generating code...");
@@ -491,10 +526,10 @@ pub fn generate_code<'ctx>(
 	let mut cir_man = CIRPassManager::new();
 
 	cir_man.add_pass(verify::Verify);
-	
+
 	// broken, don't use rn
 	//cir_man.add_mut_pass(cleanup::SimplifyCFG);
-	
+
 	cir_man.add_mut_pass(DataFlowPass::new(VarInitCheck {}));
 	cir_man.add_pass(verify::Verify);
 
@@ -585,68 +620,4 @@ pub fn generate_code<'ctx>(
 	mpm.run_on(&backend.module);
 
 	Ok(backend)
-}
-
-// TODO: Add proper module searching support, based on a list of module search dirs, as well as support for .co, .h, .hpp etc
-pub fn get_module_source_path(
-	state: &Arc<ManagerState>,
-	mut current_path: PathBuf,
-	module: &Identifier,
-) -> Option<PathBuf> {
-	// Resolve built-in library paths. This is currently hard-coded, but
-	// there's probably a more elegant solution to be written down the line
-	if module.absolute && matches!(module.path[0].to_string().as_str(), "core" | "std") {
-		let mut current_path = PathBuf::from(state.libcomune_dir.clone());
-
-		current_path.push(module.path[0].to_string());
-		current_path.push("src");
-		current_path.push("lib");
-		current_path.set_extension("co");
-
-		return Some(current_path);
-	}
-
-	current_path.set_extension("");
-
-	for i in 0..module.path.len() - 1 {
-		current_path.push(&*module.path[i]);
-	}
-
-	current_path.set_file_name(&**module.name());
-
-	let extensions = ["co", "cpp", "c"];
-
-	for extension in extensions {
-		current_path.set_extension(extension);
-
-		if current_path.exists() {
-			return Some(current_path);
-		}
-	}
-
-	for dir in &state.import_paths {
-		let mut current_path = PathBuf::from(dir);
-		current_path.push(&**module.name());
-
-		for extension in extensions {
-			current_path.set_extension(extension);
-			if current_path.exists() {
-				return Some(current_path);
-			}
-		}
-	}
-
-	None
-}
-
-pub fn get_module_out_path(state: &Arc<ManagerState>, module: &Identifier) -> PathBuf {
-	let mut result = PathBuf::from(&state.output_dir);
-
-	for scope in &module.path {
-		result.push(&**scope);
-	}
-
-	fs::create_dir_all(result.parent().unwrap()).unwrap();
-	result.set_extension("o");
-	result
 }

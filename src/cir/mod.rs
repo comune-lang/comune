@@ -105,12 +105,19 @@ pub enum Operand {
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub enum CIRType {
 	Basic(Basic),
-	Pointer { pointee: Box<CIRType>, mutable: bool },
+	Pointer {
+		pointee: Box<CIRType>,
+		mutable: bool,
+	},
 	Array(Box<CIRType>, Vec<i128>),
 	Reference(Box<CIRType>),
 	TypeRef(TypeName, Vec<CIRType>), // TypeRef with zero or more type parameters
 	TypeParam(TypeParamIndex),
 	Tuple(TupleKind, Vec<CIRType>),
+	FunctionPtr {
+		ret: Box<CIRType>,
+		args: Vec<(BindingProps, CIRType)>,
+	},
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -128,6 +135,17 @@ pub enum CIRTypeDef {
 }
 
 #[derive(Debug, Clone)]
+pub enum CIRFnCall {
+	Direct(FuncID, SrcSpan),
+	Indirect {
+		local: LValue,
+		ret: CIRType,
+		args: Vec<(BindingProps, CIRType)>,
+		span: SrcSpan,
+	},
+}
+
+#[derive(Debug, Clone)]
 pub enum CIRStmt {
 	Expression(RValue),
 	Assignment((LValue, SrcSpan), RValue),
@@ -135,13 +153,15 @@ pub enum CIRStmt {
 	Switch(Operand, Vec<(CIRType, Operand, BlockIndex)>, BlockIndex),
 	Return(Option<Operand>),
 	FnCall {
-		id: FuncID,
+		id: CIRFnCall,
 		args: Vec<(LValue, SrcSpan)>,
 		type_args: Vec<CIRType>,
 		result: Option<LValue>,
 		next: BlockIndex,
 		except: Option<BlockIndex>,
 	},
+	StorageLive(VarIndex),
+	StorageDead(VarIndex),
 }
 
 #[derive(Debug, Clone)]

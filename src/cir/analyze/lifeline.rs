@@ -7,7 +7,7 @@ use super::{
 	ResultVisitor,
 };
 use crate::{
-	cir::{CIRFunction, CIRStmt, CIRType, LValue, Operand, PlaceElem, RValue},
+	cir::{CIRFnCall, CIRFunction, CIRStmt, CIRType, LValue, Operand, PlaceElem, RValue},
 	errors::{ComuneErrCode, ComuneError},
 };
 
@@ -60,14 +60,14 @@ impl LiveVarCheckState {
 		self.liveness.insert(lval.clone(), state);
 	}
 
-	pub fn get_liveness(&self, lval: &LValue) -> LivenessState {
+	pub fn get_liveness(&self, lval: &LValue) -> Option<LivenessState> {
 		if self.liveness.get(lval).is_some() {
 			// This state has a defined liveness value, so look through its children to check for partial moves
 
 			// Get all keys that are sublocations of this lvalue
 			for (_, val) in self.get_active_sublocations(lval) {
 				if *val == LivenessState::Moved {
-					return LivenessState::PartialMoved;
+					return Some(LivenessState::PartialMoved);
 				}
 			}
 		}
@@ -78,11 +78,11 @@ impl LiveVarCheckState {
 
 		loop {
 			if let Some(state) = self.liveness.get(&lval) {
-				return *state;
+				return Some(*state);
 			}
 
 			if lval.projection.is_empty() {
-				return LivenessState::Uninit;
+				return None;
 			} else {
 				lval.projection.pop();
 			}
@@ -118,20 +118,16 @@ impl LiveVarCheckState {
 		match rval {
 			RValue::Atom(ty, _, op, _) => self.eval_operand(ty, op),
 
-			RValue::Cons(_, [(lty, lhs), (rty, rhs)], ..) => {
-				self.eval_operand(lty, lhs);
-				self.eval_operand(rty, rhs);
+			RValue::Cons(_, _, ..) => {
+				//self.eval_operand(lty, lhs);
+				//self.eval_operand(rty, rhs);
 			}
 
 			RValue::Cast { from, val, .. } => self.eval_operand(from, val),
 		}
 	}
 
-	fn eval_operand(
-		&mut self,
-		_ty: &CIRType,
-		op: &Operand,
-	) {
+	fn eval_operand(&mut self, _ty: &CIRType, op: &Operand) {
 		match op {
 			Operand::LValue(lval, _) => self.eval_lvalue(_ty, lval),
 
@@ -139,11 +135,7 @@ impl LiveVarCheckState {
 		}
 	}
 
-	fn eval_lvalue(
-		&mut self,
-		_ty: &CIRType,
-		lval: &LValue,
-	) {
+	fn eval_lvalue(&mut self, _ty: &CIRType, lval: &LValue) {
 		// TODO: Check for `Copy` types? Might be handled earlier
 
 		self.set_liveness(lval, LivenessState::Moved);
@@ -176,14 +168,44 @@ impl JoinSemiLattice for LiveVarCheckState {
 	fn join(&mut self, other: &Self) -> bool {
 		let mut changed = false;
 
-		for (lval, liveness) in &other.liveness {
-			let own_liveness = self.get_liveness(lval);
+		let mut result = LiveVarCheckState {
+			liveness: HashMap::new(),
+		};
 
-			if liveness != &own_liveness {
-				changed = true;
-
-				self.set_liveness(lval, LivenessState::MaybeUninit)
+		for lval in self.liveness.keys().chain(other.liveness.keys()) {
+			if result.liveness.contains_key(lval) {
+				continue;
 			}
+
+			match (self.liveness.get(lval), other.liveness.get(lval)) {
+				(Some(own), Some(other)) => {
+					if own != other {
+						changed = true;
+
+						result
+							.liveness
+							.insert(lval.clone(), LivenessState::MaybeUninit);
+					} else {
+						result.liveness.insert(lval.clone(), *own);
+					}
+				}
+
+				(Some(liveness), None) => {
+					result.liveness.insert(lval.clone(), *liveness);
+				}
+
+				(None, Some(liveness)) => {
+					changed = true;
+
+					result.liveness.insert(lval.clone(), *liveness);
+				}
+
+				(None, None) => unreachable!(),
+			}
+		}
+
+		if changed {
+			*self = result;
 		}
 
 		changed
@@ -194,20 +216,9 @@ impl AnalysisDomain for VarInitCheck {
 	type Domain = LiveVarCheckState;
 	type Direction = Forward;
 
-	fn bottom_value(&self, func: &CIRFunction) -> Self::Domain {
+	fn bottom_value(&self, _func: &CIRFunction) -> Self::Domain {
 		LiveVarCheckState {
-			liveness: (0..func.variables.len())
-				.into_iter()
-				.map(|idx| {
-					(
-						LValue {
-							local: idx,
-							projection: vec![],
-						},
-						LivenessState::Uninit,
-					)
-				})
-				.collect(),
+			liveness: HashMap::new(),
 		}
 	}
 
@@ -244,6 +255,18 @@ impl Analysis for VarInitCheck {
 				state.set_liveness(lval, LivenessState::Live);
 			}
 
+			CIRStmt::StorageLive(local) => {
+				state.set_liveness(&LValue { local: *local, projection: vec![] }, LivenessState::Uninit);
+			}
+
+			CIRStmt::StorageDead(local) => {
+				let lval = LValue { local: *local, projection: vec![] };
+				// Clear all sublocation states
+				state.set_liveness(&lval, LivenessState::Dropped);
+			
+				state.liveness.remove(&lval);
+			}
+
 			_ => {}
 		}
 	}
@@ -265,30 +288,29 @@ impl AnalysisResultHandler for VarInitCheck {
 					CIRStmt::Assignment(_, RValue::Atom(_, _, Operand::LValue(lval, _), span))
 					| CIRStmt::Switch(Operand::LValue(lval, span), ..)
 					| CIRStmt::Return(Some(Operand::LValue(lval, span)))
-					
-					// these represent expressions that use built-in operators. any overloaded
-					// operators are resolved into plain function calls in the AST. 
-					//
-					// these are commented out because built-in operators are currently defined
-					// to take their arguments by reference. this is a fairly inconsequential
-					// implementation detail, since all built-in types are also defined to be Copy.
-					//
-					// however, at time of writing, Copy doesn't exist yet. hence the reasoning
-					// behind this choice.
-					//
-					// | CIRStmt::Assignment(_, RValue::Cons(_, [(_, Operand::LValue(lval, span)), _], ..))
-					// | CIRStmt::Assignment(_, RValue::Cons(_, [_, (_, Operand::LValue(lval, span))], ..))
-					
-					=> {
+					| CIRStmt::Assignment(
+						_,
+						RValue::Cons(_, [(_, Operand::LValue(lval, span)), _], ..),
+					)
+					| CIRStmt::Assignment(
+						_,
+						RValue::Cons(_, [_, (_, Operand::LValue(lval, span))], ..),
+					)
+					| CIRStmt::FnCall {
+						id: CIRFnCall::Indirect {
+							local: lval, span, ..
+						},
+						..
+					} => {
 						let liveness = state.get_liveness(lval);
 
 						match liveness {
-							LivenessState::Live => {}
+							Some(LivenessState::Live) => {}
 
 							_ => errors.push(ComuneError::new(
 								ComuneErrCode::InvalidUse {
 									variable: func.get_variable_name(lval.local),
-									state: liveness,
+									state: liveness.unwrap_or(LivenessState::Uninit),
 								},
 								*span,
 							)),
@@ -298,18 +320,18 @@ impl AnalysisResultHandler for VarInitCheck {
 					CIRStmt::FnCall { args, .. } => {
 						for (lval, span) in args {
 							let liveness = state.get_liveness(lval);
-							
+
 							match liveness {
-								LivenessState::Live => {}
+								Some(LivenessState::Live) => {}
 
 								_ => errors.push(ComuneError::new(
 									ComuneErrCode::InvalidUse {
 										variable: func.get_variable_name(lval.local),
-										state: liveness,
-									}, *span
-								))
+										state: liveness.unwrap_or(LivenessState::Uninit),
+									},
+									*span,
+								)),
 							}
-						
 						}
 					}
 
@@ -318,8 +340,10 @@ impl AnalysisResultHandler for VarInitCheck {
 
 				// Check for mutation of immutable lvalues
 				if let CIRStmt::Assignment((lval, tk), _) = stmt {
-					if state.get_liveness(lval) != LivenessState::Uninit
-						&& !func.variables[lval.local].1.is_mut
+					if !matches!(
+						state.get_liveness(lval),
+						None | Some(LivenessState::Uninit) | Some(LivenessState::Moved)
+					) && !func.variables[lval.local].1.is_mut
 					{
 						errors.push(ComuneError::new(
 							ComuneErrCode::ImmutVarMutation {

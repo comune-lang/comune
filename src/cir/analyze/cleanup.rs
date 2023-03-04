@@ -3,17 +3,19 @@
 
 use std::collections::BTreeMap;
 
-use crate::{cir::{CIRFunction, CIRStmt}, errors::ComuneError};
+use crate::{
+	cir::{CIRFunction, CIRStmt},
+	errors::ComuneError,
+};
 
 use super::CIRPassMut;
 
 pub struct SimplifyCFG;
 
 impl CIRPassMut for SimplifyCFG {
-
 	fn on_function(&self, func: &mut CIRFunction) -> Vec<ComuneError> {
 		// SimplifyCFG cIR pass
-		
+
 		// This cIR pass removes "no-op" blocks that consist of a single
 		// CIRStmt::Jump instruction. These blocks can crop up from nested
 		// control flow expressions, where the builder doesn't have enough
@@ -27,7 +29,7 @@ impl CIRPassMut for SimplifyCFG {
 				block_map.insert(i, block_map[idx]);
 
 				// Decrease all greater block indices by one
-				for j in (i+1)..func.blocks.len() {
+				for j in (i + 1)..func.blocks.len() {
 					block_map.insert(j, block_map[&j] - 1);
 				}
 			}
@@ -38,7 +40,7 @@ impl CIRPassMut for SimplifyCFG {
 		for block in func.blocks.iter() {
 			if !matches!(block.items.as_slice(), [CIRStmt::Jump(_)]) {
 				let mut new_block = block.clone();
-				
+
 				for succ in &mut new_block.succs {
 					*succ = block_map[succ];
 				}
@@ -81,7 +83,7 @@ impl CIRPassMut for SimplifyCFG {
 		}
 
 		func.blocks = new_blocks;
-		
+
 		vec![]
 	}
 }

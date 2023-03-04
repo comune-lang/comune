@@ -4,6 +4,7 @@ import module_test;
 module submodule_test;
 
 using module_test::{fib, foo};
+using core::traits::Drop;
 
 @no_mangle
 void mut* malloc(usize size);
@@ -44,6 +45,17 @@ impl Test {
 	}
 }
 
+impl Drop for Test {
+	void drop(mut& self) {
+		printf(c"This is Test's destructor!\n");
+	}
+}
+
+impl submodule_test::SubmoduleTrait for Test {
+	void foo() {
+		printf(c"This is a trait in a submodule!\n");
+	}
+}
 
 trait Hello {
 	void hello(Self& self);
@@ -55,6 +67,7 @@ impl Hello for Test {
 	}
 }
 
+
 void impl_test() {
 	Test test = Test { a: 413, b: 612, };
 	test.hello();
@@ -65,9 +78,13 @@ void ref_test(i32 mut& test) {
 	test++;
 }
 
-//void fn_pointer_test(fn<void(int)> callback) {
-//	callback(12);
-//}
+void fn_pointer_test(void(int) callback) {
+	callback(12);
+}
+
+void fn_pointer_callback(int number) {
+	printf(c"this is a callback! %i\n", number);
+}
 
 
 void overload_test(i32 a) {
@@ -95,7 +112,7 @@ TestSumType sum_type_test(i32& value) {
 int main() {
 	submodule_test::bar();
 
-	int mut i;
+	int i;
 
 	if true {
 		i = 12;
@@ -103,19 +120,25 @@ int main() {
 		i = 12;
 	}
 
-	int j = i;
+	int mut i = i;
 
 	i = 12;
 
 	// `else if` syntax test
 	
 	if i == 12 {
+		int scope_test = 15;
+		int scope_test_2 = 15;
 		printf(c"i is 12!\n");
 	} else if i == 13 {
 		printf(c"i is 13!\n");
 	} else {
 		printf(c"i is something else!\n");
 	}
+
+	void(int) function;
+	//function(12);
+	//fn_pointer_test(fn_pointer_callback);
 
 	TestSumType mut who_knows = sum_type_test(322);
 
@@ -135,12 +158,12 @@ int main() {
 		loop_count += 1;
 
 		if loop_count > 100 {
+			int loop_init_test = 12;
 			break;
 		}
 	}
 
-	// liveness bug: incorrectly flagged as potentially uninitialized
-	// printf(c"Loop count after loop: %i", loop_count);
+	printf(c"Loop count after loop: %i\n", loop_count);
 	
 	impl_test();
 

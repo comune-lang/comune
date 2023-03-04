@@ -6,13 +6,14 @@ use std::{
 };
 
 use super::module::{ItemRef, ModuleImpl};
-use super::types::{FnPrototype, TypeParam, GenericParamList};
+use super::types::{FnPrototype, GenericParamList, TypeParam};
 use super::Attribute;
 use super::{
 	module::{Identifier, Name},
 	types::Type,
 };
 
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum LangTrait {
 	Sized,
 	Copy,
@@ -42,7 +43,7 @@ pub struct ImplBlockInterface {
 	pub implements: Option<ItemRef<TraitRef>>,
 	pub functions: HashMap<Name, Vec<Arc<RwLock<FnPrototype>>>>,
 	pub types: HashMap<Name, Type>,
-	pub scope: Identifier, // The scope used for name resolution within the impl
+	pub scope: Arc<Identifier>, // The scope used for name resolution within the impl
 	pub canonical_root: Identifier, // The root of the canonical names used by items in this impl
 }
 
@@ -79,6 +80,7 @@ pub enum TraitDeduction {
 
 #[derive(Clone, Debug, Default)]
 pub struct ImplSolver {
+	lang_traits: HashMap<LangTrait, TraitRef>,
 	impls: Vec<(Type, Arc<RwLock<ImplBlockInterface>>)>,
 	pub local_impls: Vec<(Arc<RwLock<Type>>, Arc<RwLock<ImplBlockInterface>>)>,
 	answer_cache: HashMap<Type, HashMap<TraitRef, TraitDeduction>>,
@@ -87,6 +89,7 @@ pub struct ImplSolver {
 impl ImplSolver {
 	pub fn new() -> Self {
 		Self {
+			lang_traits: HashMap::new(),
 			impls: vec![],
 			local_impls: vec![],
 			answer_cache: HashMap::new(),
@@ -105,6 +108,12 @@ impl ImplSolver {
 	pub fn register_impl(&mut self, ty: Type, im: ImplBlockInterface) {
 		self.local_impls
 			.push((Arc::new(RwLock::new(ty)), Arc::new(RwLock::new(im))));
+	}
+	
+	pub fn register_lang_trait(&mut self, lang: LangTrait, tr: TraitRef) {
+		assert!(!self.lang_traits.contains_key(&lang), "language trait {lang:?} already registered!");
+
+		self.lang_traits.insert(lang, tr);
 	}
 
 	pub fn type_implements_trait(

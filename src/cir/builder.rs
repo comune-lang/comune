@@ -4,14 +4,12 @@ use crate::{
 	ast::{
 		controlflow::ControlFlow,
 		expression::{Atom, Expr, FnRef, OnceAtom, Operator},
-		module::{
-			ItemRef, ModuleASTElem, ModuleImpl, ModuleInterface,
-			ModuleItemInterface, Name,
-		},
+		module::{ItemRef, ModuleASTElem, ModuleImpl, ModuleInterface, ModuleItemInterface, Name},
 		pattern::{Binding, Pattern},
 		statement::Stmt,
 		types::{
-			Basic, BindingProps, FnPrototype, TupleKind, Type, TypeDef, GenericParamList, TypeRef,
+			Basic, BindingProps, FnPrototype, GenericParamList, TupleKind, Type, TypeDefKind,
+			TypeRef,
 		},
 	},
 	constexpr::{ConstExpr, ConstValue},
@@ -20,8 +18,8 @@ use crate::{
 };
 
 use super::{
-	BlockIndex, CIRBlock, CIRFnPrototype, CIRFunction, CIRModule, CIRStmt, CIRType, CIRTypeDef,
-	CIRTypeParamList, LValue, Operand, PlaceElem, RValue, TypeName, VarIndex,
+	BlockIndex, CIRBlock, CIRFnCall, CIRFnPrototype, CIRFunction, CIRModule, CIRStmt, CIRType,
+	CIRTypeDef, CIRTypeParamList, LValue, Operand, PlaceElem, RValue, TypeName, VarIndex,
 };
 
 pub struct CIRModuleBuilder {
@@ -31,7 +29,7 @@ pub struct CIRModuleBuilder {
 	type_param_counter: usize, // Used to assign unique names to type parameters
 
 	current_fn: Option<CIRFunction>,
-	name_map_stack: Vec<HashMap<Name, VarIndex>>,
+	name_map_stack: Vec<Vec<(Name, VarIndex)>>,
 	current_block: BlockIndex,
 	loop_stack: Vec<(BlockIndex, BlockIndex)>, // start and end
 }
@@ -48,7 +46,7 @@ impl CIRModuleBuilder {
 			current_fn: None,
 			type_map: HashMap::new(),
 			type_param_counter: 0,
-			name_map_stack: vec![HashMap::new()],
+			name_map_stack: vec![vec![]],
 			current_block: 0,
 			loop_stack: vec![],
 		};
@@ -108,9 +106,14 @@ impl CIRModuleBuilder {
 				CIRType::TypeRef(idx, args_cir)
 			}
 
+			Type::TypeRef(_) => panic!("unresolved TypeRef in cIR!"),
+
 			Type::TypeParam(idx) => CIRType::TypeParam(*idx),
 
-			Type::Pointer { pointee, mutable } => CIRType::Pointer { pointee: Box::new(self.convert_type(pointee)), mutable: *mutable },
+			Type::Pointer { pointee, mutable } => CIRType::Pointer {
+				pointee: Box::new(self.convert_type(pointee)),
+				mutable: *mutable,
+			},
 
 			Type::Array(arr_ty, size) => {
 				let arr_ty_cir = Box::new(self.convert_type(arr_ty));
@@ -134,7 +137,13 @@ impl CIRModuleBuilder {
 
 			Type::Never => CIRType::Basic(Basic::Void),
 
-			_ => todo!(),
+			Type::Function(ret, params) => CIRType::FunctionPtr {
+				ret: Box::new(self.convert_type(ret)),
+				args: params
+					.iter()
+					.map(|(props, ty)| (*props, self.convert_type(ty)))
+					.collect(),
+			},
 		}
 	}
 
@@ -151,14 +160,17 @@ impl CIRModuleBuilder {
 	}
 
 	fn convert_type_def(&mut self, ty: &TypeRef) -> String {
-		let TypeRef { def, name, .. } = ty;
+		let TypeRef { def, .. } = ty;
 
 		if let Some(ty_id) = self.type_map.get(ty) {
 			ty_id.clone()
 		} else {
+			let def = def.upgrade().unwrap();
+			let def = def.read().unwrap();
+
 			// Found an unregistered TypeDef, convert it
-			let (insert_idx, cir_def) = match &*def.upgrade().unwrap().read().unwrap() {
-				TypeDef::Algebraic(alg) => {
+			let (insert_idx, cir_def) = match &def.def {
+				TypeDefKind::Algebraic(alg) => {
 					let mut members = vec![];
 					let mut members_map = HashMap::new();
 
@@ -170,7 +182,7 @@ impl CIRModuleBuilder {
 					// TODO: Variant mapping
 
 					(
-						name.to_string(),
+						def.name.to_string(),
 						CIRTypeDef::Algebraic {
 							members,
 							variants: vec![],
@@ -181,7 +193,7 @@ impl CIRModuleBuilder {
 						},
 					)
 				}
-				TypeDef::Class => todo!(),
+				TypeDefKind::Class => todo!(),
 			};
 
 			self.module.types.insert(insert_idx.clone(), cir_def);
@@ -214,7 +226,12 @@ impl CIRModuleBuilder {
 		let proto = self.get_prototype(func);
 
 		self.current_fn = Some(CIRFunction {
-			variables: func.params.params.iter().map(|(ty, name, props)| (self.convert_type(ty), *props, name.clone())).collect(),
+			variables: func
+				.params
+				.params
+				.iter()
+				.map(|(ty, name, props)| (self.convert_type(ty), *props, name.clone()))
+				.collect(),
 			blocks: vec![],
 			ret: proto.ret.clone(),
 			arg_count: func.params.params.len(),
@@ -237,19 +254,27 @@ impl CIRModuleBuilder {
 				self.module.functions.keys()
 			)
 		};
-		
+
 		self.name_map_stack.clear();
 		self.current_block = 0;
 		self.loop_stack.clear();
 
-		let mut params_map = HashMap::new();
+		let mut params_map = vec![];
 
-		for (i, (.., name)) in self.current_fn.as_ref().unwrap().variables.iter().enumerate() {
+		// Insert function parameters into name stack
+		for (i, (.., name)) in self
+			.current_fn
+			.as_ref()
+			.unwrap()
+			.variables
+			.iter()
+			.enumerate()
+		{
 			if let Some(name) = name {
-				params_map.insert(name.clone(), i);
+				params_map.push((name.clone(), i));
 			}
 		}
-		
+
 		self.name_map_stack.push(params_map);
 
 		// Generate function body
@@ -331,7 +356,7 @@ impl CIRModuleBuilder {
 	fn generate_stmt(&mut self, stmt: &Stmt) -> Option<()> {
 		match stmt {
 			Stmt::Expr(expr) => {
-				// RValues have no side effects, so we can discard the result 
+				// RValues have no side effects, so we can discard the result
 				// of this expression. However, we still propagate whether it
 				// returns normally or not.
 				self.generate_expr(expr).map(|_| ())
@@ -357,15 +382,12 @@ impl CIRModuleBuilder {
 				let cir_ty = self.convert_type(ty);
 				let var = self.insert_variable(Some(name.clone()), *props, cir_ty);
 
+				self.write(CIRStmt::StorageLive(var.local));
+
 				if let Some(val) = val {
 					self.write(CIRStmt::Assignment((var.clone(), *tk), val));
 				}
 
-				self.name_map_stack
-					.last_mut()
-					.unwrap()
-					.insert(name.clone(), var.local);
-				
 				Some(())
 			}
 		}
@@ -389,7 +411,7 @@ impl CIRModuleBuilder {
 				self.name_map_stack
 					.last_mut()
 					.unwrap()
-					.insert(name.clone(), idx);
+					.push((name.clone(), idx));
 
 				let store_place = LValue {
 					local: self.get_fn().variables.len() - 1,
@@ -438,7 +460,7 @@ impl CIRModuleBuilder {
 		self.get_fn_mut()
 			.variables
 			.push((cir_ty, props, Some(name.clone())));
-		self.name_map_stack.last_mut().unwrap().insert(name, idx);
+		self.name_map_stack.last_mut().unwrap().push((name, idx));
 
 		let lval = LValue {
 			local: self.get_fn().variables.len() - 1,
@@ -465,11 +487,11 @@ impl CIRModuleBuilder {
 			self.append_block()
 		};
 
-		self.name_map_stack.push(HashMap::new());
+		self.name_map_stack.push(vec![]);
 
 		for item in items {
 			if self.generate_stmt(item).is_none() {
-				return (jump_idx, None)
+				return (jump_idx, None);
 			}
 		}
 
@@ -479,7 +501,9 @@ impl CIRModuleBuilder {
 			let result_type = self.convert_type(result.get_type());
 			let result_ir = self.get_as_operand(result_type.clone(), result_ir);
 
-			self.name_map_stack.pop();
+			for (_, var) in self.name_map_stack.pop().unwrap().into_iter().rev() {
+				self.write(CIRStmt::StorageDead(var));
+			}
 
 			(
 				jump_idx,
@@ -491,7 +515,10 @@ impl CIRModuleBuilder {
 				)),
 			)
 		} else {
-			self.name_map_stack.pop();
+			for (_, var) in self.name_map_stack.pop().unwrap().into_iter().rev() {
+				self.write(CIRStmt::StorageDead(var));
+			}
+
 			(jump_idx, Some(Self::get_void_rvalue()))
 		}
 	}
@@ -547,10 +574,13 @@ impl CIRModuleBuilder {
 				)),
 
 				Atom::CStringLit(s) => Some(RValue::Atom(
-					CIRType::Pointer { pointee: Box::new(CIRType::Basic(Basic::Integral {
-						signed: false,
-						size_bytes: 1,
-					})), mutable: false },
+					CIRType::Pointer {
+						pointee: Box::new(CIRType::Basic(Basic::Integral {
+							signed: false,
+							size_bytes: 1,
+						})),
+						mutable: false,
+					},
 					None,
 					Operand::CStringLit(s.clone(), span),
 					span,
@@ -716,7 +746,7 @@ impl CIRModuleBuilder {
 									if_val,
 								));
 							}
-							
+
 							if cont_block.is_none() {
 								let current = self.current_block;
 								cont_block = Some(self.append_block());
@@ -750,10 +780,10 @@ impl CIRModuleBuilder {
 									cont_block = Some(self.append_block());
 									self.current_block = current;
 								}
-								
+
 								self.write(CIRStmt::Jump(cont_block.unwrap()));
 							}
-							
+
 							if let Some(cont_block) = cont_block {
 								self.current_block = start_block;
 								self.generate_branch(cond_op, if_idx, else_idx);
@@ -771,7 +801,7 @@ impl CIRModuleBuilder {
 							self.current_block = cont_block.unwrap();
 						}
 
-						if cont_block.is_some() {	
+						if cont_block.is_some() {
 							if let Some(result) = result_loc {
 								Some(RValue::Atom(
 									cir_ty,
@@ -879,14 +909,14 @@ impl CIRModuleBuilder {
 					ControlFlow::Break => {
 						let end_block = self.loop_stack.last().unwrap().1;
 						self.write(CIRStmt::Jump(end_block));
-						
+
 						None
 					}
 
 					ControlFlow::Continue => {
 						let start_block = self.loop_stack.last().unwrap().0;
 						self.write(CIRStmt::Jump(start_block));
-						
+
 						None
 					}
 
@@ -894,26 +924,20 @@ impl CIRModuleBuilder {
 						scrutinee,
 						branches,
 					} => {
-						// Generate switch discriminant calculation
+						
 						let scrutinee_ir = self.generate_expr(scrutinee)?;
 						let scrutinee_ty = self.convert_type(scrutinee.get_type());
 						let scrutinee_lval =
 							self.insert_temporary(scrutinee_ty.clone(), scrutinee_ir);
 						let cir_ty = self.convert_type(expr_ty);
 
-						let disc_ty = CIRType::Basic(scrutinee_ty.get_discriminant_type().unwrap());
-						let disc_lval = self.insert_temporary(
-							disc_ty.clone(),
-							RValue::Atom(
-								disc_ty.clone(),
-								None,
-								Operand::IntegerLit(0, SrcSpan::new()),
-								SrcSpan::new(),
-							),
-						);
-
 						let mut branches_ir = vec![];
 						let mut has_result = false;
+						
+						let disc_lval;
+						let disc_ty = CIRType::Basic(scrutinee_ty.get_discriminant_type().unwrap());
+
+						let start_block = self.current_block;
 
 						let result_loc = if cir_ty != CIRType::Basic(Basic::Void) {
 							Some(self.insert_temporary(
@@ -924,65 +948,95 @@ impl CIRModuleBuilder {
 							None
 						};
 
-						let start_block = self.current_block;
+						if Self::is_trivially_matchable(branches, scrutinee.get_type()) {
+							let mut trivial_disc_lval = scrutinee_lval.clone();
+							
+							trivial_disc_lval.projection.push(PlaceElem::Field(0));
 
-						for (i, (pattern, _)) in branches.iter().enumerate() {
-							// TODO: There is no usefulness checking here - if a value
-							// matches multiple branches, this will probably break
-							let match_expr =
-								self.generate_match_expr(pattern, &scrutinee_lval, &scrutinee_ty);
-							let match_operand =
-								self.get_as_operand(CIRType::Basic(Basic::Bool), match_expr);
+							disc_lval = trivial_disc_lval;
 
-							let cast_ir = self.get_as_operand(
-								disc_ty.clone(),
-								RValue::Cast {
-									from: CIRType::Basic(Basic::Bool),
-									to: disc_ty.clone(),
-									val: match_operand,
-									span: SrcSpan::new(),
-								},
-							);
-
-							let mult_ir = self.get_as_operand(
-								disc_ty.clone(),
-								RValue::Cons(
+							for (pattern, _) in branches.iter() {
+								branches_ir.push((
 									disc_ty.clone(),
-									[
-										(
-											disc_ty.clone(),
-											Operand::IntegerLit(i as i128 + 1, SrcSpan::new()),
-										),
-										(disc_ty.clone(), cast_ir),
-									],
-									Operator::Mul,
+									Operand::IntegerLit(
+										Self::get_trivial_match_value(pattern, scrutinee.get_type()) as i128,
+										SrcSpan::new()
+									),
+									0,
+								));
+							}
+						} else {
+							// Generate switch discriminant calculation
+							disc_lval = self.insert_temporary(
+								disc_ty.clone(),
+								RValue::Atom(
+									disc_ty.clone(),
+									None,
+									Operand::IntegerLit(0, SrcSpan::new()),
 									SrcSpan::new(),
 								),
 							);
+						
 
-							let add_ir = CIRStmt::Assignment(
-								(disc_lval.clone(), SrcSpan::new()),
-								RValue::Cons(
+
+							for (i, (pattern, _)) in branches.iter().enumerate() {
+								// TODO: There is no usefulness checking here - if a value
+								// matches multiple branches, this will probably break
+								let match_expr =
+									self.generate_match_expr(pattern, &scrutinee_lval, &scrutinee_ty);
+								let match_operand =
+									self.get_as_operand(CIRType::Basic(Basic::Bool), match_expr);
+
+								let cast_ir = self.get_as_operand(
 									disc_ty.clone(),
-									[
-										(
-											disc_ty.clone(),
-											Operand::LValue(disc_lval.clone(), SrcSpan::new()),
-										),
-										(disc_ty.clone(), mult_ir.clone()),
-									],
-									Operator::Add,
-									SrcSpan::new(),
-								),
-							);
+									RValue::Cast {
+										from: CIRType::Basic(Basic::Bool),
+										to: disc_ty.clone(),
+										val: match_operand,
+										span: SrcSpan::new(),
+									},
+								);
 
-							self.write(add_ir);
+								let mult_ir = self.get_as_operand(
+									disc_ty.clone(),
+									RValue::Cons(
+										disc_ty.clone(),
+										[
+											(
+												disc_ty.clone(),
+												Operand::IntegerLit(i as i128 + 1, SrcSpan::new()),
+											),
+											(disc_ty.clone(), cast_ir),
+										],
+										Operator::Mul,
+										SrcSpan::new(),
+									),
+								);
 
-							branches_ir.push((
-								disc_ty.clone(),
-								Operand::IntegerLit(i as i128 + 1, SrcSpan::new()),
-								0,
-							));
+								let add_ir = CIRStmt::Assignment(
+									(disc_lval.clone(), SrcSpan::new()),
+									RValue::Cons(
+										disc_ty.clone(),
+										[
+											(
+												disc_ty.clone(),
+												Operand::LValue(disc_lval.clone(), SrcSpan::new()),
+											),
+											(disc_ty.clone(), mult_ir.clone()),
+										],
+										Operator::Add,
+										SrcSpan::new(),
+									),
+								);
+
+								self.write(add_ir);
+
+								branches_ir.push((
+									disc_ty.clone(),
+									Operand::IntegerLit(i as i128 + 1, SrcSpan::new()),
+									0,
+								));
+							}
 						}
 
 						let cont_block = self.append_block();
@@ -992,9 +1046,8 @@ impl CIRModuleBuilder {
 						for (i, (pattern, branch)) in branches.iter().enumerate() {
 							let Expr::Atom(Atom::Block { items, result }, branch_meta) = branch else { panic!() };
 
-							self.name_map_stack.push(HashMap::new());
-
 							let binding_idx = self.append_block();
+
 							self.generate_pattern_bindings(
 								pattern.clone(),
 								scrutinee_lval.clone(),
@@ -1015,7 +1068,6 @@ impl CIRModuleBuilder {
 								has_result = true;
 							}
 
-							self.name_map_stack.pop();
 							self.current_block = cont_block;
 
 							branches_ir[i].2 = binding_idx;
@@ -1210,7 +1262,7 @@ impl CIRModuleBuilder {
 			name: _,
 			args,
 			type_args,
-			resolved: FnRef::Direct(resolved),
+			resolved,
 		} = call else { panic!() };
 
 		let cir_args: Vec<_> = args
@@ -1222,7 +1274,10 @@ impl CIRModuleBuilder {
 				if let RValue::Atom(_, None, Operand::LValue(lval, _), _) = cir_expr {
 					Some((lval, arg.get_node_data().tk))
 				} else {
-					Some((self.insert_temporary(cir_ty, cir_expr), arg.get_node_data().tk))
+					Some((
+						self.insert_temporary(cir_ty, cir_expr),
+						arg.get_node_data().tk,
+					))
 				}
 			})
 			.collect();
@@ -1234,41 +1289,101 @@ impl CIRModuleBuilder {
 
 		let cir_type_args = type_args.iter().map(|arg| self.convert_type(arg)).collect();
 
-		let ret = &resolved.read().unwrap().ret;
-		let current_block = self.current_block;
-		let next = self.append_block();
-		self.current_block = current_block;
+		match resolved {
+			FnRef::Direct(resolved) => {
+				let ret = &resolved.read().unwrap().ret;
 
-		let result = if ret == &Type::Basic(Basic::Void) {
-			None
-		} else {
-			// TODO: BindingProps for return type
-			let cir_ret = self.convert_type(ret);
-			Some(self.insert_variable(None, BindingProps::default(), cir_ret))
-		};
+				let current_block = self.current_block;
+				let next = self.append_block();
+				self.current_block = current_block;
 
-		let id = self.get_prototype(&*resolved.read().unwrap());
+				let result = if ret == &Type::Basic(Basic::Void) {
+					None
+				} else {
+					// TODO: BindingProps for return type
+					let cir_ret = self.convert_type(ret);
+					Some(self.insert_variable(None, BindingProps::default(), cir_ret))
+				};
 
-		self.write(CIRStmt::FnCall {
-			id,
-			args: cir_args,
-			type_args: cir_type_args,
-			result: result.clone(),
-			next,
-			except: None,
-		});
+				let id = self.get_prototype(&*resolved.read().unwrap());
 
-		self.current_block = next;
+				self.write(CIRStmt::FnCall {
+					id: CIRFnCall::Direct(id, SrcSpan::new()),
+					args: cir_args,
+					type_args: cir_type_args,
+					result: result.clone(),
+					next,
+					except: None,
+				});
 
-		if let Some(result) = result {
-			Some(RValue::Atom(
-				self.convert_type(&ret),
-				None,
-				Operand::LValue(result, span),
-				span,
-			))
-		} else {
-			Some(Self::get_void_rvalue())
+				self.current_block = next;
+
+				if let Some(result) = result {
+					Some(RValue::Atom(
+						self.convert_type(&ret),
+						None,
+						Operand::LValue(result, span),
+						span,
+					))
+				} else {
+					Some(Self::get_void_rvalue())
+				}
+			}
+
+			FnRef::Indirect(expr) => {
+				let fn_val_ir = self.generate_expr(expr)?;
+				let fn_val_ty = fn_val_ir.get_type().clone();
+
+				let local = if let RValue::Atom(_, None, Operand::LValue(lval, _), _) = fn_val_ir {
+					lval
+				} else {
+					self.insert_temporary(fn_val_ir.get_type().clone(), fn_val_ir.clone())
+				};
+
+				let CIRType::FunctionPtr { ret, args } = fn_val_ty else { 
+					panic!()
+				};
+
+				let result = if &*ret == &CIRType::Basic(Basic::Void) {
+					None
+				} else {
+					// TODO: BindingProps for return type
+					Some(self.insert_variable(None, BindingProps::default(), *ret.clone()))
+				};
+
+				let current_block = self.current_block;
+				let next = self.append_block();
+				self.current_block = current_block;
+
+				self.write(CIRStmt::FnCall {
+					id: CIRFnCall::Indirect {
+						local,
+						ret: *ret.clone(),
+						args,
+						span: expr.get_node_data().tk,
+					},
+					args: cir_args,
+					type_args: vec![],
+					result: result.clone(),
+					next,
+					except: None,
+				});
+
+				self.current_block = next;
+
+				if let Some(result) = result {
+					Some(RValue::Atom(
+						*ret,
+						None,
+						Operand::LValue(result, span),
+						span,
+					))
+				} else {
+					Some(Self::get_void_rvalue())
+				}
+			}
+
+			_ => panic!(),
 		}
 	}
 
@@ -1331,6 +1446,45 @@ impl CIRModuleBuilder {
 
 				_ => panic!(),
 			},
+		}
+	}
+
+	// TODO: Support for enum types in these
+	fn is_trivially_matchable(branches: &Vec<(Pattern, Expr)>, scrutinee_ty: &Type) -> bool {
+		let types = match scrutinee_ty {
+			Type::Tuple(TupleKind::Sum, types) => types.as_slice(),
+			
+			_ => panic!(),
+		};
+
+		for (branch, _) in branches {
+			match branch {
+				Pattern::Binding(Binding { ty, .. }) => {
+					if !types.iter().any(|t| t == ty) {
+						return false
+					}	
+				}
+
+				_ => return false,
+			}
+		}
+
+		true
+	}
+
+	fn get_trivial_match_value(branch: &Pattern, scrutinee_ty: &Type) -> usize {
+		let types = match scrutinee_ty {
+			Type::Tuple(TupleKind::Sum, types) => types.as_slice(),
+			
+			_ => panic!(),
+		};
+
+		match branch {
+			Pattern::Binding(Binding { ty, ..}) => {
+				types.iter().position(|t| t == ty).unwrap()
+			}
+
+			_ => panic!(),
 		}
 	}
 
@@ -1401,7 +1555,7 @@ impl CIRModuleBuilder {
 
 	fn get_var_index(&self, name: &Name) -> Option<VarIndex> {
 		for stack_frame in self.name_map_stack.iter().rev() {
-			if let Some(idx) = stack_frame.get(name) {
+			if let Some((_, idx)) = stack_frame.iter().rev().find(|(n, _)| n == name) {
 				return Some(*idx);
 			}
 		}
@@ -1415,7 +1569,7 @@ impl CIRModuleBuilder {
 			self.name_map_stack
 				.last_mut()
 				.unwrap()
-				.insert(name.clone(), idx);
+				.push((name.clone(), idx));
 		}
 
 		self.get_fn_mut().variables.push((ty, props, name));

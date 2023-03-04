@@ -6,3 +6,7 @@ void printf(ascii* fmt, ...);
 void bar() {
 	printf(c"Hello from submodule_test!\n");
 }
+
+trait SubmoduleTrait {
+	void foo();
+}

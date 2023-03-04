@@ -13,13 +13,13 @@ pub type GenericParamList = Vec<(Name, TypeParam, Option<Type>)>;
 
 #[derive(Clone)]
 pub enum Type {
-	Basic(Basic),                                  // Fundamental type
-	Pointer { pointee: Box<Type>, mutable: bool }, // Pointer-to-<BoxedType>
+	Basic(Basic),                                   // Fundamental type
+	Pointer { pointee: Box<Type>, mutable: bool },  // Pointer-to-<BoxedType>
 	Array(Box<Type>, Arc<RwLock<Vec<ConstExpr>>>), // N-dimensional array with constant expression for size
 	TypeRef(ItemRef<TypeRef>),                     // Reference to user-defined type
 	TypeParam(usize),                              // Reference to an in-scope type parameter
 	Tuple(TupleKind, Vec<Type>),                   // Sum/product tuple
-	Function(Box<Type>, Vec<Type>),                // Type of a function signature
+	Function(Box<Type>, Vec<(BindingProps, Type)>), // Type of a function signature
 	Never, // Return type of a function that never returns, coerces to anything
 }
 
@@ -37,12 +37,17 @@ pub enum Basic {
 #[derive(Clone, Debug, Default)]
 pub struct TypeRef {
 	pub def: Weak<RwLock<TypeDef>>,
-	pub name: Identifier,
 	pub args: Vec<Type>,
 }
 
 #[derive(Debug)]
-pub enum TypeDef {
+pub struct TypeDef {
+	pub def: TypeDefKind,
+	pub name: Identifier,
+}
+
+#[derive(Debug)]
+pub enum TypeDefKind {
 	Algebraic(AlgebraicDef),
 	Class, // TODO: Implement classes
 }
@@ -269,10 +274,10 @@ impl Type {
 	pub fn get_concrete_type(&self, type_args: &Vec<Type>) -> Type {
 		match self {
 			Type::Basic(b) => Type::Basic(*b),
-			
-			Type::Pointer { pointee, mutable } => Type::Pointer { 
-				pointee: Box::new(pointee.get_concrete_type(type_args)), 
-				mutable: *mutable 
+
+			Type::Pointer { pointee, mutable } => Type::Pointer {
+				pointee: Box::new(pointee.get_concrete_type(type_args)),
+				mutable: *mutable,
 			},
 
 			Type::Array(arr_ty, size) => {
@@ -293,7 +298,7 @@ impl Type {
 			Type::Function(ret, args) => Type::Function(
 				Box::new(ret.get_concrete_type(type_args)),
 				args.iter()
-					.map(|arg| arg.get_concrete_type(type_args))
+					.map(|(props, arg)| (*props, arg.get_concrete_type(type_args)))
 					.collect(),
 			),
 		}
@@ -328,7 +333,11 @@ impl Type {
 				}
 
 				Type::Pointer { pointee, mutable } => {
-					if let Type::Pointer { pointee: gen_pointee, mutable: gen_mutable } = generic_ty {
+					if let Type::Pointer {
+						pointee: gen_pointee,
+						mutable: gen_mutable,
+					} = generic_ty
+					{
 						mutable == gen_mutable && pointee.fits_generic(gen_pointee)
 					} else {
 						false
@@ -353,7 +362,10 @@ impl Type {
 	}
 
 	pub fn ptr_type(&self, mutable: bool) -> Self {
-		Type::Pointer { pointee: Box::new(self.clone()), mutable }
+		Type::Pointer {
+			pointee: Box::new(self.clone()),
+			mutable,
+		}
 	}
 
 	pub fn castable_to(&self, target: &Type) -> bool {
@@ -361,7 +373,14 @@ impl Type {
 			true
 		} else if self.is_numeric() {
 			target.is_numeric() || target.is_boolean()
-		} else if let (Type::Pointer { mutable, .. }, Type::Pointer { mutable: target_mutable, .. }) = (self, target) {
+		} else if let (
+			Type::Pointer { mutable, .. },
+			Type::Pointer {
+				mutable: target_mutable,
+				..
+			},
+		) = (self, target)
+		{
 			// If self is a `T mut*`, it can be cast to a `T*`
 			// but if self is a `T*`, it can't be cast to a `T mut*`
 			*mutable || !target_mutable
@@ -426,7 +445,6 @@ impl Type {
 impl PartialEq for TypeRef {
 	fn eq(&self, other: &Self) -> bool {
 		Arc::ptr_eq(&self.def.upgrade().unwrap(), &other.def.upgrade().unwrap())
-			&& self.name == other.name
 			&& self.args == other.args
 	}
 }
@@ -437,12 +455,22 @@ impl PartialEq for Type {
 	fn eq(&self, other: &Self) -> bool {
 		match (self, other) {
 			(Self::Basic(l0), Self::Basic(r0)) => l0 == r0,
-			(Self::Pointer { pointee: l0, mutable: l1}, Self::Pointer { pointee: r0, mutable: r1 }) => l0 == r0 && l1 == r1,
+			(
+				Self::Pointer {
+					pointee: l0,
+					mutable: l1,
+				},
+				Self::Pointer {
+					pointee: r0,
+					mutable: r1,
+				},
+			) => l0 == r0 && l1 == r1,
 			(Self::TypeRef(l0), Self::TypeRef(r0)) => l0 == r0,
 			(Self::TypeParam(l0), Self::TypeParam(r0)) => l0 == r0,
 			(Self::Array(l0, _l1), Self::Array(r0, _r1)) => l0 == r0,
 			(Self::Tuple(l0, l1), Self::Tuple(r0, r1)) => l0 == r0 && l1 == r1,
 			(Self::Never, Self::Never) => true,
+			(Self::Function(l0, l1), Self::Function(r0, r1)) => l0 == r0 && l1 == r1,
 			_ => false,
 		}
 	}
@@ -472,7 +500,7 @@ impl Hash for Type {
 	fn hash<H: Hasher>(&self, state: &mut H) {
 		match self {
 			Type::Basic(b) => b.hash(state),
-			Type::Pointer { pointee, mutable} => {
+			Type::Pointer { pointee, mutable } => {
 				pointee.hash(state);
 				mutable.hash(state);
 				"*".hash(state)
@@ -522,12 +550,13 @@ impl Display for Type {
 		match &self {
 			Type::Basic(t) => write!(f, "{t}"),
 
-			Type::Pointer { pointee, mutable } => 
+			Type::Pointer { pointee, mutable } => {
 				if *mutable {
 					write!(f, "{pointee} mut*")
 				} else {
 					write!(f, "{pointee}*")
 				}
+			}
 
 			Type::Array(t, _s) => write!(f, "{}[]", t),
 
@@ -550,8 +579,8 @@ impl Display for Type {
 				Ok(())
 			}
 
-			Type::TypeRef(ItemRef::Resolved(TypeRef { name, args, .. })) => {
-				write!(f, "{name}")?;
+			Type::TypeRef(ItemRef::Resolved(TypeRef { def, args, .. })) => {
+				write!(f, "{}", def.upgrade().unwrap().read().unwrap().name)?;
 
 				if !args.is_empty() {
 					let mut iter = args.iter();
@@ -597,9 +626,9 @@ impl Display for Type {
 				if !args.is_empty() {
 					let mut iter = args.iter();
 
-					write!(f, "({}", iter.next().unwrap())?;
+					write!(f, "({}", iter.next().unwrap().1)?;
 
-					for arg in iter {
+					for (_, arg) in iter {
 						write!(f, ", {arg}")?;
 					}
 
@@ -614,11 +643,11 @@ impl Display for Type {
 
 impl Display for TypeDef {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		match &self {
-			TypeDef::Algebraic(agg) => {
+		match &self.def {
+			TypeDefKind::Algebraic(agg) => {
 				write!(f, "{}", agg)?;
 			}
-			TypeDef::Class => todo!(),
+			TypeDefKind::Class => todo!(),
 		}
 		Ok(())
 	}
