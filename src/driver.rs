@@ -621,3 +621,7 @@ pub fn generate_code<'ctx>(
 
 	Ok(backend)
 }
+
+pub fn preprocess_cpp_file(state: &Arc<ManagerState>, file: &Path) -> Option<String> {
+	None
+}

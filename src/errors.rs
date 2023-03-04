@@ -408,6 +408,26 @@ pub fn spawn_logger(backtrace_on_error: bool) -> Sender<CMNMessageLog> {
 							// Print code snippet
 							for line in lines.clone() {
 								let line_text = &lines_text[line - lines.start()];
+
+								// First, convert tabs to spaces and store the display offsets for each character
+								let (line_text, offsets) = {
+									let mut line_result = String::with_capacity(line_text.len());
+									let mut current_offset = 0;
+									let mut offsets = vec![];
+
+									for c in line_text.chars() {
+										if c == '\t' {
+											line_result.push_str("    ");
+											current_offset += 3;
+										} else {
+											line_result.push(c);
+										}
+
+										offsets.push(current_offset);
+									}
+									(line_result, offsets)
+								};
+
 								writeln!(
 									out,
 									"{} {}",
@@ -460,8 +480,11 @@ pub fn spawn_logger(backtrace_on_error: bool) -> Sender<CMNMessageLog> {
 									writeln!(out, "").unwrap();
 								} else {
 									// Print squiggle
-									write!(out, "{: <1$}", "", column).unwrap();
-									writeln!(out, "{}", format!("{:~<1$}", "", len).red()).unwrap();
+									let column_offset = offsets[column];
+									let len_offset = offsets[column + len - 1] - column_offset;
+
+									write!(out, "{: <1$}", "", column + column_offset).unwrap();
+									writeln!(out, "{}", format!("{:~<1$}", "", len + len_offset).red()).unwrap();
 								}
 
 								if length_left == 0 {

@@ -157,9 +157,6 @@ impl Lexer {
 
 		File::open(path)?.read_to_string(&mut result.file_buffer)?; // lol
 
-		// Tabs fuck up the visual error reporting and making it Really Work is a nightmare because Unicode
-		// So here's this hack lol
-		result.file_buffer = result.file_buffer.replace('\t', "    ");
 		result.tokenize_file()?;
 
 		Ok(result)
