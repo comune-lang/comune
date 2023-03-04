@@ -4,6 +4,7 @@ import module_test;
 module submodule_test;
 
 using module_test::{fib, foo};
+using core::traits::Drop;
 
 @no_mangle
 void mut* malloc(usize size);
@@ -44,7 +45,7 @@ impl Test {
 	}
 }
 
-impl core::traits::Drop for Test {
+impl Drop for Test {
 	void drop(mut& self) {
 		printf(c"This is Test's destructor!\n");
 	}
