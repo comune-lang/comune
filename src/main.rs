@@ -165,11 +165,7 @@ fn main() -> color_eyre::eyre::Result<()> {
 			}
 
 			output
-				.arg("-nodefaultlibs")
 				.arg("-lstdc++")
-				.arg("-lc")
-				//.arg("-fno-rtti")
-				//.arg("-fno-exceptions")
 				.arg("-fdiagnostics-color=always")
 				.arg("-no-pie");
 

@@ -1,6 +1,6 @@
 use std::{sync::{Arc, mpsc::Sender}, path::PathBuf, fs::{File, self}, fmt::Write as _, io::{Write, self, Read}, process::Command};
 
-use crate::{driver::{ManagerState, get_module_out_path, ModuleState, await_imports_ready}, ast::{module::{Identifier, ModuleImportKind, ModuleInterface, ModuleItemInterface, ItemRef}, types::{Type, Basic, TypeDefKind}, get_attribute}, errors::{CMNMessageLog, ComuneError}, get_file_suffix};
+use crate::{driver::{ManagerState, get_module_out_path, ModuleState, await_imports_ready}, ast::{module::{Identifier, ModuleImportKind, ModuleInterface, ModuleItemInterface, ItemRef}, types::{Type, Basic, TypeDefKind, TupleKind}, get_attribute}, errors::{CMNMessageLog, ComuneError}, get_file_suffix};
 
 
 pub fn compile_cpp_module(
@@ -45,6 +45,7 @@ pub fn compile_cpp_module(
 	output
 		.arg(processed_path.clone())
 		.arg("-c")
+		.arg("-funsigned-char")
 		.arg("-fdiagnostics-color=always")
 		.arg("-I./libcomune/cpp/")
 		.arg("--output").arg(out_path.with_extension("o"));
@@ -88,7 +89,7 @@ pub fn preprocess_cpp_file(_state: &Arc<ManagerState>, file: &PathBuf) -> io::Re
 	let mut dependencies = vec![];
 
 	for line in file_in.lines() {
-		if line.starts_with("#co_include") {
+		if line.starts_with("co_import") {
 			let mut dep_path = file.clone();
 			
 			let left = line.find('"').unwrap() + 1;
@@ -99,7 +100,7 @@ pub fn preprocess_cpp_file(_state: &Arc<ManagerState>, file: &PathBuf) -> io::Re
 
 			dependencies.push(dep_path);
 
-			result.push_str(&line.replace("#co_include", "#include").replace(".co", ".hpp"));
+			result.push_str(&line.replace("co_import", "#include").replace(".co\";", ".hpp\""));
 		} else {
 			result.push_str(line);
 		}
@@ -318,6 +319,17 @@ impl Type {
 				
 				write!(f, ")")
 			}
+
+			Type::Tuple(TupleKind::Sum, types) => {
+				write!(f, "union {{ ")?;
+
+				for (i, ty) in types.iter().enumerate() {
+					ty.cpp_format(f)?;
+					write!(f, " _{i}; ")?;
+				}
+
+				write!(f, "}}")
+			},
 
 			_ => write!(f, "int /* <= TODO */"),
 		}

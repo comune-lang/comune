@@ -83,6 +83,12 @@ pub fn launch_module_compilation(
 		return Ok(());
 	}
 
+	println!(
+		"{:>10} {}",
+		"compiling".bold().green(),
+		src_path.file_name().unwrap().to_string_lossy()
+	);
+
 	let out_path = get_module_out_path(&state, &module_name);
 
 	state.output_modules.lock().unwrap().push(out_path.clone());
@@ -111,9 +117,8 @@ pub fn compile_comune_module(
 	error_sender: Sender<CMNMessageLog>,
 	s: &rayon::Scope,
 ) -> Result<(), ComuneError> {
-	
-	
 	let mut parser = match parse_interface(&state, &src_path, error_sender.clone()) {
+	
 		Ok(parser) => parser,
 
 		Err(e) => {
@@ -353,12 +358,6 @@ pub fn parse_interface(
 			}
 		},
 		state.verbose_output,
-	);
-
-	println!(
-		"{:>10} {}",
-		"compiling".bold().green(),
-		mod_state.lexer.borrow().file_name.to_string_lossy()
 	);
 
 	if state.verbose_output {
