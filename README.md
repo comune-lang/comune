@@ -40,3 +40,9 @@ the compiler takes a list of input files, as well as any modules they import, an
 - `ll` - the optimized LLVM IR. in debug builds, this won't be very different from the `.ll_raw` stage, but it can still be useful for sanity-checking the IR as a whole - if code is being optimized away that shouldn't be, it's likely the IR codegen is invoking Undefined Behaviour.
 
 the compiler accepts any non-empty list of these options, and emits them into the directory specified by `--out-dir` (by default the current working directory). for output types that involve invoking the linker (`bin`, `lib` and `dylib`), the output filename can be specified with `--output` or `-o`. the default is `a.out`.
+
+# building the test code
+
+the `test/src` folder contains basic comune code that tests various compiler features. to build this code after successfully compiling a debug build of the compiler, run the command `target/debug/comune test/src/main.co --out-dir=test/build` from the repository root. this will emit an executable `a.out` in the `test/build` directory, creating it if it does not exist. this executable can optionally be executed, in order to check for miscompilations due to compiler bugs.
+
+additionally, the user may specify other output types to be emitted, as described above. these can be useful for debugging and verifying compiler behaviour.
