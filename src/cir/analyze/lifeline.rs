@@ -7,7 +7,7 @@ use super::{
 	ResultVisitor,
 };
 use crate::{
-	cir::{CIRFnCall, CIRFunction, CIRStmt, CIRType, LValue, Operand, PlaceElem, RValue},
+	cir::{CIRFnCall, CIRFunction, CIRStmt, Type, LValue, Operand, PlaceElem, RValue},
 	errors::{ComuneErrCode, ComuneError},
 };
 
@@ -127,7 +127,7 @@ impl LiveVarCheckState {
 		}
 	}
 
-	fn eval_operand(&mut self, _ty: &CIRType, op: &Operand) {
+	fn eval_operand(&mut self, _ty: &Type, op: &Operand) {
 		match op {
 			Operand::LValue(lval, _) => self.eval_lvalue(_ty, lval),
 
@@ -135,7 +135,7 @@ impl LiveVarCheckState {
 		}
 	}
 
-	fn eval_lvalue(&mut self, _ty: &CIRType, lval: &LValue) {
+	fn eval_lvalue(&mut self, _ty: &Type, lval: &LValue) {
 		// TODO: Check for `Copy` types? Might be handled earlier
 
 		self.set_liveness(lval, LivenessState::Moved);

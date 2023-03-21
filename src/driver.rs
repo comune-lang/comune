@@ -12,7 +12,7 @@ use inkwell::{context::Context, passes::PassManager, targets::FileType};
 use crate::{
 	ast::{
 		self,
-		module::{Identifier, ModuleImportKind, ModuleInterface, Name},
+		module::{Identifier, ModuleImportKind, ModuleInterface, Name, ModuleImport},
 	},
 	cir::{
 		analyze::{lifeline::VarInitCheck, verify, CIRPassManager, DataFlowPass},
@@ -133,7 +133,7 @@ pub fn compile_comune_module(
 
 	state.module_states.write().unwrap().insert(
 		src_path.clone(),
-		ModuleState::InterfaceUntyped(Arc::new(parser.interface.clone())),
+		ModuleState::InterfaceUntyped(Arc::new(parser.interface.get_external_interface(false))),
 	);
 
 	// Resolve module imports
@@ -170,28 +170,33 @@ pub fn compile_comune_module(
 
 	state.module_states.write().unwrap().insert(
 		src_path.clone(),
-		ModuleState::InterfaceComplete(Arc::new(parser.interface.clone())),
+		ModuleState::InterfaceComplete(Arc::new(parser.interface.get_external_interface(true))),
 	);
 
 	// The rest of the module's compilation happens in a worker thread
 
 	s.spawn(move |_s| {
 		// Wait for all module interfaces to be finalized
+		parser.interface.imported.clear();
+		
 		let module_names = parser.interface.import_names.clone();
 
 		let mut imports_left = module_names
 			.into_iter()
-			.map(|name| match name {
-				ModuleImportKind::Child(name) => Identifier::from_parent(&module_name, name),
-				ModuleImportKind::Language(name) => Identifier::from_name(name, true),
-				ModuleImportKind::Extern(name) => name,
+			.map(|m_kind| {
+				let m_kind_clone = m_kind.clone();
+				match m_kind {
+					ModuleImportKind::Child(name) => (m_kind_clone, Identifier::from_parent(&module_name, name)),
+					ModuleImportKind::Language(name) => (m_kind_clone, Identifier::from_name(name, true)),
+					ModuleImportKind::Extern(name) => (m_kind_clone, name),
+				}
 			})
 			.collect::<Vec<_>>();
 
 		// Loop over remaining pending imports
 		while let Some(import_name) = imports_left.first() {
 			let import_path =
-				get_module_source_path(&state, src_path.clone(), import_name).unwrap();
+				get_module_source_path(&state, src_path.clone(), &import_name.1).unwrap();
 
 			// Get the current import's compilation state
 
@@ -212,7 +217,12 @@ pub fn compile_comune_module(
 					parser
 						.interface
 						.imported
-						.insert(import_name.name().clone(), complete);
+						.insert(import_name.1.name().clone(), ModuleImport { 
+							interface: complete, 
+							import_kind: import_name.0.clone(),
+							path: import_path
+						});
+						
 					imports_left.remove(0);
 				}
 
@@ -385,12 +395,12 @@ pub fn await_imports_ready(
 	mut modules: Vec<ModuleImportKind>,	
 	error_sender: Sender<CMNMessageLog>,
 	s: &rayon::Scope,
-) -> ComuneResult<HashMap<Name, Arc<ModuleInterface>>> {
+) -> ComuneResult<HashMap<Name, ModuleImport>> {
 	
 	let mut imports = HashMap::new();
 
 	while let Some(name) = modules.first().cloned() {
-		let (import_name, fs_name) = match name {
+		let (import_name, fs_name) = match name.clone() {
 			ModuleImportKind::Child(name) => {
 				(name.clone(), Identifier::from_parent(module_name, name))
 			}
@@ -459,8 +469,30 @@ pub fn await_imports_ready(
 					));
 				}
 
-				Some(ModuleState::InterfaceUntyped(interface) | ModuleState::InterfaceComplete(interface)) => {
-					imports.insert(import_name, interface.clone());
+				// If this is a child module, await the fully complete interface.
+				// If not, the untyped interface is fine
+				Some(ModuleState::InterfaceUntyped(interface)) => {
+					if matches!(name, ModuleImportKind::Child(_)) {
+						std::thread::sleep(std::time::Duration::from_millis(1))
+					} else {
+						imports.insert(import_name, ModuleImport { 
+							interface: interface.clone(),
+							import_kind: name,
+							path: import_path,
+						});
+
+						modules.remove(0);
+						break;
+					}
+				}
+				
+				Some(ModuleState::InterfaceComplete(interface)) => {
+					imports.insert(import_name, ModuleImport { 
+						interface: interface.clone(),
+						import_kind: name,
+						path: import_path,
+					});
+
 					modules.remove(0);
 					break;
 				}

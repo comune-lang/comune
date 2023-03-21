@@ -45,7 +45,8 @@ impl ComuneError {
 			code,
 			span,
 			notes: vec![],
-
+			
+			// Safety: CAPTURE_BACKTRACE is set before compilation begins.
 			origin: if unsafe { CAPTURE_BACKTRACE } {
 				Some(Backtrace::new())
 			} else {

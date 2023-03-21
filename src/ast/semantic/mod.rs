@@ -36,6 +36,8 @@ pub fn validate_interface(_state: &Arc<ManagerState>, parser: &mut Parser) -> Co
 	ty::check_module_cyclical_deps(&mut parser.interface)?;
 
 	validate_attributes(&mut parser.interface)?;
+	
+	parser.interface.is_typed = true;
 
 	Ok(())
 }

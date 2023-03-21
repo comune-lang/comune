@@ -1,18 +1,19 @@
 use std::fmt::Display;
 
 use crate::{
-	ast::types::{DataLayout, TupleKind},
+	ast::types::DataLayout,
 	lexer,
 };
 
 use super::{
-	CIRFnCall, CIRFnPrototype, CIRFunction, CIRModule, CIRStmt, CIRType, CIRTypeDef, LValue,
+	CIRFnCall, CIRFnPrototype, CIRFunction, CIRModule, CIRStmt, LValue,
 	Operand, PlaceElem, RValue,
 };
 
 impl Display for CIRModule {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		for (name, ty) in &self.types {
+			let ty = &*ty.read().unwrap();
 			write!(f, "type {name} {ty}")?;
 		}
 
@@ -237,97 +238,6 @@ impl Display for Operand {
 			Operand::BoolLit(b, _) => write!(f, "{b}"),
 			Operand::LValue(lval, _) => write!(f, "{lval}"),
 			Operand::Undef => write!(f, "undef"),
-		}
-	}
-}
-
-impl Display for CIRType {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		match self {
-			CIRType::Basic(b) => write!(f, "{}", b.as_str()),
-
-			CIRType::Pointer { pointee, mutable } => {
-				if *mutable {
-					write!(f, "{pointee} mut*")
-				} else {
-					write!(f, "{pointee}*")
-				}
-			}
-
-			CIRType::Array(t, _) => write!(f, "{t}[]"),
-			CIRType::Reference(r) => write!(f, "{r}&"),
-			CIRType::TypeRef(name, _) => write!(f, "{name}"),
-			CIRType::TypeParam(idx) => write!(f, "<{idx}>"),
-
-			CIRType::Tuple(kind, types) => {
-				if types.is_empty() {
-					write!(f, "()")
-				} else {
-					let mut iter = types.iter();
-
-					write!(f, "({}", iter.next().unwrap())?;
-
-					if kind == &TupleKind::Product {
-						for ty in iter {
-							write!(f, ", {ty}")?;
-						}
-					} else {
-						for ty in iter {
-							write!(f, " | {ty}")?;
-						}
-					}
-
-					write!(f, ")")
-				}
-			}
-
-			CIRType::FunctionPtr { ret, args } => {
-				write!(f, "{ret}(")?;
-
-				if !args.is_empty() {
-					let mut iter = args.iter();
-
-					write!(f, "{}", iter.next().unwrap().1)?;
-
-					for (_, arg) in iter {
-						write!(f, ", {arg}")?;
-					}
-				}
-
-				write!(f, ")")
-			}
-		}
-	}
-}
-
-impl Display for CIRTypeDef {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		match self {
-			CIRTypeDef::Algebraic {
-				members,
-				variants,
-				layout,
-				type_params,
-				..
-			} => {
-				writeln!(f, "layout({layout}) {{")?;
-
-				for (param, ..) in type_params {
-					writeln!(f, "\tparam {param:?}")?;
-				}
-
-				for var in variants {
-					writeln!(f, "\tvariant {var}")?;
-				}
-
-				for mem in members {
-					writeln!(f, "\tmember {mem},")?;
-				}
-
-				write!(f, "}}\n\n")
-			}
-
-			CIRTypeDef::Class {} => todo!(),
 		}
 	}
 }

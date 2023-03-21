@@ -15,10 +15,21 @@ pub type GenericParamList = Vec<(Name, TypeParam, Option<Type>)>;
 pub enum Type {
 	Basic(Basic),                                   // Fundamental type
 	Pointer { pointee: Box<Type>, mutable: bool },  // Pointer-to-<BoxedType>
-	Array(Box<Type>, Arc<RwLock<Vec<ConstExpr>>>), // N-dimensional array with constant expression for size
-	TypeRef(ItemRef<TypeRef>),                     // Reference to user-defined type
-	TypeParam(usize),                              // Reference to an in-scope type parameter
-	Tuple(TupleKind, Vec<Type>),                   // Sum/product tuple
+	Array(Box<Type>, Arc<RwLock<ConstExpr>>), 	    // Aarray with constant expression for size
+	
+	TypeRef {                                       // Reference to user-defined type
+		def: Weak<RwLock<TypeDef>>,
+		args: Vec<Type>,
+	},
+	
+	Unresolved {                                    // Unresolved typename
+		name: Identifier,
+		scope: Arc<Identifier>,
+		type_args: Vec<Type>
+	},
+
+	TypeParam(usize),                               // Reference to an in-scope type parameter
+	Tuple(TupleKind, Vec<Type>),                    // Sum/product tuple
 	Function(Box<Type>, Vec<(BindingProps, Type)>), // Type of a function signature
 	Never, // Return type of a function that never returns, coerces to anything
 }
@@ -40,13 +51,13 @@ pub struct TypeRef {
 	pub args: Vec<Type>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TypeDef {
 	pub def: TypeDefKind,
 	pub name: Identifier,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum TypeDefKind {
 	Algebraic(AlgebraicDef),
 	Class, // TODO: Implement classes
@@ -284,7 +295,11 @@ impl Type {
 				Type::Array(Box::new(arr_ty.get_concrete_type(type_args)), size.clone())
 			}
 
-			Type::TypeRef(ty) => Type::TypeRef(ty.clone()),
+			Type::TypeRef { def, args } => Type::TypeRef {
+				def: def.clone(), 
+				args: args.iter().map(|ty| ty.get_concrete_type(type_args)).collect()
+			},
+			
 			Type::TypeParam(param) => type_args[*param].get_concrete_type(type_args),
 			Type::Never => Type::Never,
 			Type::Tuple(kind, types) => Type::Tuple(
@@ -301,6 +316,8 @@ impl Type {
 					.map(|(props, arg)| (*props, arg.get_concrete_type(type_args)))
 					.collect(),
 			),
+
+			Type::Unresolved { .. } => unreachable!()
 		}
 	}
 
@@ -344,15 +361,29 @@ impl Type {
 					}
 				}
 
-				Type::TypeRef(ItemRef::Resolved(ty_ref)) => {
-					if let Type::TypeRef(ItemRef::Resolved(gen_ref)) = generic_ty {
-						ty_ref == gen_ref
+				Type::TypeRef { def: ty_def, args: ty_args } => {
+					if let Type::TypeRef { def: gen_def, args: gen_args } = generic_ty {
+						if !Arc::ptr_eq(&ty_def.upgrade().unwrap(), &gen_def.upgrade().unwrap()) {
+							return false;
+						}
+						
+						if ty_args.len() != gen_args.len() {
+							return false;
+						}
+
+						for (lhs, rhs) in ty_args.iter().zip(gen_args) {
+							if !lhs.fits_generic(rhs) {
+								return false;
+							}
+						}
+
+						true
 					} else {
 						false
 					}
 				}
 
-				Type::TypeRef(_) => unreachable!(), // Unresolved TypeRef, REALLY shouldn't happen
+				Type::Unresolved { .. }=> unreachable!(), // Unresolved TypeRef, REALLY shouldn't happen
 
 				Type::Array(_, _) => todo!(),
 
@@ -440,12 +471,59 @@ impl Type {
 			}
 		}
 	}
+	
+	pub fn is_signed(&self) -> bool {
+		if let Type::Basic(b) = self {
+			b.is_signed()
+		} else {
+			false
+		}
+	}
+
+	pub fn get_discriminant_type(&self) -> Option<Basic> {
+		match self {
+			Type::Tuple(TupleKind::Sum, _) => Some(Basic::Integral {
+				signed: false,
+				size_bytes: 4,
+			}),
+
+			_ => None,
+		}
+	}
+
+	pub fn is_void(&self) -> bool {
+		self == &Type::Basic(Basic::Void)
+	}
+
+	pub fn get_ir_typename(&self) -> String {
+		let Type::TypeRef { def, args } = self else { panic!() };
+		
+		let mut typename = def.upgrade().unwrap().read().unwrap().name.to_string();
+		
+		if !args.is_empty() {
+			typename.push('<');
+
+			let mut iter = args.iter();
+
+			typename.push_str(&iter.next().unwrap().to_string());
+
+			for param in iter {
+				typename.push_str(&param.to_string())
+			}
+
+			typename.push('>');
+		}
+		
+		typename
+	}
 }
 
 impl PartialEq for TypeRef {
 	fn eq(&self, other: &Self) -> bool {
-		Arc::ptr_eq(&self.def.upgrade().unwrap(), &other.def.upgrade().unwrap())
-			&& self.args == other.args
+		Arc::ptr_eq(
+			&self.def.upgrade().unwrap(), 
+			&other.def.upgrade().unwrap()
+		) && self.args == other.args
 	}
 }
 
@@ -465,12 +543,21 @@ impl PartialEq for Type {
 					mutable: r1,
 				},
 			) => l0 == r0 && l1 == r1,
-			(Self::TypeRef(l0), Self::TypeRef(r0)) => l0 == r0,
 			(Self::TypeParam(l0), Self::TypeParam(r0)) => l0 == r0,
 			(Self::Array(l0, _l1), Self::Array(r0, _r1)) => l0 == r0,
 			(Self::Tuple(l0, l1), Self::Tuple(r0, r1)) => l0 == r0 && l1 == r1,
 			(Self::Never, Self::Never) => true,
 			(Self::Function(l0, l1), Self::Function(r0, r1)) => l0 == r0 && l1 == r1,
+			
+			(
+				Self::TypeRef { def: l0, args: l1 }, 
+				Self::TypeRef { def: r0, args: r1 }
+			) => 
+				Arc::ptr_eq(&l0.upgrade().unwrap(), &r0.upgrade().unwrap()) 
+					&& l1 == r1,
+			
+			(Self::Unresolved { .. }, _) | (_, Self::Unresolved { .. }) => panic!(),
+
 			_ => false,
 		}
 	}
@@ -487,6 +574,7 @@ impl Hash for AlgebraicDef {
 		}
 	}
 }
+
 impl Hash for TypeRef {
 	fn hash<H: Hasher>(&self, state: &mut H) {
 		ptr::hash(self.def.upgrade().unwrap().as_ref(), state);
@@ -510,17 +598,20 @@ impl Hash for Type {
 				"+".hash(state)
 			}
 
-			Type::TypeRef(ItemRef::Unresolved {
+			Type::Unresolved {
 				name,
 				scope,
 				type_args,
-			}) => {
+			} => {
 				name.hash(state);
 				scope.hash(state);
 				type_args.hash(state);
 			}
 
-			Type::TypeRef(ItemRef::Resolved(ty)) => ty.hash(state),
+			Type::TypeRef { def, args } => {
+				ptr::hash(def.upgrade().unwrap().as_ref(), state);
+				args.hash(state);
+			}
 
 			Type::TypeParam(name) => name.hash(state),
 
@@ -560,9 +651,9 @@ impl Display for Type {
 
 			Type::Array(t, _s) => write!(f, "{}[]", t),
 
-			Type::TypeRef(ItemRef::Unresolved {
+			Type::Unresolved {
 				name, type_args, ..
-			}) => {
+			} => {
 				write!(f, "\"{name}\"")?;
 
 				if !type_args.is_empty() {
@@ -579,7 +670,7 @@ impl Display for Type {
 				Ok(())
 			}
 
-			Type::TypeRef(ItemRef::Resolved(TypeRef { def, args, .. })) => {
+			Type::TypeRef { def, args } => {
 				write!(f, "{}", def.upgrade().unwrap().read().unwrap().name)?;
 
 				if !args.is_empty() {
@@ -667,14 +758,30 @@ impl Display for FnPrototype {
 
 impl Display for AlgebraicDef {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		let mut members = self.members.iter();
+		if self.members.is_empty() {
+			write!(f, "{{ }};\n\n")
+		} else {
+			let mut members = self.members.iter();
+			
+			let (ty, name, vis) = members.next().unwrap();
 
-		write!(f, "Struct {{{:?}", members.next().unwrap().1)?;
+			write!(f, "{{\n\t{vis} {ty} {name};\n")?;
 
-		for mem in members {
-			write!(f, ", {:?}", mem.1)?;
+			for (ty, name, vis) in members {
+				write!(f, "\t{vis} {ty} {name};\n")?;
+			}
+			write!(f, "}};\n\n")
 		}
-		write!(f, "}}")
+	}
+}
+
+impl Display for Visibility {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		write!(f, "{}", match self {
+			Visibility::Private => "private",
+			Visibility::Protected => "protected",
+			Visibility::Public => "public",
+		})
 	}
 }
 
@@ -699,17 +806,17 @@ impl std::fmt::Debug for Type {
 			Type::Basic(arg0) => f.debug_tuple("Basic").field(arg0).finish(),
 			Type::Pointer { .. } => f.debug_tuple("Pointer").finish(),
 			Type::Array(t, _) => f.debug_tuple("Array").field(t).finish(),
-			Type::TypeRef(ItemRef::Unresolved {
+			Type::Unresolved {
 				name: arg0,
 				scope: arg1,
 				type_args: arg2,
-			}) => f
+			} => f
 				.debug_tuple("Unresolved")
 				.field(arg0)
 				.field(arg1)
 				.field(arg2)
 				.finish(),
-			Type::TypeRef(ItemRef::Resolved(TypeRef { def: arg0, .. })) => {
+			Type::TypeRef { def: arg0, .. } => {
 				f.debug_tuple("TypeRef").field(arg0).finish()
 			}
 			Type::TypeParam(arg0) => f.debug_tuple("TypeParam").field(arg0).finish(),

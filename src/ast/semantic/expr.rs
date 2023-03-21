@@ -5,9 +5,8 @@ use crate::{
 	ast::{
 		controlflow::ControlFlow,
 		expression::{Atom, Expr, FnRef, NodeData, OnceAtom, Operator},
-		module::ItemRef,
 		pattern::Binding,
-		types::{Basic, TupleKind, TypeDefKind, TypeRef},
+		types::{Basic, TupleKind, TypeDefKind},
 		FnScope,
 	},
 	constexpr::{ConstExpr, ConstValue},
@@ -243,16 +242,16 @@ impl Expr {
 		scope: &mut FnScope,
 		meta: &NodeData,
 	) -> ComuneResult<Type> {
-		let Type::TypeRef(ItemRef::Resolved(lhs_ref)) = lhs_ty else {
+		let Type::TypeRef { def: lhs_def, args: lhs_args } = lhs_ty else {
 			return Err(ComuneError::new(ComuneErrCode::InvalidSubscriptLHS { t: lhs_ty.clone() }, meta.tk));
 		};
 
-		match &lhs_ref.def.upgrade().unwrap().read().unwrap().def {
+		match &lhs_def.upgrade().unwrap().read().unwrap().def {
 			// Dot operator is on an algebraic type, so check if it's a member access or method call
 			TypeDefKind::Algebraic(t) => match rhs {
 				// Member access on algebraic type
 				Expr::Atom(Atom::Identifier(id), _) => {
-					if let Some((_, m)) = t.get_member(id.name(), Some(&lhs_ref.args)) {
+					if let Some((_, m)) = t.get_member(id.name(), Some(lhs_args)) {
 						rhs.get_node_data_mut().ty = Some(m.clone());
 
 						Ok(m)
@@ -356,10 +355,10 @@ impl Atom {
 
 			Atom::ArrayLit(elems) => {
 				let array_len =
-					Arc::new(RwLock::new(vec![ConstExpr::Result(ConstValue::Integral(
+					Arc::new(RwLock::new(ConstExpr::Result(ConstValue::Integral(
 						elems.len() as i128,
 						Some(Basic::PtrSizeInt { signed: false }),
-					))]));
+					))));
 
 				match &meta.ty {
 					Some(Type::Array(ty, _)) => {
@@ -403,7 +402,7 @@ impl Atom {
 			}
 
 			Atom::AlgebraicLit(ty, elems) => {
-				if let Type::TypeRef(ItemRef::Resolved(TypeRef { def, args, .. })) = ty {
+				if let Type::TypeRef{ def, args } = ty {
 					if let TypeDefKind::Algebraic(alg) = &def.upgrade().unwrap().read().unwrap().def
 					{
 						for (name, expr) in elems.iter_mut() {

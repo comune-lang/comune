@@ -2,7 +2,7 @@ use std::{
 	collections::{HashMap, HashSet},
 	fmt::{Debug, Display},
 	hash::Hash,
-	sync::{Arc, RwLock},
+	sync::{Arc, RwLock}, path::PathBuf,
 };
 
 use crate::{
@@ -14,7 +14,7 @@ use crate::{
 use super::{
 	expression::Expr,
 	traits::{ImplSolver, TraitInterface, TraitRef},
-	types::{Basic, FnPrototype, Type, TypeDef, TypeRef},
+	types::{Basic, FnPrototype, Type, TypeDef},
 };
 
 // String plays nicer with debuggers
@@ -32,6 +32,13 @@ pub enum ModuleImportKind {
 	Extern(Identifier),
 }
 
+#[derive(Debug, Clone)]
+pub struct ModuleImport {
+	pub interface: Arc<ModuleInterface>,
+	pub import_kind: ModuleImportKind,
+	pub path: PathBuf,
+}
+
 // The full module dependency system is complex, as the compiler is
 // designed to have as few parallelization bottlenecks as possible.
 // Rust's concurrency features may have driven me a bit mad with power.
@@ -41,19 +48,21 @@ pub enum ModuleImportKind {
 // expression bodies, only the prototypes of namespace items.
 // This is quick to construct, and downstream modules depend on
 // this stage for expression parsing.
-#[derive(Default, Clone, Debug)]
+#[derive(Default, Debug)]
 pub struct ModuleInterface {
 	pub path: Identifier,
 	pub children: HashMap<Identifier, ModuleItemInterface>,
 	pub import_names: HashSet<ModuleImportKind>,
-	pub imported: HashMap<Name, Arc<ModuleInterface>>,
+	pub imported: HashMap<Name, ModuleImport>,
 	pub trait_solver: ImplSolver,
+	pub is_typed: bool,
 }
+
 // Struct representing a module's implementation.
 // Using Vec because Arc<RwLock<T>> is not Hash for T: Hash, and
 // i do not want to start doing newtype bullshit right now
 // The Identifier here is the function's scope, for name resolution
-#[derive(Default, Clone, Debug)]
+#[derive(Default, Debug)]
 pub struct ModuleImpl {
 	pub fn_impls: Vec<(Arc<RwLock<FnPrototype>>, ModuleASTElem)>,
 }
@@ -89,7 +98,33 @@ impl ModuleInterface {
 			import_names: HashSet::from([ModuleImportKind::Language("core".into())]),
 			imported: HashMap::new(),
 			trait_solver: ImplSolver::new(),
+			is_typed: false,
 		}
+	}
+
+	pub fn get_external_interface(&self, require_typed: bool) -> Self {
+		let result = ModuleInterface { 
+			path: self.path.clone(),
+			children: self.children.clone(),
+			import_names: HashSet::new(),
+			
+			imported: self.imported
+						.iter()
+						.filter(|import| matches!(import.1.import_kind, ModuleImportKind::Child(_)))
+						.map(|(k, v)| (k.clone(), v.clone()))
+						.collect(),
+
+			trait_solver: self.trait_solver.clone(),
+			is_typed: self.is_typed
+		};
+		
+		if require_typed {
+			for (_, import) in &result.imported {
+				assert!(import.interface.is_typed);
+			}
+		}
+		
+		result
 	}
 
 	pub fn get_item<'a>(
@@ -109,7 +144,7 @@ impl ModuleInterface {
 						let mut id_sub = id.clone();
 						id_sub.path.remove(0);
 
-						return import.get_item(&id_sub);
+						return import.interface.get_item(&id_sub);
 					}
 				}
 
@@ -151,10 +186,10 @@ impl ModuleInterface {
 
 		match found {
 			Some((_, ModuleItemInterface::Type(ty))) => {
-				Some(Type::TypeRef(ItemRef::Resolved(TypeRef {
+				Some(Type::TypeRef {
 					def: Arc::downgrade(ty),
 					args: vec![],
-				})))
+				})
 			}
 
 			Some((_, ModuleItemInterface::Alias(alias))) => {
@@ -168,7 +203,7 @@ impl ModuleInterface {
 					let mut id_sub = id.clone();
 					id_sub.path.remove(0);
 
-					imported.resolve_type(&id_sub, &Identifier::new(true))
+					imported.interface.resolve_type(&id_sub, &Identifier::new(true))
 				} else {
 					None
 				}
@@ -225,7 +260,7 @@ impl ModuleInterface {
 			let mut id_relative = id.clone();
 			id_relative.path.remove(0);
 
-			imported.1.with_item(&id_relative, scope, closure)
+			imported.1.interface.with_item(&id_relative, scope, closure)
 		} else {
 			// Nada
 			None
@@ -328,6 +363,9 @@ pub enum ModuleASTElem {
 	Unparsed(TokenIndex),
 	NoElem,
 }
+
+
+// This is old and unwieldy as hell and I gotta get around to removing it
 
 #[derive(Clone)]
 pub enum ItemRef<T: Clone> {

@@ -6,7 +6,7 @@ use crate::{
 		module::{ItemRef, ModuleInterface, ModuleItemInterface},
 		traits::{TraitInterface, TraitRef},
 		types::{
-			self, AlgebraicDef, FnPrototype, GenericParamList, Type, TypeDef, TypeDefKind, TypeRef,
+			self, AlgebraicDef, FnPrototype, GenericParamList, Type, TypeDef, TypeDefKind,
 		},
 		FnScope,
 	},
@@ -158,11 +158,11 @@ pub fn resolve_type(
 
 		Type::Array(pointee, _size) => resolve_type(pointee, namespace, generics),
 
-		Type::TypeRef(ItemRef::Unresolved {
+		Type::Unresolved {
 			name: id,
 			scope,
 			type_args,
-		}) => {
+		} => {
 			let result;
 			let generic_pos = generics.iter().position(|(name, ..)| name == id.name());
 
@@ -173,9 +173,13 @@ pub fn resolve_type(
 				result = namespace.resolve_type(id, scope);
 			}
 
-			if let Some(Type::TypeRef(ItemRef::Resolved(TypeRef { def, mut args }))) = result {
+			for arg in type_args.iter_mut() {
+				resolve_type(arg, namespace, generics)?;
+			}
+
+			if let Some(Type::TypeRef { def, mut args }) = result {
 				args.append(type_args);
-				*ty = Type::TypeRef(ItemRef::Resolved(TypeRef { def, args }));
+				*ty = Type::TypeRef { def, args };
 				Ok(())
 			} else if let Some(resolved) = result {
 				*ty = resolved;
@@ -284,7 +288,7 @@ pub fn check_cyclical_deps(
 ) -> ComuneResult<()> {
 	if let TypeDefKind::Algebraic(agg) = &ty.read().unwrap().def {
 		for member in agg.members.iter() {
-			if let Type::TypeRef(ItemRef::Resolved(TypeRef { def: ref_t, .. })) = &member.1 {
+			if let Type::TypeRef { def: ref_t, .. } = &member.1 {
 				// Member is of a user-defined type
 
 				if parent_types
@@ -320,23 +324,14 @@ impl Type {
 	pub fn validate<'ctx>(&self, scope: &'ctx FnScope<'ctx>) -> ComuneResult<()> {
 		match self {
 			Type::Array(_, n) => {
-				// Old fashioned way to make life easier with the RefCell
-				let mut idx = 0;
-				let len = n.read().unwrap().len();
 
-				while idx < len {
-					let mut result = None;
+				let result = if let ConstExpr::Expr(e) = &*n.read().unwrap() {
+					 ConstExpr::Result(e.eval_const(scope)?)
+				} else {
+					panic!()
+				};
 
-					if let ConstExpr::Expr(e) = &n.read().unwrap()[idx] {
-						result = Some(ConstExpr::Result(e.eval_const(scope)?));
-					}
-
-					if let Some(result) = result {
-						n.write().unwrap()[idx] = result;
-					}
-
-					idx += 1;
-				}
+				*n.write().unwrap() = result;
 			}
 
 			Type::Tuple(_, types) => {

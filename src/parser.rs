@@ -17,7 +17,7 @@ use crate::ast::statement::Stmt;
 use crate::ast::traits::{ImplBlockInterface, TraitInterface, TraitRef};
 use crate::ast::types::{
 	AlgebraicDef, Basic, BindingProps, FnParamList, FnPrototype, GenericParamList, TupleKind, Type,
-	TypeDef, TypeDefKind, TypeRef, Visibility,
+	TypeDef, TypeDefKind, Visibility,
 };
 use crate::ast::Attribute;
 
@@ -341,7 +341,7 @@ impl Parser {
 						self.get_next()?;
 
 						// We parsed the trait as a type, so extract it
-						let Type::TypeRef(ItemRef::Unresolved { name, scope, type_args }) = impl_ty else {
+						let Type::Unresolved { name, scope, type_args } = impl_ty else {
 							return self.err(ComuneErrCode::ExpectedIdentifier); // TODO: Proper error
 						};
 
@@ -1057,12 +1057,12 @@ impl Parser {
 		if self.is_at_identifier_token()? {
 			let id = self.parse_identifier()?;
 
-			if let Some(Type::TypeRef(ItemRef::Resolved(mut found))) = self.find_type(&id) {
-				match &found.def.upgrade().unwrap().read().unwrap().def {
+			if let Some(Type::TypeRef { def, mut args }) = self.find_type(&id) {
+				match &def.upgrade().unwrap().read().unwrap().def {
 					// Parse with algebraic typename
 					TypeDefKind::Algebraic(_) => {
 						if let Token::Operator("<") = self.get_current()? {
-							found.args = self.parse_type_argument_list()?;
+							args = self.parse_type_argument_list(true)?;
 						}
 
 						if let Token::Other('{') = self.get_current()? {
@@ -1089,7 +1089,7 @@ impl Parser {
 							self.consume(&Token::Other('}'))?;
 
 							result = Some(Atom::AlgebraicLit(
-								Type::TypeRef(ItemRef::Resolved(found)),
+								Type::TypeRef { def, args },
 								inits,
 							));
 						} else {
@@ -1117,7 +1117,7 @@ impl Parser {
 							});
 
 						if is_function {
-							type_args = self.parse_type_argument_list()?
+							type_args = self.parse_type_argument_list(true)?
 						} else {
 							// Not a function, return as plain Identifier early
 							return Ok(result.unwrap());
@@ -1707,11 +1707,11 @@ impl Parser {
 					return self.err(ComuneErrCode::UnresolvedTypename(typename.to_string()));
 				}
 			} else {
-				result = Type::TypeRef(ItemRef::Unresolved {
+				result = Type::Unresolved {
 					name: typename,
 					scope: self.current_scope.clone(),
 					type_args: vec![],
-				});
+				};
 			}
 
 			match self.get_current()? {
@@ -1754,7 +1754,7 @@ impl Parser {
 
 					result = Type::Array(
 						Box::new(result),
-						Arc::new(RwLock::new(vec![ConstExpr::Expr(const_expr)])),
+						Arc::new(RwLock::new(ConstExpr::Expr(const_expr))),
 					);
 				}
 
@@ -1789,14 +1789,9 @@ impl Parser {
 				Token::Operator("<") => {
 					// Type parameters
 
-					if let Type::TypeRef(
-						ItemRef::Resolved(TypeRef { args, .. })
-						| ItemRef::Unresolved {
-							type_args: args, ..
-						},
-					) = &mut result
+					if let Type::TypeRef { args, .. } | Type::Unresolved { type_args: args, .. } = &mut result
 					{
-						*args = self.parse_type_argument_list()?;
+						*args = self.parse_type_argument_list(immediate_resolve)?;
 					} else {
 						panic!("can't apply type parameters to this type of Type!") // TODO: Real error handling
 					}
@@ -1949,13 +1944,13 @@ impl Parser {
 		Ok(result)
 	}
 
-	fn parse_type_argument_list(&self) -> ComuneResult<Vec<Type>> {
+	fn parse_type_argument_list(&self, immediate_resolve: bool) -> ComuneResult<Vec<Type>> {
 		self.get_next()?;
 
 		let mut result = vec![];
 
 		loop {
-			let generic = self.parse_type(true)?;
+			let generic = self.parse_type(immediate_resolve)?;
 			result.push(generic);
 
 			if self.get_current()? == Token::Other(',') {

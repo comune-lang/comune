@@ -22,12 +22,12 @@ use inkwell::{
 use crate::{
 	ast::{
 		expression::Operator,
-		types::{Basic, BindingProps, DataLayout, TupleKind},
+		types::{Basic, BindingProps, DataLayout, TupleKind, Type, TypeDefKind, AlgebraicDef},
 	},
 	cir::{
-		CIRFnCall, CIRFnPrototype, CIRFunction, CIRModule, CIRStmt, CIRType, CIRTypeDef, LValue,
+		CIRFnCall, CIRFnPrototype, CIRFunction, CIRModule, CIRStmt, LValue,
 		Operand, PlaceElem, RValue,
-	},
+	}, constexpr::{ConstExpr, ConstValue},
 };
 
 pub fn get_target_machine() -> TargetMachine {
@@ -113,25 +113,22 @@ impl<'ctx> LLVMBackend<'ctx> {
 	pub fn compile_module(&mut self, module: &CIRModule) -> LLVMResult<()> {
 		// Add opaque types
 
-		for (i, ty) in &module.types {
-			match ty {
-				CIRTypeDef::Algebraic { .. } | CIRTypeDef::Class { .. } => self.type_map.insert(
-					i.clone(),
-					self.context.opaque_struct_type(i).as_any_type_enum(),
-				),
-			};
+		for (i, _) in &module.types {
+			let opaque = self.context.opaque_struct_type(&i.to_string()).as_any_type_enum();
+
+			self.type_map.insert(i.clone(), opaque);
 		}
 
 		// Define type bodies
 
 		for (i, ty) in &module.types {
-			match ty {
-				CIRTypeDef::Algebraic {
+			match &ty.read().unwrap().def {
+				TypeDefKind::Algebraic(AlgebraicDef {
 					members, layout, ..
-				} => {
+				}) => {
 					let mut members_ir = vec![];
 
-					for mem in members {
+					for (_, mem, _) in members {
 						members_ir.push(Self::to_basic_type(self.get_llvm_type(mem)));
 					}
 
@@ -140,7 +137,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 					type_ir.set_body(&members_ir, *layout == DataLayout::Packed);
 				}
 
-				CIRTypeDef::Class {} => todo!(),
+				TypeDefKind::Class {} => todo!(),
 			}
 		}
 
@@ -247,7 +244,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 					CIRStmt::Switch(cond, branches, else_block) => {
 						let cond_ir = self
 							.generate_operand(
-								&CIRType::Basic(Basic::Integral {
+								&Type::Basic(Basic::Integral {
 									signed: true,
 									size_bytes: 4,
 								}),
@@ -513,7 +510,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 				span: _,
 			} => {
 				match to {
-					CIRType::Tuple(TupleKind::Sum, types) => {
+					Type::Tuple(TupleKind::Sum, types) => {
 						let val = self.generate_operand(from, val);
 						let idx = types.iter().position(|ty| ty == from).unwrap();
 
@@ -540,13 +537,13 @@ impl<'ctx> LLVMBackend<'ctx> {
 					}
 
 					_ => match from {
-						CIRType::Basic(b) => {
+						Type::Basic(b) => {
 							if from.is_integral() || from.is_floating_point() {
 								let val = self.generate_operand(from, val);
 
 								match val {
 									BasicValueEnum::IntValue(i) => match &to {
-										CIRType::Basic(Basic::Bool) => self.builder.build_store(
+										Type::Basic(Basic::Bool) => self.builder.build_store(
 											store,
 											self.builder
 												.build_select(
@@ -628,10 +625,10 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 								match b {
 									Basic::Str => {
-										let CIRType::Pointer { pointee: other_p, .. } = to else {
+										let Type::Pointer { pointee: other_p, .. } = to else {
 											panic!()
 										};
-										let CIRType::Basic(Basic::Char) = **other_p else {
+										let Type::Basic(Basic::Char) = **other_p else {
 											panic!()
 										};
 										// Cast from `str` to char*
@@ -667,7 +664,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 									}
 
 									Basic::Bool => {
-										if let CIRType::Basic(Basic::Integral { signed, .. }) = to {
+										if let Type::Basic(Basic::Integral { signed, .. }) = to {
 											let val = self
 												.generate_operand(from, val)
 												.as_basic_value_enum()
@@ -693,7 +690,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 							}
 						}
 
-						CIRType::Pointer { .. } => {
+						Type::Pointer { .. } => {
 							let val = self.generate_operand(from, val);
 							let to_ir = self.get_llvm_type(to);
 							self.builder.build_store(
@@ -708,7 +705,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 							)
 						}
 
-						CIRType::Tuple(TupleKind::Sum, _) => {
+						Type::Tuple(TupleKind::Sum, _) => {
 							// Tuple downcast, aka just indexing into the data field
 							let val = self.generate_operand(from, val);
 							let tmp = self.builder.build_alloca(val.get_type(), "tmp");
@@ -742,7 +739,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 		}
 	}
 
-	fn generate_operand(&self, ty: &CIRType, expr: &Operand) -> BasicValueEnum<'ctx> {
+	fn generate_operand(&self, ty: &Type, expr: &Operand) -> BasicValueEnum<'ctx> {
 		match expr {
 			Operand::StringLit(s, _) => {
 				let len = s.as_bytes().len().try_into().unwrap();
@@ -970,9 +967,9 @@ impl<'ctx> LLVMBackend<'ctx> {
 		}
 	}
 
-	fn get_llvm_type(&self, ty: &CIRType) -> AnyTypeEnum<'ctx> {
+	fn get_llvm_type(&self, ty: &Type) -> AnyTypeEnum<'ctx> {
 		match ty {
-			CIRType::Basic(basic) => match basic {
+			Type::Basic(basic) => match basic {
 				Basic::Integral { size_bytes, .. } => match size_bytes {
 					8 => self.context.i64_type(),
 					4 => self.context.i32_type(),
@@ -1000,12 +997,12 @@ impl<'ctx> LLVMBackend<'ctx> {
 				Basic::Str => self.slice_type(&self.context.i8_type()).as_any_type_enum(),
 			},
 
-			CIRType::Array(arr_ty, size) => Self::to_basic_type(self.get_llvm_type(arr_ty))
-				.array_type(size.iter().sum::<i128>() as u32)
+			Type::Array(arr_ty, size) => Self::to_basic_type(self.get_llvm_type(arr_ty))
+				.array_type(if let ConstExpr::Result(ConstValue::Integral(e, _)) = &*size.read().unwrap() { *e as u32 } else { panic!() })
 				.as_any_type_enum(),
 
-			CIRType::Pointer { pointee, .. } | CIRType::Reference(pointee) => {
-				if let CIRType::Basic(Basic::Void) = &**pointee {
+			Type::Pointer { pointee, .. } => {
+				if let Type::Basic(Basic::Void) = &**pointee {
 					// void* isn't valid in LLVM, so we generate an i8* type instead
 					self.context
 						.i8_type()
@@ -1018,9 +1015,9 @@ impl<'ctx> LLVMBackend<'ctx> {
 				}
 			}
 
-			CIRType::TypeRef(idx, _) => self.type_map[idx],
+			Type::TypeRef { .. } => self.type_map[&ty.get_ir_typename()],
 
-			CIRType::Tuple(kind, types) => {
+			Type::Tuple(kind, types) => {
 				let types_mapped: Vec<_> = types
 					.iter()
 					.map(|ty| Self::to_basic_type(self.get_llvm_type(ty)))
@@ -1069,7 +1066,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 				}
 			}
 
-			CIRType::FunctionPtr { ret, args } => {
+			Type::Function(ret, args) => {
 				// TODO: vararg support
 				let args_mapped = args
 					.iter()
@@ -1084,7 +1081,9 @@ impl<'ctx> LLVMBackend<'ctx> {
 				.as_any_type_enum()
 			}
 
-			CIRType::TypeParam(_) => panic!("unexpected TypeParam in codegen!"),
+			Type::TypeParam(_) => panic!("unexpected TypeParam in codegen!"),
+
+			_ => panic!(),
 		}
 	}
 

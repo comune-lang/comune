@@ -1,26 +1,28 @@
 // cIR monomorphization module
 
-use std::collections::{HashMap, HashSet};
+use std::{collections::{HashMap, HashSet}, sync::{RwLock, Arc}};
 
 use crate::{
-	ast::{get_attribute, module::Identifier, types::Basic},
+	ast::{get_attribute, module::Identifier, types::{Basic, TypeDef, TypeDefKind, AlgebraicDef}},
 	lexer::Token,
 };
 
 use super::{
-	CIRFnCall, CIRFnMap, CIRFunction, CIRModule, CIRStmt, CIRType, CIRTypeDef, FuncID, RValue,
+	CIRFnCall, CIRFnMap, CIRFunction, CIRModule, CIRStmt, Type, FuncID, RValue,
 	TypeName,
 };
 
 // A set of requested Generic monomorphizations, with a Vec of type arguments
 // TODO: Extend system to support constants as arguments
-type MonoizationList = HashSet<(Identifier, Vec<CIRType>)>;
+type MonoizationList = HashSet<(Identifier, Vec<Type>)>;
 
-type TypeSubstitutions = Vec<CIRType>;
+type TypeSubstitutions = Vec<Type>;
 
 // Map from index + parameters to indices of existing instances
 type TypeInstances = HashMap<TypeName, HashMap<TypeSubstitutions, TypeName>>;
 type FuncInstances = HashMap<FuncID, HashMap<TypeSubstitutions, FuncID>>;
+type TypeMap = HashMap<TypeName, Arc<RwLock<TypeDef>>>;
+
 
 impl CIRModule {
 	// monoize() consumes `self` and returns a CIRModule with all generics monomorphized, names mangled, etc.
@@ -80,7 +82,7 @@ impl CIRModule {
 		functions_in: &CIRFnMap,
 		functions_out: &mut CIRFnMap,
 		func: &CIRFunction,
-		types: &mut HashMap<TypeName, CIRTypeDef>,
+		types: &mut HashMap<TypeName, Arc<RwLock<TypeDef>>>,
 		param_map: &TypeSubstitutions,
 		ty_instances: &mut TypeInstances,
 		fn_instances: &mut FuncInstances,
@@ -130,7 +132,7 @@ impl CIRModule {
 		functions_in: &CIRFnMap,
 		functions_out: &mut CIRFnMap,
 		func: &mut CIRFnCall,
-		types: &mut HashMap<TypeName, CIRTypeDef>,
+		types: &mut HashMap<TypeName, Arc<RwLock<TypeDef>>>,
 		param_map: &TypeSubstitutions,
 		ty_instances: &mut TypeInstances,
 		fn_instances: &mut FuncInstances,
@@ -185,7 +187,7 @@ impl CIRModule {
 	}
 
 	fn monoize_rvalue_types(
-		types: &mut HashMap<String, CIRTypeDef>,
+		types: &mut TypeMap,
 		rval: &mut RValue,
 		param_map: &TypeSubstitutions,
 		type_instances: &mut TypeInstances,
@@ -210,76 +212,86 @@ impl CIRModule {
 	}
 
 	fn monoize_type(
-		types: &mut HashMap<String, CIRTypeDef>,
-		ty: &mut CIRType,
+		types: &mut TypeMap,
+		ty: &mut Type,
 		param_map: &TypeSubstitutions,
 		instances: &mut TypeInstances,
 	) {
 		match ty {
-			CIRType::Basic(_) => {}
+			Type::Basic(_) => {}
 
-			CIRType::Pointer { pointee, .. } => {
+			Type::Pointer { pointee, .. } => {
 				Self::monoize_type(types, pointee, param_map, instances)
 			}
-			CIRType::Array(arr_ty, _) => Self::monoize_type(types, arr_ty, param_map, instances),
-			CIRType::Reference(refee) => Self::monoize_type(types, refee, param_map, instances),
 
-			CIRType::TypeRef(idx, args) => {
+			Type::Array(arr_ty, _) => Self::monoize_type(types, arr_ty, param_map, instances),
+
+			Type::TypeRef { def, args } => {
 				// If we're referring to a type with generics, check if the
 				// instantation we want exists already. If not, create it.
+				let def_up = def.upgrade().unwrap();
+				let name = &def_up.read().unwrap().name;
+				
 				if !args.is_empty() {
-					if !instances.contains_key(idx) {
-						instances.insert(idx.clone(), HashMap::new());
+					let typename = name.to_string();
+
+					if !instances.contains_key(&typename) {
+						instances.insert(typename.clone(), HashMap::new());
 					}
 
-					if !instances[idx].contains_key(param_map) {
-						*idx = Self::instantiate_type_def(types, idx.clone(), args, instances);
+					if !instances[&typename].contains_key(param_map) {
+						Self::instantiate_type_def(types, typename.clone(), args, instances);
+						*def = Arc::downgrade(&types[&typename]);
 					}
 				}
 			}
 
-			CIRType::TypeParam(idx) => {
+			Type::TypeParam(idx) => {
 				*ty = param_map[*idx].clone();
 			}
 
-			CIRType::Tuple(_, tuple_types) => {
+			Type::Tuple(_, tuple_types) => {
 				for ty in tuple_types {
 					Self::monoize_type(types, ty, param_map, instances)
 				}
 			}
 
-			CIRType::FunctionPtr { ret, args } => {
+			Type::Function(ret, args) => {
 				Self::monoize_type(types, ret, param_map, instances);
 
 				for (_, arg) in args {
 					Self::monoize_type(types, arg, param_map, instances)
 				}
 			}
+
+			Type::Never => {},
+
+			Type::Unresolved { .. } => panic!(),
 		}
 	}
 
-	// Takes a Generic CIRTypeDef with parameters and instantiates it.
+	// Takes a Generic TypeDef with parameters and instantiates it.
 	fn instantiate_type_def(
-		types: &mut HashMap<String, CIRTypeDef>,
+		types: &mut TypeMap,
 		name: TypeName,
 		param_map: &TypeSubstitutions,
 		instances: &mut TypeInstances,
 	) -> TypeName {
-		let mut instance = types[&name].clone();
+		let mut instance = types[&name].read().unwrap().clone();
 
-		match &mut instance {
-			CIRTypeDef::Algebraic {
+		match &mut instance.def {
+			TypeDefKind::Algebraic(AlgebraicDef {
 				members,
-				type_params,
+				params,
 				..
-			} => {
-				for member in members {
+			}) => {
+				for (_, member, _) in members {
 					Self::monoize_type(types, member, param_map, instances);
 				}
-				type_params.clear();
+				params.clear();
 			}
 
-			CIRTypeDef::Class {} => todo!(),
+			TypeDefKind::Class {} => todo!(),
 		}
 
 		let mut iter = param_map.iter();
@@ -291,7 +303,7 @@ impl CIRModule {
 
 		insert_idx += ">";
 
-		types.insert(insert_idx.clone(), instance);
+		types.insert(insert_idx.clone(), Arc::new(RwLock::new(instance)));
 		insert_idx
 	}
 
@@ -352,14 +364,13 @@ fn mangle_name(name: &Identifier, func: &CIRFunction) -> String {
 	result
 }
 
-impl CIRType {
+impl Type {
 	fn mangle(&self) -> String {
 		match self {
-			CIRType::Basic(b) => String::from(b.mangle()),
-			CIRType::Pointer { pointee, .. } => String::from("P") + &pointee.mangle(),
-			CIRType::Reference(r) => String::from("R") + &r.mangle(),
-			CIRType::TypeRef(_, _) => String::from("S_"),
-			CIRType::FunctionPtr { ret, args } => {
+			Type::Basic(b) => String::from(b.mangle()),
+			Type::Pointer { pointee, .. } => String::from("P") + &pointee.mangle(),
+			Type::TypeRef { .. } => String::from("S_"),
+			Type::Function(ret, args) => {
 				let mut result = String::from("PF");
 
 				result.push_str(&ret.mangle());

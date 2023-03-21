@@ -1,12 +1,12 @@
 #![allow(dead_code)]
 
-use std::{collections::HashMap, ffi::CString, hash::Hash};
+use std::{collections::HashMap, ffi::CString, hash::Hash, sync::{RwLock, Arc}};
 
 use crate::{
 	ast::{
 		expression::Operator,
 		module::{Identifier, Name},
-		types::{Basic, BindingProps, DataLayout, TupleKind, TypeParam},
+		types::{Basic, BindingProps, TypeParam, Type, TypeDef},
 		Attribute,
 	},
 	lexer::SrcSpan,
@@ -27,7 +27,7 @@ type TypeName = String;
 type TypeParamIndex = usize;
 type FuncID = CIRFnPrototype;
 
-pub type CIRTypeParamList = Vec<(Name, TypeParam, Option<CIRType>)>;
+pub type CIRTypeParamList = Vec<(Name, TypeParam, Option<Type>)>;
 
 // An LValue is an expression that results in a memory location.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -41,7 +41,7 @@ pub struct LValue {
 pub enum PlaceElem {
 	Deref,
 	Field(FieldIndex),
-	Index(CIRType, Operand),
+	Index(Type, Operand),
 }
 
 impl PartialEq for PlaceElem {
@@ -76,11 +76,11 @@ impl Hash for PlaceElem {
 // All LValues are also usable as RValues, using Operand::LValue(LValue).
 #[derive(Clone, Debug)]
 pub enum RValue {
-	Atom(CIRType, Option<Operator>, Operand, SrcSpan),
-	Cons(CIRType, [(CIRType, Operand); 2], Operator, SrcSpan),
+	Atom(Type, Option<Operator>, Operand, SrcSpan),
+	Cons(Type, [(Type, Operand); 2], Operator, SrcSpan),
 	Cast {
-		from: CIRType,
-		to: CIRType,
+		from: Type,
+		to: Type,
 		val: Operand,
 		span: SrcSpan,
 	},
@@ -100,47 +100,13 @@ pub enum Operand {
 	Undef,
 }
 
-// A CIRType represents a non-unique instance of a comune type.
-// Not to be confused with CIRTypeDefs, which are unique descriptions of i.e. struct definitions.
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub enum CIRType {
-	Basic(Basic),
-	Pointer {
-		pointee: Box<CIRType>,
-		mutable: bool,
-	},
-	Array(Box<CIRType>, Vec<i128>),
-	Reference(Box<CIRType>),
-	TypeRef(TypeName, Vec<CIRType>), // TypeRef with zero or more type parameters
-	TypeParam(TypeParamIndex),
-	Tuple(TupleKind, Vec<CIRType>),
-	FunctionPtr {
-		ret: Box<CIRType>,
-		args: Vec<(BindingProps, CIRType)>,
-	},
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CIRTypeDef {
-	Algebraic {
-		members: Vec<CIRType>,
-		variants: Vec<CIRTypeDef>,
-		layout: DataLayout,
-		members_map: HashMap<Name, usize>,
-		variants_map: HashMap<Name, usize>,
-		type_params: CIRTypeParamList,
-	},
-
-	Class {},
-}
-
 #[derive(Debug, Clone)]
 pub enum CIRFnCall {
 	Direct(FuncID, SrcSpan),
 	Indirect {
 		local: LValue,
-		ret: CIRType,
-		args: Vec<(BindingProps, CIRType)>,
+		ret: Type,
+		args: Vec<(BindingProps, Type)>,
 		span: SrcSpan,
 	},
 }
@@ -150,12 +116,12 @@ pub enum CIRStmt {
 	Expression(RValue),
 	Assignment((LValue, SrcSpan), RValue),
 	Jump(BlockIndex),
-	Switch(Operand, Vec<(CIRType, Operand, BlockIndex)>, BlockIndex),
+	Switch(Operand, Vec<(Type, Operand, BlockIndex)>, BlockIndex),
 	Return(Option<Operand>),
 	FnCall {
 		id: CIRFnCall,
 		args: Vec<(LValue, SrcSpan)>,
-		type_args: Vec<CIRType>,
+		type_args: Vec<Type>,
 		result: Option<LValue>,
 		next: BlockIndex,
 		except: Option<BlockIndex>,
@@ -174,8 +140,8 @@ pub struct CIRBlock {
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct CIRFnPrototype {
 	pub name: Identifier,
-	pub ret: CIRType,
-	pub params: Vec<(BindingProps, CIRType)>,
+	pub ret: Type,
+	pub params: Vec<(BindingProps, Type)>,
 	pub type_params: CIRTypeParamList,
 }
 
@@ -183,9 +149,9 @@ pub struct CIRFnPrototype {
 pub struct CIRFunction {
 	// In cIR, variables are referenced by an index, not a name.
 	// (They may still have a name for pretty-printing, though.)
-	pub variables: Vec<(CIRType, BindingProps, Option<Name>)>,
+	pub variables: Vec<(Type, BindingProps, Option<Name>)>,
 	pub blocks: Vec<CIRBlock>,
-	pub ret: CIRType,
+	pub ret: Type,
 	pub arg_count: usize,
 	pub type_params: CIRTypeParamList,
 	pub attributes: Vec<Attribute>,
@@ -195,67 +161,23 @@ pub struct CIRFunction {
 }
 
 pub struct CIRModule {
-	pub types: HashMap<String, CIRTypeDef>,
-	pub globals: HashMap<Identifier, (CIRType, RValue)>,
+	pub types: HashMap<String, Arc<RwLock<TypeDef>>>,
+	pub globals: HashMap<Identifier, (Type, RValue)>,
 	pub functions: CIRFnMap,
 }
 
-impl CIRType {
-	pub fn is_integral(&self) -> bool {
-		if let CIRType::Basic(b) = self {
-			b.is_integral()
-		} else {
-			false
-		}
-	}
-
-	pub fn is_floating_point(&self) -> bool {
-		if let CIRType::Basic(b) = self {
-			b.is_floating_point()
-		} else {
-			false
-		}
-	}
-
-	pub fn is_boolean(&self) -> bool {
-		if let CIRType::Basic(b) = self {
-			b.is_boolean()
-		} else {
-			false
-		}
-	}
-
-	pub fn is_signed(&self) -> bool {
-		if let CIRType::Basic(b) = self {
-			b.is_signed()
-		} else {
-			false
-		}
-	}
-
-	pub fn get_discriminant_type(&self) -> Option<Basic> {
-		match self {
-			CIRType::Tuple(TupleKind::Sum, _) => Some(Basic::Integral {
-				signed: false,
-				size_bytes: 4,
-			}),
-
-			_ => None,
-		}
-	}
-}
 
 impl RValue {
 	pub fn const_bool(value: bool) -> Self {
 		RValue::Atom(
-			CIRType::Basic(Basic::Bool),
+			Type::Basic(Basic::Bool),
 			None,
 			Operand::BoolLit(value, SrcSpan::new()),
 			SrcSpan::new(),
 		)
 	}
 
-	pub fn get_type(&self) -> &CIRType {
+	pub fn get_type(&self) -> &Type {
 		match self {
 			RValue::Atom(ty, ..) | RValue::Cons(ty, ..) => ty,
 			RValue::Cast { to, .. } => to,
