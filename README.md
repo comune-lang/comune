@@ -3,7 +3,7 @@
 </p>
 
 # the comune programming language
-**comune** is a general-purpose programming language, designed as a gradual successor to C++.
+**comune** is a general-purpose programming language, designed as a gradual successor to C++. it boasts many modern and powerful features, including static memory safety, an expression-based C-style syntax, type-checked generics, first-class support for sum types, a flexible pattern-matching system, and a highly parallelized compiler, while providing seamless C++ interop.
 
 note: **comune is still heavily work-in-progress**, with many language features being partially implemented (if at all) and subject to change without notice. the compiler is suitable for experimentation and testing, but expect false errors, crashes, and miscompilation. 
 
