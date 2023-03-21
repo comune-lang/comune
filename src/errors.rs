@@ -45,7 +45,7 @@ impl ComuneError {
 			code,
 			span,
 			notes: vec![],
-			
+
 			// Safety: CAPTURE_BACKTRACE is set before compilation begins.
 			origin: if unsafe { CAPTURE_BACKTRACE } {
 				Some(Backtrace::new())
@@ -485,7 +485,12 @@ pub fn spawn_logger(backtrace_on_error: bool) -> Sender<CMNMessageLog> {
 									let len_offset = offsets[column + len - 1] - column_offset;
 
 									write!(out, "{: <1$}", "", column + column_offset).unwrap();
-									writeln!(out, "{}", format!("{:~<1$}", "", len + len_offset).red()).unwrap();
+									writeln!(
+										out,
+										"{}",
+										format!("{:~<1$}", "", len + len_offset).red()
+									)
+									.unwrap();
 								}
 
 								if length_left == 0 {

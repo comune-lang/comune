@@ -2,12 +2,17 @@ use std::sync::Arc;
 
 use crate::{
 	driver::ManagerState,
-	parser::{ComuneResult, Parser}, lexer::Token,
+	lexer::Token,
+	parser::{ComuneResult, Parser},
 };
 
 use self::func::validate_function_body;
 
-use super::{module::{ModuleImpl, ModuleInterface, ModuleItemInterface}, get_attribute, traits::{LangTrait, TraitRef}};
+use super::{
+	get_attribute,
+	module::{ModuleImpl, ModuleInterface, ModuleItemInterface},
+	traits::{LangTrait, TraitRef},
+};
 
 pub mod expr;
 pub mod func;
@@ -36,20 +41,16 @@ pub fn validate_interface(_state: &Arc<ManagerState>, parser: &mut Parser) -> Co
 	ty::check_module_cyclical_deps(&mut parser.interface)?;
 
 	validate_attributes(&mut parser.interface)?;
-	
+
 	parser.interface.is_typed = true;
 
 	Ok(())
 }
 
-
 fn validate_attributes(interface: &mut ModuleInterface) -> ComuneResult<()> {
-	
 	for (id, child) in &interface.children {
 		match child {
-
 			ModuleItemInterface::Trait(tr) => {
-			
 				if let Some(lang_attrib) = get_attribute(&tr.read().unwrap().attributes, "lang") {
 					let Some(names) = lang_attrib.args.get(0) else  {
 						panic!();
@@ -69,14 +70,17 @@ fn validate_attributes(interface: &mut ModuleInterface) -> ComuneResult<()> {
 						_ => panic!(),
 					};
 
-					interface.trait_solver.register_lang_trait(lang_trait, TraitRef {
-						def: Arc::downgrade(tr),
-						name: id.clone(),
-						args: vec![],
-					});
+					interface.trait_solver.register_lang_trait(
+						lang_trait,
+						TraitRef {
+							def: Arc::downgrade(tr),
+							name: id.clone(),
+							args: vec![],
+						},
+					);
 				}
 			}
-			
+
 			_ => {}
 		}
 	}

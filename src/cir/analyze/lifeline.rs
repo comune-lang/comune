@@ -7,7 +7,7 @@ use super::{
 	ResultVisitor,
 };
 use crate::{
-	cir::{CIRFnCall, CIRFunction, CIRStmt, Type, LValue, Operand, PlaceElem, RValue},
+	cir::{CIRFnCall, CIRFunction, CIRStmt, LValue, Operand, PlaceElem, RValue, Type},
 	errors::{ComuneErrCode, ComuneError},
 };
 
@@ -256,14 +256,23 @@ impl Analysis for VarInitCheck {
 			}
 
 			CIRStmt::StorageLive(local) => {
-				state.set_liveness(&LValue { local: *local, projection: vec![] }, LivenessState::Uninit);
+				state.set_liveness(
+					&LValue {
+						local: *local,
+						projection: vec![],
+					},
+					LivenessState::Uninit,
+				);
 			}
 
 			CIRStmt::StorageDead(local) => {
-				let lval = LValue { local: *local, projection: vec![] };
+				let lval = LValue {
+					local: *local,
+					projection: vec![],
+				};
 				// Clear all sublocation states
 				state.set_liveness(&lval, LivenessState::Dropped);
-			
+
 				state.liveness.remove(&lval);
 			}
 

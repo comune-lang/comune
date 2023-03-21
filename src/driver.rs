@@ -12,16 +12,17 @@ use inkwell::{context::Context, passes::PassManager, targets::FileType};
 use crate::{
 	ast::{
 		self,
-		module::{Identifier, ModuleImportKind, ModuleInterface, Name, ModuleImport},
+		module::{Identifier, ModuleImport, ModuleImportKind, ModuleInterface, Name},
 	},
 	cir::{
 		analyze::{lifeline::VarInitCheck, verify, CIRPassManager, DataFlowPass},
 		builder::CIRModuleBuilder,
 	},
+	clang::compile_cpp_module,
 	errors::{CMNMessageLog, ComuneErrCode, ComuneError, ComuneMessage},
 	lexer::{self, Lexer, SrcSpan},
 	llvm::{self, LLVMBackend},
-	parser::{Parser, ComuneResult}, clang::compile_cpp_module,
+	parser::{ComuneResult, Parser},
 };
 
 pub struct ManagerState {
@@ -92,7 +93,7 @@ pub fn launch_module_compilation(
 	let out_path = get_module_out_path(&state, &module_name);
 
 	state.output_modules.lock().unwrap().push(out_path.clone());
-	
+
 	state
 		.module_states
 		.write()
@@ -118,7 +119,6 @@ pub fn compile_comune_module(
 	s: &rayon::Scope,
 ) -> Result<(), ComuneError> {
 	let mut parser = match parse_interface(&state, &src_path, error_sender.clone()) {
-	
 		Ok(parser) => parser,
 
 		Err(e) => {
@@ -143,9 +143,9 @@ pub fn compile_comune_module(
 		&state,
 		&src_path,
 		&module_name,
-		modules, 
+		modules,
 		error_sender.clone(),
-		s
+		s,
 	)?;
 
 	match ast::semantic::validate_interface(&state, &mut parser) {
@@ -178,7 +178,7 @@ pub fn compile_comune_module(
 	s.spawn(move |_s| {
 		// Wait for all module interfaces to be finalized
 		parser.interface.imported.clear();
-		
+
 		let module_names = parser.interface.import_names.clone();
 
 		let mut imports_left = module_names
@@ -186,8 +186,12 @@ pub fn compile_comune_module(
 			.map(|m_kind| {
 				let m_kind_clone = m_kind.clone();
 				match m_kind {
-					ModuleImportKind::Child(name) => (m_kind_clone, Identifier::from_parent(&module_name, name)),
-					ModuleImportKind::Language(name) => (m_kind_clone, Identifier::from_name(name, true)),
+					ModuleImportKind::Child(name) => {
+						(m_kind_clone, Identifier::from_parent(&module_name, name))
+					}
+					ModuleImportKind::Language(name) => {
+						(m_kind_clone, Identifier::from_name(name, true))
+					}
 					ModuleImportKind::Extern(name) => (m_kind_clone, name),
 				}
 			})
@@ -214,15 +218,15 @@ pub fn compile_comune_module(
 
 			match import_state {
 				ModuleState::InterfaceComplete(complete) => {
-					parser
-						.interface
-						.imported
-						.insert(import_name.1.name().clone(), ModuleImport { 
-							interface: complete, 
+					parser.interface.imported.insert(
+						import_name.1.name().clone(),
+						ModuleImport {
+							interface: complete,
 							import_kind: import_name.0.clone(),
-							path: import_path
-						});
-						
+							path: import_path,
+						},
+					);
+
 					imports_left.remove(0);
 				}
 
@@ -392,11 +396,10 @@ pub fn await_imports_ready(
 	state: &Arc<ManagerState>,
 	src_path: &PathBuf,
 	module_name: &Identifier,
-	mut modules: Vec<ModuleImportKind>,	
+	mut modules: Vec<ModuleImportKind>,
 	error_sender: Sender<CMNMessageLog>,
 	s: &rayon::Scope,
 ) -> ComuneResult<HashMap<Name, ModuleImport>> {
-	
 	let mut imports = HashMap::new();
 
 	while let Some(name) = modules.first().cloned() {
@@ -429,16 +432,16 @@ pub fn await_imports_ready(
 					error_sender.clone(),
 					s,
 				) {
-					Ok(()) => {},
+					Ok(()) => {}
 					Err(e) => {
 						state
 							.module_states
 							.write()
 							.unwrap()
 							.insert(src_path.clone(), ModuleState::ParsingFailed);
-						
+
 						let import_name = import_path.file_name().unwrap().to_str().unwrap();
-						
+
 						error_sender
 							.send(CMNMessageLog::Raw(format!(
 								"\n{:>10} compiling {}\n",
@@ -446,10 +449,10 @@ pub fn await_imports_ready(
 								import_name.bold()
 							)))
 							.unwrap();
-		
+
 						return Err(e);
 					}
-				}
+				},
 
 				// Sleep for some short duration, so we don't hog the CPU
 				Some(ModuleState::Parsing) => {
@@ -475,23 +478,29 @@ pub fn await_imports_ready(
 					if matches!(name, ModuleImportKind::Child(_)) {
 						std::thread::sleep(std::time::Duration::from_millis(1))
 					} else {
-						imports.insert(import_name, ModuleImport { 
-							interface: interface.clone(),
-							import_kind: name,
-							path: import_path,
-						});
+						imports.insert(
+							import_name,
+							ModuleImport {
+								interface: interface.clone(),
+								import_kind: name,
+								path: import_path,
+							},
+						);
 
 						modules.remove(0);
 						break;
 					}
 				}
-				
+
 				Some(ModuleState::InterfaceComplete(interface)) => {
-					imports.insert(import_name, ModuleImport { 
-						interface: interface.clone(),
-						import_kind: name,
-						path: import_path,
-					});
+					imports.insert(
+						import_name,
+						ModuleImport {
+							interface: interface.clone(),
+							import_kind: name,
+							path: import_path,
+						},
+					);
 
 					modules.remove(0);
 					break;

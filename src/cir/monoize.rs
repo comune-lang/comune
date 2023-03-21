@@ -1,16 +1,20 @@
 // cIR monomorphization module
 
-use std::{collections::{HashMap, HashSet}, sync::{RwLock, Arc}};
+use std::{
+	collections::{HashMap, HashSet},
+	sync::{Arc, RwLock},
+};
 
 use crate::{
-	ast::{get_attribute, module::Identifier, types::{Basic, TypeDef, TypeDefKind, AlgebraicDef}},
+	ast::{
+		get_attribute,
+		module::Identifier,
+		types::{AlgebraicDef, Basic, TypeDef, TypeDefKind},
+	},
 	lexer::Token,
 };
 
-use super::{
-	CIRFnCall, CIRFnMap, CIRFunction, CIRModule, CIRStmt, Type, FuncID, RValue,
-	TypeName,
-};
+use super::{CIRFnCall, CIRFnMap, CIRFunction, CIRModule, CIRStmt, FuncID, RValue, Type, TypeName};
 
 // A set of requested Generic monomorphizations, with a Vec of type arguments
 // TODO: Extend system to support constants as arguments
@@ -22,7 +26,6 @@ type TypeSubstitutions = Vec<Type>;
 type TypeInstances = HashMap<TypeName, HashMap<TypeSubstitutions, TypeName>>;
 type FuncInstances = HashMap<FuncID, HashMap<TypeSubstitutions, FuncID>>;
 type TypeMap = HashMap<TypeName, Arc<RwLock<TypeDef>>>;
-
 
 impl CIRModule {
 	// monoize() consumes `self` and returns a CIRModule with all generics monomorphized, names mangled, etc.
@@ -231,7 +234,7 @@ impl CIRModule {
 				// instantation we want exists already. If not, create it.
 				let def_up = def.upgrade().unwrap();
 				let name = &def_up.read().unwrap().name;
-				
+
 				if !args.is_empty() {
 					let typename = name.to_string();
 
@@ -264,7 +267,7 @@ impl CIRModule {
 				}
 			}
 
-			Type::Never => {},
+			Type::Never => {}
 
 			Type::Unresolved { .. } => panic!(),
 		}
@@ -281,9 +284,7 @@ impl CIRModule {
 
 		match &mut instance.def {
 			TypeDefKind::Algebraic(AlgebraicDef {
-				members,
-				params,
-				..
+				members, params, ..
 			}) => {
 				for (_, member, _) in members {
 					Self::monoize_type(types, member, param_map, instances);

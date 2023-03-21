@@ -1,7 +1,22 @@
-use std::{sync::{Arc, mpsc::Sender}, path::PathBuf, fs::{File, self}, fmt::Write as _, io::{Write, self, Read}, process::Command};
+use std::{
+	fmt::Write as _,
+	fs::{self, File},
+	io::{self, Read, Write},
+	path::PathBuf,
+	process::Command,
+	sync::{mpsc::Sender, Arc},
+};
 
-use crate::{driver::{ManagerState, get_module_out_path, ModuleState, await_imports_ready}, ast::{module::{Identifier, ModuleImportKind, ModuleInterface, ModuleItemInterface}, types::{Type, Basic, TypeDefKind, TupleKind}, get_attribute}, errors::{CMNMessageLog, ComuneError}, get_file_suffix};
-
+use crate::{
+	ast::{
+		get_attribute,
+		module::{Identifier, ModuleImportKind, ModuleInterface, ModuleItemInterface},
+		types::{Basic, TupleKind, Type, TypeDefKind},
+	},
+	driver::{await_imports_ready, get_module_out_path, ManagerState, ModuleState},
+	errors::{CMNMessageLog, ComuneError},
+	get_file_suffix,
+};
 
 pub fn compile_cpp_module(
 	state: Arc<ManagerState>,
@@ -19,21 +34,28 @@ pub fn compile_cpp_module(
 
 	let mut cpp_out = File::create(&processed_path).unwrap();
 	cpp_out.write_all(cpp_source.as_bytes()).unwrap();
-	
+
 	// Generate C++ headers for comune dependencies
-	let modules = 
-		deps
+	let modules = deps
 		.into_iter()
-		.map(|module| ModuleImportKind::Extern(
-			Identifier::from_name(get_file_suffix(&module).unwrap(), false)
-		))
+		.map(|module| {
+			ModuleImportKind::Extern(Identifier::from_name(
+				get_file_suffix(&module).unwrap(),
+				false,
+			))
+		})
 		.collect();
-	
+
 	let interfaces = await_imports_ready(&state, &src_path, module_name, modules, error_sender, s)?;
 
 	for (name, interface) in interfaces {
 		let header = generate_cpp_header(&state, &interface.interface).unwrap();
-		let mut header_out = File::create(out_path.with_file_name(name.to_string()).with_extension("hpp")).unwrap();
+		let mut header_out = File::create(
+			out_path
+				.with_file_name(name.to_string())
+				.with_extension("hpp"),
+		)
+		.unwrap();
 
 		header_out.write_all(header.as_bytes()).unwrap();
 	}
@@ -48,26 +70,25 @@ pub fn compile_cpp_module(
 		.arg("-funsigned-char")
 		.arg("-fdiagnostics-color=always")
 		.arg("-I./libcomune/cpp/")
-		.arg("--output").arg(out_path.with_extension("o"));
+		.arg("--output")
+		.arg(out_path.with_extension("o"));
 
 	let output_result = output.output().expect("fatal: failed to invoke clang");
-	
+
 	io::stdout().write_all(&output_result.stdout).unwrap();
 	io::stderr().write_all(&output_result.stderr).unwrap();
 
 	if output_result.status.success() {
-		// This just writes an empty comune interface for now, 
+		// This just writes an empty comune interface for now,
 		// leaving the C++ code not directly accessible from comune.
 		// TODO: Implement a C++->comune interface, probably using libclang
-		state
-			.module_states
-			.write()
-			.unwrap()
-			.insert(src_path, ModuleState::InterfaceComplete(Arc::new(
-				ModuleInterface { 
-					is_typed: true, 		// hack to make some assertions pass
-					..Default::default() 
-				})));
+		state.module_states.write().unwrap().insert(
+			src_path,
+			ModuleState::InterfaceComplete(Arc::new(ModuleInterface {
+				is_typed: true, // hack to make some assertions pass
+				..Default::default()
+			})),
+		);
 	} else {
 		state
 			.module_states
@@ -76,17 +97,19 @@ pub fn compile_cpp_module(
 			.insert(src_path, ModuleState::ParsingFailed);
 	}
 
-	
 	fs::remove_file(processed_path).unwrap();
 
 	Ok(())
 }
 
-pub fn preprocess_cpp_file(_state: &Arc<ManagerState>, file: &PathBuf) -> io::Result<(String, Vec<PathBuf>)> {
+pub fn preprocess_cpp_file(
+	_state: &Arc<ManagerState>,
+	file: &PathBuf,
+) -> io::Result<(String, Vec<PathBuf>)> {
 	let mut file_in = String::new();
-	
+
 	File::open(file)?.read_to_string(&mut file_in)?;
-	
+
 	// Make input file buffer immutable
 	let file_in = file_in;
 	let mut result = String::with_capacity(file_in.len());
@@ -95,7 +118,7 @@ pub fn preprocess_cpp_file(_state: &Arc<ManagerState>, file: &PathBuf) -> io::Re
 	for line in file_in.lines() {
 		if line.starts_with("co_import") {
 			let mut dep_path = file.clone();
-			
+
 			let left = line.find('"').unwrap() + 1;
 			let right = line.rfind('.').unwrap();
 
@@ -104,23 +127,30 @@ pub fn preprocess_cpp_file(_state: &Arc<ManagerState>, file: &PathBuf) -> io::Re
 
 			dependencies.push(dep_path);
 
-			result.push_str(&line.replace("co_import", "#include").replace(".co\";", ".hpp\""));
+			result.push_str(
+				&line
+					.replace("co_import", "#include")
+					.replace(".co\";", ".hpp\""),
+			);
 		} else {
 			result.push_str(line);
 		}
 		result.push('\n');
 	}
-	
+
 	Ok((result, dependencies))
 }
 
 // generate a C++ header file from a comune ModuleInterface
-// 
-// this might be among the worst things i've ever written! 
+//
+// this might be among the worst things i've ever written!
 // if you can think of a less horrible approach to this
 // problem, you are MORE than welcome to give it a shot
 //
-pub fn generate_cpp_header(_state: &Arc<ManagerState>, input: &ModuleInterface) -> Result<String, std::fmt::Error> {
+pub fn generate_cpp_header(
+	_state: &Arc<ManagerState>,
+	input: &ModuleInterface,
+) -> Result<String, std::fmt::Error> {
 	let mut result = String::from("#pragma once\n\n#include \"bridge/bridge.hpp\"\n\n");
 
 	// Write type declarations first
@@ -132,9 +162,9 @@ pub fn generate_cpp_header(_state: &Arc<ManagerState>, input: &ModuleInterface) 
 
 			ModuleItemInterface::TypeAlias(aliased) => {
 				write!(result, "typedef ")?;
-				
+
 				aliased.read().unwrap().cpp_format(&mut result)?;
-				
+
 				writeln!(result, " {name};\n")?;
 			}
 
@@ -151,16 +181,16 @@ pub fn generate_cpp_header(_state: &Arc<ManagerState>, input: &ModuleInterface) 
 					if get_attribute(&func.attributes, "no_mangle").is_some() {
 						write!(result, "extern \"C\" ")?;
 					}
-				
+
 					func.ret.cpp_format(&mut result)?;
-					
+
 					write!(result, " {name}")?;
-					
+
 					if !func.type_params.is_empty() {
 						let mut iter = func.type_params.iter();
 
 						write!(result, "<{}", iter.next().unwrap().0)?;
-						
+
 						for (param, ..) in iter {
 							write!(result, ", {param}")?;
 						}
@@ -169,14 +199,14 @@ pub fn generate_cpp_header(_state: &Arc<ManagerState>, input: &ModuleInterface) 
 					}
 
 					write!(result, "(")?;
-					
+
 					if func.params.params.is_empty() {
 						if func.params.variadic {
 							write!(result, "...")?; // Is this even legal?? who knows
 						}
 					} else {
 						let mut iter = func.params.params.iter();
-						
+
 						iter.next().unwrap().0.cpp_format(&mut result)?;
 
 						for (param, ..) in iter {
@@ -204,17 +234,21 @@ pub fn generate_cpp_header(_state: &Arc<ManagerState>, input: &ModuleInterface) 
 	Ok(result)
 }
 
-fn generate_cpp_type(name: &Identifier, def: &TypeDefKind, result: &mut impl std::fmt::Write, generate_body: bool) -> std::fmt::Result {
+fn generate_cpp_type(
+	name: &Identifier,
+	def: &TypeDefKind,
+	result: &mut impl std::fmt::Write,
+	generate_body: bool,
+) -> std::fmt::Result {
 	match def {
-					
 		TypeDefKind::Algebraic(alg) => {
 			// check if the typedef has type parameters
-			
+
 			if !alg.params.is_empty() {
 				let mut iter = alg.params.iter();
 
 				write!(result, "template<typename {}", iter.next().unwrap().0)?;
-				
+
 				for (param, ..) in iter {
 					write!(result, ", typename {param}")?;
 				}
@@ -226,71 +260,67 @@ fn generate_cpp_type(name: &Identifier, def: &TypeDefKind, result: &mut impl std
 
 			if generate_body {
 				writeln!(result, " {{")?;
-				
+
 				for (name, ty, _) in &alg.members {
 					write!(result, "\t")?;
 
 					ty.cpp_format(result)?;
-					
+
 					writeln!(result, " {name};")?;
 				}
 
 				write!(result, "}}")?;
 			}
-			
+
 			writeln!(result, ";\n")
 		}
 
-		_ => todo!()
+		_ => todo!(),
 	}
 }
 
 impl Type {
 	fn cpp_format(&self, f: &mut impl std::fmt::Write) -> std::fmt::Result {
 		match self {
-			Type::Basic(basic) => {
-				match basic {
-					Basic::Bool => write!(f, "bool"),
-					Basic::Char => write!(f, "uint32_t"),
-					Basic::Float { size_bytes: 4 } => write!(f, "float"),
-					Basic::Float { size_bytes: 8 } => write!(f, "double"),
-					Basic::Float { size_bytes: _ } => panic!(),
-					Basic::Void => write!(f, "void"),
+			Type::Basic(basic) => match basic {
+				Basic::Bool => write!(f, "bool"),
+				Basic::Char => write!(f, "uint32_t"),
+				Basic::Float { size_bytes: 4 } => write!(f, "float"),
+				Basic::Float { size_bytes: 8 } => write!(f, "double"),
+				Basic::Float { size_bytes: _ } => panic!(),
+				Basic::Void => write!(f, "void"),
 
-					Basic::Integral { signed, size_bytes } => {
-						write!(f, "{}int{}_t",
-							if *signed {
-								""
-							} else {
-								"u"
-							},
-							size_bytes * 8,
-						)
-					}
-					
-					Basic::PtrSizeInt { signed: true } => write!(f, "intptr_t"),
-					Basic::PtrSizeInt { signed: false } => write!(f, "uintptr_t"),
-					
-					Basic::Str => todo!(),
+				Basic::Integral { signed, size_bytes } => {
+					write!(
+						f,
+						"{}int{}_t",
+						if *signed { "" } else { "u" },
+						size_bytes * 8,
+					)
 				}
-			}
+
+				Basic::PtrSizeInt { signed: true } => write!(f, "intptr_t"),
+				Basic::PtrSizeInt { signed: false } => write!(f, "uintptr_t"),
+
+				Basic::Str => todo!(),
+			},
 
 			Type::Unresolved {
 				name, type_args, ..
 			} => {
 				write!(f, "{name}")?;
-				
+
 				if !type_args.is_empty() {
 					let mut iter = type_args.iter();
-				
+
 					write!(f, "<")?;
 					iter.next().unwrap().cpp_format(f)?;
-					
+
 					for arg in iter {
 						write!(f, ", ")?;
 						arg.cpp_format(f)?;
 					}
-				
+
 					write!(f, ">")?;
 				}
 				Ok(())
@@ -309,18 +339,18 @@ impl Type {
 			Type::Function(ret, args) => {
 				ret.cpp_format(f)?;
 				write!(f, "(*)(")?;
-				
+
 				if !args.is_empty() {
 					let mut iter = args.iter();
-					
+
 					iter.next().unwrap().1.cpp_format(f)?;
 
-					for (_, arg) in args {					
+					for (_, arg) in args {
 						write!(f, ", ")?;
 						arg.cpp_format(f)?;
 					}
 				}
-				
+
 				write!(f, ")")
 			}
 
@@ -333,7 +363,7 @@ impl Type {
 				}
 
 				write!(f, "}}")
-			},
+			}
 
 			_ => write!(f, "int /* <= TODO */"),
 		}

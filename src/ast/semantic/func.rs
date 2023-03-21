@@ -281,14 +281,16 @@ pub fn resolve_method_call(
 		.collect();
 
 	let (_, selected_name, selected_candidate) = match candidates.len() {
-		0 => return Err(ComuneError::new(
-			ComuneErrCode::NoCandidateFound {
-				args: args.iter().map(|arg| arg.get_type().clone()).collect(),
-				type_args: type_args.clone(),
-				name: name.clone(),
-			},
-			lhs.get_node_data().tk,
-		)), // TODO: Proper error handling
+		0 => {
+			return Err(ComuneError::new(
+				ComuneErrCode::NoCandidateFound {
+					args: args.iter().map(|arg| arg.get_type().clone()).collect(),
+					type_args: type_args.clone(),
+					name: name.clone(),
+				},
+				lhs.get_node_data().tk,
+			))
+		} // TODO: Proper error handling
 
 		1 => candidates[0].clone(),
 

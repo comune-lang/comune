@@ -354,11 +354,10 @@ impl Atom {
 			Atom::FnCall { .. } => validate_fn_call(self, scope, meta),
 
 			Atom::ArrayLit(elems) => {
-				let array_len =
-					Arc::new(RwLock::new(ConstExpr::Result(ConstValue::Integral(
-						elems.len() as i128,
-						Some(Basic::PtrSizeInt { signed: false }),
-					))));
+				let array_len = Arc::new(RwLock::new(ConstExpr::Result(ConstValue::Integral(
+					elems.len() as i128,
+					Some(Basic::PtrSizeInt { signed: false }),
+				))));
 
 				match &meta.ty {
 					Some(Type::Array(ty, _)) => {
@@ -402,7 +401,7 @@ impl Atom {
 			}
 
 			Atom::AlgebraicLit(ty, elems) => {
-				if let Type::TypeRef{ def, args } = ty {
+				if let Type::TypeRef { def, args } = ty {
 					if let TypeDefKind::Algebraic(alg) = &def.upgrade().unwrap().read().unwrap().def
 					{
 						for (name, expr) in elems.iter_mut() {

@@ -109,9 +109,12 @@ impl ImplSolver {
 		self.local_impls
 			.push((Arc::new(RwLock::new(ty)), Arc::new(RwLock::new(im))));
 	}
-	
+
 	pub fn register_lang_trait(&mut self, lang: LangTrait, tr: TraitRef) {
-		assert!(!self.lang_traits.contains_key(&lang), "language trait {lang:?} already registered!");
+		assert!(
+			!self.lang_traits.contains_key(&lang),
+			"language trait {lang:?} already registered!"
+		);
 
 		self.lang_traits.insert(lang, tr);
 	}

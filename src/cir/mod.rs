@@ -1,12 +1,17 @@
 #![allow(dead_code)]
 
-use std::{collections::HashMap, ffi::CString, hash::Hash, sync::{RwLock, Arc}};
+use std::{
+	collections::HashMap,
+	ffi::CString,
+	hash::Hash,
+	sync::{Arc, RwLock},
+};
 
 use crate::{
 	ast::{
 		expression::Operator,
 		module::{Identifier, Name},
-		types::{Basic, BindingProps, TypeParam, Type, TypeDef},
+		types::{Basic, BindingProps, Type, TypeDef, TypeParam},
 		Attribute,
 	},
 	lexer::SrcSpan,
@@ -165,7 +170,6 @@ pub struct CIRModule {
 	pub globals: HashMap<Identifier, (Type, RValue)>,
 	pub functions: CIRFnMap,
 }
-
 
 impl RValue {
 	pub fn const_bool(value: bool) -> Self {

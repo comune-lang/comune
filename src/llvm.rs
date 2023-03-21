@@ -22,12 +22,13 @@ use inkwell::{
 use crate::{
 	ast::{
 		expression::Operator,
-		types::{Basic, BindingProps, DataLayout, TupleKind, Type, TypeDefKind, AlgebraicDef},
+		types::{AlgebraicDef, Basic, BindingProps, DataLayout, TupleKind, Type, TypeDefKind},
 	},
 	cir::{
-		CIRFnCall, CIRFnPrototype, CIRFunction, CIRModule, CIRStmt, LValue,
-		Operand, PlaceElem, RValue,
-	}, constexpr::{ConstExpr, ConstValue},
+		CIRFnCall, CIRFnPrototype, CIRFunction, CIRModule, CIRStmt, LValue, Operand, PlaceElem,
+		RValue,
+	},
+	constexpr::{ConstExpr, ConstValue},
 };
 
 pub fn get_target_machine() -> TargetMachine {
@@ -114,7 +115,10 @@ impl<'ctx> LLVMBackend<'ctx> {
 		// Add opaque types
 
 		for (i, _) in &module.types {
-			let opaque = self.context.opaque_struct_type(&i.to_string()).as_any_type_enum();
+			let opaque = self
+				.context
+				.opaque_struct_type(&i.to_string())
+				.as_any_type_enum();
 
 			self.type_map.insert(i.clone(), opaque);
 		}
@@ -998,7 +1002,13 @@ impl<'ctx> LLVMBackend<'ctx> {
 			},
 
 			Type::Array(arr_ty, size) => Self::to_basic_type(self.get_llvm_type(arr_ty))
-				.array_type(if let ConstExpr::Result(ConstValue::Integral(e, _)) = &*size.read().unwrap() { *e as u32 } else { panic!() })
+				.array_type(
+					if let ConstExpr::Result(ConstValue::Integral(e, _)) = &*size.read().unwrap() {
+						*e as u32
+					} else {
+						panic!()
+					},
+				)
 				.as_any_type_enum(),
 
 			Type::Pointer { pointee, .. } => {

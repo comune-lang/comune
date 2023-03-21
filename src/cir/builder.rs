@@ -7,24 +7,20 @@ use crate::{
 		module::{ModuleASTElem, ModuleImpl, ModuleInterface, ModuleItemInterface, Name},
 		pattern::{Binding, Pattern},
 		statement::Stmt,
-		types::{
-			Basic, BindingProps, FnPrototype, TupleKind, Type, TypeDefKind,
-			TypeRef, AlgebraicDef,
-		},
+		types::{AlgebraicDef, Basic, BindingProps, FnPrototype, TupleKind, Type, TypeDefKind},
 	},
 	lexer::SrcSpan,
 	parser::Parser,
 };
 
 use super::{
-	BlockIndex, CIRBlock, CIRFnCall, CIRFnPrototype, CIRFunction, CIRModule, CIRStmt,
-	LValue, Operand, PlaceElem, RValue, TypeName, VarIndex,
+	BlockIndex, CIRBlock, CIRFnCall, CIRFnPrototype, CIRFunction, CIRModule, CIRStmt, LValue,
+	Operand, PlaceElem, RValue, VarIndex,
 };
 
 pub struct CIRModuleBuilder {
 	pub module: CIRModule,
 
-	type_map: HashMap<TypeRef, TypeName>,
 	type_param_counter: usize, // Used to assign unique names to type parameters
 
 	current_fn: Option<CIRFunction>,
@@ -43,7 +39,6 @@ impl CIRModuleBuilder {
 			},
 
 			current_fn: None,
-			type_map: HashMap::new(),
 			type_param_counter: 0,
 			name_map_stack: vec![vec![]],
 			current_block: 0,
@@ -82,7 +77,7 @@ impl CIRModuleBuilder {
 				ModuleItemInterface::Functions(fns) => {
 					for func in fns {
 						let (proto, cir_fn) = self.generate_prototype(&*func.read().unwrap());
-	
+
 						self.module.functions.insert(proto, cir_fn);
 					}
 				}
@@ -431,30 +426,15 @@ impl CIRModuleBuilder {
 		match expr {
 			Expr::Atom(atom, _) => match atom {
 				Atom::IntegerLit(i, b) => Some(if let Some(b) = b {
-					RValue::Atom(
-						Type::Basic(*b),
-						None,
-						Operand::IntegerLit(*i, span),
-						span,
-					)
+					RValue::Atom(Type::Basic(*b), None, Operand::IntegerLit(*i, span), span)
 				} else {
-					RValue::Atom(
-						expr_ty.clone(),
-						None,
-						Operand::IntegerLit(*i, span),
-						span,
-					)
+					RValue::Atom(expr_ty.clone(), None, Operand::IntegerLit(*i, span), span)
 				}),
 
 				Atom::FloatLit(f, b) => Some(if let Some(b) = b {
 					RValue::Atom(Type::Basic(*b), None, Operand::FloatLit(*f, span), span)
 				} else {
-					RValue::Atom(
-						expr_ty.clone(),
-						None,
-						Operand::FloatLit(*f, span),
-						span,
-					)
+					RValue::Atom(expr_ty.clone(), None, Operand::FloatLit(*f, span), span)
 				}),
 
 				Atom::BoolLit(b) => Some(RValue::Atom(
@@ -511,7 +491,6 @@ impl CIRModuleBuilder {
 				}
 
 				Atom::AlgebraicLit(ty, elems) => {
-
 					let Type::TypeRef { def, .. } = ty else {
 						panic!()
 					};
@@ -527,7 +506,7 @@ impl CIRModuleBuilder {
 					for (elem, _) in elems {
 						indices.push(members.iter().position(|(name, ..)| name == elem).unwrap());
 					}
-					
+
 					let tmp = self.insert_temporary(
 						ty.clone(),
 						RValue::Atom(ty.clone(), None, Operand::Undef, SrcSpan::new()),
@@ -547,7 +526,12 @@ impl CIRModuleBuilder {
 						}
 					}
 
-					Some(RValue::Atom(ty.clone(), None, Operand::LValue(tmp, span), span))
+					Some(RValue::Atom(
+						ty.clone(),
+						None,
+						Operand::LValue(tmp, span),
+						span,
+					))
 				}
 
 				Atom::Identifier(id) => {
@@ -816,7 +800,6 @@ impl CIRModuleBuilder {
 						scrutinee,
 						branches,
 					} => {
-						
 						let scrutinee_ir = self.generate_expr(scrutinee)?;
 						let scrutinee_ty = scrutinee.get_type();
 						let scrutinee_lval =
@@ -824,7 +807,7 @@ impl CIRModuleBuilder {
 
 						let mut branches_ir = vec![];
 						let mut has_result = false;
-						
+
 						let disc_lval;
 						let disc_ty = Type::Basic(scrutinee_ty.get_discriminant_type().unwrap());
 
@@ -841,7 +824,7 @@ impl CIRModuleBuilder {
 
 						if Self::is_trivially_matchable(branches, scrutinee.get_type()) {
 							let mut trivial_disc_lval = scrutinee_lval.clone();
-							
+
 							trivial_disc_lval.projection.push(PlaceElem::Field(0));
 
 							disc_lval = trivial_disc_lval;
@@ -850,8 +833,9 @@ impl CIRModuleBuilder {
 								branches_ir.push((
 									disc_ty.clone(),
 									Operand::IntegerLit(
-										Self::get_trivial_match_value(pattern, scrutinee.get_type()) as i128,
-										SrcSpan::new()
+										Self::get_trivial_match_value(pattern, scrutinee.get_type())
+											as i128,
+										SrcSpan::new(),
 									),
 									0,
 								));
@@ -867,14 +851,15 @@ impl CIRModuleBuilder {
 									SrcSpan::new(),
 								),
 							);
-						
-
 
 							for (i, (pattern, _)) in branches.iter().enumerate() {
 								// TODO: There is no usefulness checking here - if a value
 								// matches multiple branches, this will probably break
-								let match_expr =
-									self.generate_match_expr(pattern, &scrutinee_lval, &scrutinee_ty);
+								let match_expr = self.generate_match_expr(
+									pattern,
+									&scrutinee_lval,
+									&scrutinee_ty,
+								);
 								let match_operand =
 									self.get_as_operand(&Type::Basic(Basic::Bool), match_expr);
 
@@ -992,7 +977,6 @@ impl CIRModuleBuilder {
 				},
 
 				Atom::Once(once) => {
-
 					if let OnceAtom::Eval(local) = *once.read().unwrap() {
 						return Some(RValue::Atom(
 							expr_ty.clone(),
@@ -1301,7 +1285,10 @@ impl CIRModuleBuilder {
 
 					let Expr::Atom(Atom::Identifier(id), _) = &**rhs else { panic!() };
 
-					let idx = members.iter().position(|(name, ..)| name == id.expect_scopeless().unwrap()).unwrap();
+					let idx = members
+						.iter()
+						.position(|(name, ..)| name == id.expect_scopeless().unwrap())
+						.unwrap();
 
 					lhs_ir.projection.push(PlaceElem::Field(idx));
 
@@ -1338,7 +1325,7 @@ impl CIRModuleBuilder {
 	fn is_trivially_matchable(branches: &Vec<(Pattern, Expr)>, scrutinee_ty: &Type) -> bool {
 		let types = match scrutinee_ty {
 			Type::Tuple(TupleKind::Sum, types) => types.as_slice(),
-			
+
 			_ => panic!(),
 		};
 
@@ -1346,8 +1333,8 @@ impl CIRModuleBuilder {
 			match branch {
 				Pattern::Binding(Binding { ty, .. }) => {
 					if !types.iter().any(|t| t == ty) {
-						return false
-					}	
+						return false;
+					}
 				}
 
 				_ => return false,
@@ -1360,14 +1347,12 @@ impl CIRModuleBuilder {
 	fn get_trivial_match_value(branch: &Pattern, scrutinee_ty: &Type) -> usize {
 		let types = match scrutinee_ty {
 			Type::Tuple(TupleKind::Sum, types) => types.as_slice(),
-			
+
 			_ => panic!(),
 		};
 
 		match branch {
-			Pattern::Binding(Binding { ty, ..}) => {
-				types.iter().position(|t| t == ty).unwrap()
-			}
+			Pattern::Binding(Binding { ty, .. }) => types.iter().position(|t| t == ty).unwrap(),
 
 			_ => panic!(),
 		}
@@ -1381,7 +1366,6 @@ impl CIRModuleBuilder {
 	) -> RValue {
 		match pattern {
 			Pattern::Binding(Binding { ty: pattern_ty, .. }) => {
-
 				if pattern_ty == value_ty {
 					RValue::const_bool(true)
 				} else if let Type::Tuple(TupleKind::Sum, types) = value_ty {

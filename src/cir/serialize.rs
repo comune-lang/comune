@@ -1,13 +1,9 @@
 use std::fmt::Display;
 
-use crate::{
-	ast::types::DataLayout,
-	lexer,
-};
+use crate::{ast::types::DataLayout, lexer};
 
 use super::{
-	CIRFnCall, CIRFnPrototype, CIRFunction, CIRModule, CIRStmt, LValue,
-	Operand, PlaceElem, RValue,
+	CIRFnCall, CIRFnPrototype, CIRFunction, CIRModule, CIRStmt, LValue, Operand, PlaceElem, RValue,
 };
 
 impl Display for CIRModule {

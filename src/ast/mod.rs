@@ -72,11 +72,13 @@ impl<'ctx> FnScope<'ctx> {
 			// Unqualified name, perform scope-level lookup first
 			let local_lookup;
 
-			if let Some((_, ty, _)) = self.variables.iter().rev().find(|(name, ..)| name == id.name()) {
-				local_lookup = Some((
-					id.clone(),
-					ty.clone()
-				));
+			if let Some((_, ty, _)) = self
+				.variables
+				.iter()
+				.rev()
+				.find(|(name, ..)| name == id.name())
+			{
+				local_lookup = Some((id.clone(), ty.clone()));
 			} else if let Some(parent) = self.parent {
 				local_lookup = parent.find_symbol(id, search_namespace);
 			} else {

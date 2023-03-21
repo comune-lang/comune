@@ -2,7 +2,8 @@ use std::{
 	collections::{HashMap, HashSet},
 	fmt::{Debug, Display},
 	hash::Hash,
-	sync::{Arc, RwLock}, path::PathBuf,
+	path::PathBuf,
+	sync::{Arc, RwLock},
 };
 
 use crate::{
@@ -103,27 +104,28 @@ impl ModuleInterface {
 	}
 
 	pub fn get_external_interface(&self, require_typed: bool) -> Self {
-		let result = ModuleInterface { 
+		let result = ModuleInterface {
 			path: self.path.clone(),
 			children: self.children.clone(),
 			import_names: HashSet::new(),
-			
-			imported: self.imported
-						.iter()
-						.filter(|import| matches!(import.1.import_kind, ModuleImportKind::Child(_)))
-						.map(|(k, v)| (k.clone(), v.clone()))
-						.collect(),
+
+			imported: self
+				.imported
+				.iter()
+				.filter(|import| matches!(import.1.import_kind, ModuleImportKind::Child(_)))
+				.map(|(k, v)| (k.clone(), v.clone()))
+				.collect(),
 
 			trait_solver: self.trait_solver.clone(),
-			is_typed: self.is_typed
+			is_typed: self.is_typed,
 		};
-		
+
 		if require_typed {
 			for (_, import) in &result.imported {
 				assert!(import.interface.is_typed);
 			}
 		}
-		
+
 		result
 	}
 
@@ -185,12 +187,10 @@ impl ModuleInterface {
 		}
 
 		match found {
-			Some((_, ModuleItemInterface::Type(ty))) => {
-				Some(Type::TypeRef {
-					def: Arc::downgrade(ty),
-					args: vec![],
-				})
-			}
+			Some((_, ModuleItemInterface::Type(ty))) => Some(Type::TypeRef {
+				def: Arc::downgrade(ty),
+				args: vec![],
+			}),
 
 			Some((_, ModuleItemInterface::Alias(alias))) => {
 				self.resolve_type(alias, &Identifier::new(true))
@@ -203,7 +203,9 @@ impl ModuleInterface {
 					let mut id_sub = id.clone();
 					id_sub.path.remove(0);
 
-					imported.interface.resolve_type(&id_sub, &Identifier::new(true))
+					imported
+						.interface
+						.resolve_type(&id_sub, &Identifier::new(true))
 				} else {
 					None
 				}
@@ -363,7 +365,6 @@ pub enum ModuleASTElem {
 	Unparsed(TokenIndex),
 	NoElem,
 }
-
 
 // This is old and unwieldy as hell and I gotta get around to removing it
 

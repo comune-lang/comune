@@ -5,9 +5,7 @@ use crate::{
 		get_attribute,
 		module::{ItemRef, ModuleInterface, ModuleItemInterface},
 		traits::{TraitInterface, TraitRef},
-		types::{
-			self, AlgebraicDef, FnPrototype, GenericParamList, Type, TypeDef, TypeDefKind,
-		},
+		types::{self, AlgebraicDef, FnPrototype, GenericParamList, Type, TypeDef, TypeDefKind},
 		FnScope,
 	},
 	constexpr::{ConstEval, ConstExpr},
@@ -112,7 +110,10 @@ pub fn resolve_interface_types(interface: &ModuleInterface) -> ComuneResult<()> 
 			if let Some(found) = found {
 				found
 			} else {
-				return Err(ComuneError::new(ComuneErrCode::UnresolvedTrait(name.clone()), SrcSpan::new()))
+				return Err(ComuneError::new(
+					ComuneErrCode::UnresolvedTrait(name.clone()),
+					SrcSpan::new(),
+				));
 			}
 		} else {
 			None
@@ -324,9 +325,8 @@ impl Type {
 	pub fn validate<'ctx>(&self, scope: &'ctx FnScope<'ctx>) -> ComuneResult<()> {
 		match self {
 			Type::Array(_, n) => {
-
 				let result = if let ConstExpr::Expr(e) = &*n.read().unwrap() {
-					 ConstExpr::Result(e.eval_const(scope)?)
+					ConstExpr::Result(e.eval_const(scope)?)
 				} else {
 					panic!()
 				};

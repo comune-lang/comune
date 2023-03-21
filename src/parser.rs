@@ -1088,10 +1088,7 @@ impl Parser {
 
 							self.consume(&Token::Other('}'))?;
 
-							result = Some(Atom::AlgebraicLit(
-								Type::TypeRef { def, args },
-								inits,
-							));
+							result = Some(Atom::AlgebraicLit(Type::TypeRef { def, args }, inits));
 						} else {
 							return self.err(ComuneErrCode::UnexpectedToken);
 						}
@@ -1789,7 +1786,10 @@ impl Parser {
 				Token::Operator("<") => {
 					// Type parameters
 
-					if let Type::TypeRef { args, .. } | Type::Unresolved { type_args: args, .. } = &mut result
+					if let Type::TypeRef { args, .. }
+					| Type::Unresolved {
+						type_args: args, ..
+					} = &mut result
 					{
 						*args = self.parse_type_argument_list(immediate_resolve)?;
 					} else {
