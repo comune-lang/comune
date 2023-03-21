@@ -5,6 +5,8 @@
 # the comune programming language
 **comune** is a general-purpose programming language, designed as a gradual successor to C++.
 
+note: **comune is still heavily work-in-progress**, with many language features being partially implemented (if at all) and subject to change without notice. the compiler is suitable for experimentation and testing, but expect false errors, crashes, and miscompilation. 
+
 # requirements
 
 the compiler is currently implemented in Rust, with plans to self-host in the future.
@@ -12,7 +14,7 @@ the compiler is currently implemented in Rust, with plans to self-host in the fu
 what you'll need:
 
 - Rust 1.65+ (stable)
-- LLVM 12.0, 13.0, or 14.0
+- LLVM 12.0, 13.0, or 14.0 set up for development
 
 # building
 comune is a simple `cargo` project, though you are required to pass in a feature flag matching the version of LLVM installed on your system. for instance:
