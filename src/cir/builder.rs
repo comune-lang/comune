@@ -574,7 +574,7 @@ impl CIRModuleBuilder {
 
 				call @ Atom::FnCall { .. } => self.generate_fn_call(call, span),
 
-				Atom::Block { items, result } => self.generate_block(items, result, true).1,
+				Atom::Block { items, result, .. } => self.generate_block(items, result, true).1,
 
 				Atom::CtrlFlow(ctrl) => match &**ctrl {
 					ControlFlow::Return { expr } => {
@@ -592,7 +592,7 @@ impl CIRModuleBuilder {
 
 					ControlFlow::If {
 						cond,
-						body: Expr::Atom(Atom::Block { items, result }, body_meta),
+						body: Expr::Atom(Atom::Block { items, result, .. }, body_meta),
 						else_body,
 					} => {
 						let result_loc = if !expr_ty.is_void() {
@@ -636,6 +636,7 @@ impl CIRModuleBuilder {
 							Atom::Block {
 								items: else_items,
 								result: else_result,
+								..
 							},
 							else_meta,
 						)) = else_body
@@ -695,7 +696,7 @@ impl CIRModuleBuilder {
 
 					ControlFlow::While {
 						cond,
-						body: Expr::Atom(Atom::Block { items, result }, _),
+						body: Expr::Atom(Atom::Block { items, result, .. }, _),
 					} => {
 						let start_block = self.current_block;
 						let cond_block = self.append_block();
@@ -920,7 +921,7 @@ impl CIRModuleBuilder {
 						// Generate branches
 
 						for (i, (pattern, branch)) in branches.iter().enumerate() {
-							let Expr::Atom(Atom::Block { items, result }, branch_meta) = branch else { panic!() };
+							let Expr::Atom(Atom::Block { items, result, .. }, branch_meta) = branch else { panic!() };
 
 							let binding_idx = self.append_block();
 

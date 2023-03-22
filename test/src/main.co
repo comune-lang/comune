@@ -183,17 +183,19 @@ int main() {
 	
 	my_cool_generic.data = malloc(4) as int mut*;
 
-	*my_cool_generic.data = if true {
-		printf(c"True!\n");
-		69
-	} else {
-		printf(c"False!\n");
-		42
-	};
+	unsafe { 
+		*my_cool_generic.data = if true {
+			printf(c"True!\n");
+			69
+		} else {
+			printf(c"False!\n");
+			42
+		};
 	
-	i32 generic_get = *my_cool_generic.data;
+		i32 generic_get = *my_cool_generic.data;
 	
-	free(my_cool_generic.data as void mut*);
-
+		free(my_cool_generic.data as void mut*);
+	}
+	
 	return module_test::foo();
 }

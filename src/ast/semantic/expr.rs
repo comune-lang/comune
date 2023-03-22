@@ -111,7 +111,16 @@ impl Expr {
 					Operator::Ref => Ok(expr_ty.ptr_type(true)),
 
 					Operator::Deref => match expr_ty {
-						Type::Pointer { pointee, .. } => Ok(*pointee),
+						Type::Pointer { pointee, .. } => {
+							if !scope.is_unsafe {
+								return Err(ComuneError::new(
+									ComuneErrCode::UnsafeOperation,
+									meta.tk
+								))
+							}
+
+							Ok(*pointee)
+						}
 
 						_ => Err(ComuneError::new(
 							ComuneErrCode::InvalidDeref(expr_ty),
@@ -451,8 +460,8 @@ impl Atom {
 				todo!()
 			}
 
-			Atom::Block { items, result } => {
-				let mut subscope = FnScope::from_parent(scope, false);
+			Atom::Block { items, result, is_unsafe } => {
+				let mut subscope = FnScope::from_parent(scope, false, *is_unsafe);
 
 				for item in items {
 					item.validate(&mut subscope)?;
@@ -472,7 +481,7 @@ impl Atom {
 					else_body,
 				} => {
 					let bool_ty = Type::Basic(Basic::Bool);
-					let mut subscope = FnScope::from_parent(scope, false);
+					let mut subscope = FnScope::from_parent(scope, false, false);
 
 					let cond_ty = cond.validate(&mut subscope)?;
 
@@ -501,7 +510,7 @@ impl Atom {
 
 				ControlFlow::While { cond, body } => {
 					let bool_ty = Type::Basic(Basic::Bool);
-					let mut subscope = FnScope::from_parent(scope, true);
+					let mut subscope = FnScope::from_parent(scope, true, false);
 
 					let cond_ty = cond.validate(&mut subscope)?;
 
@@ -523,7 +532,7 @@ impl Atom {
 					body,
 				} => {
 					let bool_ty = Type::Basic(Basic::Bool);
-					let mut subscope = FnScope::from_parent(scope, true);
+					let mut subscope = FnScope::from_parent(scope, true, false);
 
 					if let Some(init) = init {
 						init.validate(&mut subscope)?;
@@ -606,7 +615,7 @@ impl Atom {
 					let scrutinee_type = scrutinee.validate(scope)?;
 
 					for branch in branches {
-						let mut subscope = FnScope::from_parent(scope, false);
+						let mut subscope = FnScope::from_parent(scope, false, false);
 
 						for binding in branch.0.get_bindings() {
 							if let Binding {

@@ -374,6 +374,7 @@ impl Expr {
 					Atom::Block {
 						items: vec![],
 						result: Some(Box::new(self)),
+						is_unsafe: false,
 					},
 					node_data,
 				)
@@ -401,6 +402,7 @@ pub enum Atom {
 	Block {
 		items: Vec<Stmt>,
 		result: Option<Box<Expr>>,
+		is_unsafe: bool,
 	},
 
 	CtrlFlow(Box<ControlFlow>),
@@ -450,12 +452,14 @@ impl PartialEq for Atom {
 				Self::Block {
 					items: l_items,
 					result: l_result,
+					is_unsafe: l_unsafe,
 				},
 				Self::Block {
 					items: r_items,
 					result: r_result,
+					is_unsafe: r_unsafe,
 				},
-			) => l_items == r_items && l_result == r_result,
+			) => l_items == r_items && l_result == r_result && l_unsafe == r_unsafe,
 			(Self::CtrlFlow(l0), Self::CtrlFlow(r0)) => l0 == r0,
 			(Self::IntegerLit(l0, l1), Self::IntegerLit(r0, r1)) => l0 == r0 && l1 == r1,
 			(Self::FloatLit(l0, l1), Self::FloatLit(r0, r1)) => l0 == r0 && l1 == r1,
@@ -536,7 +540,11 @@ impl Display for Atom {
 
 			Atom::Identifier(var) => write!(f, "{}", var),
 
-			Atom::Block { items, result } => {
+			Atom::Block { items, result, is_unsafe } => {
+				if *is_unsafe {
+					write!(f, "unsafe ")?;
+				}
+
 				writeln!(f, "{{")?;
 
 				for item in items {

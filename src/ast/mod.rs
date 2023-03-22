@@ -36,10 +36,11 @@ pub struct FnScope<'ctx> {
 	fn_return_type: Type,
 	variables: Vec<(Name, Type, BindingProps)>,
 	is_inside_loop: bool,
+	is_unsafe: bool,
 }
 
 impl<'ctx> FnScope<'ctx> {
-	pub fn from_parent(parent: &'ctx FnScope, is_loop_block: bool) -> Self {
+	pub fn from_parent(parent: &'ctx FnScope, is_loop_block: bool, is_unsafe: bool) -> Self {
 		FnScope {
 			context: parent.context,
 			scope: parent.scope.clone(),
@@ -47,6 +48,7 @@ impl<'ctx> FnScope<'ctx> {
 			fn_return_type: parent.fn_return_type.clone(),
 			variables: vec![],
 			is_inside_loop: is_loop_block | parent.is_inside_loop,
+			is_unsafe: is_unsafe | parent.is_unsafe,
 		}
 	}
 
@@ -58,6 +60,7 @@ impl<'ctx> FnScope<'ctx> {
 			fn_return_type: return_type,
 			variables: vec![],
 			is_inside_loop: false,
+			is_unsafe: false,
 		}
 	}
 

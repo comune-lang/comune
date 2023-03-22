@@ -31,7 +31,7 @@ pub fn validate_function_body(
 		// Validate function block & get return type, make sure it matches the signature
 		elem.validate(&mut scope)?;
 
-		let Expr::Atom(Atom::Block { items, result }, _) = elem else { panic!() };
+		let Expr::Atom(Atom::Block { items, result, .. }, _) = elem else { panic!() };
 
 		// Turn result values into explicit return expressions
 		let has_result = result.is_some();

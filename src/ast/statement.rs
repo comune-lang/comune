@@ -76,6 +76,7 @@ impl Stmt {
 				Atom::Block {
 					items: vec![self],
 					result: None,
+					is_unsafe: false,
 				},
 				NodeData { ty: None, tk },
 			),

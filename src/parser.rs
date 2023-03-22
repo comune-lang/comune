@@ -590,6 +590,15 @@ impl Parser {
 	fn parse_block(&self) -> ComuneResult<Expr> {
 		let begin = self.get_current_start_index();
 		let mut current = self.get_current()?;
+		
+		let is_unsafe;
+
+		if current == Token::Keyword("unsafe") {
+			is_unsafe = true;
+			current = self.get_next()?;
+		} else {
+			is_unsafe = false;
+		}
 
 		if current != Token::Other('{') {
 			return self.err(ComuneErrCode::UnexpectedToken);
@@ -648,7 +657,7 @@ impl Parser {
 		let end = self.get_prev_end_index();
 
 		Ok(Expr::Atom(
-			Atom::Block { items, result },
+			Atom::Block { items, result, is_unsafe },
 			NodeData {
 				tk: SrcSpan {
 					start: begin,
@@ -1220,7 +1229,7 @@ impl Parser {
 					result = Some(Atom::ArrayLit(elements));
 				}
 
-				Token::Other('{') => {
+				Token::Other('{') | Token::Keyword("unsafe") => {
 					let Expr::Atom(block @ Atom::Block { .. }, _) = self.parse_block()? else {
 						panic!()
 					};
