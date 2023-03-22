@@ -408,18 +408,19 @@ pub fn spawn_logger(backtrace_on_error: bool) -> Sender<CMNMessageLog> {
 
 							// Print code snippet
 							for line in lines.clone() {
-								let line_text = &lines_text[line - lines.start()];
+								let og_line_text = &lines_text[line - lines.start()];
 
 								// First, convert tabs to spaces and store the display offsets for each character
 								let (line_text, offsets) = {
-									let mut line_result = String::with_capacity(line_text.len());
+									let mut line_result = String::with_capacity(og_line_text.len());
 									let mut current_offset = 0;
 									let mut offsets = vec![];
 
-									for c in line_text.chars() {
+									for c in og_line_text.chars() {
 										if c == '\t' {
 											line_result.push_str("    ");
 											current_offset += 3;
+											length_left += 3;
 										} else {
 											line_result.push(c);
 										}
@@ -436,13 +437,12 @@ pub fn spawn_logger(backtrace_on_error: bool) -> Sender<CMNMessageLog> {
 									line_text
 								)
 								.unwrap();
-
+								
 								let column = {
 									if line == *lines.start() {
-										*column
+										*column + offsets[*column]
 									} else {
-										if let Some(first) =
-											line_text.chars().position(|c| c != ' ')
+										if let Some(first) = line_text.chars().position(|c| c != ' ')
 										{
 											first + 1
 										} else {
@@ -461,8 +461,7 @@ pub fn spawn_logger(backtrace_on_error: bool) -> Sender<CMNMessageLog> {
 									length_left -= 1;
 								} else if line == *lines.start() {
 									// First line
-									len = usize::min(column + length - 1, line_text.len()) - column
-										+ 1;
+									len = usize::min(column + length - 1, line_text.len()) - column + 1;
 									length_left -= len;
 								} else if line != *lines.end() {
 									// Middle line
@@ -481,14 +480,12 @@ pub fn spawn_logger(backtrace_on_error: bool) -> Sender<CMNMessageLog> {
 									writeln!(out, "").unwrap();
 								} else {
 									// Print squiggle
-									let column_offset = offsets[column];
-									let len_offset = offsets[column + len - 1] - column_offset;
 
-									write!(out, "{: <1$}", "", column + column_offset).unwrap();
+									write!(out, "{: <1$}", "", column).unwrap();
 									writeln!(
 										out,
 										"{}",
-										format!("{:~<1$}", "", len + len_offset).red()
+										format!("{:~<1$}", "", len).red(),
 									)
 									.unwrap();
 								}
