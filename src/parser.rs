@@ -628,6 +628,8 @@ impl Parser {
 				) {
 					semicolon_optional = true;
 				}
+			} else if matches!(stmt, Stmt::Expr(Expr::Atom(Atom::Block { .. }, _))) {
+				semicolon_optional = true;
 			}
 
 			if !semicolon_optional {
@@ -870,6 +872,7 @@ impl Parser {
 			| Token::NumLiteral(_, _)
 			| Token::BoolLiteral(_)
 			| Token::Operator("[")
+			| Token::Other('{')
 			| Token::Keyword(_) => Expr::Atom(
 				self.parse_atom()?,
 				NodeData {
@@ -1215,6 +1218,14 @@ impl Parser {
 					self.consume(&Token::Operator("]"))?;
 
 					result = Some(Atom::ArrayLit(elements));
+				}
+
+				Token::Other('{') => {
+					let Expr::Atom(block @ Atom::Block { .. }, _) = self.parse_block()? else {
+						panic!()
+					};
+
+					result = Some(block);
 				}
 
 				Token::Keyword(keyword) => match keyword {

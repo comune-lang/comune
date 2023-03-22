@@ -440,7 +440,7 @@ pub fn spawn_logger(backtrace_on_error: bool) -> Sender<CMNMessageLog> {
 								
 								let column = {
 									if line == *lines.start() {
-										*column + offsets[*column]
+										*column + offsets[*column - 1]
 									} else {
 										if let Some(first) = line_text.chars().position(|c| c != ' ')
 										{

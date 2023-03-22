@@ -124,6 +124,10 @@ int main() {
 
 	i = 12;
 
+	{
+		int explicit_scope_test = 23;
+	}
+
 	// `else if` syntax test
 	
 	if i == 12 {
