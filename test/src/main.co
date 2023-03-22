@@ -99,6 +99,7 @@ Vector<i32> generic_ret() {
 	return Vector<i32> {
 		data: malloc(4) as i32 mut*,
 		len: 1,
+		capacity: 1,
 	};
 }
 
