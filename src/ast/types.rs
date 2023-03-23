@@ -7,6 +7,7 @@ use super::module::{Identifier, ItemRef, Name};
 use super::traits::TraitRef;
 use super::Attribute;
 use crate::constexpr::ConstExpr;
+use crate::lexer::SrcSpan;
 
 pub type TypeParam = Vec<ItemRef<TraitRef>>; // Generic type parameter, with trait bounds
 pub type GenericParamList = Vec<(Name, TypeParam, Option<Type>)>;
@@ -31,6 +32,7 @@ pub enum Type {
 		name: Identifier,
 		scope: Arc<Identifier>,
 		type_args: Vec<Type>,
+		span: SrcSpan,
 	},
 
 	TypeParam(usize),            // Reference to an in-scope type parameter
@@ -588,6 +590,7 @@ impl Hash for Type {
 				name,
 				scope,
 				type_args,
+				span: _,
 			} => {
 				name.hash(state);
 				scope.hash(state);
@@ -777,14 +780,14 @@ impl Display for Visibility {
 
 impl Display for BindingProps {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		if self.is_ref {
-			write!(f, "&")?;
-		}
 		if self.is_unsafe {
-			write!(f, "unsafe ")?;
+			write!(f, " unsafe")?;
 		}
 		if self.is_mut {
-			write!(f, "mut ")?;
+			write!(f, " mut")?;
+		}
+		if self.is_ref {
+			write!(f, "&")?;
 		}
 		Ok(())
 	}
@@ -800,6 +803,7 @@ impl std::fmt::Debug for Type {
 				name: arg0,
 				scope: arg1,
 				type_args: arg2,
+				span: _
 			} => f
 				.debug_tuple("Unresolved")
 				.field(arg0)

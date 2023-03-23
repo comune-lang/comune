@@ -549,7 +549,12 @@ impl Lexer {
 			.ok_or_else(|| Error::new(io::ErrorKind::UnexpectedEof, "Unexpected EOF"))
 	}
 
-	pub fn log_msg_at(&self, span: SrcSpan, e: ComuneMessage) {
+	pub fn log_msg(&self, e: ComuneMessage) {
+		let span = match &e {
+			ComuneMessage::Error(e) => e.span,
+			ComuneMessage::Warning(_) => SrcSpan::new(), // TODO: Implement
+		};
+
 		if span.start > 0 {
 			let first_line = self.get_line_number(span.start);
 			let last_line = self.get_line_number(span.start + span.len);
@@ -577,14 +582,6 @@ impl Lexer {
 					filename: self.file_name.to_string_lossy().into_owned(),
 				})
 				.unwrap();
-		}
-	}
-
-	pub fn log_msg(&self, e: ComuneMessage) {
-		if let Some((span, _)) = self.current() {
-			self.log_msg_at(*span, e)
-		} else {
-			self.log_msg_at(SrcSpan { start: 0, len: 0 }, e)
 		}
 	}
 }

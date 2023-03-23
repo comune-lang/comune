@@ -1,4 +1,5 @@
 import module_test;
+import vector;
 //import cpp_test;
 
 module submodule_test;
@@ -196,6 +197,6 @@ int main() {
 	
 		free(my_cool_generic.data as void mut*);
 	}
-	
+
 	return module_test::foo();
 }

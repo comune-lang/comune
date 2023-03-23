@@ -45,6 +45,7 @@ pub struct ImplBlockInterface {
 	pub types: HashMap<Name, Type>,
 	pub scope: Arc<Identifier>, // The scope used for name resolution within the impl
 	pub canonical_root: Identifier, // The root of the canonical names used by items in this impl
+	pub params: GenericParamList,
 }
 
 impl PartialEq for TraitRef {

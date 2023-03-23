@@ -53,7 +53,7 @@ impl Parser {
 	}
 
 	fn err<T>(&self, code: ComuneErrCode) -> ComuneResult<T> {
-		Err(ComuneError::new(code, SrcSpan::new()))
+		Err(ComuneError::new(code, self.lexer.borrow().current().unwrap().0))
 	}
 
 	fn get_current(&self) -> ComuneResult<Token> {
@@ -139,12 +139,11 @@ impl Parser {
 					let mut aggregate = AlgebraicDef::new();
 					let Token::Name(name) = self.get_next()? else { return self.err(ComuneErrCode::ExpectedIdentifier) };
 
-					let mut next = self.get_next()?;
+					self.get_next()?;
 
-					if token_compare(&next, "<") {
-						aggregate.params = self.parse_generic_param_list()?;
-						next = self.get_current()?;
-					}
+					aggregate.params = self.parse_generic_param_list()?;
+
+					let mut next = self.get_current()?;
 
 					if !token_compare(&next, "{") {
 						return self.err(ComuneErrCode::UnexpectedToken);
@@ -202,12 +201,11 @@ impl Parser {
 					let mut aggregate = AlgebraicDef::new();
 					let Token::Name(name) = self.get_next()? else { return self.err(ComuneErrCode::ExpectedIdentifier) };
 
-					let mut next = self.get_next()?;
+					self.get_next()?;
 
-					if token_compare(&next, "<") {
-						aggregate.params = self.parse_generic_param_list()?;
-						next = self.get_current()?;
-					}
+					aggregate.params = self.parse_generic_param_list()?;
+
+					let mut next = self.get_current()?;
 
 					if !token_compare(&next, "{") {
 						return self.err(ComuneErrCode::UnexpectedToken);
@@ -333,6 +331,9 @@ impl Parser {
 				Token::Keyword("impl") => {
 					self.get_next()?;
 
+					// Parse generic parameters
+					let params = self.parse_generic_param_list()?;
+
 					// Parse type or trait name, depending on if the next token is "for"
 					let mut impl_ty = self.parse_type(false)?;
 					let mut trait_name = None;
@@ -341,7 +342,7 @@ impl Parser {
 						self.get_next()?;
 
 						// We parsed the trait as a type, so extract it
-						let Type::Unresolved { name, scope, type_args } = impl_ty else {
+						let Type::Unresolved { name, scope, type_args, span } = impl_ty else {
 							return self.err(ComuneErrCode::ExpectedIdentifier); // TODO: Proper error
 						};
 
@@ -381,6 +382,7 @@ impl Parser {
 
 						self.get_next()?;
 
+						let type_params = self.parse_generic_param_list()?;
 						let params = self.parse_parameter_list(Some(&impl_ty))?;
 						let ast = ModuleASTElem::Unparsed(self.get_current_token_index());
 
@@ -390,7 +392,7 @@ impl Parser {
 							path: Identifier::from_parent(&canonical_root, fn_name.clone()),
 							ret,
 							params,
-							type_params: vec![],
+							type_params,
 							attributes: func_attributes,
 						}));
 
@@ -410,6 +412,7 @@ impl Parser {
 							scope: self.current_scope.clone(),
 
 							canonical_root,
+							params
 						},
 					);
 
@@ -703,12 +706,8 @@ impl Parser {
 			match op {
 				// Function declaration
 				"<" | "(" => {
-					let mut type_params = vec![];
-
-					if op == "<" {
-						type_params = self.parse_generic_param_list()?;
-					}
-
+					let type_params = self.parse_generic_param_list()?;
+					
 					let t = FnPrototype {
 						path: Identifier::from_parent(&self.current_scope, name.clone()),
 						ret: t,
@@ -1715,6 +1714,8 @@ impl Parser {
 
 			Ok(Type::Tuple(kind, types))
 		} else if self.is_at_identifier_token()? {
+			let start_idx = self.get_current_start_index();
+
 			let typename = self.parse_identifier()?;
 
 			if immediate_resolve {
@@ -1728,6 +1729,10 @@ impl Parser {
 					name: typename,
 					scope: self.current_scope.clone(),
 					type_args: vec![],
+					span: SrcSpan { 
+						start: start_idx, 
+						len: self.get_prev_end_index() - start_idx 
+					}
 				};
 			}
 
@@ -1891,8 +1896,8 @@ impl Parser {
 	}
 
 	fn parse_generic_param_list(&self) -> ComuneResult<GenericParamList> {
-		if !token_compare(&self.get_current()?, "<") {
-			return self.err(ComuneErrCode::UnexpectedToken);
+		if self.get_current()? != Token::Operator("<") {
+			return Ok(vec![]);
 		}
 
 		let mut result = vec![];

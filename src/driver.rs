@@ -154,7 +154,7 @@ pub fn compile_comune_module(
 			parser
 				.lexer
 				.borrow()
-				.log_msg_at(SrcSpan::new(), ComuneMessage::Error(e.clone()));
+				.log_msg(ComuneMessage::Error(e.clone()));
 
 			state
 				.module_states
@@ -548,7 +548,7 @@ pub fn generate_code<'ctx>(
 			parser
 				.lexer
 				.borrow()
-				.log_msg_at(e.span, ComuneMessage::Error(e.clone()));
+				.log_msg(ComuneMessage::Error(e.clone()));
 			return Err(e);
 		}
 	}
@@ -594,7 +594,7 @@ pub fn generate_code<'ctx>(
 			parser
 				.lexer
 				.borrow()
-				.log_msg_at(error.span, ComuneMessage::Error(error));
+				.log_msg(ComuneMessage::Error(error));
 		}
 
 		return Err(ComuneError::new(

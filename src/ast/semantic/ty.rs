@@ -163,6 +163,7 @@ pub fn resolve_type(
 			name: id,
 			scope,
 			type_args,
+			span
 		} => {
 			let result;
 			let generic_pos = generics.iter().position(|(name, ..)| name == id.name());
@@ -188,7 +189,7 @@ pub fn resolve_type(
 			} else {
 				Err(ComuneError::new(
 					ComuneErrCode::UnresolvedTypename(id.to_string()),
-					SrcSpan::new(),
+					*span,
 				))
 			}
 		}
