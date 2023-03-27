@@ -31,8 +31,7 @@ pub fn resolve_interface_types(interface: &ModuleInterface) -> ComuneResult<()> 
 						ret,
 						params,
 						type_params: generics,
-						path: _,
-						attributes: _,
+						..
 					} = &mut *func.write().unwrap();
 
 					resolve_type(ret, interface, generics)?;
@@ -55,10 +54,7 @@ pub fn resolve_interface_types(interface: &ModuleInterface) -> ComuneResult<()> 
 
 			ModuleItemInterface::Trait(tr) => {
 				let TraitInterface {
-					items,
-					supers: _,
-					types: _,
-					attributes: _,
+					items, ..
 				} = &mut *tr.write().unwrap();
 
 				for fns in items.values_mut() {
@@ -67,8 +63,7 @@ pub fn resolve_interface_types(interface: &ModuleInterface) -> ComuneResult<()> 
 							ret,
 							params,
 							type_params: generics,
-							path: _,
-							attributes: _,
+							..
 						} = &mut *func.write().unwrap();
 
 						generics.insert(0, ("Self".into(), vec![], None));
@@ -87,7 +82,7 @@ pub fn resolve_interface_types(interface: &ModuleInterface) -> ComuneResult<()> 
 	}
 
 	for (ty, im) in &interface.trait_solver.local_impls {
-		resolve_type(&mut *ty.write().unwrap(), interface, &vec![])?;
+		resolve_type(&mut *ty.write().unwrap(), interface, &im.read().unwrap().params)?;
 
 		// Resolve item references in canonical root
 
@@ -122,8 +117,10 @@ pub fn resolve_interface_types(interface: &ModuleInterface) -> ComuneResult<()> 
 		let trait_qualif = (Some(Box::new(ty.read().unwrap().clone())), resolved_trait);
 
 		im.write().unwrap().canonical_root.qualifier = trait_qualif.clone();
+		
+		let im = im.read().unwrap();
 
-		for fns in im.read().unwrap().functions.values() {
+		for fns in im.functions.values() {
 			for func in fns {
 				let FnPrototype {
 					ret,
@@ -134,6 +131,11 @@ pub fn resolve_interface_types(interface: &ModuleInterface) -> ComuneResult<()> 
 				} = &mut *func.write().unwrap();
 
 				path.qualifier = trait_qualif.clone();
+				
+				// Kinda inefficient but it works for now
+				for param in &im.params {
+					generics.insert(0, param.clone());
+				}
 
 				generics.insert(0, ("Self".into(), vec![], None));
 

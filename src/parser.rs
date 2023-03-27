@@ -342,7 +342,7 @@ impl Parser {
 						self.get_next()?;
 
 						// We parsed the trait as a type, so extract it
-						let Type::Unresolved { name, scope, type_args, span } = impl_ty else {
+						let Type::Unresolved { name, scope, type_args, .. } = impl_ty else {
 							return self.err(ComuneErrCode::ExpectedIdentifier); // TODO: Proper error
 						};
 
@@ -1441,7 +1441,7 @@ impl Parser {
 
 	// Returns true if the current token is the start of a Type.
 	// In ambiguous contexts (i.e. function blocks), `resolve_idents` enables basic name resolution
-	fn is_at_type_token(&self, resolve_idents: bool) -> ComuneResult<bool> {
+	fn is_at_type_token(&self, immediate_resolve: bool) -> ComuneResult<bool> {
 		let current = self.get_current()?;
 
 		let current_idx = self.get_current_token_index();
@@ -1452,7 +1452,7 @@ impl Parser {
 		}
 
 		if self.is_at_identifier_token()? {
-			if resolve_idents {
+			if immediate_resolve {
 				let typename = self.parse_identifier()?;
 
 				self.lexer.borrow_mut().seek_token_idx(current_idx);
