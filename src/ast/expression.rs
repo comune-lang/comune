@@ -398,7 +398,6 @@ impl Display for Expr {
 
 #[derive(Clone, Debug)]
 pub enum Atom {
-	// has_result determines whether the result of the last expression is used as the block's result value
 	Block {
 		items: Vec<Stmt>,
 		result: Option<Box<Expr>>,

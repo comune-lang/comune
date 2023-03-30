@@ -266,7 +266,7 @@ impl Display for ComuneErrCode {
 
 				Ok(())
 			}
-			
+
 			ComuneErrCode::UnresolvedTrait(tr) => write!(f, "failed to resolve trait `{tr}`"),
 
 			ComuneErrCode::LoopCtrlOutsideLoop(name) => write!(f, "{name} outside of loop"),

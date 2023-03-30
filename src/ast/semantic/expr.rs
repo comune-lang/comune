@@ -72,34 +72,48 @@ impl Expr {
 						let first_t = lhs.validate(scope)?;
 						let second_t = rhs.validate(scope)?;
 
-						if first_t != second_t {
-							// Try to coerce one to the other
+						match (&first_t, &op, &second_t) {
+							(
+								Type::Pointer { .. }, 
+								Operator::Add | Operator::Sub, 
+								Type::Basic(Basic::Integral { .. } | Basic::PtrSizeInt { .. })
+							) => {
+								Ok(first_t)
+							}
 
-							if lhs.coercable_to(&first_t, &second_t, scope) {
-								lhs.wrap_in_cast(second_t.clone());
-							} else if rhs.coercable_to(&second_t, &first_t, scope) {
-								rhs.wrap_in_cast(first_t.clone());
-							} else {
-								return Err(ComuneError::new(
-									ComuneErrCode::ExprTypeMismatch(first_t, second_t, op.clone()),
-									meta.tk,
-								));
+							_ => {
+								if first_t != second_t {
+									// Try to coerce one to the other
+		
+									if lhs.coercable_to(&first_t, &second_t, scope) {
+										lhs.wrap_in_cast(second_t.clone());
+									} else if rhs.coercable_to(&second_t, &first_t, scope) {
+										rhs.wrap_in_cast(first_t.clone());
+									} else {
+										return Err(ComuneError::new(
+											ComuneErrCode::ExprTypeMismatch(first_t, second_t, op.clone()),
+											meta.tk,
+										));
+									}
+								}
+		
+								// Handle operators that change the expression's type here
+								match op {
+									Operator::Eq
+									| Operator::NotEq
+									| Operator::Less
+									| Operator::Greater
+									| Operator::LessEq
+									| Operator::GreaterEq => Ok(Type::Basic(Basic::Bool)),
+		
+									Operator::PostDec | Operator::PostInc => Ok(first_t),
+		
+									_ => Ok(second_t),
+								}
 							}
 						}
 
-						// Handle operators that change the expression's type here
-						match op {
-							Operator::Eq
-							| Operator::NotEq
-							| Operator::Less
-							| Operator::Greater
-							| Operator::LessEq
-							| Operator::GreaterEq => Ok(Type::Basic(Basic::Bool)),
-
-							Operator::PostDec | Operator::PostInc => Ok(first_t),
-
-							_ => Ok(second_t),
-						}
+						
 					}
 				}
 			}
@@ -265,7 +279,13 @@ impl Expr {
 
 						Ok(m)
 					} else {
-						panic!()
+						Err(ComuneError::new(
+							ComuneErrCode::InvalidMemberAccess { t: 
+								lhs_ty.clone(), 
+								idx: id.name().to_string()
+							},
+							rhs.get_node_data().tk
+						))
 					}
 				}
 

@@ -304,8 +304,19 @@ impl Type {
 					.collect(),
 			},
 
-			Type::TypeParam(param) => type_args[*param].get_concrete_type(type_args),
+			Type::TypeParam(param) => 
+				if let Some(concrete) = type_args.get(*param) {
+					if concrete == self {
+						concrete.clone()
+					} else {
+						concrete.get_concrete_type(type_args)
+					}
+				} else {
+					Type::TypeParam(*param)
+				}
+
 			Type::Never => Type::Never,
+
 			Type::Tuple(kind, types) => Type::Tuple(
 				*kind,
 				types
@@ -677,7 +688,7 @@ impl Display for Type {
 				Ok(())
 			}
 
-			Type::TypeParam(t) => write!(f, "<{t}>"),
+			Type::TypeParam(t) => write!(f, "${t}"),
 
 			Type::Never => write!(f, "never"),
 

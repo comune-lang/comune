@@ -213,7 +213,7 @@ impl Display for LValue {
 			match proj {
 				PlaceElem::Deref => write!(f, ">"),
 				PlaceElem::Field(i) => write!(f, ".{i}"),
-				PlaceElem::Index(i, t) => write!(f, "[{t} {i}]"),
+				PlaceElem::Offset(i, t, o) => write!(f, "[{t} {i}]"),
 			}?;
 		}
 		Ok(())

@@ -19,7 +19,7 @@ use crate::ast::types::{
 	AlgebraicDef, Basic, BindingProps, FnParamList, FnPrototype, GenericParamList, TupleKind, Type,
 	TypeDef, TypeDefKind, Visibility,
 };
-use crate::ast::Attribute;
+use crate::ast::{Attribute, FnScope};
 
 // Convenience function that matches a &str against various token kinds
 fn token_compare(token: &Token, text: &str) -> bool {
@@ -41,13 +41,13 @@ pub struct Parser {
 	verbose: bool,
 }
 
-impl Parser {
+impl<'ctx> Parser {
 	pub fn new(lexer: Lexer, verbose: bool) -> Parser {
 		Parser {
 			interface: ModuleInterface::new(Identifier::new(true)),
 			module_impl: ModuleImpl::new(),
-			current_scope: Arc::new(Identifier::new(true)),
 			lexer: RefCell::new(lexer),
+			current_scope: Arc::new(Identifier::new(true)),
 			verbose,
 		}
 	}
@@ -116,8 +116,16 @@ impl Parser {
 			// Parse function block
 			if let ModuleASTElem::Unparsed(idx) = ast {
 				self.lexer.borrow_mut().seek_token_idx(*idx);
-
-				fn_impls.push((proto.clone(), ModuleASTElem::Parsed(self.parse_block()?)));
+				
+				let proto_inner = proto.read().unwrap();
+				
+				let scope = FnScope::new(
+					&self.interface, 
+					proto_inner.path.clone(), 
+					proto_inner.ret.clone()
+				).with_params(proto_inner.type_params.clone());
+				
+				fn_impls.push((proto.clone(), ModuleASTElem::Parsed(self.parse_block(&scope)?)));
 			}
 		}
 
@@ -141,7 +149,7 @@ impl Parser {
 
 					self.get_next()?;
 
-					aggregate.params = self.parse_generic_param_list()?;
+					aggregate.params = self.parse_generic_param_list(None)?;
 
 					let mut next = self.get_current()?;
 
@@ -158,7 +166,7 @@ impl Parser {
 
 						let (tuple_kind, tuple_types) = if self.get_next()? == Token::Operator("(")
 						{
-							self.parse_tuple_type(false)?
+							self.parse_tuple_type(None)?
 						} else {
 							(TupleKind::Product, vec![])
 						};
@@ -203,7 +211,7 @@ impl Parser {
 
 					self.get_next()?;
 
-					aggregate.params = self.parse_generic_param_list()?;
+					aggregate.params = self.parse_generic_param_list(None)?;
 
 					let mut next = self.get_current()?;
 
@@ -332,10 +340,10 @@ impl Parser {
 					self.get_next()?;
 
 					// Parse generic parameters
-					let params = self.parse_generic_param_list()?;
+					let params = self.parse_generic_param_list(None)?;
 
 					// Parse type or trait name, depending on if the next token is "for"
-					let mut impl_ty = self.parse_type(false)?;
+					let mut impl_ty = self.parse_type(None)?;
 					let mut trait_name = None;
 
 					if self.get_current()? == Token::Keyword("for") {
@@ -353,7 +361,7 @@ impl Parser {
 						});
 
 						// Then parse the implementing type, for real this time
-						impl_ty = self.parse_type(false)?;
+						impl_ty = self.parse_type(None)?;
 					}
 
 					// Consume barce
@@ -374,7 +382,7 @@ impl Parser {
 					while self.get_current()? != Token::Other('}') {
 						let func_attributes = self.parse_attributes()?;
 
-						let ret = self.parse_type(false)?;
+						let ret = self.parse_type(None)?;
 
 						let Token::Name(fn_name) = self.get_current()? else {
 							return self.err(ComuneErrCode::ExpectedIdentifier);
@@ -382,8 +390,8 @@ impl Parser {
 
 						self.get_next()?;
 
-						let type_params = self.parse_generic_param_list()?;
-						let params = self.parse_parameter_list(Some(&impl_ty))?;
+						let type_params = self.parse_generic_param_list(None)?;
+						let params = self.parse_parameter_list(Some(&impl_ty), None)?;
 						let ast = ModuleASTElem::Unparsed(self.get_current_token_index());
 
 						self.skip_block()?;
@@ -424,7 +432,7 @@ impl Parser {
 					self.get_next()?;
 
 					if self.is_at_identifier_token()? {
-						let import = ModuleImportKind::Extern(self.parse_identifier()?);
+						let import = ModuleImportKind::Extern(self.parse_identifier(None)?);
 
 						self.interface.import_names.insert(import);
 
@@ -446,15 +454,15 @@ impl Parser {
 
 							let name = names[0].expect_scopeless()?.clone();
 
-							if self.is_at_type_token(false)? {
-								let ty = self.parse_type(false)?;
+							if self.is_at_type_token(None)? {
+								let ty = self.parse_type(None)?;
 
 								self.interface.children.insert(
 									Identifier::from_parent(scope, name),
 									ModuleItemInterface::TypeAlias(Arc::new(RwLock::new(ty))),
 								);
 							} else {
-								let aliased = self.parse_identifier()?;
+								let aliased = self.parse_identifier(None)?;
 
 								self.interface.children.insert(
 									Identifier::from_parent(scope, name),
@@ -590,7 +598,7 @@ impl Parser {
 		self.get_next()
 	}
 
-	fn parse_block(&self) -> ComuneResult<Expr> {
+	fn parse_block(&self, scope: &FnScope<'ctx>) -> ComuneResult<Expr> {
 		let begin = self.get_current_start_index();
 		let mut current = self.get_current()?;
 		
@@ -613,7 +621,7 @@ impl Parser {
 		self.get_next()?;
 
 		while self.get_current()? != Token::Other('}') {
-			let stmt = self.parse_statement()?;
+			let stmt = self.parse_statement(scope)?;
 
 			current = self.get_current()?;
 
@@ -694,7 +702,7 @@ impl Parser {
 		attributes: Vec<Attribute>,
 		self_ty: Option<&Type>,
 	) -> ComuneResult<(Name, ModuleItemInterface, ModuleItemImpl)> {
-		let t = self.parse_type(false)?;
+		let t = self.parse_type(None)?;
 		let interface;
 		let item;
 
@@ -706,12 +714,12 @@ impl Parser {
 			match op {
 				// Function declaration
 				"<" | "(" => {
-					let type_params = self.parse_generic_param_list()?;
+					let type_params = self.parse_generic_param_list(None)?;
 					
 					let t = FnPrototype {
 						path: Identifier::from_parent(&self.current_scope, name.clone()),
 						ret: t,
-						params: self.parse_parameter_list(self_ty)?,
+						params: self.parse_parameter_list(self_ty, None)?,
 						type_params,
 						attributes,
 					};
@@ -799,24 +807,28 @@ impl Parser {
 		Ok(Some(props))
 	}
 
-	fn parse_statement(&self) -> ComuneResult<Stmt> {
+	fn parse_statement(&self, scope: &FnScope<'ctx>) -> ComuneResult<Stmt> {
 		let begin = self.get_current_start_index();
+		let begin_token = self.get_current_token_index();
 
-		if self.is_at_type_token(true)? {
+		if self.is_at_type_token(Some(scope))? {
 			// This is a declaration
 
-			let ty = self.parse_type(true)?;
+			let ty = self.parse_type(Some(scope))?;
 			let binding_props = self.parse_binding_props()?;
 
 			let Token::Name(name) = self.get_current()? else {
-				return self.err(ComuneErrCode::ExpectedIdentifier)
+				// Nope, try to parse as an expression after all
+				self.lexer.borrow_mut().seek_token_idx(begin_token);
+
+				return Ok(Stmt::Expr(self.parse_expression(scope)?))
 			};
 
 			let mut expr = None;
 
 			if token_compare(&self.get_next()?, "=") {
 				self.get_next()?;
-				expr = Some(self.parse_expression()?);
+				expr = Some(self.parse_expression(scope)?);
 			}
 
 			let stmt_result = Stmt::Decl(
@@ -832,15 +844,13 @@ impl Parser {
 		} else {
 			// This isn't a declaration, so parse an expression
 
-			let expr = self.parse_expression()?;
-
-			Ok(Stmt::Expr(expr))
+			Ok(Stmt::Expr(self.parse_expression(scope)?))
 		}
 	}
 
-	fn parse_pattern(&self) -> ComuneResult<Pattern> {
-		if self.is_at_type_token(true)? {
-			let pattern_ty = self.parse_type(true)?;
+	fn parse_pattern(&self, scope: &FnScope<'ctx>) -> ComuneResult<Pattern> {
+		if self.is_at_type_token(Some(scope))? {
+			let pattern_ty = self.parse_type(Some(scope))?;
 			let props = self.parse_binding_props()?;
 
 			match self.get_current()? {
@@ -863,12 +873,12 @@ impl Parser {
 		}
 	}
 
-	fn parse_expression(&self) -> ComuneResult<Expr> {
-		self.parse_expression_bp(0)
+	fn parse_expression(&self, scope: &FnScope<'ctx>) -> ComuneResult<Expr> {
+		self.parse_expression_bp(0, scope)
 	}
 
 	// World's most hacked-together pratt parser (tm)
-	fn parse_expression_bp(&self, min_bp: u8) -> ComuneResult<Expr> {
+	fn parse_expression_bp(&self, min_bp: u8, scope: &FnScope<'ctx>) -> ComuneResult<Expr> {
 		let mut current = self.get_current()?;
 		let begin_lhs = self.get_current_start_index();
 
@@ -882,7 +892,7 @@ impl Parser {
 			| Token::Operator("[")
 			| Token::Other('{')
 			| Token::Keyword(_) => Expr::Atom(
-				self.parse_atom()?,
+				self.parse_atom(scope)?,
 				NodeData {
 					ty: None,
 					tk: SrcSpan {
@@ -893,7 +903,7 @@ impl Parser {
 			),
 
 			_ if self.is_at_identifier_token()? => Expr::Atom(
-				self.parse_atom()?,
+				self.parse_atom(scope)?,
 				NodeData {
 					ty: None,
 					tk: SrcSpan {
@@ -913,7 +923,7 @@ impl Parser {
 
 				if let Operator::Call = op {
 					// Special case; parse sub-expression
-					let sub = self.parse_expression_bp(0)?;
+					let sub = self.parse_expression_bp(0, scope)?;
 
 					current = self.get_current()?;
 
@@ -927,7 +937,7 @@ impl Parser {
 						return self.err(ComuneErrCode::UnexpectedToken);
 					}
 				} else {
-					let rhs = self.parse_expression_bp(op.get_binding_power())?;
+					let rhs = self.parse_expression_bp(op.get_binding_power(), scope)?;
 
 					let end_index = self.get_prev_end_index();
 
@@ -978,8 +988,7 @@ impl Parser {
 
 			match op {
 				Operator::Cast => {
-					let goal_t = self.parse_type(true)?;
-
+					let goal_t = self.parse_type(Some(scope))?;
 					let end_index = self.get_prev_end_index();
 					let tk = SrcSpan {
 						start: begin_lhs,
@@ -1017,7 +1026,7 @@ impl Parser {
 				}
 
 				Operator::Subscr => {
-					let rhs = self.parse_expression_bp(rbp)?;
+					let rhs = self.parse_expression_bp(rbp, scope)?;
 					let end_rhs = self.get_prev_end_index();
 
 					lhs = Expr::Cons(
@@ -1040,7 +1049,7 @@ impl Parser {
 				}
 
 				_ => {
-					let rhs = self.parse_expression_bp(rbp)?;
+					let rhs = self.parse_expression_bp(rbp, scope)?;
 					let end_rhs = self.get_prev_end_index();
 
 					lhs = Expr::Cons(
@@ -1061,19 +1070,19 @@ impl Parser {
 		Ok(lhs)
 	}
 
-	fn parse_atom(&self) -> ComuneResult<Atom> {
+	fn parse_atom(&self, scope: &FnScope<'ctx>) -> ComuneResult<Atom> {
 		let mut result = None;
 		let mut current = self.get_current()?;
 
 		if self.is_at_identifier_token()? {
-			let id = self.parse_identifier()?;
+			let id = self.parse_identifier(Some(scope))?;
 
-			if let Some(Type::TypeRef { def, mut args }) = self.find_type(&id) {
+			if let Some(Type::TypeRef { def, mut args }) = scope.find_type(&id) {
 				match &def.upgrade().unwrap().read().unwrap().def {
 					// Parse with algebraic typename
 					TypeDefKind::Algebraic(_) => {
 						if let Token::Operator("<") = self.get_current()? {
-							args = self.parse_type_argument_list(true)?;
+							args = self.parse_type_argument_list(Some(scope))?;
 						}
 
 						if let Token::Other('{') = self.get_current()? {
@@ -1089,7 +1098,7 @@ impl Parser {
 
 									self.consume(&Token::Other(':'))?;
 
-									let expr = self.parse_expression()?;
+									let expr = self.parse_expression(scope)?;
 
 									inits.push((member_name, expr));
 								} else if self.get_current()? != Token::Other('}') {
@@ -1112,23 +1121,29 @@ impl Parser {
 			if result.is_none() {
 				// Variable or function name
 				result = Some(Atom::Identifier(id.clone()));
-
+				
+				
 				if let Token::Operator("(" | "<") = self.get_current()? {
+					let start_token = self.get_current_token_index();
 					let mut type_args = vec![];
 
 					if self.get_current()? == Token::Operator("<") {
-						let mut is_function = false;
-
-						self.interface
-							.with_item(&id, &self.current_scope, |item, _| {
-								is_function = matches!(item, ModuleItemInterface::Functions(..));
-							});
-
-						if is_function {
-							type_args = self.parse_type_argument_list(true)?
-						} else {
-							// Not a function, return as plain Identifier early
-							return Ok(result.unwrap());
+						// Here lies the Turbofish, vanquished after a battle
+						// lasting months on end, at the cost of tuple syntax.
+	
+						type_args = match self.parse_type_argument_list(Some(scope)) {
+							Ok(args) => args,
+							
+							Err(ComuneError { 
+								code: ComuneErrCode::UnexpectedToken | ComuneErrCode::ExpectedIdentifier, 
+								.. 
+							}) => {
+								self.lexer.borrow_mut().seek_token_idx(start_token);
+								
+								return Ok(Atom::Identifier(id));
+							}
+							
+							Err(e) => return Err(e),
 						}
 					}
 
@@ -1137,7 +1152,7 @@ impl Parser {
 
 					if self.get_next()? != Token::Operator(")") {
 						loop {
-							args.push(self.parse_expression()?);
+							args.push(self.parse_expression(scope)?);
 
 							current = self.get_current()?;
 
@@ -1212,7 +1227,7 @@ impl Parser {
 					let mut elements = vec![];
 
 					loop {
-						elements.push(self.parse_expression()?);
+						elements.push(self.parse_expression(scope)?);
 
 						if self.get_current()? == Token::Other(',') {
 							self.get_next()?;
@@ -1229,7 +1244,7 @@ impl Parser {
 				}
 
 				Token::Other('{') | Token::Keyword("unsafe") => {
-					let Expr::Atom(block @ Atom::Block { .. }, _) = self.parse_block()? else {
+					let Expr::Atom(block @ Atom::Block { .. }, _) = self.parse_block(scope)? else {
 						panic!()
 					};
 
@@ -1246,7 +1261,7 @@ impl Parser {
 								Some(Atom::CtrlFlow(Box::new(ControlFlow::Return { expr: None })));
 						} else {
 							result = Some(Atom::CtrlFlow(Box::new(ControlFlow::Return {
-								expr: Some(self.parse_expression()?),
+								expr: Some(self.parse_expression(scope)?),
 							})));
 						}
 					}
@@ -1270,7 +1285,7 @@ impl Parser {
 					"match" => {
 						self.get_next()?;
 
-						let scrutinee = self.parse_expression()?;
+						let scrutinee = self.parse_expression(scope)?;
 						current = self.get_current()?;
 
 						if current != Token::Other('{') {
@@ -1282,7 +1297,7 @@ impl Parser {
 						let mut branches = vec![];
 
 						while current != Token::Other('}') {
-							let branch_pat = self.parse_pattern()?;
+							let branch_pat = self.parse_pattern(scope)?;
 							let branch_block;
 
 							if self.get_current()? != Token::Operator("=>") {
@@ -1290,9 +1305,9 @@ impl Parser {
 							}
 
 							if self.get_next()? == Token::Other('{') {
-								branch_block = self.parse_block()?;
+								branch_block = self.parse_block(scope)?;
 							} else {
-								branch_block = self.parse_expression()?;
+								branch_block = self.parse_expression(scope)?;
 
 								// After a bare expression, a comma is required
 								if self.get_current()? != Token::Other(',') {
@@ -1322,14 +1337,14 @@ impl Parser {
 						self.get_next()?;
 
 						// Parse condition
-						let cond = self.parse_expression()?;
+						let cond = self.parse_expression(scope)?;
 
 						// Parse body
 						let body;
 						let mut else_body = None;
 
 						if token_compare(&self.get_current()?, "{") {
-							body = self.parse_block()?;
+							body = self.parse_block(scope)?;
 						} else {
 							return self.err(ComuneErrCode::UnexpectedToken);
 						}
@@ -1338,10 +1353,10 @@ impl Parser {
 							self.get_next()?;
 
 							match self.get_current()? {
-								Token::Other('{') => else_body = Some(self.parse_block()?),
+								Token::Other('{') => else_body = Some(self.parse_block(scope)?),
 
 								// Bit of a hack to get `else if` working
-								Token::Keyword("if") => else_body = Some(self.parse_expression()?),
+								Token::Keyword("if") => else_body = Some(self.parse_expression(scope)?),
 
 								_ => return self.err(ComuneErrCode::UnexpectedToken),
 							}
@@ -1359,8 +1374,8 @@ impl Parser {
 					// Parse while loop
 					"while" => {
 						self.get_next()?;
-						let cond = self.parse_expression()?;
-						let body = self.parse_block()?;
+						let cond = self.parse_expression(scope)?;
+						let body = self.parse_block(scope)?;
 
 						result = Some(Atom::CtrlFlow(Box::new(ControlFlow::While { cond, body })));
 					}
@@ -1380,7 +1395,7 @@ impl Parser {
 							// No init statement, skip
 							current = self.get_next()?;
 						} else {
-							init = Some(self.parse_statement()?); // TODO: Restrict to declaration?
+							init = Some(self.parse_statement(scope)?); // TODO: Restrict to declaration?
 							self.check_semicolon()?;
 							current = self.get_current()?;
 						}
@@ -1389,7 +1404,7 @@ impl Parser {
 							// No iter expression, skip
 							current = self.get_next()?;
 						} else {
-							cond = Some(self.parse_expression()?);
+							cond = Some(self.parse_expression(scope)?);
 							self.check_semicolon()?;
 							current = self.get_current()?;
 						}
@@ -1398,7 +1413,7 @@ impl Parser {
 							// No cond expression, skip
 							current = self.get_next()?;
 						} else if !token_compare(&current, ")") {
-							iter = Some(self.parse_expression()?);
+							iter = Some(self.parse_expression(scope)?);
 							current = self.get_current()?;
 						}
 
@@ -1411,9 +1426,9 @@ impl Parser {
 
 						// Parse body
 						let body = if token_compare(&current, "{") {
-							self.parse_block()?
+							self.parse_block(scope)?
 						} else {
-							self.parse_statement()?.wrap_in_block()
+							self.parse_statement(scope)?.wrap_in_block()
 						};
 
 						result = Some(Atom::CtrlFlow(Box::new(ControlFlow::For {
@@ -1435,13 +1450,9 @@ impl Parser {
 		Ok(result.unwrap())
 	}
 
-	fn find_type(&self, typename: &Identifier) -> Option<Type> {
-		self.interface.resolve_type(typename, &self.current_scope)
-	}
-
 	// Returns true if the current token is the start of a Type.
 	// In ambiguous contexts (i.e. function blocks), `resolve_idents` enables basic name resolution
-	fn is_at_type_token(&self, immediate_resolve: bool) -> ComuneResult<bool> {
+	fn is_at_type_token(&self, scope: Option<&FnScope<'ctx>>) -> ComuneResult<bool> {
 		let current = self.get_current()?;
 
 		let current_idx = self.get_current_token_index();
@@ -1452,15 +1463,12 @@ impl Parser {
 		}
 
 		if self.is_at_identifier_token()? {
-			if immediate_resolve {
-				let typename = self.parse_identifier()?;
+			if let Some(scope) = scope {
+				let typename = self.parse_identifier(Some(scope))?;
 
 				self.lexer.borrow_mut().seek_token_idx(current_idx);
 
-				Ok(self
-					.interface
-					.resolve_type(&typename, &self.current_scope)
-					.is_some())
+				Ok(scope.find_type(&typename).is_some())
 			} else {
 				self.lexer.borrow_mut().seek_token_idx(current_idx);
 
@@ -1478,7 +1486,7 @@ impl Parser {
 		))
 	}
 
-	fn parse_identifier(&self) -> ComuneResult<Identifier> {
+	fn parse_identifier(&self, scope: Option<&FnScope<'ctx>>) -> ComuneResult<Identifier> {
 		if !self.is_at_identifier_token()? {
 			return self.err(ComuneErrCode::ExpectedIdentifier);
 		}
@@ -1494,13 +1502,13 @@ impl Parser {
 		} else if self.get_current()? == Token::Operator("<") {
 			self.get_next()?;
 
-			let ty = self.parse_type(true)?;
+			let ty = self.parse_type(scope)?;
 
 			let tr = match self.get_current()? {
 				Token::Operator("as") => {
 					self.get_next()?;
 					Some(Box::new(ItemRef::Unresolved {
-						name: self.parse_identifier()?,
+						name: self.parse_identifier(scope)?,
 						scope: self.current_scope.clone(),
 						type_args: vec![],
 					}))
@@ -1615,7 +1623,7 @@ impl Parser {
 		Ok(result)
 	}
 
-	fn parse_parameter_list(&self, self_ty: Option<&Type>) -> ComuneResult<FnParamList> {
+	fn parse_parameter_list(&self, self_ty: Option<&Type>, scope: Option<&FnScope<'ctx>>) -> ComuneResult<FnParamList> {
 		let mut result = FnParamList {
 			params: vec![],
 			variadic: false,
@@ -1648,9 +1656,9 @@ impl Parser {
 			}
 		}
 
-		while self.is_at_type_token(false)? {
+		while self.is_at_type_token(scope)? {
 			let mut param = (
-				self.parse_type(false)?,
+				self.parse_type(scope)?,
 				None,
 				self.parse_binding_props()?.unwrap_or_default(),
 			);
@@ -1702,24 +1710,25 @@ impl Parser {
 		}
 	}
 
-	fn parse_type(&self, immediate_resolve: bool) -> ComuneResult<Type> {
+	fn parse_type(&self, scope: Option<&FnScope<'ctx>>) -> ComuneResult<Type> {
 		let mut result;
 
-		if !self.is_at_type_token(immediate_resolve)? {
+		if !self.is_at_type_token(scope)? {
 			return self.err(ComuneErrCode::ExpectedIdentifier);
 		}
 
 		if self.get_current()? == Token::Operator("(") {
-			let (kind, types) = self.parse_tuple_type(immediate_resolve)?;
+			let (kind, types) = self.parse_tuple_type(scope)?;
 
 			Ok(Type::Tuple(kind, types))
 		} else if self.is_at_identifier_token()? {
 			let start_idx = self.get_current_start_index();
 
-			let typename = self.parse_identifier()?;
+			let typename = self.parse_identifier(scope)?;
 
-			if immediate_resolve {
-				if let Some(ty) = self.interface.resolve_type(&typename, &self.current_scope) {
+			if let Some(scope) = scope {
+				
+				if let Some(ty) = scope.find_type(&typename) {
 					result = ty;
 				} else {
 					return self.err(ComuneErrCode::UnresolvedTypename(typename.to_string()));
@@ -1767,10 +1776,10 @@ impl Parser {
 
 				Token::Operator("[") => {
 					// Array type
-
+					let Some(scope) = scope else { panic!() };
 					self.get_next()?;
 
-					let const_expr = self.parse_expression()?;
+					let const_expr = self.parse_expression(scope)?;
 
 					self.consume(&Token::Operator("]"))?;
 
@@ -1789,7 +1798,7 @@ impl Parser {
 					let mut args = vec![];
 
 					while self.get_current()? != Token::Operator(")") {
-						let ty = self.parse_type(immediate_resolve)?;
+						let ty = self.parse_type(scope)?;
 						let props = self.parse_binding_props()?.unwrap_or_default();
 
 						args.push((props, ty));
@@ -1816,7 +1825,7 @@ impl Parser {
 						type_args: args, ..
 					} = &mut result
 					{
-						*args = self.parse_type_argument_list(immediate_resolve)?;
+						*args = self.parse_type_argument_list(scope)?;
 					} else {
 						panic!("can't apply type parameters to this type of Type!") // TODO: Real error handling
 					}
@@ -1895,7 +1904,7 @@ impl Parser {
 		Ok(result)
 	}
 
-	fn parse_generic_param_list(&self) -> ComuneResult<GenericParamList> {
+	fn parse_generic_param_list(&self, scope: Option<&FnScope<'ctx>>) -> ComuneResult<GenericParamList> {
 		if self.get_current()? != Token::Operator("<") {
 			return Ok(vec![]);
 		}
@@ -1919,7 +1928,7 @@ impl Parser {
 
 						// Collect trait bounds
 						while self.is_at_identifier_token()? {
-							let tr = self.parse_identifier()?;
+							let tr = self.parse_identifier(scope)?;
 
 							traits.push(ItemRef::Unresolved {
 								name: tr,
@@ -1969,13 +1978,13 @@ impl Parser {
 		Ok(result)
 	}
 
-	fn parse_type_argument_list(&self, immediate_resolve: bool) -> ComuneResult<Vec<Type>> {
+	fn parse_type_argument_list(&self, scope: Option<&FnScope<'ctx>>) -> ComuneResult<Vec<Type>> {
 		self.get_next()?;
 
 		let mut result = vec![];
 
 		loop {
-			let generic = self.parse_type(immediate_resolve)?;
+			let generic = self.parse_type(scope)?;
 			result.push(generic);
 
 			if self.get_current()? == Token::Other(',') {
@@ -1995,7 +2004,7 @@ impl Parser {
 		Ok(result)
 	}
 
-	fn parse_tuple_type(&self, immediate_resolve: bool) -> ComuneResult<(TupleKind, Vec<Type>)> {
+	fn parse_tuple_type(&self, scope: Option<&FnScope<'ctx>>) -> ComuneResult<(TupleKind, Vec<Type>)> {
 		let mut types = vec![];
 
 		if self.get_current()? != Token::Operator("(") {
@@ -2008,7 +2017,7 @@ impl Parser {
 			kind = Some(TupleKind::Empty);
 		} else {
 			loop {
-				types.push(self.parse_type(immediate_resolve)?);
+				types.push(self.parse_type(scope)?);
 
 				match self.get_current()? {
 					Token::Other(',') => {

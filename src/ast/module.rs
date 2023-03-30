@@ -167,6 +167,8 @@ impl ModuleInterface {
 		if !id.absolute {
 			let mut scope_unwind = scope.clone();
 
+			scope_unwind.qualifier = (None, None);
+
 			loop {
 				let mut scope_combined = scope_unwind.clone();
 				scope_combined.path.append(&mut id.clone().path);
@@ -176,11 +178,11 @@ impl ModuleInterface {
 					break;
 				}
 
-				scope_unwind.path.pop();
-
 				if scope_unwind.path.is_empty() {
 					break;
 				}
+
+				scope_unwind.path.pop();
 			}
 		} else if let Some(item) = self.children.get(id) {
 			found = Some((id.clone(), item));
@@ -235,7 +237,7 @@ impl ModuleInterface {
 					}
 				}
 
-				scope_unwind.path.remove(scope_unwind.path.len() - 2);
+				scope_unwind.path.remove(scope_unwind.path.len() - 1);
 			}
 
 			// Didn't find it, fall back to absolute lookup below

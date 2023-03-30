@@ -46,7 +46,7 @@ pub struct LValue {
 pub enum PlaceElem {
 	Deref,
 	Field(FieldIndex),
-	Index(Type, Operand),
+	Offset(Type, Operand, Operator),
 }
 
 impl PartialEq for PlaceElem {
@@ -60,7 +60,7 @@ impl PartialEq for PlaceElem {
 					false
 				}
 			}
-			PlaceElem::Index(..) => matches!(other, PlaceElem::Index(..)),
+			PlaceElem::Offset(..) => matches!(other, PlaceElem::Offset(..)),
 		}
 	}
 }
@@ -72,7 +72,7 @@ impl Hash for PlaceElem {
 		match self {
 			PlaceElem::Deref => "deref".hash(state),
 			PlaceElem::Field(idx) => idx.hash(state),
-			PlaceElem::Index(..) => "index".hash(state),
+			PlaceElem::Offset(..) => "index".hash(state),
 		}
 	}
 }

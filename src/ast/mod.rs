@@ -4,7 +4,7 @@ use crate::lexer::Token;
 
 use self::{
 	module::{Identifier, ModuleInterface, ModuleItemInterface, Name},
-	types::BindingProps,
+	types::{BindingProps, GenericParamList},
 };
 
 pub mod controlflow;
@@ -37,6 +37,7 @@ pub struct FnScope<'ctx> {
 	variables: Vec<(Name, Type, BindingProps)>,
 	is_inside_loop: bool,
 	is_unsafe: bool,
+	generic_params: GenericParamList
 }
 
 impl<'ctx> FnScope<'ctx> {
@@ -49,6 +50,7 @@ impl<'ctx> FnScope<'ctx> {
 			variables: vec![],
 			is_inside_loop: is_loop_block | parent.is_inside_loop,
 			is_unsafe: is_unsafe | parent.is_unsafe,
+			generic_params: vec![],
 		}
 	}
 
@@ -61,7 +63,28 @@ impl<'ctx> FnScope<'ctx> {
 			variables: vec![],
 			is_inside_loop: false,
 			is_unsafe: false,
+			generic_params: vec![],
 		}
+	}
+
+	pub fn with_params(mut self, mut params: GenericParamList) -> Self {
+		self.generic_params.append(&mut params);
+		self
+	}
+
+	pub fn find_type(
+		&self,
+		id: &Identifier
+	) -> Option<Type> {
+		if !id.is_qualified() {
+			for (i, (name, ..)) in self.generic_params.iter().enumerate().rev() {
+				if name == id.name() {
+					return Some(Type::TypeParam(i))
+				}
+			}
+		}
+
+		self.context.resolve_type(id, &self.scope)
 	}
 
 	pub fn find_symbol(

@@ -851,14 +851,20 @@ impl<'ctx> LLVMBackend<'ctx> {
 					.builder
 					.build_struct_gep(local, *i as u32, "field")
 					.unwrap(),
-				PlaceElem::Index(index_ty, expr) => unsafe {
+				PlaceElem::Offset(index_ty, expr, op) => unsafe {
+					let mut idx = self.generate_operand(index_ty, expr)
+								.as_basic_value_enum()
+								.into_int_value();
+
+					if *op == Operator::Sub {
+						idx = self.builder.build_int_neg(idx, "idxneg");
+					}
+
 					self.builder.build_gep(
 						local,
 						&[
 							self.context.i32_type().const_zero(),
-							self.generate_operand(index_ty, expr)
-								.as_basic_value_enum()
-								.into_int_value(),
+							idx,
 						],
 						"index",
 					)

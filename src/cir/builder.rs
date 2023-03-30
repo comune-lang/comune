@@ -474,9 +474,10 @@ impl CIRModuleBuilder {
 						let expr_ir = self.generate_expr(expr)?;
 
 						let mut tmp_idx = tmp.clone();
-						tmp_idx.projection.push(PlaceElem::Index(
+						tmp_idx.projection.push(PlaceElem::Offset(
 							Type::Basic(Basic::PtrSizeInt { signed: false }),
 							Operand::IntegerLit(i as i128, SrcSpan::new()),
+							Operator::Add,
 						));
 
 						self.write(CIRStmt::Assignment((tmp_idx, SrcSpan::new()), expr_ir))
@@ -1300,10 +1301,29 @@ impl CIRModuleBuilder {
 					let (mut indexed, meta) = self.generate_lvalue_expr(lhs)?;
 					let index = self.generate_expr(rhs)?;
 					let index_ty = rhs.get_type();
-					indexed.projection.push(PlaceElem::Index(
+					
+					indexed.projection.push(PlaceElem::Offset(
 						index_ty.clone(),
 						self.get_as_operand(index_ty, index),
+						Operator::Add,
 					));
+
+					indexed.projection.push(PlaceElem::Deref);
+					
+					Some((indexed, meta))
+				}
+
+				Operator::Add | Operator::Sub => {
+					let (mut indexed, meta) = self.generate_lvalue_expr(lhs)?;
+					let index = self.generate_expr(rhs)?;
+					let index_ty = rhs.get_type();
+
+					indexed.projection.push(PlaceElem::Offset(
+						index_ty.clone(),
+						self.get_as_operand(index_ty, index),
+						op.clone()
+					));
+
 					Some((indexed, meta))
 				}
 
