@@ -206,6 +206,11 @@ impl CIRModule {
 
 				Self::monoize_type(types, &mut insert_id.ret, type_args, ty_instances);
 
+				if let (Some(qualifier), _) = &mut insert_id.name.qualifier {
+					Self::monoize_type(types, qualifier, type_args, ty_instances);	
+				}
+				
+
 				fn_instances
 					.get_mut(id)
 					.unwrap()
