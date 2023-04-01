@@ -14,7 +14,8 @@ void free(void mut* ptr);
 void printf(u8* fmt, ...);
 
 
-usize stride_of<type T>(T* ptr1) {
+usize stride_of<type T>() {
+	T* ptr1 = malloc(0) as T*;
 	T* ptr2 = ptr1 + 1;
 
 	unsafe {
@@ -25,14 +26,6 @@ usize stride_of<type T>(T* ptr1) {
 }
 
 impl<type T> Vector<T> {
-
-	Vector<T> new() {
-		Vector<T> {
-			data: malloc(0) as T mut*,
-			len: 0,
-			capacity: 0,
-		}
-	}
 
 	void push(mut& self, T elem) {
 		printf(c"Pushing %i... new size: %i\n", elem, self.len + 1);
@@ -46,6 +39,7 @@ impl<type T> Vector<T> {
 		}
 		printf(c"self.data: %i\n", self.data);
 		printf(c"self.data + self.len: %i\n", self.data + self.len);
+
 		unsafe {
 			*(self.data + self.len) = elem;
 		}
@@ -56,8 +50,7 @@ impl<type T> Vector<T> {
 	void realloc(mut& self, usize capacity) {
 		printf(c"Reallocating... new capacity: %i\n", capacity);
 
-		// TODO: Implement sizeof(T)
-		T mut* mut new_storage = malloc(capacity * 4) as T mut*;
+		T mut* mut new_storage = malloc(capacity * stride_of<T>()) as T mut*;
 		
 		for (usize mut i = 0; i < self.len; i++) {
 			unsafe { 
@@ -86,7 +79,7 @@ int main() {
 	};
 	
 	i32 a = 0;
-	printf(c"stride_of i32: %i\n", stride_of<i32>(&a as i32*));
+	printf(c"stride_of i32: %i\n", stride_of<i32>());
 
 	test.push(413);
 	test.push(612);
