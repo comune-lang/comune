@@ -24,6 +24,7 @@ impl<type T> Vector<T> {
 	}
 
 	void push(mut& self, T elem) {
+		printf(c"Pushing %i... new size: %i\n", elem, self.len + 1);
 		self.len += 1;
 		
 		if self.len > self.capacity {
@@ -67,8 +68,8 @@ int main() {
 		capacity: 0,
 	};
 
-	test.push(1);
-	test.push(2);
+	test.push(413);
+	test.push(612);
 
 	test.get(0)
 }

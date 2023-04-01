@@ -200,10 +200,17 @@ impl CIRModule {
 					insert_id.type_params[i].2 = Some(type_arg.clone())
 				}
 
+				for (_, param) in &mut insert_id.params {
+					Self::monoize_type(types, param, type_args, ty_instances);
+				}
+
+				Self::monoize_type(types, &mut insert_id.ret, type_args, ty_instances);
+
 				fn_instances
 					.get_mut(id)
 					.unwrap()
 					.insert(type_args.clone(), insert_id.clone());
+
 				functions_out.insert(insert_id.clone(), monoized);
 
 				*id = insert_id;
