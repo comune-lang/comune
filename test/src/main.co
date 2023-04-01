@@ -1,8 +1,11 @@
-struct Vector<type T> {
-	T mut* data;
-	usize len;
-	usize capacity;
-}
+import module_test;
+import vector;
+//import cpp_test;
+
+module submodule_test;
+
+using module_test::fib;
+using core::traits::Drop;
 
 @no_mangle
 void mut* malloc(usize size);
@@ -10,81 +13,190 @@ void mut* malloc(usize size);
 @no_mangle
 void free(void mut* ptr);
 
+using ascii = u8;
+
 @no_mangle
-void printf(u8* fmt, ...);
+int printf(ascii* fmt, ...);
 
+struct Test {
+	int a;
+	int b;
+}
 
-usize stride_of<type T>() {
-	T* ptr1 = malloc(0) as T*;
-	T* ptr2 = ptr1 + 1;
+struct Vector<type T> {
+	T mut* data;
+	usize len;
+	usize capacity;
+}
 
-	unsafe {
-		usize addr1 = *(&ptr1 as usize*);
-		usize addr2 = *(&ptr2 as usize*);
-		addr2-addr1
+enum EnumTest {
+	VariantA,
+	VariantB,
+}
+
+impl Test {
+	int sum(Test& self) {
+		printf(c"This is a method call!\n");
+		self.a + self.b
+	}
+	
+	// the `self` parameter's type can be omitted
+	int product(&self) {
+		self.a * self.b
 	}
 }
 
-impl<type T> Vector<T> {
-
-	void push(mut& self, T elem) {
-		printf(c"Pushing %i... new size: %i\n", elem, self.len + 1);
-		
-		if self.len >= self.capacity {
-			if self.capacity == 0 {
-				self.realloc(1);
-			} else {
-				self.realloc(self.capacity * 2);
-			}
-		}
-		printf(c"self.data: %i\n", self.data);
-		printf(c"self.data + self.len: %i\n", self.data + self.len);
-
-		unsafe {
-			*(self.data + self.len) = elem;
-		}
-
-		self.len += 1;
+impl Drop for Test {
+	void drop(mut& self) {
+		printf(c"This is Test's destructor!\n");
 	}
-
-	void realloc(mut& self, usize capacity) {
-		printf(c"Reallocating... new capacity: %i\n", capacity);
-
-		T mut* mut new_storage = malloc(capacity * stride_of<T>()) as T mut*;
-		
-		for (usize mut i = 0; i < self.len; i++) {
-			unsafe { 
-				*(new_storage + i) = *(self.data + i);
-			}
-		}
-		
-		free(self.data as void mut*);
-		self.data = new_storage;
-		self.capacity = capacity;
-	}
-
-	// TODO: Implement returning references with `self` lifetime
-	T get(mut& self, usize i) {
-		unsafe { *(self.data + i) }
-	}
-
 }
 
+impl submodule_test::SubmoduleTrait for Test {
+	void foo() {
+		printf(c"This is a trait in a submodule!\n");
+	}
+}
+
+trait Hello {
+	void hello(Self& self);
+}
+
+impl Hello for Test {
+	void hello(Test mut& self) {
+		printf(c"Hello Test!\n");
+	}
+}
+
+
+void impl_test() {
+	Test test = Test { a: 413, b: 612, };
+	test.hello();
+	printf(c"The sum of a and b is %i!\n", test.sum());
+}
+
+void ref_test(i32 mut& test) {
+	test++;
+}
+
+void fn_pointer_test(void(int) callback) {
+	callback(12);
+}
+
+void fn_pointer_callback(int number) {
+	printf(c"this is a callback! %i\n", number);
+}
+
+
+void overload_test(i32 a) {
+	printf(c"i32 overload called!\n");
+}
+
+void overload_test(i64 a) {
+	printf(c"i64 overload called!\n");
+}
+
+Vector<i32> generic_ret() {
+	return Vector<i32> {
+		data: malloc(4) as i32 mut*,
+		len: 1,
+		capacity: 1,
+	};
+}
+
+using TestSumType = (i32 | f32);
+
+TestSumType sum_type_test(i32& value) {
+	return value;
+}
 
 int main() {
-	Vector<i32> mut test = Vector<i32> {
-		data: malloc(0) as i32 mut*,
-		len: 0,
-		capacity: 0,
-	};
-	
-	i32 a = 0;
-	printf(c"stride_of i32: %i\n", stride_of<i32>());
+	submodule_test::bar();
 
-	test.push(413);
-	test.push(612);
+	int i;
+
+	if true {
+		i = 12;
+	} else {
+		i = 12;
+	}
+
+	int mut i = i;
+
+	i = 12;
+
+	{
+		int explicit_scope_test = 23;
+	}
+
+	// `else if` syntax test
 	
-	printf(c"test.get(0) = %i\n", test.get(0));
-	printf(c"test.get(1) = %i\n", test.get(1));
-	0
+	if i == 12 {
+		int scope_test = 15;
+		int scope_test_2 = 15;
+		printf(c"i is 12!\n");
+	} else if i == 13 {
+		printf(c"i is 13!\n");
+	} else {
+		printf(c"i is something else!\n");
+	}
+
+	void(int) function;
+	//function(12);
+	//fn_pointer_test(fn_pointer_callback);
+
+	TestSumType mut who_knows = sum_type_test(322);
+
+	match who_knows {
+		int int_result => {
+			printf(c"It's an int! %i\n", int_result)
+		}
+
+		float float_result => {
+			printf(c"It's a float! %f\n", float_result)
+		}
+	}
+	
+	int mut loop_count = 0;
+	
+	while true {		
+		loop_count += 1;
+
+		if loop_count > 100 {
+			int loop_init_test = 12;
+			break;
+		}
+	}
+
+	printf(c"Loop count after loop: %i\n", loop_count);
+	
+	impl_test();
+
+	overload_test(12i32);
+
+	int int_ref_test = 12;
+	ref_test(int_ref_test);
+	printf(c"int_ref_test: %i\n", int_ref_test);
+
+	printf(c"Temporary->lvalue promotion: %i\n", Test { a: 23, b: 35 }.sum());
+
+	Vector<int> mut my_cool_generic;
+	
+	my_cool_generic.data = malloc(4) as int mut*;
+
+	unsafe { 
+		*my_cool_generic.data = if true {
+			printf(c"True!\n");
+			69
+		} else {
+			printf(c"False!\n");
+			42
+		};
+	
+		i32 generic_get = *my_cool_generic.data;
+	
+		free(my_cool_generic.data as void mut*);
+	}
+
+	return 0;
 }

@@ -83,7 +83,6 @@ pub struct FnPrototype {
 	pub ret: Type,
 	pub params: FnParamList,
 	pub type_params: GenericParamList,
-	pub context_params: GenericParamList,
 	pub attributes: Vec<Attribute>,
 }
 

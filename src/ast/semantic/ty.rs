@@ -126,18 +126,15 @@ pub fn resolve_interface_types(interface: &ModuleInterface) -> ComuneResult<()> 
 					ret,
 					params,
 					type_params: generics,
-					context_params: context_generics,
 					path,
 					attributes: _,
 				} = &mut *func.write().unwrap();
 
 				path.qualifier = trait_qualif.clone();
 
-				context_generics.append(&mut im.params.clone());
-				generics.push(("Self".into(), vec![], None));
+				generics.append(&mut im.params.clone());
 
-				let mut combined_generics = context_generics.clone();
-				combined_generics.append(&mut generics.clone());
+				let mut combined_generics = generics.clone();
 
 				resolve_type(ret, interface, &combined_generics)?;
 

@@ -124,7 +124,6 @@ impl<'ctx> Parser {
 						proto_inner.path.clone(), 
 						proto_inner.ret.clone()
 					)
-					.with_params(proto_inner.context_params.clone())
 					.with_params(proto_inner.type_params.clone());
 				
 				fn_impls.push((proto.clone(), ModuleASTElem::Parsed(self.parse_block(&scope)?)));
@@ -403,7 +402,6 @@ impl<'ctx> Parser {
 							ret,
 							params,
 							type_params,
-							context_params: vec![],
 							attributes: func_attributes,
 						}));
 
@@ -724,7 +722,6 @@ impl<'ctx> Parser {
 						ret: t,
 						params: self.parse_parameter_list(self_ty, None)?,
 						type_params,
-						context_params: vec![],
 						attributes,
 					};
 

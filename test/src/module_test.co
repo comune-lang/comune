@@ -14,8 +14,3 @@ u64 fib(u64 n) {
 
 	return b;
 }
-
-
-i32 foo() {
-	return 10;
-}

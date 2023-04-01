@@ -24,7 +24,6 @@ pub fn validate_function_body(
 			scope, 
 			func.ret.clone()
 		)
-		.with_params(func.context_params.clone())
 		.with_params(func.type_params.clone());
 
 	for (param, name, props) in &func.params.params {
@@ -261,7 +260,7 @@ pub fn resolve_method_call(
 			type_args.insert(i, arg.clone());
 		}
 	};
-	
+
 	for arg in args.iter_mut() {
 		arg.validate(scope)?;
 	}
@@ -364,7 +363,6 @@ pub fn is_candidate_viable(args: &Vec<Expr>, type_args: &Vec<Type>, func: &FnPro
 				.get_concrete_type(type_args)
 				.castable_to(&param.get_concrete_type(type_args))
 			{
-				println!("type mismatch between {} and {}", arg.get_type().get_concrete_type(type_args), param.get_concrete_type(type_args));
 				return false;
 			}
 		}
