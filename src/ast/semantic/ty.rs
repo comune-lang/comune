@@ -126,23 +126,23 @@ pub fn resolve_interface_types(interface: &ModuleInterface) -> ComuneResult<()> 
 					ret,
 					params,
 					type_params: generics,
+					context_params: context_generics,
 					path,
 					attributes: _,
 				} = &mut *func.write().unwrap();
 
 				path.qualifier = trait_qualif.clone();
-				
-				// Kinda inefficient but it works for now
-				for param in &im.params {
-					generics.insert(0, param.clone());
-				}
 
-				generics.insert(0, ("Self".into(), vec![], None));
+				context_generics.append(&mut im.params.clone());
+				generics.push(("Self".into(), vec![], None));
 
-				resolve_type(ret, interface, generics)?;
+				let mut combined_generics = context_generics.clone();
+				combined_generics.append(&mut generics.clone());
+
+				resolve_type(ret, interface, &combined_generics)?;
 
 				for param in &mut params.params {
-					resolve_type(&mut param.0, interface, generics)?;
+					resolve_type(&mut param.0, interface, &combined_generics)?;
 				}
 			}
 		}

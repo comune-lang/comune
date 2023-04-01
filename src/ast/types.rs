@@ -83,6 +83,7 @@ pub struct FnPrototype {
 	pub ret: Type,
 	pub params: FnParamList,
 	pub type_params: GenericParamList,
+	pub context_params: GenericParamList,
 	pub attributes: Vec<Attribute>,
 }
 
@@ -306,11 +307,7 @@ impl Type {
 
 			Type::TypeParam(param) => 
 				if let Some(concrete) = type_args.get(*param) {
-					if concrete == self {
-						concrete.clone()
-					} else {
-						concrete.get_concrete_type(type_args)
-					}
+					concrete.clone()
 				} else {
 					Type::TypeParam(*param)
 				}

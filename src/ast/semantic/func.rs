@@ -24,6 +24,7 @@ pub fn validate_function_body(
 			scope, 
 			func.ret.clone()
 		)
+		.with_params(func.context_params.clone())
 		.with_params(func.type_params.clone());
 
 	for (param, name, props) in &func.params.params {
@@ -252,8 +253,15 @@ pub fn resolve_method_call(
 	}
 
 	args.insert(0, lhs.clone());
-	type_args.insert(0, receiver.clone());
-
+	
+	if let Type::TypeRef { args, .. } = receiver {
+		type_args.reserve(args.len());
+		
+		for (i, arg) in args.iter().enumerate() {
+			type_args.insert(i, arg.clone());
+		}
+	};
+	
 	for arg in args.iter_mut() {
 		arg.validate(scope)?;
 	}
@@ -334,7 +342,7 @@ pub fn resolve_method_call(
 	*resolved = FnRef::Direct(selected_candidate.clone());
 	*name = selected_name;
 
-	Ok(func.ret.clone())
+	Ok(func.ret.get_concrete_type(&type_args))
 }
 
 pub fn is_candidate_viable(args: &Vec<Expr>, type_args: &Vec<Type>, func: &FnPrototype) -> bool {
@@ -353,8 +361,10 @@ pub fn is_candidate_viable(args: &Vec<Expr>, type_args: &Vec<Type>, func: &FnPro
 		if let Some(arg) = args.get(i) {
 			if !arg
 				.get_type()
+				.get_concrete_type(type_args)
 				.castable_to(&param.get_concrete_type(type_args))
 			{
+				println!("type mismatch between {} and {}", arg.get_type().get_concrete_type(type_args), param.get_concrete_type(type_args));
 				return false;
 			}
 		}
@@ -422,7 +432,7 @@ fn validate_arg_list(
 
 			arg.get_node_data_mut().ty.replace(param_concrete.clone());
 
-			let arg_type = arg.validate(scope)?;
+			let arg_type = arg.validate(scope)?.get_concrete_type(type_args);
 
 			if !arg.coercable_to(&arg_type, &param_concrete, scope) {
 				return Err(ComuneError::new(

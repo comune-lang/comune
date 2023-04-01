@@ -14,7 +14,7 @@ use crate::{
 };
 
 use super::{
-	BlockIndex, CIRBlock, CIRFnCall, CIRFnPrototype, CIRFunction, CIRModule, CIRStmt, LValue,
+	BlockIndex, CIRBlock, CIRCallId, CIRFnPrototype, CIRFunction, CIRModule, CIRStmt, LValue,
 	Operand, PlaceElem, RValue, VarIndex,
 };
 
@@ -581,9 +581,13 @@ impl CIRModuleBuilder {
 					ControlFlow::Return { expr } => {
 						if let Some(expr) = expr {
 							let expr_ir = self.generate_expr(expr)?;
-							let operand = self.get_as_operand(expr.get_type(), expr_ir);
 
-							self.write(CIRStmt::Return(Some(operand)));
+							if expr.get_type() == &Type::Basic(Basic::Void) {
+								self.write(CIRStmt::Return(None));
+							} else {
+								let operand = self.get_as_operand(expr.get_type(), expr_ir);
+								self.write(CIRStmt::Return(Some(operand)));
+							}
 						} else {
 							self.write(CIRStmt::Return(None));
 						}
@@ -1161,13 +1165,13 @@ impl CIRModuleBuilder {
 
 		match resolved {
 			FnRef::Direct(resolved) => {
-				let ret = &resolved.read().unwrap().ret;
+				let ret = resolved.read().unwrap().ret.get_concrete_type(type_args);
 
 				let current_block = self.current_block;
 				let next = self.append_block();
 				self.current_block = current_block;
 
-				let result = if ret == &Type::Basic(Basic::Void) {
+				let result = if ret == Type::Basic(Basic::Void) {
 					None
 				} else {
 					// TODO: BindingProps for return type
@@ -1177,7 +1181,7 @@ impl CIRModuleBuilder {
 				let id = self.get_prototype(&*resolved.read().unwrap());
 
 				self.write(CIRStmt::FnCall {
-					id: CIRFnCall::Direct(id, SrcSpan::new()),
+					id: CIRCallId::Direct(id, SrcSpan::new()),
 					args: cir_args,
 					type_args: type_args.clone(),
 					result: result.clone(),
@@ -1189,7 +1193,7 @@ impl CIRModuleBuilder {
 
 				if let Some(result) = result {
 					Some(RValue::Atom(
-						ret.clone(),
+						ret,
 						None,
 						Operand::LValue(result, span),
 						span,
@@ -1225,7 +1229,7 @@ impl CIRModuleBuilder {
 				self.current_block = current_block;
 
 				self.write(CIRStmt::FnCall {
-					id: CIRFnCall::Indirect {
+					id: CIRCallId::Indirect {
 						local,
 						ret: *ret.clone(),
 						args,

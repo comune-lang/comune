@@ -3,7 +3,7 @@ use std::fmt::Display;
 use crate::{ast::types::DataLayout, lexer};
 
 use super::{
-	CIRFnCall, CIRFnPrototype, CIRFunction, CIRModule, CIRStmt, LValue, Operand, PlaceElem, RValue,
+	CIRCallId, CIRFnPrototype, CIRFunction, CIRModule, CIRStmt, LValue, Operand, PlaceElem, RValue,
 };
 
 impl Display for CIRModule {
@@ -91,7 +91,7 @@ impl Display for CIRFunction {
 
 				writeln!(
 					f,
-					"bb{idx}:\t\t\t\t\t\t\t\t\t\t\t; preds: {:?}, succs: {:?}",
+					"\nbb{idx}:\t\t\t\t\t\t\t\t\t\t\t; preds: {:?}, succs: {:?}",
 					block.preds, block.succs
 				)?;
 
@@ -99,6 +99,7 @@ impl Display for CIRFunction {
 					write!(f, "\t{stmt}")?;
 				}
 			}
+
 			writeln!(f, "}}\n")
 		}
 	}
@@ -213,7 +214,7 @@ impl Display for LValue {
 			match proj {
 				PlaceElem::Deref => write!(f, ">"),
 				PlaceElem::Field(i) => write!(f, ".{i}"),
-				PlaceElem::Offset(i, t, o) => write!(f, "[{t} {i}]"),
+				PlaceElem::Offset(i, t, _) => write!(f, "[{t} {i}]"),
 			}?;
 		}
 		Ok(())
@@ -252,13 +253,28 @@ impl Display for DataLayout {
 	}
 }
 
-impl Display for CIRFnCall {
+impl Display for CIRCallId {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match self {
-			CIRFnCall::Direct(id, _) => write!(f, "{id}"),
-			CIRFnCall::Indirect {
+			CIRCallId::Direct(id, _) => write!(f, "{id}"),
+			CIRCallId::Indirect {
 				local, ret, args, ..
-			} => write!(f, "{ret}({args:?}) {local}"),
+			} => {
+				write!(f, "{ret}(")?;
+				
+				if !args.is_empty() {
+					let mut iter = args.iter();
+					let (props, ty) = iter.next().unwrap();
+
+					write!(f, "{props}{ty}")?;
+					
+					for (props, ty) in iter {
+						write!(f, ", {ty}{props}")?;
+					}
+				}
+
+				write!(f, "){local}")
+			}
 		}
 	}
 }

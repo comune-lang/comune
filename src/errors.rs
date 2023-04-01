@@ -6,7 +6,7 @@ use std::{
 	fmt::Display,
 	io,
 	sync::{
-		atomic::{AtomicU32, Ordering},
+		atomic::AtomicU32,
 		mpsc::{self, Sender},
 		Arc,
 	},
@@ -40,7 +40,6 @@ pub struct ComuneError {
 
 impl ComuneError {
 	pub fn new(code: ComuneErrCode, span: SrcSpan) -> Self {
-		ERROR_COUNT.fetch_add(1, Ordering::Relaxed);
 		ComuneError {
 			code,
 			span,

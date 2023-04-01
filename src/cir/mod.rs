@@ -106,7 +106,7 @@ pub enum Operand {
 }
 
 #[derive(Debug, Clone)]
-pub enum CIRFnCall {
+pub enum CIRCallId {
 	Direct(FuncID, SrcSpan),
 	Indirect {
 		local: LValue,
@@ -124,7 +124,7 @@ pub enum CIRStmt {
 	Switch(Operand, Vec<(Type, Operand, BlockIndex)>, BlockIndex),
 	Return(Option<Operand>),
 	FnCall {
-		id: CIRFnCall,
+		id: CIRCallId,
 		args: Vec<(LValue, SrcSpan)>,
 		type_args: Vec<Type>,
 		result: Option<LValue>,

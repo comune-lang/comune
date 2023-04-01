@@ -25,7 +25,7 @@ use crate::{
 		types::{AlgebraicDef, Basic, BindingProps, DataLayout, TupleKind, Type, TypeDefKind},
 	},
 	cir::{
-		CIRFnCall, CIRFnPrototype, CIRFunction, CIRModule, CIRStmt, LValue, Operand, PlaceElem,
+		CIRCallId, CIRFnPrototype, CIRFunction, CIRModule, CIRStmt, LValue, Operand, PlaceElem,
 		RValue,
 	},
 	constexpr::{ConstExpr, ConstValue},
@@ -294,14 +294,14 @@ impl<'ctx> LLVMBackend<'ctx> {
 						);
 
 						let (fn_v, params) = match id {
-							CIRFnCall::Direct(id, _) => {
+							CIRCallId::Direct(id, _) => {
 								let mangled = &self.fn_map[id];
 								let fn_v = self.module.get_function(mangled).unwrap();
 
 								(fn_v.into(), &id.params)
 							}
 
-							CIRFnCall::Indirect { args, local, .. } => {
+							CIRCallId::Indirect { args, local, .. } => {
 								let ptr = self
 									.builder
 									.build_load(self.generate_lvalue(local), "fnload")
@@ -500,8 +500,18 @@ impl<'ctx> LLVMBackend<'ctx> {
 					} else {
 						panic!()
 					}
+				} else if matches!(expr_ty, Type::Pointer{..}) {
+					let lhs = lhs_v.into_pointer_value();
+					let rhs = rhs_v.into_int_value();
+
+					result = unsafe { 
+						self
+							.builder
+							.build_gep(lhs, &[rhs], "ptrgep")
+							.as_basic_value_enum()
+					};
 				} else {
-					panic!()
+					todo!()
 				}
 
 				self.builder.build_store(store, result)
@@ -862,10 +872,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 					self.builder.build_gep(
 						local,
-						&[
-							self.context.i32_type().const_zero(),
-							idx,
-						],
+						&[idx],
 						"index",
 					)
 				},

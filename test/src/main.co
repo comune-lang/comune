@@ -10,7 +10,11 @@ void mut* malloc(usize size);
 @no_mangle
 void free(void mut* ptr);
 
+@no_mangle
+void printf(u8* fmt, ...);
+
 impl<type T> Vector<T> {
+
 	Vector<T> new() {
 		Vector<T> {
 			data: malloc(0) as T mut*,
@@ -23,11 +27,17 @@ impl<type T> Vector<T> {
 		self.len += 1;
 		
 		if self.len > self.capacity {
-			self.realloc<T>(self.capacity * 2);
+			if self.capacity == 0 {
+				self.realloc(1);
+			} else {
+				self.realloc(self.capacity * 2);
+			}
 		}
 	}
 
 	void realloc(mut& self, usize capacity) {
+		printf(c"Reallocating... new capacity: %i\n", capacity);
+
 		// TODO: Implement sizeof(T)
 		T mut* mut new_storage = malloc(capacity) as T mut*;
 		
@@ -36,13 +46,29 @@ impl<type T> Vector<T> {
 				*(new_storage + i) = *(self.data + i);
 			}
 		}
-
+		
 		free(self.data as void mut*);
 		self.data = new_storage;
+		self.capacity = capacity;
 	}
 
 	// TODO: Implement returning references with `self` lifetime
 	T get(mut& self, usize i) {
 		unsafe { *(self.data + i) }
 	}
+
+}
+
+
+int main() {
+	Vector<i32> mut test = Vector<i32> {
+		data: malloc(0) as i32 mut*,
+		len: 0,
+		capacity: 0,
+	};
+
+	test.push(1);
+	test.push(2);
+
+	test.get(0)
 }

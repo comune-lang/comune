@@ -7,7 +7,7 @@ use super::{
 	ResultVisitor,
 };
 use crate::{
-	cir::{CIRFnCall, CIRFunction, CIRStmt, LValue, Operand, PlaceElem, RValue, Type},
+	cir::{CIRCallId, CIRFunction, CIRStmt, LValue, Operand, PlaceElem, RValue, Type},
 	errors::{ComuneErrCode, ComuneError},
 };
 
@@ -306,7 +306,7 @@ impl AnalysisResultHandler for VarInitCheck {
 						RValue::Cons(_, [_, (_, Operand::LValue(lval, span))], ..),
 					)
 					| CIRStmt::FnCall {
-						id: CIRFnCall::Indirect {
+						id: CIRCallId::Indirect {
 							local: lval, span, ..
 						},
 						..

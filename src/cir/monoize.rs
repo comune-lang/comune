@@ -14,7 +14,7 @@ use crate::{
 	lexer::Token,
 };
 
-use super::{CIRFnCall, CIRFnMap, CIRFunction, CIRModule, CIRStmt, FuncID, RValue, Type, TypeName};
+use super::{CIRCallId, CIRFnMap, CIRFunction, CIRModule, CIRStmt, FuncID, RValue, Type, TypeName};
 
 // A set of requested Generic monomorphizations, with a Vec of type arguments
 // TODO: Extend system to support constants as arguments
@@ -67,10 +67,26 @@ impl CIRModule {
 
 			functions_mono.insert(proto, function_monoized);
 		}
+		
+		let generic_ty_keys: Vec<_> = self.types
+			.iter()
+			.filter_map(|(k, v)| {
+				let is_generic = match &v.read().unwrap().def {
+					TypeDefKind::Algebraic(alg) => !alg.params.is_empty(),
+					TypeDefKind::Class => todo!()
+				};
+
+				if is_generic {
+					Some(k.clone())
+				} else {
+					None
+				}
+			})
+			.collect();
 
 		// Remove generic types
-		for generic in ty_instances.keys() {
-			self.types.remove(generic);
+		for generic in generic_ty_keys {
+			self.types.remove(&generic);
 		}
 
 		// Remove generic functions
@@ -109,18 +125,19 @@ impl CIRModule {
 						Self::monoize_rvalue_types(types, expr, param_map, ty_instances);
 					}
 
-					CIRStmt::FnCall { id, type_args, .. } => {
+					CIRStmt::FnCall { type_args, .. } => {
+						for arg in type_args.iter_mut() {
+							Self::monoize_type(types, arg, param_map, ty_instances);
+						}
+
 						Self::monoize_call(
 							functions_in,
 							functions_out,
-							id,
+							stmt,
 							types,
-							&type_args,
 							ty_instances,
 							fn_instances,
 						);
-
-						type_args.clear();
 					}
 
 					_ => {}
@@ -134,26 +151,31 @@ impl CIRModule {
 	fn monoize_call(
 		functions_in: &CIRFnMap,
 		functions_out: &mut CIRFnMap,
-		func: &mut CIRFnCall,
+		func: &mut CIRStmt,
 		types: &mut HashMap<TypeName, Arc<RwLock<TypeDef>>>,
-		param_map: &TypeSubstitutions,
 		ty_instances: &mut TypeInstances,
 		fn_instances: &mut FuncInstances,
 	) {
-		if param_map.is_empty() {
+		let CIRStmt::FnCall { 
+			id, 
+			type_args,
+			..
+		} = func else { panic!() };
+
+		if type_args.is_empty() {
 			return;
 		}
 
-		if let CIRFnCall::Direct(func, _) = func {
-			if !fn_instances.contains_key(func) {
-				fn_instances.insert(func.clone(), HashMap::new());
+		if let CIRCallId::Direct(id, _) = id {
+			if !fn_instances.contains_key(id) {
+				fn_instances.insert(id.clone(), HashMap::new());
 			}
 
-			if fn_instances[func].contains_key(param_map) {
-				*func = fn_instances[func][param_map].clone();
+			if fn_instances[id].contains_key(type_args) {
+				*id = fn_instances[id][type_args].clone();
 			} else {
-				let Some(fn_in) = functions_in.get(func) else {
-					let mut fail_str = format!("failed to find CIRFnPrototype {func} in functions_in map! items:\n");
+				let Some(fn_in) = functions_in.get(id) else {
+					let mut fail_str = format!("failed to find CIRFnPrototype {id} in functions_in map! items:\n");
 
 					for item in functions_in.keys() {
 						fail_str.push_str(&format!("\t{item}\n"));
@@ -167,25 +189,27 @@ impl CIRModule {
 					functions_out,
 					fn_in,
 					types,
-					param_map,
+					type_args,
 					ty_instances,
 					fn_instances,
 				);
 
-				let mut insert_id = func.clone();
+				let mut insert_id = id.clone();
 
-				for (i, type_arg) in param_map.iter().enumerate() {
+				for (i, type_arg) in type_args.iter().enumerate() {
 					insert_id.type_params[i].2 = Some(type_arg.clone())
 				}
 
 				fn_instances
-					.get_mut(func)
+					.get_mut(id)
 					.unwrap()
-					.insert(param_map.clone(), insert_id.clone());
+					.insert(type_args.clone(), insert_id.clone());
 				functions_out.insert(insert_id.clone(), monoized);
 
-				*func = insert_id;
+				*id = insert_id;
 			}
+
+			type_args.clear();
 		}
 	}
 
@@ -236,16 +260,24 @@ impl CIRModule {
 				let name = &def_up.read().unwrap().name;
 
 				if !args.is_empty() {
+					for arg in args.iter_mut() {
+						Self::monoize_type(types, arg, param_map, instances);
+					}
+
 					let typename = name.to_string();
 
 					if !instances.contains_key(&typename) {
 						instances.insert(typename.clone(), HashMap::new());
 					}
 
-					if !instances[&typename].contains_key(param_map) {
-						Self::instantiate_type_def(types, typename.clone(), args, instances);
-						*def = Arc::downgrade(&types[&typename]);
-					}
+					let name = if instances[&typename].contains_key(param_map) {
+						instances[&typename][param_map].clone()
+					} else {
+						Self::instantiate_type_def(types, typename.clone(), args, instances)
+					};
+
+					*def = Arc::downgrade(&types[&name]);
+					args.clear();
 				}
 			}
 
@@ -289,6 +321,7 @@ impl CIRModule {
 				for (_, member, _) in members {
 					Self::monoize_type(types, member, param_map, instances);
 				}
+
 				params.clear();
 			}
 
@@ -303,8 +336,14 @@ impl CIRModule {
 		}
 
 		insert_idx += ">";
+				
+		if types.contains_key(&insert_idx) {
+			return insert_idx;
+		}
 
+		*instance.name.path.last_mut().unwrap() = insert_idx.clone();
 		types.insert(insert_idx.clone(), Arc::new(RwLock::new(instance)));
+
 		insert_idx
 	}
 

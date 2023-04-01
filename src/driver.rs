@@ -3,7 +3,7 @@ use std::{
 	ffi::OsString,
 	fs,
 	path::{Path, PathBuf},
-	sync::{mpsc::Sender, Arc, Mutex, RwLock},
+	sync::{mpsc::Sender, Arc, Mutex, RwLock, atomic::Ordering},
 };
 
 use colored::Colorize;
@@ -19,7 +19,7 @@ use crate::{
 		builder::CIRModuleBuilder,
 	},
 	clang::compile_cpp_module,
-	errors::{CMNMessageLog, ComuneErrCode, ComuneError, ComuneMessage},
+	errors::{CMNMessageLog, ComuneErrCode, ComuneError, ComuneMessage, ERROR_COUNT},
 	lexer::{self, Lexer, SrcSpan},
 	llvm::{self, LLVMBackend},
 	parser::{ComuneResult, Parser},
@@ -122,11 +122,14 @@ pub fn compile_comune_module(
 		Ok(parser) => parser,
 
 		Err(e) => {
+			ERROR_COUNT.fetch_add(1, Ordering::Relaxed);
+
 			state
 				.module_states
 				.write()
 				.unwrap()
 				.insert(src_path, ModuleState::ParsingFailed);
+			
 			return Err(e);
 		}
 	};
@@ -151,6 +154,8 @@ pub fn compile_comune_module(
 	match ast::semantic::validate_interface(&state, &mut parser) {
 		Ok(_) => {}
 		Err(e) => {
+			ERROR_COUNT.fetch_add(1, Ordering::Relaxed);
+
 			parser
 				.lexer
 				.borrow()
@@ -255,6 +260,8 @@ pub fn compile_comune_module(
 		let result = match generate_code(&state, &mut parser, &context, &src_path, &module_name) {
 			Ok(res) => res,
 			Err(_) => {
+				ERROR_COUNT.fetch_add(1, Ordering::Relaxed);
+
 				error_sender
 					.send(CMNMessageLog::Raw(format!(
 						"\n{:>10} compiling {}\n",

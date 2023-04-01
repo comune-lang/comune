@@ -211,7 +211,7 @@ impl Expr {
 
 					Atom::StringLit(_) => target == &Type::Basic(Basic::Str),
 
-					Atom::Identifier(i) => scope.find_symbol(i, true).unwrap().1 == *target,
+					Atom::Identifier(_) => from == target,
 
 					Atom::FnCall { resolved, .. } => {
 						if let FnRef::Direct(resolved) = resolved {
