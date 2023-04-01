@@ -211,8 +211,6 @@ impl Expr {
 
 					Atom::StringLit(_) => target == &Type::Basic(Basic::Str),
 
-					Atom::Identifier(_) => from == target,
-
 					Atom::FnCall { resolved, .. } => {
 						if let FnRef::Direct(resolved) = resolved {
 							resolved.read().unwrap().ret == *target
@@ -229,9 +227,6 @@ impl Expr {
 
 					Atom::Cast(_, cast_t) => target == cast_t,
 					Atom::AlgebraicLit(alg_ty, _) => target == alg_ty,
-					Atom::ArrayLit(_) => todo!(),
-					Atom::Block { .. } => todo!(),
-					Atom::CtrlFlow(_) => todo!(),
 
 					Atom::Once(once) => {
 						if let OnceAtom::Uneval(expr) = &*once.read().unwrap() {
@@ -240,10 +235,11 @@ impl Expr {
 							false
 						}
 					}
+
+					_ => from == target,
 				},
 
-				Expr::Cons(_, _, _) => from == target,
-				Expr::Unary(_, _, _) => from == target,
+				_ => from == target,
 			},
 		}
 	}
@@ -367,7 +363,6 @@ impl Atom {
 				let expr_t = expr.validate(scope)?;
 
 				if expr_t.castable_to(to) {
-					expr.get_node_data_mut().ty.replace(to.clone());
 					Ok(to.clone())
 				} else {
 					Err(ComuneError::new(

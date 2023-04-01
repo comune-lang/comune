@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::fmt::{Display, Write};
 
 use crate::{ast::types::DataLayout, lexer};
 
@@ -208,16 +208,27 @@ impl Display for RValue {
 
 impl Display for LValue {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		write!(f, "_{}", self.local)?;
+		let mut result = String::new();
+
+		write!(&mut result, "_{}", self.local)?;
 
 		for proj in &self.projection {
 			match proj {
-				PlaceElem::Deref => write!(f, ">"),
-				PlaceElem::Field(i) => write!(f, ".{i}"),
-				PlaceElem::Offset(i, t, _) => write!(f, "[{t} {i}]"),
-			}?;
+				PlaceElem::Deref => {
+					result.insert(0, '*');
+					result.insert(1, '(');
+					result.push(')');
+				}
+				PlaceElem::Field(i) => {
+					write!(&mut result, ".{i}")?;
+				}
+				PlaceElem::Offset(t, i, _) => {
+					write!(&mut result, "[{t} {i}]")?;
+				},
+			};
 		}
-		Ok(())
+
+		write!(f, "{result}")
 	}
 }
 

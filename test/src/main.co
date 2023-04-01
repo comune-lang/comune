@@ -13,6 +13,17 @@ void free(void mut* ptr);
 @no_mangle
 void printf(u8* fmt, ...);
 
+
+usize stride_of<type T>(T* ptr1) {
+	T* ptr2 = ptr1 + 1;
+
+	unsafe {
+		usize addr1 = *(&ptr1 as usize*);
+		usize addr2 = *(&ptr2 as usize*);
+		addr2-addr1
+	}
+}
+
 impl<type T> Vector<T> {
 
 	Vector<T> new() {
@@ -25,22 +36,28 @@ impl<type T> Vector<T> {
 
 	void push(mut& self, T elem) {
 		printf(c"Pushing %i... new size: %i\n", elem, self.len + 1);
-		self.len += 1;
 		
-		if self.len > self.capacity {
+		if self.len >= self.capacity {
 			if self.capacity == 0 {
 				self.realloc(1);
 			} else {
 				self.realloc(self.capacity * 2);
 			}
 		}
+		printf(c"self.data: %i\n", self.data);
+		printf(c"self.data + self.len: %i\n", self.data + self.len);
+		unsafe {
+			*(self.data + self.len) = elem;
+		}
+
+		self.len += 1;
 	}
 
 	void realloc(mut& self, usize capacity) {
 		printf(c"Reallocating... new capacity: %i\n", capacity);
 
 		// TODO: Implement sizeof(T)
-		T mut* mut new_storage = malloc(capacity) as T mut*;
+		T mut* mut new_storage = malloc(capacity * 4) as T mut*;
 		
 		for (usize mut i = 0; i < self.len; i++) {
 			unsafe { 
@@ -67,9 +84,14 @@ int main() {
 		len: 0,
 		capacity: 0,
 	};
+	
+	i32 a = 0;
+	printf(c"stride_of i32: %i\n", stride_of<i32>(&a as i32*));
 
 	test.push(413);
 	test.push(612);
-
-	test.get(0)
+	
+	printf(c"test.get(0) = %i\n", test.get(0));
+	printf(c"test.get(1) = %i\n", test.get(1));
+	0
 }
