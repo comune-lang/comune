@@ -6,6 +6,8 @@ module submodule_test;
 
 using module_test::fib;
 using core::traits::Drop;
+using vector::Vector;
+using ascii = u8;
 
 @no_mangle
 void mut* malloc(usize size);
@@ -13,7 +15,6 @@ void mut* malloc(usize size);
 @no_mangle
 void free(void mut* ptr);
 
-using ascii = u8;
 
 @no_mangle
 int printf(ascii* fmt, ...);
@@ -21,12 +22,6 @@ int printf(ascii* fmt, ...);
 struct Test {
 	int a;
 	int b;
-}
-
-struct Vector<type T> {
-	T mut* data;
-	usize len;
-	usize capacity;
 }
 
 enum EnumTest {
@@ -110,9 +105,20 @@ TestSumType sum_type_test(i32& value) {
 	return value;
 }
 
+// In lie of properly working static functions
+Vector<T> vec<type T>() {
+	Vector<T> {
+		data: malloc(0) as T mut*,
+		capacity: 0,
+		len: 0,
+	}
+}
+
 int main() {
 	submodule_test::bar();
 
+	Vector<float> a = vec<float>();
+	
 	int i;
 
 	if true {

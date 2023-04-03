@@ -285,7 +285,7 @@ impl CIRModule {
 					let name = if instances[&typename].contains_key(param_map) {
 						instances[&typename][param_map].clone()
 					} else {
-						Self::instantiate_type_def(types, typename.clone(), args, instances)
+						Self::instantiate_type_def(types, def.upgrade().unwrap(), typename.clone(), args, instances)
 					};
 
 					*def = Arc::downgrade(&types[&name]);
@@ -320,11 +320,12 @@ impl CIRModule {
 	// Takes a Generic TypeDef with parameters and instantiates it.
 	fn instantiate_type_def(
 		types: &mut TypeMap,
+		def: Arc<RwLock<TypeDef>>,
 		name: TypeName,
 		param_map: &TypeSubstitutions,
 		instances: &mut TypeInstances,
 	) -> TypeName {
-		let mut instance = types[&name].read().unwrap().clone();
+		let mut instance = def.read().unwrap().clone();
 
 		match &mut instance.def {
 			TypeDefKind::Algebraic(AlgebraicDef {
