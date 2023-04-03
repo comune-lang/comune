@@ -134,12 +134,10 @@ pub fn resolve_interface_types(interface: &ModuleInterface) -> ComuneResult<()> 
 
 				generics.append(&mut im.params.clone());
 
-				let mut combined_generics = generics.clone();
-
-				resolve_type(ret, interface, &combined_generics)?;
+				resolve_type(ret, interface, &generics)?;
 
 				for param in &mut params.params {
-					resolve_type(&mut param.0, interface, &combined_generics)?;
+					resolve_type(&mut param.0, interface, &generics)?;
 				}
 			}
 		}

@@ -136,7 +136,11 @@ impl ModuleInterface {
 		assert!(id.absolute, "argument to get_item should be absolute!");
 
 		match self.children.get(id) {
-			Some(ModuleItemInterface::Alias(alias)) => self.get_item(alias),
+			Some(ModuleItemInterface::Alias(alias)) => {
+				let mut alias = alias.clone();
+				alias.absolute = true;
+				self.get_item(&alias)
+			}
 
 			Some(item) => Some((id.clone(), item)),
 

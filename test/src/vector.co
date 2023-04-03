@@ -1,17 +1,10 @@
+using core::mem::{size_of, malloc, realloc, free};
+
 struct Vector<type T> {
 	T mut* data;
 	usize len;
 	usize capacity;
 }
-
-@no_mangle
-void mut* malloc(usize size);
-
-@no_mangle
-void mut* realloc(void mut* ptr, usize capacity);
-
-@no_mangle
-void free(void mut* ptr);
 
 @no_mangle
 int printf(u8* fmt, ...);
