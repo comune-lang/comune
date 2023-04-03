@@ -1,0 +1,60 @@
+struct Vector<type T> {
+	T mut* data;
+	usize len;
+	usize capacity;
+}
+
+@no_mangle
+void mut* malloc(usize size);
+
+@no_mangle
+void mut* realloc(void mut* ptr, usize capacity);
+
+@no_mangle
+void free(void mut* ptr);
+
+@no_mangle
+int printf(u8* fmt, ...);
+
+
+
+impl<type T> Vector<T> {
+
+	void push(mut& self, T elem) {
+		printf(c"Pushing %i... new size: %i\n", elem, self.len + 1);
+		
+		if self.len >= self.capacity {
+			if self.capacity == 0 {
+				self.realloc(1);
+			} else {
+				self.realloc(self.capacity * 2);
+			}
+		}
+		
+		printf(c"self.data: %i\n", self.data);
+		printf(c"self.data + self.len: %i\n", self.data + self.len);
+
+		unsafe {
+			*(self.data + self.len) = elem;
+		}
+
+		self.len += 1;
+	}
+
+	void realloc(mut& self, usize capacity) {
+		printf(c"Reallocating... new capacity: %i\n", capacity);
+		
+		self.data = realloc(
+				self.data as void mut*, 
+				capacity * size_of<T>()
+			) as T mut*;
+		
+		self.capacity = capacity;
+	}
+
+	// TODO: Implement returning references with `self` lifetime
+	T get(mut& self, usize i) {
+		unsafe { *(self.data + i) }
+	}
+
+}
