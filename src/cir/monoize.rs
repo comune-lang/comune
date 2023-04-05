@@ -350,7 +350,7 @@ impl MonomorphServer {
 			return insert_idx;
 		}
 
-		*instance.name.path.last_mut().unwrap() = insert_idx.clone();
+		*instance.name.path.last_mut().unwrap() = insert_idx.clone().into();
 
 		if !types.contains_key(&insert_idx) {
 			types.insert(insert_idx.clone(), Arc::new(RwLock::new(instance)));
