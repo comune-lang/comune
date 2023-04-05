@@ -24,6 +24,7 @@ pub mod serialize;
 
 // Bunch of type aliases to make code more readable
 type CIRFnMap = HashMap<CIRFnPrototype, CIRFunction>;
+type CIRTyMap = HashMap<TypeName, Arc<RwLock<TypeDef>>>;
 type BlockIndex = usize;
 type StmtIndex = usize;
 type VarIndex = usize;
@@ -199,5 +200,19 @@ impl CIRFunction {
 				.clone(),
 			false,
 		)
+	}
+
+	pub fn get_extern(&self) -> CIRFunction {
+		CIRFunction {
+			variables: self.variables[0..self.arg_count].to_vec(),
+			blocks: vec![],
+			ret: self.ret.clone(),
+			arg_count: self.arg_count,
+			type_params: self.type_params.clone(),
+			attributes: self.attributes.clone(),
+			is_extern: true,
+			is_variadic: self.is_variadic,
+			mangled_name: self.mangled_name.clone()
+		}
 	}
 }

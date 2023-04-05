@@ -38,17 +38,15 @@ pub struct Parser {
 	pub module_impl: ModuleImpl,
 	pub lexer: RefCell<Lexer>,
 	current_scope: Arc<Identifier>,
-	verbose: bool,
 }
 
 impl<'ctx> Parser {
-	pub fn new(lexer: Lexer, verbose: bool) -> Parser {
+	pub fn new(lexer: Lexer) -> Parser {
 		Parser {
 			interface: ModuleInterface::new(Identifier::new(true)),
 			module_impl: ModuleImpl::new(),
 			lexer: RefCell::new(lexer),
 			current_scope: Arc::new(Identifier::new(true)),
-			verbose,
 		}
 	}
 
@@ -96,17 +94,9 @@ impl<'ctx> Parser {
 	pub fn parse_interface(&mut self) -> ComuneResult<&ModuleInterface> {
 		self.lexer.borrow_mut().tokenize_file().unwrap();
 
-		match self.parse_namespace(&Identifier::new(true)) {
-			Ok(()) => {
-				if self.verbose {
-					todo!()
-					//println!("\ngenerated namespace info:\n\n{}", &self.interface);
-				}
-
-				Ok(&self.interface)
-			}
-			Err(e) => Err(e),
-		}
+		self.parse_namespace(&Identifier::new(true))?;
+		
+		Ok(&self.interface)
 	}
 
 	pub fn generate_ast(&mut self) -> ComuneResult<()> {

@@ -16,7 +16,7 @@ use crate::{
 	},
 	cir::{
 		analyze::{lifeline::VarInitCheck, verify, CIRPassManager, DataFlowPass},
-		builder::CIRModuleBuilder,
+		builder::CIRModuleBuilder, monoize::MonomorphServer, CIRModule,
 	},
 	clang::compile_cpp_module,
 	errors::{CMNMessageLog, ComuneErrCode, ComuneError, ComuneMessage, ERROR_COUNT},
@@ -25,7 +25,7 @@ use crate::{
 	parser::{ComuneResult, Parser},
 };
 
-pub struct ManagerState {
+pub struct CompilerState {
 	pub libcomune_dir: OsString,
 	pub import_paths: Vec<OsString>,
 	pub max_threads: usize,
@@ -35,6 +35,7 @@ pub struct ManagerState {
 	pub emit_types: Vec<EmitType>,
 	pub backtrace_on_error: bool,
 	pub module_states: RwLock<HashMap<PathBuf, ModuleState>>,
+	pub monomorph_server: MonomorphServer,
 }
 
 #[derive(Clone)]
@@ -74,7 +75,7 @@ impl EmitType {
 }
 
 pub fn launch_module_compilation(
-	state: Arc<ManagerState>,
+	state: Arc<CompilerState>,
 	src_path: PathBuf,
 	module_name: Identifier,
 	error_sender: Sender<CMNMessageLog>,
@@ -112,7 +113,7 @@ pub fn launch_module_compilation(
 }
 
 pub fn compile_comune_module(
-	state: Arc<ManagerState>,
+	state: Arc<CompilerState>,
 	src_path: PathBuf,
 	module_name: Identifier,
 	error_sender: Sender<CMNMessageLog>,
@@ -299,7 +300,7 @@ pub fn compile_comune_module(
 
 // TODO: Add proper module searching support, based on a list of module search dirs, as well as support for .co, .h, .hpp etc
 pub fn get_module_source_path(
-	state: &Arc<ManagerState>,
+	state: &CompilerState,
 	mut current_path: PathBuf,
 	module: &Identifier,
 ) -> Option<PathBuf> {
@@ -342,7 +343,7 @@ pub fn get_module_source_path(
 	None
 }
 
-pub fn get_module_out_path(state: &Arc<ManagerState>, module: &Identifier) -> PathBuf {
+pub fn get_module_out_path(state: &CompilerState, module: &Identifier) -> PathBuf {
 	let mut result = PathBuf::from(&state.output_dir);
 
 	for scope in &module.path {
@@ -355,7 +356,7 @@ pub fn get_module_out_path(state: &Arc<ManagerState>, module: &Identifier) -> Pa
 }
 
 pub fn parse_interface(
-	state: &Arc<ManagerState>,
+	state: &Arc<CompilerState>,
 	path: &Path,
 	error_sender: Sender<CMNMessageLog>,
 ) -> Result<Parser, ComuneError> {
@@ -378,7 +379,6 @@ pub fn parse_interface(
 				));
 			}
 		},
-		state.verbose_output,
 	);
 
 	if state.verbose_output {
@@ -400,7 +400,7 @@ pub fn parse_interface(
 }
 
 pub fn await_imports_ready(
-	state: &Arc<ManagerState>,
+	state: &Arc<CompilerState>,
 	src_path: &PathBuf,
 	module_name: &Identifier,
 	mut modules: Vec<ModuleImportKind>,
@@ -520,7 +520,7 @@ pub fn await_imports_ready(
 }
 
 pub fn generate_code<'ctx>(
-	state: &Arc<ManagerState>,
+	state: &Arc<CompilerState>,
 	parser: &mut Parser,
 	context: &'ctx Context,
 	src_path: &Path,
@@ -610,7 +610,7 @@ pub fn generate_code<'ctx>(
 		));
 	}
 
-	let module_mono = cir_module.monoize();
+	let module_mono = state.monomorph_server.monoize_module(cir_module);
 
 	if state.emit_types.contains(&EmitType::ComuneIrMono) {
 		// Write monomorphized cIR to file
@@ -620,6 +620,25 @@ pub fn generate_code<'ctx>(
 		)
 		.unwrap();
 	}
+
+	generate_llvm_ir(
+		state, 
+		module_name, 
+		module_mono, 
+		src_path,
+		&get_module_out_path(state, input_module), 
+		context,
+	)
+}
+
+pub fn generate_llvm_ir<'ctx>(
+	state: &CompilerState,
+	module_name: String,
+	module_mono: CIRModule,
+	src_path: &Path,
+	out_path: &Path,
+	context: &'ctx Context,
+) -> ComuneResult<LLVMBackend<'ctx>> {
 
 	// Generate LLVM IR
 	let mut backend = LLVMBackend::new(
@@ -656,7 +675,7 @@ pub fn generate_code<'ctx>(
 		backend
 			.module
 			.print_to_file(
-				get_module_out_path(state, input_module)
+				out_path
 					.with_extension("llraw")
 					.as_os_str(),
 			)
@@ -676,6 +695,6 @@ pub fn generate_code<'ctx>(
 	mpm.add_reassociate_pass();
 
 	mpm.run_on(&backend.module);
-
 	Ok(backend)
+
 }

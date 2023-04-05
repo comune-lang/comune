@@ -23,6 +23,7 @@ use std::{
 	time::Instant,
 };
 
+use crate::cir::monoize::MonomorphServer;
 use crate::driver::EmitType;
 
 #[derive(Parser, Debug)]
@@ -80,7 +81,7 @@ fn main() -> color_eyre::eyre::Result<()> {
 		.build_global()
 		.unwrap();
 
-	let manager_state = Arc::new(driver::ManagerState {
+	let compiler_state = Arc::new(driver::CompilerState {
 		libcomune_dir: "./libcomune".into(),
 		import_paths: vec![],
 		max_threads: args.num_jobs,
@@ -90,9 +91,10 @@ fn main() -> color_eyre::eyre::Result<()> {
 		emit_types,
 		backtrace_on_error: args.backtrace,
 		module_states: RwLock::default(),
+		monomorph_server: MonomorphServer::new(),
 	});
 
-	if manager_state.backtrace_on_error {
+	if compiler_state.backtrace_on_error {
 		unsafe {
 			errors::CAPTURE_BACKTRACE = true;
 		}
@@ -108,13 +110,13 @@ fn main() -> color_eyre::eyre::Result<()> {
 			let module_name = Identifier::from_name(get_file_suffix(&input_file).unwrap(), true);
 
 			let _ = driver::launch_module_compilation(
-				manager_state.clone(),
+				compiler_state.clone(),
 				input_file,
 				module_name,
 				error_sender.clone(),
 				s,
 			);
-		}
+		}		
 	});
 
 	if errors::ERROR_COUNT.load(Ordering::Acquire) > 0 {
@@ -136,7 +138,7 @@ fn main() -> color_eyre::eyre::Result<()> {
 
 	// Link into binary
 
-	let mut output_file = PathBuf::from(&manager_state.output_dir);
+	let mut output_file = PathBuf::from(&compiler_state.output_dir);
 	output_file.push(args.output_file);
 
 	let build_name = output_file
@@ -156,11 +158,11 @@ fn main() -> color_eyre::eyre::Result<()> {
 
 	let mut link_errors = 0;
 
-	for emit_type in &manager_state.emit_types {
+	for emit_type in &compiler_state.emit_types {
 		if let EmitType::Binary | EmitType::DynamicLib | EmitType::StaticLib = emit_type {
 			let mut output = Command::new("clang");
 
-			for module in &*manager_state.output_modules.lock().unwrap() {
+			for module in &*compiler_state.output_modules.lock().unwrap() {
 				output.arg(module);
 			}
 
@@ -189,8 +191,8 @@ fn main() -> color_eyre::eyre::Result<()> {
 		}
 	}
 
-	if !manager_state.emit_types.contains(&EmitType::Object) {
-		for module in &*manager_state.output_modules.lock().unwrap() {
+	if !compiler_state.emit_types.contains(&EmitType::Object) {
+		for module in &*compiler_state.output_modules.lock().unwrap() {
 			let _ = fs::remove_file(module);
 		}
 	}

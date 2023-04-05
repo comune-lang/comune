@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::{
-	driver::ManagerState,
+	driver::CompilerState,
 	lexer::Token,
 	parser::{ComuneResult, Parser},
 };
@@ -32,7 +32,7 @@ pub fn validate_module_impl(
 	Ok(())
 }
 
-pub fn validate_interface(_state: &Arc<ManagerState>, parser: &mut Parser) -> ComuneResult<()> {
+pub fn validate_interface(_state: &Arc<CompilerState>, parser: &mut Parser) -> ComuneResult<()> {
 	// At this point, all imports have been resolved, so validate namespace-level types
 	ty::resolve_interface_types(&mut parser.interface)?;
 

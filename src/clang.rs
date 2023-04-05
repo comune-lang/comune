@@ -13,13 +13,13 @@ use crate::{
 		module::{Identifier, ModuleImportKind, ModuleInterface, ModuleItemInterface},
 		types::{Basic, TupleKind, Type, TypeDefKind},
 	},
-	driver::{await_imports_ready, get_module_out_path, ManagerState, ModuleState},
+	driver::{await_imports_ready, get_module_out_path, CompilerState, ModuleState},
 	errors::{CMNMessageLog, ComuneError},
 	get_file_suffix,
 };
 
 pub fn compile_cpp_module(
-	state: Arc<ManagerState>,
+	state: Arc<CompilerState>,
 	src_path: PathBuf,
 	module_name: &Identifier,
 	error_sender: Sender<CMNMessageLog>,
@@ -103,7 +103,7 @@ pub fn compile_cpp_module(
 }
 
 pub fn preprocess_cpp_file(
-	_state: &Arc<ManagerState>,
+	_state: &Arc<CompilerState>,
 	file: &PathBuf,
 ) -> io::Result<(String, Vec<PathBuf>)> {
 	let mut file_in = String::new();
@@ -148,7 +148,7 @@ pub fn preprocess_cpp_file(
 // problem, you are MORE than welcome to give it a shot
 //
 pub fn generate_cpp_header(
-	_state: &Arc<ManagerState>,
+	_state: &Arc<CompilerState>,
 	input: &ModuleInterface,
 ) -> Result<String, std::fmt::Error> {
 	let mut result = String::from("#pragma once\n\n#include \"bridge/bridge.hpp\"\n\n");

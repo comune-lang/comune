@@ -8,13 +8,7 @@ using module_test::fib;
 using core::traits::Drop;
 using vector::Vector;
 using ascii = u8;
-
-@no_mangle
-void mut* malloc(usize size);
-
-@no_mangle
-void free(void mut* ptr);
-
+using core::mem::{malloc, free, bit_cast};
 
 @no_mangle
 int printf(ascii* fmt, ...);
@@ -118,7 +112,7 @@ int main() {
 	submodule_test::bar();
 
 	Vector<float> a = vec<float>();
-	
+
 	int i;
 
 	if true {
@@ -204,5 +198,6 @@ int main() {
 		free(my_cool_generic.data as void mut*);
 	}
 
+	printf(c"bit_cast<f32, u32>: %i\n", bit_cast<f32, u32>(10.0f32));
 	return 0;
 }

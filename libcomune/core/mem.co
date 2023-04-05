@@ -1,4 +1,19 @@
 
+@no_mangle
+void mut* malloc(usize size);
+
+@no_mangle
+void mut* realloc(void mut* ptr, usize capacity);
+
+@no_mangle
+void free(void mut* ptr);
+
+@no_mangle
+int printf(u8* fmt, ...);
+
+@no_mangle
+void abort();
+
 // TODO: Replace this with an intrinsic lol
 usize size_of<type T>() {
 	T* ptr1 = malloc(0) as T*;
@@ -11,11 +26,12 @@ usize size_of<type T>() {
 	}
 }
 
-@no_mangle
-void mut* malloc(usize size);
+U bit_cast<type T, type U>(T& t) {
+	if size_of<T>() != size_of<U>() {
+		// TODO: Replace this with a panic/throw when implemented
+		printf(c"ERROR: size_of<T> != size_of<U>!\n");
+		abort();
+	};
 
-@no_mangle
-void mut* realloc(void mut* ptr, usize capacity);
-
-@no_mangle
-void free(void mut* ptr);
+	unsafe { *(&t as U*) }
+}
