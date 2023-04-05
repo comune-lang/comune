@@ -99,7 +99,7 @@ TestSumType sum_type_test(i32& value) {
 	return value;
 }
 
-// In lie of properly working static functions
+// In lieu of properly working static functions
 Vector<T> vec<type T>() {
 	Vector<T> {
 		data: malloc(0) as T mut*,
