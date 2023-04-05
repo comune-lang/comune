@@ -116,7 +116,7 @@ fn main() -> color_eyre::eyre::Result<()> {
 				error_sender.clone(),
 				s,
 			);
-		}		
+		}
 	});
 
 	if errors::ERROR_COUNT.load(Ordering::Acquire) > 0 {

@@ -224,7 +224,7 @@ impl Display for LValue {
 				}
 				PlaceElem::Offset(t, i, _) => {
 					write!(&mut result, "[{t} {i}]")?;
-				},
+				}
 			};
 		}
 
@@ -272,13 +272,13 @@ impl Display for CIRCallId {
 				local, ret, args, ..
 			} => {
 				write!(f, "{ret}(")?;
-				
+
 				if !args.is_empty() {
 					let mut iter = args.iter();
 					let (props, ty) = iter.next().unwrap();
 
 					write!(f, "{props}{ty}")?;
-					
+
 					for (props, ty) in iter {
 						write!(f, ", {ty}{props}")?;
 					}

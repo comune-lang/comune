@@ -440,12 +440,13 @@ pub fn spawn_logger(backtrace_on_error: bool) -> Sender<CMNMessageLog> {
 									line_text
 								)
 								.unwrap();
-								
+
 								let column = {
 									if line == *lines.start() {
 										*column + offsets[*column - 1]
 									} else {
-										if let Some(first) = line_text.chars().position(|c| c != ' ')
+										if let Some(first) =
+											line_text.chars().position(|c| c != ' ')
 										{
 											first + 1
 										} else {
@@ -464,7 +465,8 @@ pub fn spawn_logger(backtrace_on_error: bool) -> Sender<CMNMessageLog> {
 									length_left -= 1;
 								} else if line == *lines.start() {
 									// First line
-									len = usize::min(column + length - 1, line_text.len()) - column + 1;
+									len = usize::min(column + length - 1, line_text.len()) - column
+										+ 1;
 									length_left -= len;
 								} else if line != *lines.end() {
 									// Middle line
@@ -485,12 +487,8 @@ pub fn spawn_logger(backtrace_on_error: bool) -> Sender<CMNMessageLog> {
 									// Print squiggle
 
 									write!(out, "{: <1$}", "", column).unwrap();
-									writeln!(
-										out,
-										"{}",
-										format!("{:~<1$}", "", len).red(),
-									)
-									.unwrap();
+									writeln!(out, "{}", format!("{:~<1$}", "", len).red(),)
+										.unwrap();
 								}
 
 								if length_left == 0 {

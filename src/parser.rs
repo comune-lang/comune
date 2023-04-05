@@ -51,7 +51,10 @@ impl<'ctx> Parser {
 	}
 
 	fn err<T>(&self, code: ComuneErrCode) -> ComuneResult<T> {
-		Err(ComuneError::new(code, self.lexer.borrow().current().unwrap().0))
+		Err(ComuneError::new(
+			code,
+			self.lexer.borrow().current().unwrap().0,
+		))
 	}
 
 	fn get_current(&self) -> ComuneResult<Token> {
@@ -95,7 +98,7 @@ impl<'ctx> Parser {
 		self.lexer.borrow_mut().tokenize_file().unwrap();
 
 		self.parse_namespace(&Identifier::new(true))?;
-		
+
 		Ok(&self.interface)
 	}
 
@@ -106,17 +109,20 @@ impl<'ctx> Parser {
 			// Parse function block
 			if let ModuleASTElem::Unparsed(idx) = ast {
 				self.lexer.borrow_mut().seek_token_idx(*idx);
-				
+
 				let proto_inner = proto.read().unwrap();
-				
+
 				let scope = FnScope::new(
-						&self.interface, 
-						proto_inner.path.clone(), 
-						proto_inner.ret.clone()
-					)
-					.with_params(proto_inner.type_params.clone());
-				
-				fn_impls.push((proto.clone(), ModuleASTElem::Parsed(self.parse_block(&scope)?)));
+					&self.interface,
+					proto_inner.path.clone(),
+					proto_inner.ret.clone(),
+				)
+				.with_params(proto_inner.type_params.clone());
+
+				fn_impls.push((
+					proto.clone(),
+					ModuleASTElem::Parsed(self.parse_block(&scope)?),
+				));
 			}
 		}
 
@@ -411,7 +417,7 @@ impl<'ctx> Parser {
 							scope: self.current_scope.clone(),
 
 							canonical_root,
-							params
+							params,
 						},
 					);
 
@@ -592,7 +598,7 @@ impl<'ctx> Parser {
 	fn parse_block(&self, scope: &FnScope<'ctx>) -> ComuneResult<Expr> {
 		let begin = self.get_current_start_index();
 		let mut current = self.get_current()?;
-		
+
 		let is_unsafe;
 
 		if current == Token::Keyword("unsafe") {
@@ -659,7 +665,11 @@ impl<'ctx> Parser {
 		let end = self.get_prev_end_index();
 
 		Ok(Expr::Atom(
-			Atom::Block { items, result, is_unsafe },
+			Atom::Block {
+				items,
+				result,
+				is_unsafe,
+			},
 			NodeData {
 				tk: SrcSpan {
 					start: begin,
@@ -706,7 +716,7 @@ impl<'ctx> Parser {
 				// Function declaration
 				"<" | "(" => {
 					let type_params = self.parse_generic_param_list(None)?;
-					
+
 					let t = FnPrototype {
 						path: Identifier::from_parent(&self.current_scope, name.clone()),
 						ret: t,
@@ -1112,8 +1122,7 @@ impl<'ctx> Parser {
 			if result.is_none() {
 				// Variable or function name
 				result = Some(Atom::Identifier(id.clone()));
-				
-				
+
 				if let Token::Operator("(" | "<") = self.get_current()? {
 					let start_token = self.get_current_token_index();
 					let mut type_args = vec![];
@@ -1121,19 +1130,20 @@ impl<'ctx> Parser {
 					if self.get_current()? == Token::Operator("<") {
 						// Here lies the Turbofish, vanquished after a battle
 						// lasting months on end, at the cost of tuple syntax.
-	
+
 						type_args = match self.parse_type_argument_list(Some(scope)) {
 							Ok(args) => args,
-							
-							Err(ComuneError { 
-								code: ComuneErrCode::UnexpectedToken | ComuneErrCode::ExpectedIdentifier, 
-								.. 
+
+							Err(ComuneError {
+								code:
+									ComuneErrCode::UnexpectedToken | ComuneErrCode::ExpectedIdentifier,
+								..
 							}) => {
 								self.lexer.borrow_mut().seek_token_idx(start_token);
-								
+
 								return Ok(Atom::Identifier(id));
 							}
-							
+
 							Err(e) => return Err(e),
 						}
 					}
@@ -1347,7 +1357,9 @@ impl<'ctx> Parser {
 								Token::Other('{') => else_body = Some(self.parse_block(scope)?),
 
 								// Bit of a hack to get `else if` working
-								Token::Keyword("if") => else_body = Some(self.parse_expression(scope)?),
+								Token::Keyword("if") => {
+									else_body = Some(self.parse_expression(scope)?)
+								}
 
 								_ => return self.err(ComuneErrCode::UnexpectedToken),
 							}
@@ -1614,7 +1626,11 @@ impl<'ctx> Parser {
 		Ok(result)
 	}
 
-	fn parse_parameter_list(&self, self_ty: Option<&Type>, scope: Option<&FnScope<'ctx>>) -> ComuneResult<FnParamList> {
+	fn parse_parameter_list(
+		&self,
+		self_ty: Option<&Type>,
+		scope: Option<&FnScope<'ctx>>,
+	) -> ComuneResult<FnParamList> {
 		let mut result = FnParamList {
 			params: vec![],
 			variadic: false,
@@ -1718,7 +1734,6 @@ impl<'ctx> Parser {
 			let typename = self.parse_identifier(scope)?;
 
 			if let Some(scope) = scope {
-				
 				if let Some(ty) = scope.find_type(&typename) {
 					result = ty;
 				} else {
@@ -1729,10 +1744,10 @@ impl<'ctx> Parser {
 					name: typename,
 					scope: self.current_scope.clone(),
 					type_args: vec![],
-					span: SrcSpan { 
-						start: start_idx, 
-						len: self.get_prev_end_index() - start_idx 
-					}
+					span: SrcSpan {
+						start: start_idx,
+						len: self.get_prev_end_index() - start_idx,
+					},
 				};
 			}
 
@@ -1895,7 +1910,10 @@ impl<'ctx> Parser {
 		Ok(result)
 	}
 
-	fn parse_generic_param_list(&self, scope: Option<&FnScope<'ctx>>) -> ComuneResult<GenericParamList> {
+	fn parse_generic_param_list(
+		&self,
+		scope: Option<&FnScope<'ctx>>,
+	) -> ComuneResult<GenericParamList> {
 		if self.get_current()? != Token::Operator("<") {
 			return Ok(vec![]);
 		}
@@ -1995,7 +2013,10 @@ impl<'ctx> Parser {
 		Ok(result)
 	}
 
-	fn parse_tuple_type(&self, scope: Option<&FnScope<'ctx>>) -> ComuneResult<(TupleKind, Vec<Type>)> {
+	fn parse_tuple_type(
+		&self,
+		scope: Option<&FnScope<'ctx>>,
+	) -> ComuneResult<(TupleKind, Vec<Type>)> {
 		let mut types = vec![];
 
 		if self.get_current()? != Token::Operator("(") {

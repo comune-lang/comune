@@ -1192,12 +1192,7 @@ impl CIRModuleBuilder {
 				self.current_block = next;
 
 				if let Some(result) = result {
-					Some(RValue::Atom(
-						ret,
-						None,
-						Operand::LValue(result, span),
-						span,
-					))
+					Some(RValue::Atom(ret, None, Operand::LValue(result, span), span))
 				} else {
 					Some(Self::get_void_rvalue())
 				}
@@ -1213,7 +1208,7 @@ impl CIRModuleBuilder {
 					self.insert_temporary(fn_val_ir.get_type().clone(), fn_val_ir.clone())
 				};
 
-				let Type::Function(ret, args) = fn_val_ty else { 
+				let Type::Function(ret, args) = fn_val_ty else {
 					panic!()
 				};
 
@@ -1305,7 +1300,7 @@ impl CIRModuleBuilder {
 					let (mut indexed, meta) = self.generate_lvalue_expr(lhs)?;
 					let index = self.generate_expr(rhs)?;
 					let index_ty = rhs.get_type();
-					
+
 					indexed.projection.push(PlaceElem::Offset(
 						index_ty.clone(),
 						self.get_as_operand(index_ty, index),
@@ -1313,7 +1308,7 @@ impl CIRModuleBuilder {
 					));
 
 					indexed.projection.push(PlaceElem::Deref);
-					
+
 					Some((indexed, meta))
 				}
 
@@ -1325,7 +1320,7 @@ impl CIRModuleBuilder {
 					indexed.projection.push(PlaceElem::Offset(
 						index_ty.clone(),
 						self.get_as_operand(index_ty, index),
-						op.clone()
+						op.clone(),
 					));
 
 					Some((indexed, meta))

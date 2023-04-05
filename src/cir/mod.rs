@@ -212,7 +212,7 @@ impl CIRFunction {
 			attributes: self.attributes.clone(),
 			is_extern: true,
 			is_variadic: self.is_variadic,
-			mangled_name: self.mangled_name.clone()
+			mangled_name: self.mangled_name.clone(),
 		}
 	}
 }

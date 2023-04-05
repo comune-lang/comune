@@ -37,7 +37,7 @@ pub struct FnScope<'ctx> {
 	variables: Vec<(Name, Type, BindingProps)>,
 	is_inside_loop: bool,
 	is_unsafe: bool,
-	generic_params: GenericParamList
+	generic_params: GenericParamList,
 }
 
 impl<'ctx> FnScope<'ctx> {
@@ -72,14 +72,11 @@ impl<'ctx> FnScope<'ctx> {
 		self
 	}
 
-	pub fn find_type(
-		&self,
-		id: &Identifier
-	) -> Option<Type> {
+	pub fn find_type(&self, id: &Identifier) -> Option<Type> {
 		if !id.is_qualified() {
 			for (i, (name, ..)) in self.generic_params.iter().enumerate().rev() {
 				if name == id.name() {
-					return Some(Type::TypeParam(i))
+					return Some(Type::TypeParam(i));
 				}
 			}
 		}

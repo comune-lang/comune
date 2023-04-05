@@ -53,9 +53,7 @@ pub fn resolve_interface_types(interface: &ModuleInterface) -> ComuneResult<()> 
 			ModuleItemInterface::Alias(_) => {}
 
 			ModuleItemInterface::Trait(tr) => {
-				let TraitInterface {
-					items, ..
-				} = &mut *tr.write().unwrap();
+				let TraitInterface { items, .. } = &mut *tr.write().unwrap();
 
 				for fns in items.values_mut() {
 					for func in fns {
@@ -82,7 +80,11 @@ pub fn resolve_interface_types(interface: &ModuleInterface) -> ComuneResult<()> 
 	}
 
 	for (ty, im) in &interface.trait_solver.local_impls {
-		resolve_type(&mut *ty.write().unwrap(), interface, &im.read().unwrap().params)?;
+		resolve_type(
+			&mut *ty.write().unwrap(),
+			interface,
+			&im.read().unwrap().params,
+		)?;
 
 		// Resolve item references in canonical root
 
@@ -117,7 +119,7 @@ pub fn resolve_interface_types(interface: &ModuleInterface) -> ComuneResult<()> 
 		let trait_qualif = (Some(Box::new(ty.read().unwrap().clone())), resolved_trait);
 
 		im.write().unwrap().canonical_root.qualifier = trait_qualif.clone();
-		
+
 		let im = im.read().unwrap();
 
 		for fns in im.functions.values() {
@@ -160,7 +162,7 @@ pub fn resolve_type(
 			name: id,
 			scope,
 			type_args,
-			span
+			span,
 		} => {
 			let result;
 			let generic_pos = generics.iter().position(|(name, ..)| name == id.name());

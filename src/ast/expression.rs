@@ -539,7 +539,11 @@ impl Display for Atom {
 
 			Atom::Identifier(var) => write!(f, "{}", var),
 
-			Atom::Block { items, result, is_unsafe } => {
+			Atom::Block {
+				items,
+				result,
+				is_unsafe,
+			} => {
 				if *is_unsafe {
 					write!(f, "unsafe ")?;
 				}

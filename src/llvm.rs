@@ -500,13 +500,12 @@ impl<'ctx> LLVMBackend<'ctx> {
 					} else {
 						panic!()
 					}
-				} else if matches!(expr_ty, Type::Pointer{..}) {
+				} else if matches!(expr_ty, Type::Pointer { .. }) {
 					let lhs = lhs_v.into_pointer_value();
 					let rhs = rhs_v.into_int_value();
 
-					result = unsafe { 
-						self
-							.builder
+					result = unsafe {
+						self.builder
 							.build_gep(lhs, &[rhs], "ptrgep")
 							.as_basic_value_enum()
 					};
@@ -862,19 +861,16 @@ impl<'ctx> LLVMBackend<'ctx> {
 					.build_struct_gep(local, *i as u32, "field")
 					.unwrap(),
 				PlaceElem::Offset(index_ty, expr, op) => unsafe {
-					let mut idx = self.generate_operand(index_ty, expr)
-								.as_basic_value_enum()
-								.into_int_value();
+					let mut idx = self
+						.generate_operand(index_ty, expr)
+						.as_basic_value_enum()
+						.into_int_value();
 
 					if *op == Operator::Sub {
 						idx = self.builder.build_int_neg(idx, "idxneg");
 					}
 
-					self.builder.build_gep(
-						local,
-						&[idx],
-						"index",
-					)
+					self.builder.build_gep(local, &[idx], "index")
 				},
 			}
 		}

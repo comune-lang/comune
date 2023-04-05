@@ -19,12 +19,8 @@ pub fn validate_function_body(
 	elem: &mut ModuleASTElem,
 	namespace: &ModuleInterface,
 ) -> ComuneResult<()> {
-	let mut scope = FnScope::new(
-			namespace, 
-			scope, 
-			func.ret.clone()
-		)
-		.with_params(func.type_params.clone());
+	let mut scope =
+		FnScope::new(namespace, scope, func.ret.clone()).with_params(func.type_params.clone());
 
 	for (param, name, props) in &func.params.params {
 		scope.add_variable(param.clone(), name.clone().unwrap(), *props)
@@ -252,10 +248,10 @@ pub fn resolve_method_call(
 	}
 
 	args.insert(0, lhs.clone());
-	
+
 	if let Type::TypeRef { args, .. } = receiver {
 		type_args.reserve(args.len());
-		
+
 		for (i, arg) in args.iter().enumerate() {
 			type_args.insert(i, arg.clone());
 		}

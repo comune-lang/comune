@@ -74,29 +74,31 @@ impl Expr {
 
 						match (&first_t, &op, &second_t) {
 							(
-								Type::Pointer { .. }, 
-								Operator::Add | Operator::Sub, 
-								Type::Basic(Basic::Integral { .. } | Basic::PtrSizeInt { .. })
-							) => {
-								Ok(first_t)
-							}
+								Type::Pointer { .. },
+								Operator::Add | Operator::Sub,
+								Type::Basic(Basic::Integral { .. } | Basic::PtrSizeInt { .. }),
+							) => Ok(first_t),
 
 							_ => {
 								if first_t != second_t {
 									// Try to coerce one to the other
-		
+
 									if lhs.coercable_to(&first_t, &second_t, scope) {
 										lhs.wrap_in_cast(second_t.clone());
 									} else if rhs.coercable_to(&second_t, &first_t, scope) {
 										rhs.wrap_in_cast(first_t.clone());
 									} else {
 										return Err(ComuneError::new(
-											ComuneErrCode::ExprTypeMismatch(first_t, second_t, op.clone()),
+											ComuneErrCode::ExprTypeMismatch(
+												first_t,
+												second_t,
+												op.clone(),
+											),
 											meta.tk,
 										));
 									}
 								}
-		
+
 								// Handle operators that change the expression's type here
 								match op {
 									Operator::Eq
@@ -105,15 +107,13 @@ impl Expr {
 									| Operator::Greater
 									| Operator::LessEq
 									| Operator::GreaterEq => Ok(Type::Basic(Basic::Bool)),
-		
+
 									Operator::PostDec | Operator::PostInc => Ok(first_t),
-		
+
 									_ => Ok(second_t),
 								}
 							}
 						}
-
-						
 					}
 				}
 			}
@@ -129,8 +129,8 @@ impl Expr {
 							if !scope.is_unsafe {
 								return Err(ComuneError::new(
 									ComuneErrCode::UnsafeOperation,
-									meta.tk
-								))
+									meta.tk,
+								));
 							}
 
 							Ok(*pointee)
@@ -276,11 +276,11 @@ impl Expr {
 						Ok(m)
 					} else {
 						Err(ComuneError::new(
-							ComuneErrCode::InvalidMemberAccess { t: 
-								lhs_ty.clone(), 
-								idx: id.name().to_string()
+							ComuneErrCode::InvalidMemberAccess {
+								t: lhs_ty.clone(),
+								idx: id.name().to_string(),
 							},
-							rhs.get_node_data().tk
+							rhs.get_node_data().tk,
 						))
 					}
 				}
@@ -475,7 +475,11 @@ impl Atom {
 				todo!()
 			}
 
-			Atom::Block { items, result, is_unsafe } => {
+			Atom::Block {
+				items,
+				result,
+				is_unsafe,
+			} => {
 				let mut subscope = FnScope::from_parent(scope, false, *is_unsafe);
 
 				for item in items {

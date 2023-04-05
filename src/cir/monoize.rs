@@ -2,7 +2,8 @@
 
 use std::{
 	collections::{HashMap, HashSet},
-	sync::{Arc, RwLock}, time::Duration,
+	sync::{Arc, RwLock},
+	time::Duration,
 };
 
 use crate::{
@@ -14,7 +15,9 @@ use crate::{
 	lexer::Token,
 };
 
-use super::{CIRCallId, CIRFnMap, CIRFunction, CIRModule, CIRStmt, FuncID, RValue, Type, TypeName, CIRTyMap, CIRFnPrototype};
+use super::{
+	CIRCallId, CIRFnMap, CIRFunction, CIRModule, CIRStmt, CIRTyMap, FuncID, RValue, Type, TypeName,
+};
 
 // A set of requested Generic monomorphizations, with a Vec of type arguments
 // TODO: Extend system to support constants as arguments
@@ -38,9 +41,9 @@ pub struct MonomorphServer {
 
 impl MonomorphServer {
 	pub fn new() -> Self {
-		MonomorphServer { 
-			fn_templates: RwLock::default(), 
-			fn_instances: RwLock::default(), 
+		MonomorphServer {
+			fn_templates: RwLock::default(),
+			fn_instances: RwLock::default(),
 			ty_instances: RwLock::default(),
 		}
 	}
@@ -66,15 +69,14 @@ impl MonomorphServer {
 		let function_protos: Vec<_> = module.functions.keys().cloned().collect();
 
 		let generics: Vec<_> = function_protos
-						.iter()
-						.filter(
-							|k| !module.functions[k].type_params.is_empty()
-						).collect();
-		
+			.iter()
+			.filter(|k| !module.functions[k].type_params.is_empty())
+			.collect();
+
 		for proto in generics {
 			let mut fn_repo = self.fn_templates.write().unwrap();
 			let fn_template = module.functions.remove(proto).unwrap();
-		
+
 			if !fn_template.is_extern {
 				fn_repo.insert(proto.clone(), fn_template);
 			}
@@ -96,13 +98,14 @@ impl MonomorphServer {
 
 			functions_mono.insert(proto, function_monoized);
 		}
-		
-		let generic_ty_keys: Vec<_> = module.types
+
+		let generic_ty_keys: Vec<_> = module
+			.types
 			.iter()
 			.filter_map(|(k, v)| {
 				let is_generic = match &v.read().unwrap().def {
 					TypeDefKind::Algebraic(alg) => !alg.params.is_empty(),
-					TypeDefKind::Class => todo!()
+					TypeDefKind::Class => todo!(),
 				};
 
 				if is_generic {
@@ -153,12 +156,7 @@ impl MonomorphServer {
 							self.monoize_type(types, arg, param_map);
 						}
 
-						self.monoize_call(
-							functions_in,
-							functions_out,
-							stmt,
-							types,
-						);
+						self.monoize_call(functions_in, functions_out, stmt, types);
 					}
 
 					_ => {}
@@ -176,8 +174,8 @@ impl MonomorphServer {
 		func: &mut CIRStmt,
 		types: &mut HashMap<TypeName, Arc<RwLock<TypeDef>>>,
 	) {
-		let CIRStmt::FnCall { 
-			id, 
+		let CIRStmt::FnCall {
+			id,
 			type_args,
 			..
 		} = func else { panic!() };
@@ -200,7 +198,7 @@ impl MonomorphServer {
 			self.monoize_type(types, &mut insert_id.ret, type_args);
 
 			if let (Some(qualifier), _) = &mut insert_id.name.qualifier {
-				self.monoize_type(types, qualifier, type_args);	
+				self.monoize_type(types, qualifier, type_args);
 			}
 
 			// If the function template isn't available yet, wait for it
@@ -217,14 +215,9 @@ impl MonomorphServer {
 				};
 
 				drop(fn_instances);
-				
-				let monoized = self.monoize_function(
-					functions_in,
-					functions_out,
-					fn_in,
-					types,
-					type_args,
-				);
+
+				let monoized =
+					self.monoize_function(functions_in, functions_out, fn_in, types, type_args);
 
 				drop(fn_templates);
 
@@ -232,9 +225,9 @@ impl MonomorphServer {
 
 				fn_instances.insert(insert_id.clone(), monoized);
 			}
-			
+
 			*id = insert_id;
-			
+
 			let extern_fn = self.fn_instances.read().unwrap()[id].clone();
 
 			functions_out.insert(id.clone(), extern_fn);
@@ -268,18 +261,11 @@ impl MonomorphServer {
 		}
 	}
 
-	fn monoize_type(
-		&self,
-		types: &mut TypeMap,
-		ty: &mut Type,
-		param_map: &TypeSubstitutions,
-	) {
+	fn monoize_type(&self, types: &mut TypeMap, ty: &mut Type, param_map: &TypeSubstitutions) {
 		match ty {
 			Type::Basic(_) => {}
 
-			Type::Pointer { pointee, .. } => {
-				self.monoize_type(types, pointee, param_map)
-			}
+			Type::Pointer { pointee, .. } => self.monoize_type(types, pointee, param_map),
 
 			Type::Array(arr_ty, _) => self.monoize_type(types, arr_ty, param_map),
 
@@ -295,7 +281,8 @@ impl MonomorphServer {
 					}
 
 					let typename = name.to_string();
-					let name = self.instantiate_type_def(types, def.upgrade().unwrap(), typename, args);
+					let name =
+						self.instantiate_type_def(types, def.upgrade().unwrap(), typename, args);
 
 					*def = Arc::downgrade(&types[&name]);
 					args.clear();
@@ -358,7 +345,7 @@ impl MonomorphServer {
 		}
 
 		insert_idx += ">";
-				
+
 		if types.contains_key(&insert_idx) {
 			return insert_idx;
 		}

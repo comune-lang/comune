@@ -3,7 +3,7 @@ use std::{
 	ffi::OsString,
 	fs,
 	path::{Path, PathBuf},
-	sync::{mpsc::Sender, Arc, Mutex, RwLock, atomic::Ordering},
+	sync::{atomic::Ordering, mpsc::Sender, Arc, Mutex, RwLock},
 };
 
 use colored::Colorize;
@@ -16,7 +16,9 @@ use crate::{
 	},
 	cir::{
 		analyze::{lifeline::VarInitCheck, verify, CIRPassManager, DataFlowPass},
-		builder::CIRModuleBuilder, monoize::MonomorphServer, CIRModule,
+		builder::CIRModuleBuilder,
+		monoize::MonomorphServer,
+		CIRModule,
 	},
 	clang::compile_cpp_module,
 	errors::{CMNMessageLog, ComuneErrCode, ComuneError, ComuneMessage, ERROR_COUNT},
@@ -130,7 +132,7 @@ pub fn compile_comune_module(
 				.write()
 				.unwrap()
 				.insert(src_path, ModuleState::ParsingFailed);
-			
+
 			return Err(e);
 		}
 	};
@@ -362,24 +364,22 @@ pub fn parse_interface(
 ) -> Result<Parser, ComuneError> {
 	// First phase of module compilation: create Lexer and Parser, and parse the module at the namespace level
 
-	let mut mod_state = Parser::new(
-		match Lexer::new(path, error_sender) {
-			// TODO: Take module name instead of filename
-			Ok(f) => f,
-			Err(e) => {
-				println!(
-					"{} failed to open module '{}' ({})",
-					"fatal:".red().bold(),
-					path.file_name().unwrap().to_string_lossy(),
-					e
-				);
-				return Err(ComuneError::new(
-					ComuneErrCode::ModuleNotFound(OsString::from(path.file_name().unwrap())),
-					SrcSpan::new(),
-				));
-			}
-		},
-	);
+	let mut mod_state = Parser::new(match Lexer::new(path, error_sender) {
+		// TODO: Take module name instead of filename
+		Ok(f) => f,
+		Err(e) => {
+			println!(
+				"{} failed to open module '{}' ({})",
+				"fatal:".red().bold(),
+				path.file_name().unwrap().to_string_lossy(),
+				e
+			);
+			return Err(ComuneError::new(
+				ComuneErrCode::ModuleNotFound(OsString::from(path.file_name().unwrap())),
+				SrcSpan::new(),
+			));
+		}
+	});
 
 	if state.verbose_output {
 		println!("\ncollecting symbols...");
@@ -598,10 +598,7 @@ pub fn generate_code<'ctx>(
 
 		for error in cir_errors {
 			return_errors.push(error.clone());
-			parser
-				.lexer
-				.borrow()
-				.log_msg(ComuneMessage::Error(error));
+			parser.lexer.borrow().log_msg(ComuneMessage::Error(error));
 		}
 
 		return Err(ComuneError::new(
@@ -622,11 +619,11 @@ pub fn generate_code<'ctx>(
 	}
 
 	generate_llvm_ir(
-		state, 
-		module_name, 
-		module_mono, 
+		state,
+		module_name,
+		module_mono,
 		src_path,
-		&get_module_out_path(state, input_module), 
+		&get_module_out_path(state, input_module),
 		context,
 	)
 }
@@ -639,7 +636,6 @@ pub fn generate_llvm_ir<'ctx>(
 	out_path: &Path,
 	context: &'ctx Context,
 ) -> ComuneResult<LLVMBackend<'ctx>> {
-
 	// Generate LLVM IR
 	let mut backend = LLVMBackend::new(
 		context,
@@ -674,11 +670,7 @@ pub fn generate_llvm_ir<'ctx>(
 	if state.emit_types.contains(&EmitType::LLVMIrRaw) {
 		backend
 			.module
-			.print_to_file(
-				out_path
-					.with_extension("llraw")
-					.as_os_str(),
-			)
+			.print_to_file(out_path.with_extension("llraw").as_os_str())
 			.unwrap();
 	}
 
@@ -696,5 +688,4 @@ pub fn generate_llvm_ir<'ctx>(
 
 	mpm.run_on(&backend.module);
 	Ok(backend)
-
 }

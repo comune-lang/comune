@@ -304,12 +304,13 @@ impl Type {
 					.collect(),
 			},
 
-			Type::TypeParam(param) => 
+			Type::TypeParam(param) => {
 				if let Some(concrete) = type_args.get(*param) {
 					concrete.clone()
 				} else {
 					Type::TypeParam(*param)
 				}
+			}
 
 			Type::Never => Type::Never,
 
@@ -810,7 +811,7 @@ impl std::fmt::Debug for Type {
 				name: arg0,
 				scope: arg1,
 				type_args: arg2,
-				span: _
+				span: _,
 			} => f
 				.debug_tuple("Unresolved")
 				.field(arg0)
