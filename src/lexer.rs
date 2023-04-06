@@ -92,7 +92,7 @@ impl Token {
 	}
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Default, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct SrcSpan {
 	pub start: usize,
 	pub len: usize,

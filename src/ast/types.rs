@@ -74,6 +74,7 @@ pub struct BindingProps {
 	pub is_ref: bool,
 	pub is_mut: bool,
 	pub is_unsafe: bool,
+	pub span: SrcSpan,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

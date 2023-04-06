@@ -1480,6 +1480,7 @@ impl CIRModuleBuilder {
 				is_mut: true,
 				is_ref: false,
 				is_unsafe: false,
+				span: SrcSpan::new(),
 			},
 			None,
 		));

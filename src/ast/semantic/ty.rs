@@ -159,7 +159,7 @@ pub fn check_dst_indirection(ty: &Type, props: &BindingProps) -> ComuneResult<()
 			if !props.is_ref {
 				return Err(ComuneError::new(
 					ComuneErrCode::DSTWithoutIndirection,
-					SrcSpan::new()
+					props.span
 				));
 			}
 

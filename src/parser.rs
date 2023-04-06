@@ -832,13 +832,19 @@ impl<'ctx> Parser {
 				expr = Some(self.parse_expression(scope)?);
 			}
 
+			let span = SrcSpan {
+				start: begin,
+				len: self.get_prev_end_index() - begin,
+			};
+
+			let mut props = binding_props.unwrap_or_default();
+
+			props.span = span;
+
 			let stmt_result = Stmt::Decl(
-				vec![(ty, name, binding_props.unwrap_or_default())],
+				vec![(ty, name, props)],
 				expr,
-				SrcSpan {
-					start: begin,
-					len: self.get_prev_end_index() - begin,
-				},
+				span,
 			);
 
 			Ok(stmt_result)
@@ -1664,6 +1670,8 @@ impl<'ctx> Parser {
 		}
 
 		while self.is_at_type_token(scope)? {
+			let start = self.get_current_start_index();
+
 			let mut param = (
 				self.parse_type(scope)?,
 				None,
@@ -1677,6 +1685,13 @@ impl<'ctx> Parser {
 				param.1 = Some(name);
 				self.get_next()?;
 			}
+
+			let end = self.get_prev_end_index();
+			
+			param.2.span = SrcSpan {
+				start,
+				len: end - start,
+			};
 
 			result.params.push(param);
 
@@ -1806,8 +1821,15 @@ impl<'ctx> Parser {
 					let mut args = vec![];
 
 					while self.get_current()? != Token::Operator(")") {
+						let start = self.get_current_start_index();
 						let ty = self.parse_type(scope)?;
-						let props = self.parse_binding_props()?.unwrap_or_default();
+						let mut props = self.parse_binding_props()?.unwrap_or_default();
+						let end = self.get_prev_end_index();
+						
+						props.span = SrcSpan {
+							start,
+							len: end - start,
+						};
 
 						args.push((props, ty));
 
