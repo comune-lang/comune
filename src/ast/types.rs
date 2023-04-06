@@ -541,22 +541,27 @@ impl Type {
 		typename
 	}
 
+	#[allow(dead_code)]
 	pub fn i8_type(signed: bool) -> Self {
 		Type::Basic(Basic::Integral { signed, size_bytes: 1 })
 	}
 	
+	#[allow(dead_code)]
 	pub fn i16_type(signed: bool) -> Self {
 		Type::Basic(Basic::Integral { signed, size_bytes: 2 })
 	}
 
+	#[allow(dead_code)]
 	pub fn i32_type(signed: bool) -> Self {
 		Type::Basic(Basic::Integral { signed, size_bytes: 4 })
 	}
 	
+	#[allow(dead_code)]
 	pub fn i64_type(signed: bool) -> Self {
 		Type::Basic(Basic::Integral { signed, size_bytes: 8 })
 	}
-
+	
+	#[allow(dead_code)]
 	pub fn isize_type(signed: bool) -> Self {
 		Type::Basic(Basic::PtrSizeInt { signed })
 	}

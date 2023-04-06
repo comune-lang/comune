@@ -1781,18 +1781,21 @@ impl<'ctx> Parser {
 				}
 
 				Token::Operator("[") => {
-					// Array type
+					// Array or slice type
 					let Some(scope) = scope else { panic!() };
-					self.get_next()?;
-
-					let const_expr = self.parse_expression(scope)?;
+					
+					if self.get_next()? == Token::Operator("]") {
+						result = Type::Slice(Box::new(result));
+					} else {
+						let const_expr = self.parse_expression(scope)?;
+						
+						result = Type::Array(
+							Box::new(result),
+							Arc::new(RwLock::new(ConstExpr::Expr(const_expr))),
+						);
+					}
 
 					self.consume(&Token::Operator("]"))?;
-
-					result = Type::Array(
-						Box::new(result),
-						Arc::new(RwLock::new(ConstExpr::Expr(const_expr))),
-					);
 				}
 
 				Token::Operator("(") => {
