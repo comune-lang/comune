@@ -382,6 +382,10 @@ impl<'ctx> LLVMBackend<'ctx> {
 				}
 			}
 		}
+		
+		if !t.type_params.is_empty() {
+			self.fn_value_opt.unwrap().set_linkage(Linkage::LinkOnceODR);
+		}
 
 		self.blocks.clear();
 		self.variables.clear();

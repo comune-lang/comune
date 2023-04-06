@@ -27,12 +27,15 @@ impl Display for CIRFnPrototype {
 
 		// Print type parameters
 		if !self.type_params.is_empty() {
-			let mut iter = self.type_params.iter();
 
-			write!(f, "<{}", iter.next().unwrap().0)?;
+			for (i, (param, traits, ty)) in self.type_params.iter().enumerate() {
+				if i == 0 {
+					write!(f, "<")?;
+				} else {
+					write!(f, ", ")?;
+				}
 
-			for (param, traits, ty) in iter {
-				write!(f, ", {param}")?;
+				write!(f, "{param}")?;
 
 				if !traits.is_empty() {
 					let mut traits_iter = traits.iter();
@@ -42,10 +45,10 @@ impl Display for CIRFnPrototype {
 					for tr in traits_iter {
 						write!(f, " + {tr:?}")?;
 					}
-
-					if let Some(ty) = ty {
-						write!(f, " = {ty}")?;
-					}
+				}
+				
+				if let Some(ty) = ty {
+					write!(f, " = {ty}")?;
 				}
 			}
 
