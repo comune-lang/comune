@@ -1019,19 +1019,27 @@ impl<'ctx> LLVMBackend<'ctx> {
 				)
 				.as_any_type_enum(),
 			
-			Type::Slice(slicee) => self.slice_type(&Self::to_basic_type(self.get_llvm_type(slicee))).as_any_type_enum(),
+			Type::Slice(_) => panic!("encountered Type::Slice without indirection!"),
 
 			Type::Pointer { pointee, .. } => {
-				if let Type::Basic(Basic::Void) = &**pointee {
+				match &**pointee {
+					Type::Slice(slicee) => {
+						self.slice_type(&Self::to_basic_type(self.get_llvm_type(slicee))).as_any_type_enum()
+					}
+
 					// void* isn't valid in LLVM, so we generate an i8* type instead
-					self.context
-						.i8_type()
-						.ptr_type(AddressSpace::Generic)
-						.as_any_type_enum()
-				} else {
-					Self::to_basic_type(self.get_llvm_type(pointee))
-						.ptr_type(AddressSpace::Generic)
-						.as_any_type_enum()
+					Type::Basic(Basic::Void) => {
+						self.context
+							.i8_type()
+							.ptr_type(AddressSpace::Generic)
+							.as_any_type_enum()
+					}
+
+					_ => {
+						Self::to_basic_type(self.get_llvm_type(pointee))
+							.ptr_type(AddressSpace::Generic)
+							.as_any_type_enum()
+					}
 				}
 			}
 

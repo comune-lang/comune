@@ -594,7 +594,13 @@ impl PartialEq for Type {
 
 			(Self::Unresolved { .. }, _) | (_, Self::Unresolved { .. }) => panic!(),
 
-			_ => false,
+			(Self::Slice(l0), Self::Slice(r0)) => l0 == r0,
+
+			_ => if std::mem::discriminant(self) == std::mem::discriminant(other) {
+				panic!("unimplemented PartialEq variant for Type!")
+			} else {
+				false
+			}
 		}
 	}
 }

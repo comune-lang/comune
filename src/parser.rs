@@ -1782,11 +1782,10 @@ impl<'ctx> Parser {
 
 				Token::Operator("[") => {
 					// Array or slice type
-					let Some(scope) = scope else { panic!() };
-					
 					if self.get_next()? == Token::Operator("]") {
 						result = Type::Slice(Box::new(result));
 					} else {
+						let Some(scope) = scope else { panic!() };
 						let const_expr = self.parse_expression(scope)?;
 						
 						result = Type::Array(

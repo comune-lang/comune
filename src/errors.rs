@@ -132,6 +132,7 @@ pub enum ComuneErrCode {
 
 	LoopCtrlOutsideLoop(&'static str),
 	UnsafeOperation,
+	DSTWithoutIndirection,
 
 	// Resolution errors
 	ModuleNotFound(OsString),
@@ -267,10 +268,9 @@ impl Display for ComuneErrCode {
 			}
 
 			ComuneErrCode::UnresolvedTrait(tr) => write!(f, "failed to resolve trait `{tr}`"),
-
 			ComuneErrCode::LoopCtrlOutsideLoop(name) => write!(f, "{name} outside of loop"),
-
 			ComuneErrCode::UnsafeOperation => write!(f, "unsafe operation outside `unsafe` block"),
+			ComuneErrCode::DSTWithoutIndirection => write!(f, "dynamically-sized type without indirection"),
 
 			ComuneErrCode::ModuleNotFound(m) => write!(f, "module not found: {m:#?}"),
 			ComuneErrCode::DependencyError => write!(f, "a dependency failed to compile"),

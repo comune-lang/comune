@@ -5,7 +5,7 @@ use crate::{
 		get_attribute,
 		module::{ItemRef, ModuleInterface, ModuleItemInterface},
 		traits::{TraitInterface, TraitRef},
-		types::{self, AlgebraicDef, FnPrototype, GenericParamList, Type, TypeDef, TypeDefKind},
+		types::{self, AlgebraicDef, FnPrototype, GenericParamList, Type, TypeDef, TypeDefKind, BindingProps},
 		FnScope,
 	},
 	constexpr::{ConstEval, ConstExpr},
@@ -20,6 +20,7 @@ pub fn resolve_interface_types(interface: &ModuleInterface) -> ComuneResult<()> 
 	for child in interface.children.values() {
 		if let ModuleItemInterface::TypeAlias(alias) = child {
 			resolve_type(&mut *alias.write().unwrap(), interface, &vec![])?;
+			check_dst_indirection(&alias.read().unwrap(), &BindingProps::default())?;
 		}
 	}
 
@@ -35,9 +36,11 @@ pub fn resolve_interface_types(interface: &ModuleInterface) -> ComuneResult<()> 
 					} = &mut *func.write().unwrap();
 
 					resolve_type(ret, interface, generics)?;
+					check_dst_indirection(ret, &BindingProps::default())?;
 
-					for param in &mut params.params {
-						resolve_type(&mut param.0, interface, generics)?;
+					for (param, _, props) in &mut params.params {
+						resolve_type(param, interface, generics)?;
+						check_dst_indirection(param, props)?;
 					}
 				}
 			}
@@ -137,15 +140,42 @@ pub fn resolve_interface_types(interface: &ModuleInterface) -> ComuneResult<()> 
 				generics.append(&mut im.params.clone());
 
 				resolve_type(ret, interface, &generics)?;
+				check_dst_indirection(&ret, &BindingProps::default())?;
 
-				for param in &mut params.params {
-					resolve_type(&mut param.0, interface, &generics)?;
+				for (param, _, props) in &mut params.params {
+					resolve_type(param, interface, &generics)?;
+					check_dst_indirection(&param, &props)?;
 				}
 			}
 		}
 	}
 
 	Ok(())
+}
+
+pub fn check_dst_indirection(ty: &Type, props: &BindingProps) -> ComuneResult<()> {
+	match ty {
+		Type::Slice(slicee) => {
+			if !props.is_ref {
+				return Err(ComuneError::new(
+					ComuneErrCode::DSTWithoutIndirection,
+					SrcSpan::new()
+				));
+			}
+
+			check_dst_indirection(&slicee, &BindingProps::default())
+		}
+
+		Type::Tuple(_, types) => {
+			for ty in types {
+				check_dst_indirection(ty, &BindingProps::default())?;
+			}
+
+			Ok(())
+		}
+
+		_ => Ok(()),
+	}
 }
 
 pub fn resolve_type(

@@ -422,8 +422,17 @@ impl Type {
 	fn mangle(&self) -> String {
 		match self {
 			Type::Basic(b) => String::from(b.mangle()),
-			Type::Pointer { pointee, .. } => String::from("P") + &pointee.mangle(),
+			
+			Type::Pointer { pointee, .. } => {
+				if let Type::Slice(slicee) = &**pointee {
+					String::from("P") + &slicee.mangle() + "y"
+				} else {
+					String::from("P") + &pointee.mangle()
+				}
+			}
+
 			Type::TypeRef { .. } => String::from("S_"),
+			
 			Type::Function(ret, args) => {
 				let mut result = String::from("PF");
 
@@ -435,6 +444,8 @@ impl Type {
 
 				result
 			}
+
+			Type::Slice(_) => panic!("encountered Type::Slice without indirection!"),
 
 			_ => todo!(),
 		}
