@@ -58,7 +58,7 @@ pub struct LLVMBackend<'ctx> {
 	type_map: HashMap<String, AnyTypeEnum<'ctx>>,
 	fn_map: HashMap<CIRFnPrototype, String>,
 	blocks: Vec<BasicBlock<'ctx>>,
-	variables: Vec<(PointerValue<'ctx>, BindingProps)>,
+	variables: Vec<(PointerValue<'ctx>, BindingProps, Type)>,
 }
 
 impl<'ctx> LLVMBackend<'ctx> {
@@ -194,14 +194,14 @@ impl<'ctx> LLVMBackend<'ctx> {
 		}
 
 		for (i, (ty, props, _)) in t.variables.iter().enumerate() {
-			let mut ty = Self::to_basic_type(self.get_llvm_type(ty));
+			let mut ty_ll = Self::to_basic_type(self.get_llvm_type(ty));
 
 			if self.pass_by_ptr(&ty, props) {
-				ty = ty.ptr_type(AddressSpace::Generic).as_basic_type_enum();
+				ty_ll = Self::to_basic_type(self.get_llvm_type(&ty.ptr_type(props.is_mut)));
 			}
 
 			self.variables
-				.push((self.create_entry_block_alloca(&format!("_{i}"), ty), *props));
+				.push((self.create_entry_block_alloca(&format!("_{i}"), ty_ll), *props, ty.clone()));
 		}
 
 		// Build parameter stores
@@ -317,10 +317,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 								.map(|(i, (x, _))| {
 									let (props, ty) = &params[i];
 
-									if self.pass_by_ptr(
-										&Self::to_basic_type(self.get_llvm_type(ty)),
-										props,
-									) {
+									if self.pass_by_ptr(ty, props) {
 										self.generate_lvalue(x).as_basic_value_enum()
 									} else {
 										self.builder
@@ -343,10 +340,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 								.enumerate()
 								.map(|(i, (x, _))| {
 									let is_ref = if let Some((props, ty)) = params.get(i) {
-										self.pass_by_ptr(
-											&Self::to_basic_type(self.get_llvm_type(ty)),
-											props,
-										)
+										self.pass_by_ptr(ty, props)
 									} else {
 										false
 									};
@@ -837,12 +831,9 @@ impl<'ctx> LLVMBackend<'ctx> {
 	}
 
 	fn generate_lvalue(&self, expr: &LValue) -> PointerValue<'ctx> {
-		let (mut local, props) = self.variables[expr.local];
+		let (mut local, props, ty) = &self.variables[expr.local];
 
-		if self.pass_by_ptr(
-			&Self::to_basic_type(local.get_type().get_element_type()),
-			&props,
-		) {
+		if self.pass_by_ptr(ty, props) {
 			local = self
 				.builder
 				.build_load(local, "deref")
@@ -883,23 +874,12 @@ impl<'ctx> LLVMBackend<'ctx> {
 		let types_mapped: Vec<_> = t.variables[0..t.arg_count]
 			.iter()
 			.map(|(ty, props, _)| {
-				let ty = self.get_llvm_type(ty);
+				let ty_ll = self.get_llvm_type(ty);
 
-				if self.pass_by_ptr(&Self::to_basic_type(ty), props) {
-					Self::to_basic_metadata_type(
-						match ty.as_any_type_enum() {
-							AnyTypeEnum::ArrayType(a) => a.ptr_type(AddressSpace::Generic),
-							AnyTypeEnum::FloatType(f) => f.ptr_type(AddressSpace::Generic),
-							AnyTypeEnum::IntType(i) => i.ptr_type(AddressSpace::Generic),
-							AnyTypeEnum::PointerType(p) => p.ptr_type(AddressSpace::Generic),
-							AnyTypeEnum::StructType(s) => s.ptr_type(AddressSpace::Generic),
-							AnyTypeEnum::VectorType(v) => v.ptr_type(AddressSpace::Generic),
-							_ => panic!(),
-						}
-						.as_any_type_enum(),
-					)
+				if self.pass_by_ptr(ty, props) {
+					Self::to_basic_metadata_type(self.get_llvm_type(&ty.ptr_type(props.is_mut)))
 				} else {
-					Self::to_basic_metadata_type(ty)
+					Self::to_basic_metadata_type(ty_ll)
 				}
 			})
 			.collect();
@@ -1019,7 +999,10 @@ impl<'ctx> LLVMBackend<'ctx> {
 				)
 				.as_any_type_enum(),
 			
-			Type::Slice(_) => panic!("encountered Type::Slice without indirection!"),
+			// Hack to make some ABI/optimization code work. Don't actually use this in codegen
+			Type::Slice(slicee) => Self::to_basic_type(self.get_llvm_type(slicee))
+										.ptr_type(AddressSpace::Generic)
+										.as_any_type_enum(),
 
 			Type::Pointer { pointee, .. } => {
 				match &**pointee {
@@ -1182,23 +1165,23 @@ impl<'ctx> LLVMBackend<'ctx> {
 			.create_enum_attribute(Attribute::get_named_enum_kind_id(name), 0)
 	}
 
-	fn pass_by_ptr(&self, ty: &BasicTypeEnum<'ctx>, props: &BindingProps) -> bool {
+	fn pass_by_ptr(&self, ty: &Type, props: &BindingProps) -> bool {
 		// don't pass by pointer if binding is not a reference, or if it's unsafe
 		if !props.is_ref || props.is_unsafe {
 			return false;
 		}
 
-		// mutable references are passed by pointer
-		if props.is_mut {
+		// mutable references and DSTs are passed by pointer
+		if props.is_mut || ty.is_dyn_sized() {
 			return true;
 		}
 
 		let target_data = get_target_machine().get_target_data();
-		let store_size = target_data.get_store_size(ty);
+		let store_size = target_data.get_store_size(&self.get_llvm_type(ty));
 
 		// determine how shared reference should be passed
 		// if the data is bigger than the equivalent pointer,
 		// we pass-by-pointer. else, we pass-by-value.
-		store_size > target_data.get_store_size(&ty.ptr_type(AddressSpace::Generic))
+		store_size > target_data.get_store_size(&self.get_llvm_type(&ty.ptr_type(false)))
 	}
 }

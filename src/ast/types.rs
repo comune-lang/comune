@@ -520,6 +520,10 @@ impl Type {
 		self == &Type::Basic(Basic::Void)
 	}
 
+	pub fn is_dyn_sized(&self) -> bool {
+		matches!(self, Type::Slice(_))
+	}
+
 	pub fn get_ir_typename(&self) -> String {
 		let Type::TypeRef { def, args } = self else { panic!() };
 

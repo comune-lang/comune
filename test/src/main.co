@@ -108,9 +108,7 @@ Vector<T> vec<type T>() {
 	}
 }
 
-void slice_test(i32[] test) {
-	test[0]
-}
+void slice_test(i32[] &test) { }
 
 int main() {
 	submodule_test::bar();

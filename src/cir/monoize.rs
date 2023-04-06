@@ -411,7 +411,13 @@ fn mangle_name(name: &Identifier, func: &CIRFunction) -> String {
 		result.push('v');
 	} else {
 		for i in 0..func.arg_count {
-			result.push_str(&func.variables[i].0.mangle());
+			let (ty, props, _) = &func.variables[i];
+
+			if props.is_ref {
+				result.push_str(&ty.ptr_type(props.is_mut).mangle())
+			} else {
+				result.push_str(&ty.mangle());
+			}
 		}
 	}
 
