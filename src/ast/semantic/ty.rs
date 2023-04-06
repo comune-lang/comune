@@ -157,6 +157,8 @@ pub fn resolve_type(
 		Type::Pointer { pointee, .. } => resolve_type(pointee, namespace, generics),
 
 		Type::Array(pointee, _size) => resolve_type(pointee, namespace, generics),
+		
+		Type::Slice(slicee) => resolve_type(slicee, namespace, generics),
 
 		Type::Unresolved {
 			name: id,

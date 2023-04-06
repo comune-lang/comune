@@ -445,7 +445,7 @@ impl CIRModuleBuilder {
 				)),
 
 				Atom::StringLit(s) => Some(RValue::Atom(
-					Type::Basic(Basic::Str),
+					Type::Slice(Box::new(Type::i8_type(false))),
 					None,
 					Operand::StringLit(s.clone(), span),
 					span,
@@ -453,10 +453,7 @@ impl CIRModuleBuilder {
 
 				Atom::CStringLit(s) => Some(RValue::Atom(
 					Type::Pointer {
-						pointee: Box::new(Type::Basic(Basic::Integral {
-							signed: false,
-							size_bytes: 1,
-						})),
+						pointee: Box::new(Type::i8_type(false)),
 						mutable: false,
 					},
 					None,

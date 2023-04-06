@@ -248,10 +248,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 					CIRStmt::Switch(cond, branches, else_block) => {
 						let cond_ir = self
 							.generate_operand(
-								&Type::Basic(Basic::Integral {
-									signed: true,
-									size_bytes: 4,
-								}),
+								&Type::i32_type(true),
 								cond,
 							)
 							.as_basic_value_enum()
@@ -641,7 +638,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 								// Not numeric, match other Basics
 
 								match b {
-									Basic::Str => {
+									/*Basic::Str => {
 										let Type::Pointer { pointee: other_p, .. } = to else {
 											panic!()
 										};
@@ -678,7 +675,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 											_ => panic!(),
 										}
-									}
+									}*/
 
 									Basic::Bool => {
 										if let Type::Basic(Basic::Integral { signed, .. }) = to {
@@ -1008,10 +1005,8 @@ impl<'ctx> LLVMBackend<'ctx> {
 				}
 				.as_any_type_enum(),
 
-				Basic::Char => self.context.i8_type().as_any_type_enum(),
 				Basic::Bool => self.context.bool_type().as_any_type_enum(),
 				Basic::Void => self.context.void_type().as_any_type_enum(),
-				Basic::Str => self.slice_type(&self.context.i8_type()).as_any_type_enum(),
 			},
 
 			Type::Array(arr_ty, size) => Self::to_basic_type(self.get_llvm_type(arr_ty))
@@ -1023,6 +1018,8 @@ impl<'ctx> LLVMBackend<'ctx> {
 					},
 				)
 				.as_any_type_enum(),
+			
+			Type::Slice(slicee) => self.slice_type(&Self::to_basic_type(self.get_llvm_type(slicee))).as_any_type_enum(),
 
 			Type::Pointer { pointee, .. } => {
 				if let Type::Basic(Basic::Void) = &**pointee {
@@ -1106,7 +1103,9 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 			Type::TypeParam(_) => panic!("unexpected TypeParam in codegen!"),
 
-			_ => panic!(),
+			Type::Unresolved { .. } => panic!(),
+
+			Type::Never => panic!()
 		}
 	}
 

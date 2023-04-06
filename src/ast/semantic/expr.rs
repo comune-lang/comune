@@ -209,8 +209,6 @@ impl Expr {
 						false
 					}
 
-					Atom::StringLit(_) => target == &Type::Basic(Basic::Str),
-
 					Atom::FnCall { resolved, .. } => {
 						if let FnRef::Direct(resolved) = resolved {
 							resolved.read().unwrap().ret == *target
@@ -316,10 +314,7 @@ impl Atom {
 				} else if let Some(Type::Basic(_)) = meta.ty {
 					Ok(meta.ty.as_ref().unwrap().clone())
 				} else {
-					Ok(Type::Basic(Basic::Integral {
-						signed: true,
-						size_bytes: 4,
-					}))
+					Ok(Type::i32_type(true))
 				}
 			}
 
@@ -336,13 +331,11 @@ impl Atom {
 			}
 
 			Atom::BoolLit(_) => Ok(Type::Basic(Basic::Bool)),
-			Atom::StringLit(_) => Ok(Type::Basic(Basic::Str)),
+
+			Atom::StringLit(_) => Ok(Type::Slice(Box::new(Type::i8_type(false)))),
 
 			Atom::CStringLit(_) => Ok(Type::Pointer {
-				pointee: Box::new(Type::Basic(Basic::Integral {
-					signed: false,
-					size_bytes: 1,
-				})),
+				pointee: Box::new(Type::i8_type(false)),
 				mutable: false,
 			}),
 

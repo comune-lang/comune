@@ -14,12 +14,19 @@ pub type GenericParamList = Vec<(Name, TypeParam, Option<Type>)>;
 
 #[derive(Clone)]
 pub enum Type {
-	Basic(Basic), // Fundamental type
+	Basic(Basic),
+
 	Pointer {
+		// Raw pointer type
 		pointee: Box<Type>,
 		mutable: bool,
-	}, // Pointer-to-<BoxedType>
+	},
+
 	Array(Box<Type>, Arc<RwLock<ConstExpr>>), // Aarray with constant expression for size
+
+	// View type, dynamically sized
+	// Note: mutability is determined by the binding
+	Slice(Box<Type>),
 
 	TypeRef {
 		// Reference to user-defined type
@@ -38,7 +45,7 @@ pub enum Type {
 	TypeParam(usize),            // Reference to an in-scope type parameter
 	Tuple(TupleKind, Vec<Type>), // Sum/product tuple
 	Function(Box<Type>, Vec<(BindingProps, Type)>), // Type of a function signature
-	Never,                       // Return type of a function that never returns, coerces to anything
+	Never,                       // The type of expressions that diverge, coerces to anything
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -46,10 +53,8 @@ pub enum Basic {
 	Integral { signed: bool, size_bytes: u32 },
 	PtrSizeInt { signed: bool },
 	Float { size_bytes: u32 },
-	Char,
 	Bool,
 	Void,
-	Str,
 }
 
 #[derive(Debug, Clone)]
@@ -192,8 +197,6 @@ impl Basic {
 			"f64" | "double" => Some(Basic::Float { size_bytes: 8 }),
 			"f32" | "float" => Some(Basic::Float { size_bytes: 4 }),
 
-			"char" => Some(Basic::Char),
-			"str" => Some(Basic::Str),
 			"bool" => Some(Basic::Bool),
 			"void" => Some(Basic::Void),
 
@@ -250,8 +253,6 @@ impl Basic {
 				}
 			}
 
-			Basic::Char => "char",
-			Basic::Str => "str",
 			Basic::Bool => "bool",
 			Basic::Void => "void",
 		}
@@ -294,6 +295,10 @@ impl Type {
 
 			Type::Array(arr_ty, size) => {
 				Type::Array(Box::new(arr_ty.get_concrete_type(type_args)), size.clone())
+			}
+
+			Type::Slice(slicee) => {
+				Type::Slice(Box::new(slicee.get_concrete_type(type_args)))
 			}
 
 			Type::TypeRef { def, args } => Type::TypeRef {
@@ -535,7 +540,28 @@ impl Type {
 
 		typename
 	}
+
+	pub fn i8_type(signed: bool) -> Self {
+		Type::Basic(Basic::Integral { signed, size_bytes: 1 })
+	}
+	
+	pub fn i16_type(signed: bool) -> Self {
+		Type::Basic(Basic::Integral { signed, size_bytes: 2 })
+	}
+
+	pub fn i32_type(signed: bool) -> Self {
+		Type::Basic(Basic::Integral { signed, size_bytes: 4 })
+	}
+	
+	pub fn i64_type(signed: bool) -> Self {
+		Type::Basic(Basic::Integral { signed, size_bytes: 8 })
+	}
+
+	pub fn isize_type(signed: bool) -> Self {
+		Type::Basic(Basic::PtrSizeInt { signed })
+	}
 }
+
 
 impl PartialEq for Type {
 	fn eq(&self, other: &Self) -> bool {
@@ -594,6 +620,11 @@ impl Hash for Type {
 				"+".hash(state)
 			}
 
+			Type::Slice(slicee) => {
+				slicee.hash(state);
+				"[]".hash(state)
+			}
+
 			Type::Unresolved {
 				name,
 				scope,
@@ -635,7 +666,7 @@ impl Display for Basic {
 
 impl Display for Type {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		match &self {
+		match self {
 			Type::Basic(t) => write!(f, "{t}"),
 
 			Type::Pointer { pointee, mutable } => {
@@ -646,7 +677,9 @@ impl Display for Type {
 				}
 			}
 
-			Type::Array(t, _s) => write!(f, "{}[]", t),
+			Type::Array(t, _) => write!(f, "{t}[]"), // TODO: ConstExpr serialization
+
+			Type::Slice(slicee) => write!(f, "{slicee}[dyn]"),
 
 			Type::Unresolved {
 				name, type_args, ..
@@ -807,6 +840,7 @@ impl std::fmt::Debug for Type {
 			Type::Basic(arg0) => f.debug_tuple("Basic").field(arg0).finish(),
 			Type::Pointer { .. } => f.debug_tuple("Pointer").finish(),
 			Type::Array(t, _) => f.debug_tuple("Array").field(t).finish(),
+			Type::Slice(t) => f.debug_tuple("Slice").field(t).finish(),
 			Type::Unresolved {
 				name: arg0,
 				scope: arg1,

@@ -269,6 +269,8 @@ impl MonomorphServer {
 
 			Type::Array(arr_ty, _) => self.monoize_type(types, arr_ty, param_map),
 
+			Type::Slice(slicee) => self.monoize_type(types, slicee, param_map),
+
 			Type::TypeRef { def, args } => {
 				// If we're referring to a type with generics, check if the
 				// instantation we want exists already. If not, create it.
@@ -479,9 +481,7 @@ impl Basic {
 				_ => unimplemented!(),
 			},
 
-			Basic::Char => "c",
 			Basic::Void => "v",
-			Basic::Str => "cj", // TODO: Figure this out
 		}
 	}
 }

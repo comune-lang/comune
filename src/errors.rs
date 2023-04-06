@@ -402,7 +402,7 @@ pub fn spawn_logger(backtrace_on_error: bool) -> Sender<CMNMessageLog> {
 							writeln!(
 								out,
 								"{}",
-								format!(" in {}:{}:{}\n", filename, lines.start() + 1, column)
+								format!(" - in {}:{}:{}\n", filename, lines.start() + 1, column)
 									.bright_black()
 							)
 							.unwrap();

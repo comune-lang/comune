@@ -284,16 +284,13 @@ impl Type {
 		match self {
 			Type::Basic(basic) => match basic {
 				Basic::Bool => write!(f, "bool"),
-				Basic::Char => write!(f, "uint32_t"),
 				Basic::Float { size_bytes: 4 } => write!(f, "float"),
 				Basic::Float { size_bytes: 8 } => write!(f, "double"),
 				Basic::Float { size_bytes: _ } => panic!(),
 				Basic::Void => write!(f, "void"),
 
 				Basic::Integral { signed, size_bytes } => {
-					write!(
-						f,
-						"{}int{}_t",
+					write!(f, "{}int{}_t",
 						if *signed { "" } else { "u" },
 						size_bytes * 8,
 					)
@@ -301,8 +298,6 @@ impl Type {
 
 				Basic::PtrSizeInt { signed: true } => write!(f, "intptr_t"),
 				Basic::PtrSizeInt { signed: false } => write!(f, "uintptr_t"),
-
-				Basic::Str => todo!(),
 			},
 
 			Type::Unresolved {
