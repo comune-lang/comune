@@ -33,7 +33,7 @@ pub struct FnScope<'ctx> {
 	context: &'ctx ModuleInterface,
 	scope: Identifier,
 	parent: Option<&'ctx FnScope<'ctx>>,
-	fn_return_type: Type,
+	fn_return_type: (BindingProps, Type),
 	variables: Vec<(Name, Type, BindingProps)>,
 	is_inside_loop: bool,
 	is_unsafe: bool,
@@ -54,12 +54,12 @@ impl<'ctx> FnScope<'ctx> {
 		}
 	}
 
-	pub fn new(context: &'ctx ModuleInterface, scope: Identifier, return_type: Type) -> Self {
+	pub fn new(context: &'ctx ModuleInterface, scope: Identifier, ret: (BindingProps, Type)) -> Self {
 		FnScope {
 			context,
 			scope,
 			parent: None,
-			fn_return_type: return_type,
+			fn_return_type: ret,
 			variables: vec![],
 			is_inside_loop: false,
 			is_unsafe: false,
@@ -123,7 +123,7 @@ impl<'ctx> FnScope<'ctx> {
 						result = Some((
 							id.clone(),
 							Type::Function(
-								Box::new(func.ret.clone()),
+								Box::new(func.ret.1.clone()),
 								func.params
 									.params
 									.iter()

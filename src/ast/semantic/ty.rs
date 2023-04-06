@@ -35,8 +35,8 @@ pub fn resolve_interface_types(interface: &ModuleInterface) -> ComuneResult<()> 
 						..
 					} = &mut *func.write().unwrap();
 
-					resolve_type(ret, interface, generics)?;
-					check_dst_indirection(ret, &BindingProps::default())?;
+					resolve_type(&mut ret.1, interface, generics)?;
+					check_dst_indirection(&ret.1, &BindingProps::default())?;
 
 					for (param, _, props) in &mut params.params {
 						resolve_type(param, interface, generics)?;
@@ -69,7 +69,7 @@ pub fn resolve_interface_types(interface: &ModuleInterface) -> ComuneResult<()> 
 
 						generics.insert(0, ("Self".into(), vec![], None));
 
-						resolve_type(ret, interface, generics)?;
+						resolve_type(&mut ret.1, interface, generics)?;
 
 						for param in &mut params.params {
 							resolve_type(&mut param.0, interface, generics)?;
@@ -139,8 +139,8 @@ pub fn resolve_interface_types(interface: &ModuleInterface) -> ComuneResult<()> 
 
 				generics.append(&mut im.params.clone());
 
-				resolve_type(ret, interface, &generics)?;
-				check_dst_indirection(&ret, &BindingProps::default())?;
+				resolve_type(&mut ret.1, interface, &generics)?;
+				check_dst_indirection(&ret.1, &BindingProps::default())?;
 
 				for (param, _, props) in &mut params.params {
 					resolve_type(param, interface, &generics)?;

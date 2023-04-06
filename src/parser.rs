@@ -380,6 +380,7 @@ impl<'ctx> Parser {
 						let func_attributes = self.parse_attributes()?;
 
 						let ret = self.parse_type(None)?;
+						let props = self.parse_binding_props()?.unwrap_or_default();
 
 						let Token::Name(fn_name) = self.get_current()? else {
 							return self.err(ComuneErrCode::ExpectedIdentifier);
@@ -395,7 +396,7 @@ impl<'ctx> Parser {
 
 						let proto = Arc::new(RwLock::new(FnPrototype {
 							path: Identifier::from_parent(&canonical_root, fn_name.clone()),
-							ret,
+							ret: (props, ret),
 							params,
 							type_params,
 							attributes: func_attributes,
@@ -704,6 +705,7 @@ impl<'ctx> Parser {
 		self_ty: Option<&Type>,
 	) -> ComuneResult<(Name, ModuleItemInterface, ModuleItemImpl)> {
 		let t = self.parse_type(None)?;
+		let props = self.parse_binding_props()?.unwrap_or_default();
 		let interface;
 		let item;
 
@@ -719,7 +721,7 @@ impl<'ctx> Parser {
 
 					let t = FnPrototype {
 						path: Identifier::from_parent(&self.current_scope, name.clone()),
-						ret: t,
+						ret: (props, t),
 						params: self.parse_parameter_list(self_ty, None)?,
 						type_params,
 						attributes,

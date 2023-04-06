@@ -86,7 +86,7 @@ pub struct FnParamList {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FnPrototype {
 	pub path: Identifier,
-	pub ret: Type,
+	pub ret: (BindingProps, Type),
 	pub params: FnParamList,
 	pub type_params: GenericParamList,
 	pub attributes: Vec<Attribute>,
@@ -792,7 +792,7 @@ impl Display for TypeDef {
 
 impl Display for FnPrototype {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		write!(f, "{}(", self.ret)?;
+		write!(f, "{}(", self.ret.1)?;
 
 		for param in &self.params.params {
 			write!(f, "{}, ", param.0)?;

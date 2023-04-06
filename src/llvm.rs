@@ -271,7 +271,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 					CIRStmt::Return(expr) => {
 						if let Some(expr) = expr {
 							self.builder
-								.build_return(Some(&self.generate_operand(&t.ret, expr)));
+								.build_return(Some(&self.generate_operand(&t.ret.1, expr)));
 						} else {
 							self.builder.build_return(None);
 						}
@@ -884,7 +884,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 			})
 			.collect();
 
-		Ok(match self.get_llvm_type(&t.ret) {
+		Ok(match self.get_llvm_type(&t.ret.1) {
 			AnyTypeEnum::ArrayType(a) => a.fn_type(&types_mapped, t.is_variadic),
 			AnyTypeEnum::FloatType(f) => f.fn_type(&types_mapped, t.is_variadic),
 			AnyTypeEnum::IntType(i) => i.fn_type(&types_mapped, t.is_variadic),

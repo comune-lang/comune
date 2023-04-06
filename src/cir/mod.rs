@@ -146,7 +146,7 @@ pub struct CIRBlock {
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct CIRFnPrototype {
 	pub name: Identifier,
-	pub ret: Type,
+	pub ret: (BindingProps, Type),
 	pub params: Vec<(BindingProps, Type)>,
 	pub type_params: CIRTypeParamList,
 }
@@ -157,7 +157,7 @@ pub struct CIRFunction {
 	// (They may still have a name for pretty-printing, though.)
 	pub variables: Vec<(Type, BindingProps, Option<Name>)>,
 	pub blocks: Vec<CIRBlock>,
-	pub ret: Type,
+	pub ret: (BindingProps, Type),
 	pub arg_count: usize,
 	pub type_params: CIRTypeParamList,
 	pub attributes: Vec<Attribute>,

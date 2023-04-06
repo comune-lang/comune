@@ -53,10 +53,10 @@ pub fn validate_function_body(
 			if let Some(Stmt::Expr(expr)) = items.last() {
 				let expr_ty = expr.get_type();
 
-				if !expr_ty.castable_to(&scope.fn_return_type) {
+				if !expr_ty.castable_to(&scope.fn_return_type.1) {
 					return Err(ComuneError::new(
 						ComuneErrCode::ReturnTypeMismatch {
-							expected: scope.fn_return_type,
+							expected: scope.fn_return_type.1,
 							got: expr_ty.clone(),
 						},
 						elem.get_node_data().tk,
@@ -70,10 +70,10 @@ pub fn validate_function_body(
 		}
 
 		if !has_return {
-			if scope.fn_return_type != Type::Basic(Basic::Void) {
+			if scope.fn_return_type.1 != Type::Basic(Basic::Void) {
 				return Err(ComuneError::new(
 					ComuneErrCode::ReturnTypeMismatch {
-						expected: scope.fn_return_type.clone(),
+						expected: scope.fn_return_type.1.clone(),
 						got: Type::Basic(Basic::Void),
 					},
 					elem_node_data.tk,
@@ -102,7 +102,7 @@ pub fn validate_fn_call(
 	let Atom::FnCall { name, args, type_args, resolved } = call else { panic!() };
 
 	if let FnRef::Direct(resolved) = resolved {
-		return Ok(resolved.read().unwrap().ret.clone());
+		return Ok(resolved.read().unwrap().ret.1.clone());
 	}
 
 	if let FnRef::Indirect(expr) = resolved {
@@ -223,7 +223,7 @@ pub fn validate_fn_call(
 	*resolved = FnRef::Direct(selected_candidate.clone());
 	*name = selected_name;
 
-	Ok(func.ret.get_concrete_type(type_args))
+	Ok(func.ret.1.get_concrete_type(type_args))
 }
 
 pub fn resolve_method_call(
@@ -236,7 +236,7 @@ pub fn resolve_method_call(
 
 	// Already validated
 	if let FnRef::Direct(resolved) = resolved {
-		return Ok(resolved.read().unwrap().ret.clone());
+		return Ok(resolved.read().unwrap().ret.1.clone());
 	}
 
 	if let FnRef::Indirect(expr) = resolved {
@@ -337,7 +337,7 @@ pub fn resolve_method_call(
 	*resolved = FnRef::Direct(selected_candidate.clone());
 	*name = selected_name;
 
-	Ok(func.ret.get_concrete_type(&type_args))
+	Ok(func.ret.1.get_concrete_type(&type_args))
 }
 
 pub fn is_candidate_viable(args: &Vec<Expr>, type_args: &Vec<Type>, func: &FnPrototype) -> bool {

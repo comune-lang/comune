@@ -108,6 +108,10 @@ Vector<T> vec<type T>() {
 	}
 }
 
+i32& ref_return(i32& in) {
+	in
+}
+
 void slice_test(i32[] &test) { }
 
 int main() {

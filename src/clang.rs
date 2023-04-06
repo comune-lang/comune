@@ -182,7 +182,7 @@ pub fn generate_cpp_header(
 						write!(result, "extern \"C\" ")?;
 					}
 
-					func.ret.cpp_format(&mut result)?;
+					func.ret.1.cpp_format(&mut result)?;
 
 					write!(result, " {name}")?;
 

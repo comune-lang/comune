@@ -138,7 +138,7 @@ impl MonomorphServer {
 			self.monoize_type(types, var, param_map);
 		}
 
-		self.monoize_type(types, &mut func.ret, param_map);
+		self.monoize_type(types, &mut func.ret.1, param_map);
 
 		for block in &mut func.blocks {
 			for stmt in block.items.iter_mut() {
@@ -195,7 +195,7 @@ impl MonomorphServer {
 				self.monoize_type(types, param, type_args);
 			}
 
-			self.monoize_type(types, &mut insert_id.ret, type_args);
+			self.monoize_type(types, &mut insert_id.ret.1, type_args);
 
 			if let (Some(qualifier), _) = &mut insert_id.name.qualifier {
 				self.monoize_type(types, qualifier, type_args);

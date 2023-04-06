@@ -70,7 +70,7 @@ impl Display for CIRFnPrototype {
 			write!(f, ")")?;
 		}
 
-		write!(f, " -> {}", self.ret)
+		write!(f, " -> {}{}", self.ret.1, self.ret.0)
 	}
 }
 

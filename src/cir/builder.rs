@@ -1162,7 +1162,7 @@ impl CIRModuleBuilder {
 
 		match resolved {
 			FnRef::Direct(resolved) => {
-				let ret = resolved.read().unwrap().ret.get_concrete_type(type_args);
+				let ret = resolved.read().unwrap().ret.1.get_concrete_type(type_args);
 
 				let current_block = self.current_block;
 				let next = self.append_block();

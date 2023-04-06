@@ -211,7 +211,7 @@ impl Expr {
 
 					Atom::FnCall { resolved, .. } => {
 						if let FnRef::Direct(resolved) = resolved {
-							resolved.read().unwrap().ret == *target
+							resolved.read().unwrap().ret.1 == *target
 						} else if let FnRef::Indirect(expr) = resolved {
 							let Some(Type::Function(ret, _)) = &expr.get_node_data().ty else {
 								panic!()
@@ -573,26 +573,26 @@ impl Atom {
 					if let Some(expr) = expr {
 						let expr_ty = expr.validate(scope)?;
 
-						if expr_ty == scope.fn_return_type {
+						if expr_ty == scope.fn_return_type.1 {
 							Ok(Type::Never)
-						} else if expr.coercable_to(&expr_ty, &scope.fn_return_type, scope) {
-							expr.wrap_in_cast(scope.fn_return_type.clone());
+						} else if expr.coercable_to(&expr_ty, &scope.fn_return_type.1, scope) {
+							expr.wrap_in_cast(scope.fn_return_type.1.clone());
 							Ok(Type::Never)
 						} else {
 							Err(ComuneError::new(
 								ComuneErrCode::ReturnTypeMismatch {
-									expected: scope.fn_return_type.clone(),
+									expected: scope.fn_return_type.1.clone(),
 									got: expr_ty,
 								},
 								meta.tk,
 							))
 						}
-					} else if scope.fn_return_type == Type::Basic(Basic::Void) {
+					} else if scope.fn_return_type.1 == Type::Basic(Basic::Void) {
 						Ok(Type::Never)
 					} else {
 						Err(ComuneError::new(
 							ComuneErrCode::ReturnTypeMismatch {
-								expected: scope.fn_return_type.clone(),
+								expected: scope.fn_return_type.1.clone(),
 								got: Type::Basic(Basic::Void),
 							},
 							meta.tk,
