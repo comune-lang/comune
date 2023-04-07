@@ -6,7 +6,7 @@ use std::{
 };
 
 use super::module::{ItemRef, ModuleImpl};
-use super::types::{FnPrototype, GenericParamList, TypeParam};
+use super::types::{FnPrototype, Generics, GenericParam};
 use super::Attribute;
 use super::{
 	module::{Identifier, Name},
@@ -33,7 +33,7 @@ pub struct TraitRef {
 #[derive(Debug)]
 pub struct TraitInterface {
 	pub items: HashMap<Name, Vec<Arc<RwLock<FnPrototype>>>>,
-	pub types: HashMap<Name, TypeParam>, // Associated types
+	pub types: HashMap<Name, GenericParam>, // Associated types
 	pub supers: Vec<Identifier>,
 	pub attributes: Vec<Attribute>,
 }
@@ -45,7 +45,7 @@ pub struct ImplBlockInterface {
 	pub types: HashMap<Name, Type>,
 	pub scope: Arc<Identifier>, // The scope used for name resolution within the impl
 	pub canonical_root: Identifier, // The root of the canonical names used by items in this impl
-	pub params: GenericParamList,
+	pub params: Generics,
 }
 
 impl PartialEq for TraitRef {
@@ -124,7 +124,7 @@ impl ImplSolver {
 		&self,
 		ty: &Type,
 		tr: &TraitRef,
-		type_params: &GenericParamList,
+		type_params: &Generics,
 	) -> bool {
 		match ty {
 			Type::TypeParam(idx) => {
@@ -154,7 +154,7 @@ impl ImplSolver {
 		&mut self,
 		im: &ImplBlockInterface,
 		ty: Type,
-		type_params: &GenericParamList,
+		type_params: &Generics,
 		root: &ModuleImpl,
 	) -> Option<TraitDeduction> {
 		// for a given impl, test if it applies

@@ -52,7 +52,7 @@ trait Hello {
 }
 
 impl Hello for Test {
-	void hello(Test mut& self) {
+	void hello(Test& self) {
 		printf(c"Hello Test!\n");
 	}
 }
@@ -108,7 +108,7 @@ Vector<T> vec<type T>() {
 	}
 }
 
-i32& ref_return(i32& in) {
+i32& ref_return(i32 mut& in) {
 	in
 }
 
@@ -118,6 +118,9 @@ int main() {
 	submodule_test::bar();
 
 	Vector<float> a = vec<float>();
+	
+	i32 test = ref_return(32);
+
 
 	int i;
 

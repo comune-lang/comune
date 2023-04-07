@@ -5,7 +5,7 @@ use crate::{
 		get_attribute,
 		module::{ItemRef, ModuleInterface, ModuleItemInterface},
 		traits::{TraitInterface, TraitRef},
-		types::{self, AlgebraicDef, FnPrototype, GenericParamList, Type, TypeDef, TypeDefKind, BindingProps},
+		types::{self, AlgebraicDef, FnPrototype, Generics, Type, TypeDef, TypeDefKind, BindingProps},
 		FnScope,
 	},
 	constexpr::{ConstEval, ConstExpr},
@@ -31,7 +31,7 @@ pub fn resolve_interface_types(interface: &ModuleInterface) -> ComuneResult<()> 
 					let FnPrototype {
 						ret,
 						params,
-						type_params: generics,
+						generics,
 						..
 					} = &mut *func.write().unwrap();
 
@@ -63,16 +63,18 @@ pub fn resolve_interface_types(interface: &ModuleInterface) -> ComuneResult<()> 
 						let FnPrototype {
 							ret,
 							params,
-							type_params: generics,
+							generics,
 							..
 						} = &mut *func.write().unwrap();
 
 						generics.insert(0, ("Self".into(), vec![], None));
 
 						resolve_type(&mut ret.1, interface, generics)?;
+						check_dst_indirection(&ret.1, &BindingProps::default())?;
 
 						for param in &mut params.params {
 							resolve_type(&mut param.0, interface, generics)?;
+							check_dst_indirection(&param.0, &BindingProps::default())?;
 						}
 					}
 				}
@@ -94,14 +96,14 @@ pub fn resolve_interface_types(interface: &ModuleInterface) -> ComuneResult<()> 
 		let resolved_trait = if let Some(ItemRef::Unresolved {
 			name,
 			scope,
-			type_args,
+			generic_args,
 		}) = &im.read().unwrap().implements
 		{
 			let found = interface.with_item(&name, &scope, |item, name| match item {
 				ModuleItemInterface::Trait(tr) => Some(Box::new(ItemRef::Resolved(TraitRef {
 					def: Arc::downgrade(tr),
 					name: name.clone(),
-					args: type_args.clone(),
+					args: generic_args.clone(),
 				}))),
 
 				_ => None,
@@ -119,18 +121,18 @@ pub fn resolve_interface_types(interface: &ModuleInterface) -> ComuneResult<()> 
 			None
 		};
 
-		let trait_qualif = (Some(Box::new(ty.read().unwrap().clone())), resolved_trait);
+		let trait_qualif = (Some(Box::new(ty.read().unwrap().clone())), resolved_trait.clone());
 
 		im.write().unwrap().canonical_root.qualifier = trait_qualif.clone();
 
 		let im = im.read().unwrap();
 
-		for fns in im.functions.values() {
+		for (fn_name, fns) in &im.functions {
 			for func in fns {
 				let FnPrototype {
 					ret,
 					params,
-					type_params: generics,
+					generics,
 					path,
 					attributes: _,
 				} = &mut *func.write().unwrap();
@@ -145,6 +147,66 @@ pub fn resolve_interface_types(interface: &ModuleInterface) -> ComuneResult<()> 
 				for (param, _, props) in &mut params.params {
 					resolve_type(param, interface, &generics)?;
 					check_dst_indirection(&param, &props)?;
+				}
+
+				if let Some(tr) = &resolved_trait {
+					// Check if the function signature matches a declaration in the trait
+
+					let ItemRef::Resolved(TraitRef { def, args, .. }) = &**tr else {
+						panic!()
+					};
+
+					let mut args = args.clone();
+					args.insert(0, ty.read().unwrap().clone());
+
+					let def = def.upgrade().unwrap();
+					let def = def.read().unwrap();
+
+					let mut found_match = false;
+
+					if let Some(funcs) = def.items.get(fn_name) {
+						// Go through the overloads in the trait definition
+						// and look for one that matches this impl function
+
+						'overloads: for func in funcs {
+							let func = func.read().unwrap();
+
+							if func.params.params.len() != params.params.len() {
+								continue 'overloads;
+							}
+
+							if func.params.variadic != params.variadic {
+								continue 'overloads;
+							}
+
+							if ret.1 != func.ret.1.get_concrete_type(&args) {
+								continue 'overloads;
+							}
+
+							for (i, (ty, _, props)) in func.params.params.iter().enumerate() {
+								if params.params[i].2 != *props {
+									continue 'overloads;
+								}
+
+								if params.params[i].0.get_concrete_type(&args) != ty.get_concrete_type(&args) {
+									continue 'overloads;
+								}
+							}
+
+							// Checks out! 
+							found_match = true;
+							break;
+						}
+					}
+
+					if !found_match {
+						return Err(
+							ComuneError::new(
+								ComuneErrCode::TraitFunctionMismatch,
+								SrcSpan::new(),
+							)
+						)
+					}
 				}
 			}
 		}
@@ -181,7 +243,7 @@ pub fn check_dst_indirection(ty: &Type, props: &BindingProps) -> ComuneResult<()
 pub fn resolve_type(
 	ty: &mut Type,
 	namespace: &ModuleInterface,
-	generics: &GenericParamList,
+	generics: &Generics,
 ) -> ComuneResult<()> {
 	match ty {
 		Type::Pointer { pointee, .. } => resolve_type(pointee, namespace, generics),
@@ -250,7 +312,7 @@ pub fn resolve_type(
 pub fn resolve_algebraic_def(
 	agg: &mut AlgebraicDef,
 	namespace: &ModuleInterface,
-	base_generics: &GenericParamList,
+	base_generics: &Generics,
 ) -> ComuneResult<()> {
 	let mut generics = base_generics.clone();
 	generics.extend(agg.params.clone());
@@ -306,7 +368,7 @@ pub fn resolve_algebraic_def(
 pub fn resolve_type_def(
 	ty: &mut TypeDefKind,
 	namespace: &ModuleInterface,
-	base_generics: &GenericParamList,
+	base_generics: &Generics,
 ) -> ComuneResult<()> {
 	match ty {
 		TypeDefKind::Algebraic(agg) => resolve_algebraic_def(agg, namespace, base_generics),

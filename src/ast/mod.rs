@@ -4,7 +4,7 @@ use crate::lexer::Token;
 
 use self::{
 	module::{Identifier, ModuleInterface, ModuleItemInterface, Name},
-	types::{BindingProps, GenericParamList},
+	types::{BindingProps, Generics},
 };
 
 pub mod controlflow;
@@ -37,7 +37,7 @@ pub struct FnScope<'ctx> {
 	variables: Vec<(Name, Type, BindingProps)>,
 	is_inside_loop: bool,
 	is_unsafe: bool,
-	generic_params: GenericParamList,
+	generic_params: Generics,
 }
 
 impl<'ctx> FnScope<'ctx> {
@@ -67,7 +67,7 @@ impl<'ctx> FnScope<'ctx> {
 		}
 	}
 
-	pub fn with_params(mut self, mut params: GenericParamList) -> Self {
+	pub fn with_params(mut self, mut params: Generics) -> Self {
 		self.generic_params.append(&mut params);
 		self
 	}

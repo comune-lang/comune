@@ -114,7 +114,7 @@ impl CIRModuleBuilder {
 			name: func.path.clone(),
 			ret,
 			params,
-			type_params: func.type_params.clone(),
+			type_params: func.generics.clone(),
 		}
 	}
 
@@ -131,7 +131,7 @@ impl CIRModuleBuilder {
 			blocks: vec![],
 			ret: proto.ret.clone(),
 			arg_count: func.params.params.len(),
-			type_params: func.type_params.clone(),
+			type_params: func.generics.clone(),
 			attributes: func.attributes.clone(),
 			is_extern: true,
 			is_variadic: func.params.variadic,

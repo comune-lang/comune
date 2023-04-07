@@ -379,7 +379,7 @@ pub enum ItemRef<T: Clone> {
 	Unresolved {
 		name: Identifier,
 		scope: Arc<Identifier>,
-		type_args: Vec<Type>,
+		generic_args: Vec<Type>,
 	},
 	Resolved(T),
 }
@@ -396,12 +396,12 @@ where
 				Self::Unresolved {
 					name: l0,
 					scope: l1,
-					type_args: l2,
+					generic_args: l2,
 				},
 				Self::Unresolved {
 					name: r0,
 					scope: r1,
-					type_args: r2,
+					generic_args: r2,
 				},
 			) => l0 == r0 && l1 == r1 && l2 == r2,
 			(Self::Resolved(l0), Self::Resolved(r0)) => l0 == r0,
@@ -419,7 +419,7 @@ where
 			Self::Unresolved {
 				name,
 				scope,
-				type_args,
+				generic_args: type_args,
 			} => {
 				name.hash(state);
 				scope.hash(state);
@@ -440,7 +440,7 @@ where
 			Self::Unresolved {
 				name: arg0,
 				scope: arg1,
-				type_args: arg2,
+				generic_args: arg2,
 			} => f
 				.debug_tuple("Unresolved")
 				.field(arg0)

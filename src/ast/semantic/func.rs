@@ -20,7 +20,7 @@ pub fn validate_function_body(
 	namespace: &ModuleInterface,
 ) -> ComuneResult<()> {
 	let mut scope =
-		FnScope::new(namespace, scope, func.ret.clone()).with_params(func.type_params.clone());
+		FnScope::new(namespace, scope, func.ret.clone()).with_params(func.generics.clone());
 
 	for (param, name, props) in &func.params.params {
 		scope.add_variable(param.clone(), name.clone().unwrap(), *props)
@@ -348,7 +348,7 @@ pub fn is_candidate_viable(args: &Vec<Expr>, type_args: &Vec<Type>, func: &FnPro
 	}
 
 	// TODO: Type arg deduction
-	if type_args.len() != func.type_params.len() {
+	if type_args.len() != func.generics.len() {
 		return false;
 	}
 

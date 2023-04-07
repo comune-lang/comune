@@ -11,7 +11,7 @@ use crate::{
 	ast::{
 		expression::Operator,
 		module::{Identifier, Name},
-		types::{Basic, BindingProps, Type, TypeDef, TypeParam},
+		types::{Basic, BindingProps, Type, TypeDef, GenericParam},
 		Attribute,
 	},
 	lexer::SrcSpan,
@@ -33,7 +33,7 @@ type TypeName = String;
 type TypeParamIndex = usize;
 type FuncID = CIRFnPrototype;
 
-pub type CIRTypeParamList = Vec<(Name, TypeParam, Option<Type>)>;
+pub type CIRTypeParamList = Vec<(Name, GenericParam, Option<Type>)>;
 
 // An LValue is an expression that results in a memory location.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]

@@ -16,7 +16,7 @@ use crate::ast::module::{
 use crate::ast::statement::Stmt;
 use crate::ast::traits::{ImplBlockInterface, TraitInterface, TraitRef};
 use crate::ast::types::{
-	AlgebraicDef, Basic, BindingProps, FnParamList, FnPrototype, GenericParamList, TupleKind, Type,
+	AlgebraicDef, Basic, BindingProps, FnParamList, FnPrototype, Generics, TupleKind, Type,
 	TypeDef, TypeDefKind, Visibility,
 };
 use crate::ast::{Attribute, FnScope};
@@ -117,7 +117,7 @@ impl<'ctx> Parser {
 					proto_inner.path.clone(),
 					proto_inner.ret.clone(),
 				)
-				.with_params(proto_inner.type_params.clone());
+				.with_params(proto_inner.generics.clone());
 
 				fn_impls.push((
 					proto.clone(),
@@ -354,7 +354,7 @@ impl<'ctx> Parser {
 						trait_name = Some(ItemRef::<TraitRef>::Unresolved {
 							name,
 							scope,
-							type_args,
+							generic_args: type_args,
 						});
 
 						// Then parse the implementing type, for real this time
@@ -398,7 +398,7 @@ impl<'ctx> Parser {
 							path: Identifier::from_parent(&canonical_root, fn_name.clone()),
 							ret: (props, ret),
 							params,
-							type_params,
+							generics: type_params,
 							attributes: func_attributes,
 						}));
 
@@ -723,7 +723,7 @@ impl<'ctx> Parser {
 						path: Identifier::from_parent(&self.current_scope, name.clone()),
 						ret: (props, t),
 						params: self.parse_parameter_list(self_ty, None)?,
-						type_params,
+						generics: type_params,
 						attributes,
 					};
 
@@ -1521,7 +1521,7 @@ impl<'ctx> Parser {
 					Some(Box::new(ItemRef::Unresolved {
 						name: self.parse_identifier(scope)?,
 						scope: self.current_scope.clone(),
-						type_args: vec![],
+						generic_args: vec![],
 					}))
 				}
 
@@ -1939,7 +1939,7 @@ impl<'ctx> Parser {
 	fn parse_generic_param_list(
 		&self,
 		scope: Option<&FnScope<'ctx>>,
-	) -> ComuneResult<GenericParamList> {
+	) -> ComuneResult<Generics> {
 		if self.get_current()? != Token::Operator("<") {
 			return Ok(vec![]);
 		}
@@ -1968,7 +1968,7 @@ impl<'ctx> Parser {
 							traits.push(ItemRef::Unresolved {
 								name: tr,
 								scope: self.current_scope.clone(),
-								type_args: vec![],
+								generic_args: vec![],
 							});
 
 							current = self.get_next()?;

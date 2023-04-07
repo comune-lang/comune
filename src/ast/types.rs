@@ -9,8 +9,8 @@ use super::Attribute;
 use crate::constexpr::ConstExpr;
 use crate::lexer::SrcSpan;
 
-pub type TypeParam = Vec<ItemRef<TraitRef>>; // Generic type parameter, with trait bounds
-pub type GenericParamList = Vec<(Name, TypeParam, Option<Type>)>;
+pub type GenericParam = Vec<ItemRef<TraitRef>>; // Type parameter, with trait bounds
+pub type Generics = Vec<(Name, GenericParam, Option<Type>)>;
 
 #[derive(Clone)]
 pub enum Type {
@@ -69,7 +69,7 @@ pub enum TypeDefKind {
 	Class, // TODO: Implement classes
 }
 
-#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Default, Debug, Clone, Copy)]
 pub struct BindingProps {
 	pub is_ref: bool,
 	pub is_mut: bool,
@@ -88,7 +88,7 @@ pub struct FnPrototype {
 	pub path: Identifier,
 	pub ret: (BindingProps, Type),
 	pub params: FnParamList,
-	pub type_params: GenericParamList,
+	pub generics: Generics,
 	pub attributes: Vec<Attribute>,
 }
 
@@ -110,7 +110,7 @@ pub struct AlgebraicDef {
 	pub members: Vec<(Name, Type, Visibility)>,
 	pub variants: Vec<(Name, Vec<Type>)>,
 	pub layout: DataLayout,
-	pub params: GenericParamList,
+	pub params: Generics,
 	pub attributes: Vec<Attribute>,
 }
 
@@ -876,3 +876,19 @@ impl std::fmt::Debug for Type {
 		}
 	}
 }
+
+impl PartialEq for BindingProps {
+	fn eq(&self, other: &Self) -> bool {
+		(self.is_mut, self.is_ref, self.is_unsafe) == (other.is_mut, other.is_ref, other.is_unsafe)
+	}
+}
+
+impl Hash for BindingProps {
+	fn hash<H: Hasher>(&self, state: &mut H) {
+		self.is_mut.hash(state);
+		self.is_ref.hash(state);
+		self.is_unsafe.hash(state);
+	}
+}
+
+impl Eq for BindingProps {}

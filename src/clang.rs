@@ -186,8 +186,8 @@ pub fn generate_cpp_header(
 
 					write!(result, " {name}")?;
 
-					if !func.type_params.is_empty() {
-						let mut iter = func.type_params.iter();
+					if !func.generics.is_empty() {
+						let mut iter = func.generics.iter();
 
 						write!(result, "<{}", iter.next().unwrap().0)?;
 
