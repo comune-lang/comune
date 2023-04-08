@@ -19,7 +19,7 @@ pub mod types;
 // AST & SEMANTIC ANALYSIS
 // This module contains structs and impls related to the AST, name resolution, and type validation.
 
-#[derive(PartialEq, Eq, Clone, Debug)]
+#[derive(PartialEq, Eq, Hash, Clone, Debug)]
 pub struct Attribute {
 	pub name: String,
 	pub args: Vec<Vec<Token>>,

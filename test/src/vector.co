@@ -13,33 +13,25 @@ int printf(u8* fmt, ...);
 
 impl<type T> Vector<T> {
 
-	void push(mut& self, T elem) {
-		printf(c"Pushing... new size: %lu\n", self.len + 1);
-		
+	void push(mut& self, T elem) {		
 		if self.len >= self.capacity {
-			if self.capacity == 0 {
-				self.realloc(1);
-			} else {
-				self.realloc(self.capacity * 2);
-			}
+			self.realloc(
+				if self.capacity == 0 { 
+					self.capacity + 1 
+				} else { 
+					self.capacity * 2
+				}
+			)
 		}
 		
-		printf(c"self.data: %p\n", self.data);
-		printf(c"self.data + self.len: %p\n", self.data + self.len);
-		printf(c"self.data + self.capacity: %p\n", self.data + self.capacity);
-
 		unsafe {
-			*(self.data + self.len) = elem;
+			*(self.data + self.len) = elem
 		}
 		
-		printf(c"data written!\n");
-
 		self.len += 1;
 	}
 
-	void realloc(mut& self, usize capacity) {
-		printf(c"Reallocating... new capacity: %lu\n", capacity);
-		
+	void realloc(mut& self, usize capacity) {		
 		self.data = realloc(
 				self.data as void mut*, 
 				capacity * size_of<T>()
@@ -53,6 +45,10 @@ impl<type T> Vector<T> {
 		unsafe { *(self.data + i) }
 	}
 
+}
+
+impl<type T> core::traits::Drop for Vector<T> {
+	
 }
 
 void vector_test(Vector<float> test) {

@@ -1,4 +1,4 @@
-use std::sync::{Arc, RwLock};
+use std::{sync::{Arc, RwLock}, collections::HashSet};
 
 use crate::{
 	ast::{
@@ -124,6 +124,8 @@ pub fn resolve_interface_types(interface: &ModuleInterface) -> ComuneResult<()> 
 		let trait_qualif = (Some(Box::new(ty.read().unwrap().clone())), resolved_trait.clone());
 
 		im.write().unwrap().canonical_root.qualifier = trait_qualif.clone();
+		
+		let mut trait_functions_found = HashSet::new();
 
 		let im = im.read().unwrap();
 
@@ -195,6 +197,7 @@ pub fn resolve_interface_types(interface: &ModuleInterface) -> ComuneResult<()> 
 
 							// Checks out! 
 							found_match = true;
+							trait_functions_found.insert(func.clone());
 							break;
 						}
 					}
@@ -206,6 +209,20 @@ pub fn resolve_interface_types(interface: &ModuleInterface) -> ComuneResult<()> 
 								SrcSpan::new(),
 							)
 						)
+					}
+				}
+			}
+		}
+
+		if let Some(ItemRef::Resolved(tr)) = &resolved_trait.and_then(|t| Some(*t)) { 
+			// Now go through all the trait's functions and check for missing impls
+			for (_, funcs) in &tr.def.upgrade().unwrap().read().unwrap().items {
+				for func in funcs {
+					if !trait_functions_found.contains(&*func.read().unwrap()) {
+						return Err(ComuneError::new(
+							ComuneErrCode::MissingTraitFuncImpl(func.read().unwrap().get_pretty_name()),
+							SrcSpan::new()
+						))
 					}
 				}
 			}

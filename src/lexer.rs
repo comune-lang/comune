@@ -51,7 +51,7 @@ static OPERATORS: [&str; 42] = [
 	"as", // yeah `as` is technically an operator lol
 ];
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum Token {
 	Eof,
 	Name(Name),

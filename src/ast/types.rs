@@ -1,3 +1,4 @@
+use std::fmt::Write;
 use std::fmt::Display;
 use std::hash::{Hash, Hasher};
 use std::ptr;
@@ -77,13 +78,13 @@ pub struct BindingProps {
 	pub span: SrcSpan,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct FnParamList {
 	pub params: Vec<(Type, Option<Name>, BindingProps)>,
 	pub variadic: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct FnPrototype {
 	pub path: Identifier,
 	pub ret: (BindingProps, Type),
@@ -799,6 +800,57 @@ impl Display for FnPrototype {
 		}
 
 		write!(f, ")")
+	}
+}
+
+impl FnPrototype {
+	pub fn get_pretty_name(&self) -> String {
+		let mut result = String::new();
+		let f = &mut result;
+
+		write!(f, "{}{} {}", self.ret.1, self.ret.0, self.path).unwrap();
+		
+		if !self.generics.is_empty() {
+			let mut iter = self.generics.iter();
+			let first = iter.next().unwrap();
+
+			write!(f, "<{}", first.0).unwrap();
+			
+			if let Some(t) = &first.2 {
+				write!(f, " = {t}").unwrap();
+			}
+
+			for (arg, _, t) in iter {
+				write!(f, ", {arg}").unwrap();
+
+				if let Some(t) = t {
+					write!(f, " = {t}").unwrap();
+				}
+			}
+
+			write!(f, ">").unwrap();
+		}
+
+		if !self.params.params.is_empty() {
+			let mut iter = self.params.params.iter();
+			let first = iter.next().unwrap();
+
+			write!(f, "({}{}", first.0, first.2).unwrap();
+
+			for (param, _, props) in iter {
+				write!(f, ", {param}{props}").unwrap();
+			}
+
+			if self.params.variadic {
+				write!(f, ", ...").unwrap();
+			}
+
+			write!(f, ")").unwrap();
+		} else {
+			write!(f, "()").unwrap();
+		}
+
+		result
 	}
 }
 

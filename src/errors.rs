@@ -134,6 +134,7 @@ pub enum ComuneErrCode {
 	UnsafeOperation,
 	DSTWithoutIndirection,
 	TraitFunctionMismatch,
+	MissingTraitFuncImpl(String),
 
 	// Resolution errors
 	ModuleNotFound(OsString),
@@ -273,6 +274,7 @@ impl Display for ComuneErrCode {
 			ComuneErrCode::UnsafeOperation => write!(f, "unsafe operation outside `unsafe` block"),
 			ComuneErrCode::DSTWithoutIndirection => write!(f, "dynamically-sized type without indirection"),
 			ComuneErrCode::TraitFunctionMismatch => write!(f, "function signature does not match trait definition"),
+			ComuneErrCode::MissingTraitFuncImpl(name) => write!(f, "missing implementation for function `{name}`"),
 
 			ComuneErrCode::ModuleNotFound(m) => write!(f, "module not found: {m:#?}"),
 			ComuneErrCode::DependencyError => write!(f, "a dependency failed to compile"),
