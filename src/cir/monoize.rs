@@ -2,7 +2,7 @@
 
 use std::{
 	collections::{HashMap, HashSet},
-	sync::{Arc, RwLock},
+	sync::{Arc, RwLock, Weak},
 	time::Duration,
 };
 
@@ -283,10 +283,8 @@ impl MonomorphServer {
 					}
 
 					let typename = name.to_string();
-					let name =
-						self.instantiate_type_def(types, def.upgrade().unwrap(), typename, args);
-
-					*def = Arc::downgrade(&types[&name]);
+					
+					*def = self.instantiate_type_def(types, def.upgrade().unwrap(), typename, args);
 					args.clear();
 				}
 			}
@@ -322,7 +320,7 @@ impl MonomorphServer {
 		def: Arc<RwLock<TypeDef>>,
 		name: TypeName,
 		param_map: &TypeSubstitutions,
-	) -> TypeName {
+	) -> Weak<RwLock<TypeDef>> {
 		let mut instance = def.read().unwrap().clone();
 
 		match &mut instance.def {
@@ -348,17 +346,36 @@ impl MonomorphServer {
 
 		insert_idx += ">";
 
-		if types.contains_key(&insert_idx) {
-			return insert_idx;
+		// Check if the current module has this instance already
+		
+		if let Some(instance) = types.get(&insert_idx) {
+			return Arc::downgrade(instance);
 		}
+		
+		// Nope, check if the global instance map has it instead
+
+		let global_types = self.ty_instances.read().unwrap();
+
+		if let Some(instance) = global_types.get(&insert_idx) {
+			types.insert(insert_idx, instance.clone());
+			return Arc::downgrade(instance);
+		}
+
+		// Couldn't find this instance in the global map either, so store it
 
 		*instance.name.path.last_mut().unwrap() = insert_idx.clone().into();
 
-		if !types.contains_key(&insert_idx) {
-			types.insert(insert_idx.clone(), Arc::new(RwLock::new(instance)));
-		}
+		drop(global_types);
+		
+		let global_types = &mut *self.ty_instances.write().unwrap();
 
-		insert_idx
+		global_types.insert(insert_idx.clone(), Arc::new(RwLock::new(instance)));
+		
+		let instance = &global_types[&insert_idx];
+
+		types.insert(insert_idx, instance.clone());
+
+		Arc::downgrade(instance)
 	}
 
 	fn mangle(&self, module: &mut CIRModule) {

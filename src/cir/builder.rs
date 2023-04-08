@@ -394,9 +394,7 @@ impl CIRModuleBuilder {
 			let result_type = result.get_type();
 			let result_ir = self.get_as_operand(result_type, result_ir);
 
-			for (_, var) in self.name_map_stack.pop().unwrap().into_iter().rev() {
-				self.write(CIRStmt::StorageDead(var));
-			}
+			self.generate_scope_end();
 
 			(
 				jump_idx,
@@ -408,11 +406,14 @@ impl CIRModuleBuilder {
 				)),
 			)
 		} else {
-			for (_, var) in self.name_map_stack.pop().unwrap().into_iter().rev() {
-				self.write(CIRStmt::StorageDead(var));
-			}
-
+			self.generate_scope_end();
 			(jump_idx, Some(Self::get_void_rvalue()))
+		}
+	}
+
+	fn generate_scope_end(&mut self) {
+		for (_, var) in self.name_map_stack.pop().unwrap().into_iter().rev() {
+			self.write(CIRStmt::StorageDead(var));
 		}
 	}
 

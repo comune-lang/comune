@@ -51,3 +51,8 @@ impl<type T> Vector<T> {
 	}
 
 }
+
+void vector_test(Vector<float> test) {
+	test.push(12.0f);
+	test.push(24.0f)
+}

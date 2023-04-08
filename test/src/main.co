@@ -118,7 +118,8 @@ int main() {
 	submodule_test::bar();
 
 	Vector<float> a = vec<float>();
-	
+	vector::vector_test(a);
+
 	i32 test = ref_return(32);
 
 
@@ -188,24 +189,6 @@ int main() {
 	printf(c"int_ref_test: %i\n", int_ref_test);
 
 	printf(c"Temporary->lvalue promotion: %i\n", Test { a: 23, b: 35 }.sum());
-
-	Vector<int> mut my_cool_generic;
-	
-	my_cool_generic.data = malloc(4) as int mut*;
-
-	unsafe { 
-		*my_cool_generic.data = if true {
-			printf(c"True!\n");
-			69
-		} else {
-			printf(c"False!\n");
-			42
-		};
-	
-		i32 generic_get = *my_cool_generic.data;
-	
-		free(my_cool_generic.data as void mut*);
-	}
 
 	printf(c"bit_cast<f32, u32>: %i\n", bit_cast<f32, u32>(10.0f32));
 	return 0;
