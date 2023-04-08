@@ -178,7 +178,7 @@ impl CIRModuleBuilder {
 			// variable to write the return value to
 			let mut props = proto.ret.0;
 			props.is_mut = true;
-			
+
 			self.insert_variable(
 				Some("return".to_string()),
 				props, 
@@ -590,16 +590,15 @@ impl CIRModuleBuilder {
 
 				Atom::CtrlFlow(ctrl) => match &**ctrl {
 					ControlFlow::Return { expr } => {
-
-						if let Some(lval) = self.current_fn.as_ref().unwrap().get_return_lvalue() {
-							let Some(expr) = expr else { panic!() };
-							
+						if let Some(expr) = expr {
 							let expr_ir = self.generate_expr(expr)?;
 
-							self.write(CIRStmt::Assignment(
-								(lval.clone(), expr.get_node_data().tk),
-								expr_ir
-							));
+							if let Some(lval) = self.current_fn.as_ref().unwrap().get_return_lvalue() {	
+								self.write(CIRStmt::Assignment(
+									(lval.clone(), expr.get_node_data().tk),
+									expr_ir
+								));
+							}
 						}
 						
 						self.write(CIRStmt::Return);
