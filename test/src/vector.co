@@ -14,7 +14,7 @@ int printf(u8* fmt, ...);
 impl<type T> Vector<T> {
 
 	void push(mut& self, T elem) {
-		printf(c"Pushing %i... new size: %i\n", elem, self.len + 1);
+		printf(c"Pushing... new size: %lu\n", self.len + 1);
 		
 		if self.len >= self.capacity {
 			if self.capacity == 0 {
@@ -24,18 +24,21 @@ impl<type T> Vector<T> {
 			}
 		}
 		
-		printf(c"self.data: %i\n", self.data);
-		printf(c"self.data + self.len: %i\n", self.data + self.len);
+		printf(c"self.data: %p\n", self.data);
+		printf(c"self.data + self.len: %p\n", self.data + self.len);
+		printf(c"self.data + self.capacity: %p\n", self.data + self.capacity);
 
 		unsafe {
 			*(self.data + self.len) = elem;
 		}
+		
+		printf(c"data written!\n");
 
 		self.len += 1;
 	}
 
 	void realloc(mut& self, usize capacity) {
-		printf(c"Reallocating... new capacity: %i\n", capacity);
+		printf(c"Reallocating... new capacity: %lu\n", capacity);
 		
 		self.data = realloc(
 				self.data as void mut*, 
