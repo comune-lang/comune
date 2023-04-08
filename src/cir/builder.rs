@@ -485,7 +485,7 @@ impl CIRModuleBuilder {
 						let expr_ir = self.generate_expr(expr)?;
 
 						let mut tmp_idx = tmp.clone();
-						tmp_idx.projection.push(PlaceElem::Offset(
+						tmp_idx.projection.push(PlaceElem::Index(
 							Type::Basic(Basic::PtrSizeInt { signed: false }),
 							Operand::IntegerLit(i as i128, SrcSpan::new()),
 							Operator::Add,
@@ -1311,23 +1311,29 @@ impl CIRModuleBuilder {
 					let index = self.generate_expr(rhs)?;
 					let index_ty = rhs.get_type();
 
-					indexed.projection.push(PlaceElem::Offset(
+					indexed.projection.push(PlaceElem::Index(
 						index_ty.clone(),
 						self.get_as_operand(index_ty, index),
 						Operator::Add,
 					));
 
-					indexed.projection.push(PlaceElem::Deref);
-
 					Some((indexed, meta))
 				}
 
-				Operator::Add | Operator::Sub => {
+				// Not a valid lvalue without an outer deref, handled by case below
+				Operator::Add | Operator::Sub => panic!(),
+
+				_ => panic!(),
+			},
+
+			Expr::Unary(val, Operator::Deref, _) => match &**val {
+				// Special case for *(ptr + n)
+				Expr::Cons([lhs, rhs], op @ Operator::Add | op @ Operator::Sub, _) => {
 					let (mut indexed, meta) = self.generate_lvalue_expr(lhs)?;
 					let index = self.generate_expr(rhs)?;
 					let index_ty = rhs.get_type();
 
-					indexed.projection.push(PlaceElem::Offset(
+					indexed.projection.push(PlaceElem::Index(
 						index_ty.clone(),
 						self.get_as_operand(index_ty, index),
 						op.clone(),
@@ -1336,18 +1342,14 @@ impl CIRModuleBuilder {
 					Some((indexed, meta))
 				}
 
-				_ => panic!(),
-			},
-
-			Expr::Unary(val, op, _) => match op {
-				Operator::Deref => {
+				_ => {
 					let (mut derefee, meta) = self.generate_lvalue_expr(val)?;
 					derefee.projection.push(PlaceElem::Deref);
 					Some((derefee, meta))
 				}
-
-				_ => panic!(),
-			},
+			}
+			
+			_ => panic!(),
 		}
 	}
 

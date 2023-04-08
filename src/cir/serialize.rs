@@ -220,7 +220,7 @@ impl Display for LValue {
 				PlaceElem::Field(i) => {
 					write!(&mut result, ".{i}")?;
 				}
-				PlaceElem::Offset(t, i, _) => {
+				PlaceElem::Index(t, i, _) => {
 					write!(&mut result, "[{t} {i}]")?;
 				}
 			};

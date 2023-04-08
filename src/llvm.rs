@@ -818,7 +818,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 					.build_struct_gep(local, *i as u32, "")
 					.unwrap(),
 
-				PlaceElem::Offset(index_ty, expr, op) => {
+				PlaceElem::Index(index_ty, expr, op) => {
 					let mut idx = self
 						.generate_operand(index_ty, expr)
 						.as_basic_value_enum()
@@ -827,6 +827,8 @@ impl<'ctx> LLVMBackend<'ctx> {
 					if *op == Operator::Sub {
 						idx = self.builder.build_int_neg(idx, "");
 					}
+
+					local = self.builder.build_load(local, "").into_pointer_value();
 
 					unsafe {
 						self.builder.build_gep(local, &[idx], "")

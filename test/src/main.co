@@ -8,7 +8,7 @@ using module_test::fib;
 using core::traits::Drop;
 using vector::Vector;
 using ascii = u8;
-using core::mem::{malloc, free, bit_cast};
+using core::mem::{malloc, free, bit_cast, size_of};
 
 @no_mangle
 int printf(ascii* fmt, ...);
@@ -119,9 +119,6 @@ int main() {
 
 	Vector<float> a = vec<float>();
 	vector::vector_test(a);
-
-	i32 test = ref_return(32);
-
 
 	int i;
 
