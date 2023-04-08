@@ -268,10 +268,12 @@ impl<'ctx> LLVMBackend<'ctx> {
 							.build_switch(cond_ir, self.blocks[*else_block], &cases);
 					}
 
-					CIRStmt::Return(expr) => {
-						if let Some(expr) = expr {
-							self.builder
-								.build_return(Some(&self.generate_operand(&t.ret.1, expr)));
+					CIRStmt::Return => {
+						if let Some(lval) = t.get_return_lvalue() {
+							let ret = self.generate_lvalue(&lval);
+							let ret_ld = self.builder.build_load(ret, "retld");
+
+							self.builder.build_return(Some(&ret_ld));
 						} else {
 							self.builder.build_return(None);
 						}

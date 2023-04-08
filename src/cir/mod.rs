@@ -123,7 +123,7 @@ pub enum CIRStmt {
 	Assignment((LValue, SrcSpan), RValue),
 	Jump(BlockIndex),
 	Switch(Operand, Vec<(Type, Operand, BlockIndex)>, BlockIndex),
-	Return(Option<Operand>),
+	Return,//(Option<Operand>),
 	FnCall {
 		id: CIRCallId,
 		args: Vec<(LValue, SrcSpan)>,
@@ -213,6 +213,14 @@ impl CIRFunction {
 			is_extern: true,
 			is_variadic: self.is_variadic,
 			mangled_name: self.mangled_name.clone(),
+		}
+	}
+
+	pub fn get_return_lvalue(&self) -> Option<LValue> {
+		if self.ret.1.is_void() {
+			None
+		} else {
+			Some(LValue { local: self.arg_count, projection: vec![] })
 		}
 	}
 }

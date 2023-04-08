@@ -18,8 +18,9 @@ impl CIRPass for Verify {
 			if let Some(last) = block.items.last() {
 				if !matches!(
 					last,
-					CIRStmt::Return(_)
-						| CIRStmt::Switch(..) | CIRStmt::Jump(_)
+					CIRStmt::Return
+						| CIRStmt::Switch(..)
+						| CIRStmt::Jump(_)
 						| CIRStmt::FnCall { .. }
 				) {
 					errors.push(ComuneError::new(

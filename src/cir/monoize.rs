@@ -74,10 +74,11 @@ impl MonomorphServer {
 			.collect();
 
 		for proto in generics {
-			let mut fn_repo = self.fn_templates.write().unwrap();
 			let fn_template = module.functions.remove(proto).unwrap();
 
 			if !fn_template.is_extern {
+				let mut fn_repo = self.fn_templates.write().unwrap();
+
 				fn_repo.insert(proto.clone(), fn_template);
 			}
 		}
@@ -366,7 +367,7 @@ impl MonomorphServer {
 		*instance.name.path.last_mut().unwrap() = insert_idx.clone().into();
 
 		drop(global_types);
-		
+
 		let global_types = &mut *self.ty_instances.write().unwrap();
 
 		global_types.insert(insert_idx.clone(), Arc::new(RwLock::new(instance)));

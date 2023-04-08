@@ -7,6 +7,7 @@ use crate::errors::ComuneError;
 use super::{BlockIndex, CIRFunction, CIRModule, CIRStmt, StmtIndex};
 
 pub mod cleanup;
+pub mod drop;
 pub mod lifeline;
 pub mod verify;
 

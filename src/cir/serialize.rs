@@ -124,13 +124,8 @@ impl Display for CIRStmt {
 				writeln!(f, "\t\telse => bb{else_branch},\n\t}}")
 			}
 
-			CIRStmt::Return(expr_opt) => {
-				if let Some(expr) = expr_opt {
-					writeln!(f, "ret {expr};")
-				} else {
-					writeln!(f, "ret;")
-				}
-			}
+			CIRStmt::Return => writeln!(f, "ret;"),
+			
 			CIRStmt::FnCall {
 				id,
 				args,

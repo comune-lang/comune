@@ -46,7 +46,7 @@ impl CIRModuleBuilder {
 		};
 
 		result.register_module(&ast.interface);
-		result.generate_namespace(&ast.module_impl);
+		result.generate_module(&ast.module_impl);
 
 		result
 	}
@@ -91,7 +91,7 @@ impl CIRModuleBuilder {
 		}
 	}
 
-	fn generate_namespace(&mut self, module_impl: &ModuleImpl) {
+	fn generate_module(&mut self, module_impl: &ModuleImpl) {
 		for (func, ast) in module_impl.fn_impls.iter() {
 			let ModuleASTElem::Parsed(ast) = ast else { panic!() };
 
@@ -173,6 +173,19 @@ impl CIRModuleBuilder {
 
 		self.name_map_stack.push(params_map);
 
+		if !proto.ret.1.is_void() {
+			// If the return type isn't void, insert a
+			// variable to write the return value to
+			let mut props = proto.ret.0;
+			props.is_mut = true;
+			
+			self.insert_variable(
+				Some("return".to_string()),
+				props, 
+				proto.ret.1.clone()
+			);
+		}
+
 		// Generate function body
 		self.append_block();
 
@@ -205,7 +218,7 @@ impl CIRModuleBuilder {
 					result
 				}
 
-				CIRStmt::Return(_) => vec![],
+				CIRStmt::Return => vec![],
 
 				term => panic!("invalid terminator in cIR: {term:?}"),
 			};
@@ -577,19 +590,19 @@ impl CIRModuleBuilder {
 
 				Atom::CtrlFlow(ctrl) => match &**ctrl {
 					ControlFlow::Return { expr } => {
-						if let Some(expr) = expr {
+
+						if let Some(lval) = self.current_fn.as_ref().unwrap().get_return_lvalue() {
+							let Some(expr) = expr else { panic!() };
+							
 							let expr_ir = self.generate_expr(expr)?;
 
-							if expr.get_type() == &Type::Basic(Basic::Void) {
-								self.write(CIRStmt::Return(None));
-							} else {
-								let operand = self.get_as_operand(expr.get_type(), expr_ir);
-								self.write(CIRStmt::Return(Some(operand)));
-							}
-						} else {
-							self.write(CIRStmt::Return(None));
+							self.write(CIRStmt::Assignment(
+								(lval.clone(), expr.get_node_data().tk),
+								expr_ir
+							));
 						}
-
+						
+						self.write(CIRStmt::Return);
 						None
 					}
 

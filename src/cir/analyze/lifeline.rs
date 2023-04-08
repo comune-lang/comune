@@ -296,7 +296,6 @@ impl AnalysisResultHandler for VarInitCheck {
 				match stmt {
 					CIRStmt::Assignment(_, RValue::Atom(_, _, Operand::LValue(lval, _), span))
 					| CIRStmt::Switch(Operand::LValue(lval, span), ..)
-					| CIRStmt::Return(Some(Operand::LValue(lval, span)))
 					| CIRStmt::Assignment(
 						_,
 						RValue::Cons(_, [(_, Operand::LValue(lval, span)), _], ..),
