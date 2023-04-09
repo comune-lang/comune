@@ -7,7 +7,6 @@ use crate::errors::ComuneError;
 use super::{BlockIndex, CIRFunction, CIRModule, CIRStmt, StmtIndex};
 
 pub mod cleanup;
-pub mod drop;
 pub mod lifeline;
 pub mod verify;
 
@@ -179,7 +178,7 @@ impl Direction for Backward {
 }
 
 pub trait AnalysisResultHandler: Analysis {
-	fn process_result(result: ResultVisitor<Self>, func: &CIRFunction) -> Vec<ComuneError>
+	fn process_result(result: ResultVisitor<Self>, func: &CIRFunction) -> Result<Option<CIRFunction>, Vec<ComuneError>>
 	where
 		Self: Sized;
 }
@@ -200,11 +199,11 @@ where
 	}
 }
 
-impl<T> CIRPass for DataFlowPass<T>
+impl<T> CIRPassMut for DataFlowPass<T>
 where
 	T: AnalysisResultHandler + Send + Sync,
 {
-	fn on_function(&self, func: &CIRFunction) -> Vec<ComuneError> {
+	fn on_function(&self, func: &mut CIRFunction) -> Vec<ComuneError> {
 		let mut entry_state = self.analysis.bottom_value(func);
 
 		self.analysis.initialize_start_block(func, &mut entry_state);
@@ -292,7 +291,17 @@ where
 
 		let in_states = in_states.into_iter().map(|(_, state)| state).collect();
 
-		T::process_result(ResultVisitor::new(func, &self.analysis, in_states), func)
+		match T::process_result(ResultVisitor::new(func, &self.analysis, in_states), func) {
+			Ok(None) => vec![],
+
+			Ok(Some(transformed)) => {
+				*func = transformed;
+				
+				vec![]
+			},
+			
+			Err(errors) => errors,
+		}
 	}
 }
 

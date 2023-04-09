@@ -282,31 +282,62 @@ impl Analysis for VarInitCheck {
 }
 
 impl AnalysisResultHandler for VarInitCheck {
-	fn process_result(result: ResultVisitor<Self>, func: &CIRFunction) -> Vec<ComuneError> {
+	fn process_result(result: ResultVisitor<Self>, func: &CIRFunction) -> Result<Option<CIRFunction>, Vec<ComuneError>> {
 		let mut errors = vec![];
 
-		for (i, block) in func.blocks.iter().enumerate() {
-			for (j, stmt) in block.items.iter().enumerate() {
-				let state = result.get_state_before(i, j);
+		errors.append(&mut validate_mutations(result, func));
+		
+		if !errors.is_empty() {
+			Err(errors)
+		} else {
+			Ok(None)
+		}
+	}
+}
 
-				// Check for uses of uninit/moved lvalues
-				match stmt {
-					CIRStmt::Assignment(_, RValue::Atom(_, _, Operand::LValue(lval, _), span))
-					| CIRStmt::Switch(Operand::LValue(lval, span), ..)
-					| CIRStmt::Assignment(
-						_,
-						RValue::Cons(_, [(_, Operand::LValue(lval, span)), _], ..),
-					)
-					| CIRStmt::Assignment(
-						_,
-						RValue::Cons(_, [_, (_, Operand::LValue(lval, span))], ..),
-					)
-					| CIRStmt::FnCall {
-						id: CIRCallId::Indirect {
-							local: lval, span, ..
-						},
-						..
-					} => {
+
+fn validate_mutations(result: ResultVisitor<VarInitCheck>, func: &CIRFunction) -> Vec<ComuneError> {
+	let mut errors = vec![];
+
+	for (i, block) in func.blocks.iter().enumerate() {
+		for (j, stmt) in block.items.iter().enumerate() {
+			let state = result.get_state_before(i, j);
+
+			// Check for uses of uninit/moved lvalues
+			match stmt {
+				CIRStmt::Assignment(_, RValue::Atom(_, _, Operand::LValue(lval, _), span))
+				| CIRStmt::Switch(Operand::LValue(lval, span), ..)
+				| CIRStmt::Assignment(
+					_,
+					RValue::Cons(_, [(_, Operand::LValue(lval, span)), _], ..),
+				)
+				| CIRStmt::Assignment(
+					_,
+					RValue::Cons(_, [_, (_, Operand::LValue(lval, span))], ..),
+				)
+				| CIRStmt::FnCall {
+					id: CIRCallId::Indirect {
+						local: lval, span, ..
+					},
+					..
+				} => {
+					let liveness = state.get_liveness(lval);
+
+					match liveness {
+						Some(LivenessState::Live) => {}
+
+						_ => errors.push(ComuneError::new(
+							ComuneErrCode::InvalidUse {
+								variable: func.get_variable_name(lval.local),
+								state: liveness.unwrap_or(LivenessState::Uninit),
+							},
+							*span,
+						)),
+					}
+				}
+
+				CIRStmt::FnCall { args, .. } => {
+					for (lval, span) in args {
 						let liveness = state.get_liveness(lval);
 
 						match liveness {
@@ -321,46 +352,28 @@ impl AnalysisResultHandler for VarInitCheck {
 							)),
 						}
 					}
-
-					CIRStmt::FnCall { args, .. } => {
-						for (lval, span) in args {
-							let liveness = state.get_liveness(lval);
-
-							match liveness {
-								Some(LivenessState::Live) => {}
-
-								_ => errors.push(ComuneError::new(
-									ComuneErrCode::InvalidUse {
-										variable: func.get_variable_name(lval.local),
-										state: liveness.unwrap_or(LivenessState::Uninit),
-									},
-									*span,
-								)),
-							}
-						}
-					}
-
-					_ => {}
 				}
 
-				// Check for mutation of immutable lvalues
-				if let CIRStmt::Assignment((lval, tk), _) = stmt {
-					if !matches!(
-						state.get_liveness(lval),
-						None | Some(LivenessState::Uninit) | Some(LivenessState::Moved)
-					) && !func.variables[lval.local].1.is_mut
-					{
-						errors.push(ComuneError::new(
-							ComuneErrCode::ImmutVarMutation {
-								variable: func.get_variable_name(lval.local),
-							},
-							*tk,
-						))
-					}
+				_ => {}
+			}
+
+			// Check for mutation of immutable lvalues
+			if let CIRStmt::Assignment((lval, tk), _) = stmt {
+				if !matches!(
+					state.get_liveness(lval),
+					None | Some(LivenessState::Uninit) | Some(LivenessState::Moved)
+				) && !func.variables[lval.local].1.is_mut
+				{
+					errors.push(ComuneError::new(
+						ComuneErrCode::ImmutVarMutation {
+							variable: func.get_variable_name(lval.local),
+						},
+						*tk,
+					))
 				}
 			}
 		}
-
-		errors
 	}
+
+	errors
 }
