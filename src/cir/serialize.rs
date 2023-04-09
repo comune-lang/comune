@@ -136,7 +136,7 @@ impl Display for CIRStmt {
 					write!(f, "{result} = ")?;
 				}
 
-				write!(f, "invoke {id} with")?;
+				write!(f, "call {id} with")?;
 
 				if !generic_args.is_empty() {
 					let mut args_iter = generic_args.iter();
