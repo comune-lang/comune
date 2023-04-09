@@ -1,4 +1,5 @@
 using core::mem::{size_of, malloc, realloc, free};
+using core::traits::Drop;
 
 struct Vector<type T> {
 	T mut* data;
@@ -40,16 +41,19 @@ impl<type T> Vector<T> {
 		self.capacity = capacity;
 	}
 
-	// TODO: Implement returning references with `self` lifetime
 	T get(mut& self, usize i) {
 		unsafe { *(self.data + i) }
 	}
 
 }
 
-impl<type T> core::traits::Drop for Vector<T> {
-	void drop(Vector<T> mut& self) {
-
+impl<type T> Drop for Vector<T> {
+	void drop(mut& self) {
+		printf(c"<Vector<T> as Drop>::drop() called!\n");
+	
+		if self.capacity > 0 {
+			free(self.data as void mut*);
+		}
 	}
 }
 

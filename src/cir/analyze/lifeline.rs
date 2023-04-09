@@ -286,9 +286,6 @@ impl AnalysisResultHandler for VarInitCheck {
 		let mut errors = vec![];
 
 		for (i, block) in func.blocks.iter().enumerate() {
-			//let state = result.get_state_before(i, 0);
-			//println!("state at start of block {i}:\n {state}\n\n");
-
 			for (j, stmt) in block.items.iter().enumerate() {
 				let state = result.get_state_before(i, j);
 
@@ -362,9 +359,6 @@ impl AnalysisResultHandler for VarInitCheck {
 					}
 				}
 			}
-
-			//let state = result.get_state_before(i, block.items.len() - 1);
-			//println!("state at end of block {i}:\n {state}\n\n");
 		}
 
 		errors

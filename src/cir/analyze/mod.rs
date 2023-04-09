@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, VecDeque};
+use std::{collections::{BTreeMap, VecDeque}, sync::RwLock};
 
 use rayon::prelude::{IntoParallelRefIterator, ParallelIterator};
 
@@ -303,6 +303,7 @@ where
 	func: &'a CIRFunction,
 	analysis: &'a T,
 	block_start_states: Vec<T::Domain>,
+	cache: RwLock<Option<(BlockIndex, StmtIndex, T::Domain)>>,
 }
 
 impl<'a, T> ResultVisitor<'a, T>
@@ -314,6 +315,7 @@ where
 			func,
 			analysis,
 			block_start_states,
+			cache: RwLock::default(),
 		}
 	}
 
@@ -321,6 +323,30 @@ where
 		if stmt == 0 {
 			self.block_start_states[block].clone()
 		} else {
+			let cache_guard = self.cache.read().unwrap();
+			
+			if let Some((cache_block, cache_idx, cache_state)) = &*cache_guard {
+				if *cache_block == block && *cache_idx <= stmt {
+					// Update cache to current statement
+
+					let mut result = cache_state.clone();
+
+					for i in *cache_idx..stmt {
+						let s = &self.func.blocks[block].items[i];
+						self.analysis
+							.apply_before_effect(s, (block, i), &mut result);
+						self.analysis.apply_effect(s, (block, i), &mut result);
+					}
+
+					drop(cache_guard);
+
+					*self.cache.write().unwrap() = Some((block, stmt, result.clone()));
+					
+					return result
+				}
+			}
+
+			// Cache is dirty, calculate state from scratch
 			let mut result = self.block_start_states[block].clone();
 
 			for i in 0..stmt {
@@ -338,5 +364,6 @@ where
 
 			result
 		}
+			
 	}
 }
