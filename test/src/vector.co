@@ -48,7 +48,9 @@ impl<type T> Vector<T> {
 }
 
 impl<type T> core::traits::Drop for Vector<T> {
-	
+	void drop(Vector<T> mut& self) {
+
+	}
 }
 
 void vector_test(Vector<float> test) {

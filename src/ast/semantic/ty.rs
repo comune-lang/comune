@@ -85,14 +85,17 @@ pub fn resolve_interface_types(interface: &ModuleInterface) -> ComuneResult<()> 
 	}
 
 	for (ty, im) in &interface.trait_solver.local_impls {
-		resolve_type(
-			&mut *ty.write().unwrap(),
-			interface,
-			&im.read().unwrap().params,
-		)?;
+		// Create type parameter list with empty Self param
+		let mut generics = vec![("Self".to_string(), vec![], None)];
+		generics.append(&mut im.read().unwrap().params.clone());
+
+		// Resolve the implementing type
+		resolve_type(&mut *ty.write().unwrap(), interface, &generics)?;
+
+		// Then use it to fill in the Self param's type
+		generics[0].2 = Some(ty.read().unwrap().clone());
 
 		// Resolve item references in canonical root
-
 		let resolved_trait = if let Some(ItemRef::Unresolved {
 			name,
 			scope,
@@ -134,20 +137,22 @@ pub fn resolve_interface_types(interface: &ModuleInterface) -> ComuneResult<()> 
 				let FnPrototype {
 					ret,
 					params,
-					generics,
+					generics: fn_generics,
 					path,
 					attributes: _,
 				} = &mut *func.write().unwrap();
 
 				path.qualifier = trait_qualif.clone();
 
-				generics.append(&mut im.params.clone());
+				for (i, param) in generics.iter().enumerate() {
+					fn_generics.insert(i, param.clone());
+				}
 
-				resolve_type(&mut ret.1, interface, &generics)?;
+				resolve_type(&mut ret.1, interface, &fn_generics)?;
 				check_dst_indirection(&ret.1, &BindingProps::default())?;
 
 				for (param, _, props) in &mut params.params {
-					resolve_type(param, interface, &generics)?;
+					resolve_type(param, interface, &fn_generics)?;
 					check_dst_indirection(&param, &props)?;
 				}
 
@@ -189,8 +194,14 @@ pub fn resolve_interface_types(interface: &ModuleInterface) -> ComuneResult<()> 
 								if params.params[i].2 != *props {
 									continue 'overloads;
 								}
+								
+								let concrete_self = params.params[i].0.get_concrete_type(&args);
+								let concrete_other = ty.get_concrete_type(&args);
 
-								if params.params[i].0.get_concrete_type(&args) != ty.get_concrete_type(&args) {
+								if concrete_self != concrete_other {
+									println!("mismatch between {concrete_self} and {concrete_other}");
+									println!("type args: {:?}", args);
+
 									continue 'overloads;
 								}
 							}

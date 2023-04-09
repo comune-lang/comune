@@ -249,11 +249,13 @@ pub fn resolve_method_call(
 
 	args.insert(0, lhs.clone());
 
+	type_args.insert(0, receiver.clone());
+
 	if let Type::TypeRef { args, .. } = receiver {
 		type_args.reserve(args.len());
 
 		for (i, arg) in args.iter().enumerate() {
-			type_args.insert(i, arg.clone());
+			type_args.insert(i+1, arg.clone());
 		}
 	};
 

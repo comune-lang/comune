@@ -920,7 +920,7 @@ impl std::fmt::Debug for Type {
 				.field(arg1)
 				.field(arg2)
 				.finish(),
-			Type::TypeRef { def: arg0, .. } => f.debug_tuple("TypeRef").field(arg0).finish(),
+			Type::TypeRef { def: arg0, args: arg1 } => f.debug_tuple("TypeRef").field(arg0).field(arg1).finish(),
 			Type::TypeParam(arg0) => f.debug_tuple("TypeParam").field(arg0).finish(),
 			Type::Never => f.debug_tuple("Never").finish(),
 			Type::Tuple(kind, types) => f.debug_tuple("Tuple").field(kind).field(types).finish(),
