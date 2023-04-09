@@ -279,16 +279,14 @@ impl<'ctx> LLVMBackend<'ctx> {
 						}
 					}
 
-					CIRStmt::FnCall {
+					CIRStmt::Call {
 						id,
 						args,
-						type_args,
-						result,
-						next,
-						except,
+						generic_args,
+						result
 					} => {
 						assert!(
-							type_args.is_empty(),
+							generic_args.is_empty(),
 							"encountered un-monoized type argument in LLVM codegen!"
 						);
 
@@ -310,57 +308,91 @@ impl<'ctx> LLVMBackend<'ctx> {
 							}
 						};
 
-						let callsite;
+						let args_mapped: Vec<_> = args
+							.iter()
+							.enumerate()
+							.map(|(i, (x, _))| {
+								let is_ref = if let Some((props, ty)) = params.get(i) {
+									self.pass_by_ptr(ty, props)
+								} else {
+									false
+								};
 
-						if let Some(except) = except {
-							let args_mapped: Vec<_> = args
-								.iter()
-								.enumerate()
-								.map(|(i, (x, _))| {
-									let (props, ty) = &params[i];
-
-									if self.pass_by_ptr(ty, props) {
-										self.generate_lvalue(x).as_basic_value_enum()
-									} else {
-										self.builder
-											.build_load(self.generate_lvalue(x), "")
-											.as_basic_value_enum()
-									}
+								Self::to_basic_metadata_value(if is_ref {
+									self.generate_lvalue(x).as_any_value_enum()
+								} else {
+									self.builder
+										.build_load(self.generate_lvalue(x), "")
+										.as_any_value_enum()
 								})
-								.collect();
+							})
+							.collect();
 
-							callsite = self.builder.build_invoke(
-								fn_v,
-								&args_mapped,
-								self.blocks[*next],
-								self.blocks[*except],
-								"",
-							)
-						} else {
-							let args_mapped: Vec<_> = args
-								.iter()
-								.enumerate()
-								.map(|(i, (x, _))| {
-									let is_ref = if let Some((props, ty)) = params.get(i) {
-										self.pass_by_ptr(ty, props)
-									} else {
-										false
-									};
-
-									Self::to_basic_metadata_value(if is_ref {
-										self.generate_lvalue(x).as_any_value_enum()
-									} else {
-										self.builder
-											.build_load(self.generate_lvalue(x), "")
-											.as_any_value_enum()
-									})
-								})
-								.collect();
-
-							callsite = self.builder.build_call(fn_v, &args_mapped, "");
-							self.builder.build_unconditional_branch(self.blocks[*next]);
+						let callsite = self.builder.build_call(fn_v, &args_mapped, "");
+						
+						if let Some(result) = result {
+							self.builder.build_store(
+								self.generate_lvalue(result),
+								callsite.try_as_basic_value().unwrap_left(),
+							);
 						}
+					}
 
+					CIRStmt::Invoke {
+						id,
+						args,
+						generic_args,
+						result,
+						next,
+						except,
+					} => {
+						assert!(
+							generic_args.is_empty(),
+							"encountered un-monoized type argument in LLVM codegen!"
+						);
+
+						let (fn_v, params) = match id {
+							CIRCallId::Direct(id, _) => {
+								let mangled = &self.fn_map[id];
+								let fn_v = self.module.get_function(mangled).unwrap();
+
+								(fn_v.into(), &id.params)
+							}
+
+							CIRCallId::Indirect { args, local, .. } => {
+								let ptr = self
+									.builder
+									.build_load(self.generate_lvalue(local), "")
+									.into_pointer_value();
+
+								(CallableValue::try_from(ptr).unwrap(), args)
+							}
+						};
+
+						let args_mapped: Vec<_> = args
+							.iter()
+							.enumerate()
+							.map(|(i, (x, _))| {
+								let (props, ty) = &params[i];
+
+								if self.pass_by_ptr(ty, props) {
+									self.generate_lvalue(x).as_basic_value_enum()
+								} else {
+									self.builder
+										.build_load(self.generate_lvalue(x), "")
+										.as_basic_value_enum()
+								}
+							})
+							.collect();
+
+						let callsite = self.builder.build_invoke(
+							fn_v,
+							&args_mapped,
+							self.blocks[*next],
+							self.blocks[*except],
+							"",
+						);
+					
 						if let Some(result) = result {
 							self.builder.position_at_end(self.blocks[*next]);
 

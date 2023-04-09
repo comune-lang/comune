@@ -3,19 +3,13 @@
 use std::{collections::HashMap, fmt::Display};
 
 use super::{
-	Analysis, AnalysisDomain, AnalysisResultHandler, CIRPassMut, Forward, JoinSemiLattice,
+	Analysis, AnalysisDomain, AnalysisResultHandler, Forward, JoinSemiLattice,
 	ResultVisitor,
 };
 use crate::{
 	cir::{CIRCallId, CIRFunction, CIRStmt, LValue, Operand, PlaceElem, RValue, Type},
 	errors::{ComuneErrCode, ComuneError},
 };
-
-pub struct BorrowCheck;
-
-struct Borrow {
-	place: LValue,
-}
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum LivenessState {
@@ -142,26 +136,6 @@ impl LiveVarCheckState {
 	}
 }
 
-impl CIRPassMut for BorrowCheck {
-	fn on_function(&self, func: &mut CIRFunction) -> Vec<ComuneError> {
-		let mut liveness = LiveVarCheckState {
-			liveness: HashMap::new(),
-		};
-
-		for i in 0..func.arg_count {
-			// Set first `arg_count` variables as pre-initialized
-			liveness.liveness.insert(
-				LValue {
-					local: i,
-					projection: vec![],
-				},
-				LivenessState::Live,
-			);
-		}
-		vec![]
-	}
-}
-
 pub struct VarInitCheck;
 
 impl JoinSemiLattice for LiveVarCheckState {
@@ -249,9 +223,8 @@ impl Analysis for VarInitCheck {
 				state.set_liveness(lval, LivenessState::Live);
 			}
 
-			CIRStmt::FnCall {
-				result: Some(lval), ..
-			} => {
+			CIRStmt::Invoke { result: Some(lval), .. } |
+			CIRStmt::Call { result: Some(lval), .. } => {
 				state.set_liveness(lval, LivenessState::Live);
 			}
 
@@ -307,20 +280,10 @@ fn validate_mutations(result: ResultVisitor<VarInitCheck>, func: &CIRFunction) -
 			match stmt {
 				CIRStmt::Assignment(_, RValue::Atom(_, _, Operand::LValue(lval, _), span))
 				| CIRStmt::Switch(Operand::LValue(lval, span), ..)
-				| CIRStmt::Assignment(
-					_,
-					RValue::Cons(_, [(_, Operand::LValue(lval, span)), _], ..),
-				)
-				| CIRStmt::Assignment(
-					_,
-					RValue::Cons(_, [_, (_, Operand::LValue(lval, span))], ..),
-				)
-				| CIRStmt::FnCall {
-					id: CIRCallId::Indirect {
-						local: lval, span, ..
-					},
-					..
-				} => {
+				| CIRStmt::Assignment(_, RValue::Cons(_, [(_, Operand::LValue(lval, span)), _], ..))
+				| CIRStmt::Assignment(_, RValue::Cons(_, [_, (_, Operand::LValue(lval, span))], ..))
+				| CIRStmt::Invoke { id: CIRCallId::Indirect { local: lval, span, .. }, .. }
+				| CIRStmt::Call { id: CIRCallId::Indirect { local: lval, span, .. }, .. } => {
 					let liveness = state.get_liveness(lval);
 
 					match liveness {
@@ -336,7 +299,7 @@ fn validate_mutations(result: ResultVisitor<VarInitCheck>, func: &CIRFunction) -
 					}
 				}
 
-				CIRStmt::FnCall { args, .. } => {
+				CIRStmt::Invoke { args, .. } | CIRStmt::Call { args, .. } => {
 					for (lval, span) in args {
 						let liveness = state.get_liveness(lval);
 
@@ -376,4 +339,54 @@ fn validate_mutations(result: ResultVisitor<VarInitCheck>, func: &CIRFunction) -
 	}
 
 	errors
+}
+
+fn elaborate_drops(result: ResultVisitor<VarInitCheck>, func: &CIRFunction) -> Result<CIRFunction, Vec<ComuneError>> {
+	let mut errors = vec![];
+	let mut func_out = func.clone();
+
+	//let mut block_obligations = vec![];
+
+	for (i, block) in func.blocks.iter().enumerate() {
+		//let mut obligations = vec![];
+
+		for (j, stmt) in block.items.iter().enumerate() {
+			match stmt {
+				CIRStmt::StorageDead(local) => {
+					let lvalue = LValue { local: *local, projection: vec![] };
+
+					let state = result.get_state_before(i, j);
+
+					match state.get_liveness(&lvalue) {
+						None | Some(LivenessState::Moved) | Some(LivenessState::Uninit) => {
+							// Don't emit drop
+						}
+
+						Some(LivenessState::Live) => {
+							// Emit drop + sublocation drop
+						}
+
+						Some(LivenessState::PartialMoved) => {
+							// Emit sublocation drop only
+						}
+
+						Some(LivenessState::MaybeUninit) => {
+							// Emit conditional drop
+						}
+
+						_ => todo!()
+					}
+				}
+				_ => {}
+			}
+		}
+
+		//block_obligations.push(obligations);
+	}
+
+	if !errors.is_empty() {
+		Err(errors)
+	} else {
+		Ok(func_out)
+	}
 }

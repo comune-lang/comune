@@ -152,8 +152,9 @@ impl MonomorphServer {
 						self.monoize_rvalue_types(types, expr, param_map);
 					}
 
-					CIRStmt::FnCall { type_args, .. } => {
-						for arg in type_args.iter_mut() {
+					CIRStmt::Invoke { generic_args, .. } |
+					CIRStmt::Call { generic_args, .. } => {
+						for arg in generic_args.iter_mut() {
 							self.monoize_type(types, arg, param_map);
 						}
 
@@ -175,31 +176,28 @@ impl MonomorphServer {
 		func: &mut CIRStmt,
 		types: &mut HashMap<TypeName, Arc<RwLock<TypeDef>>>,
 	) {
-		let CIRStmt::FnCall {
-			id,
-			type_args,
-			..
-		} = func else { panic!() };
+		let (CIRStmt::Invoke { id, generic_args, .. } 
+			| CIRStmt::Call { id, generic_args, .. }) = func else { panic!() };
 
-		if type_args.is_empty() {
+		if generic_args.is_empty() {
 			return;
 		}
 
 		if let CIRCallId::Direct(id, _) = id {
 			let mut insert_id = id.clone();
 
-			for (i, type_arg) in type_args.iter().enumerate() {
+			for (i, type_arg) in generic_args.iter().enumerate() {
 				insert_id.type_params[i].2 = Some(type_arg.clone())
 			}
 
 			for (_, param) in &mut insert_id.params {
-				self.monoize_type(types, param, type_args);
+				self.monoize_type(types, param, generic_args);
 			}
 
-			self.monoize_type(types, &mut insert_id.ret.1, type_args);
+			self.monoize_type(types, &mut insert_id.ret.1, generic_args);
 
 			if let (Some(qualifier), _) = &mut insert_id.name.qualifier {
-				self.monoize_type(types, qualifier, type_args);
+				self.monoize_type(types, qualifier, generic_args);
 			}
 
 			// If the function template isn't available yet, wait for it
@@ -218,7 +216,7 @@ impl MonomorphServer {
 				drop(fn_instances);
 
 				let monoized =
-					self.monoize_function(functions_in, functions_out, fn_in, types, type_args);
+					self.monoize_function(functions_in, functions_out, fn_in, types, generic_args);
 
 				drop(fn_templates);
 
@@ -233,7 +231,7 @@ impl MonomorphServer {
 
 			functions_out.insert(id.clone(), extern_fn);
 
-			type_args.clear();
+			generic_args.clear();
 		}
 	}
 

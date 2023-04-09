@@ -125,11 +125,49 @@ impl Display for CIRStmt {
 			}
 
 			CIRStmt::Return => writeln!(f, "ret;"),
-			
-			CIRStmt::FnCall {
+
+			CIRStmt::Call {
 				id,
 				args,
-				type_args,
+				generic_args,
+				result
+			} => {
+				if let Some(result) = result {
+					write!(f, "{result} = ")?;
+				}
+
+				write!(f, "invoke {id} with")?;
+
+				if !generic_args.is_empty() {
+					let mut args_iter = generic_args.iter();
+
+					write!(f, "<{}", args_iter.next().unwrap())?;
+
+					for arg in args_iter {
+						write!(f, ", {arg}")?;
+					}
+
+					write!(f, ">")?;
+				}
+
+				if !args.is_empty() {
+					let mut args_iter = args.iter();
+					write!(f, "({}", args_iter.next().unwrap().0)?;
+
+					for (arg, _) in args_iter {
+						write!(f, ", {arg}")?;
+					}
+
+					writeln!(f, ");")
+				} else {
+					writeln!(f, "();")
+				}
+			},
+
+			CIRStmt::Invoke {
+				id,
+				args,
+				generic_args,
 				result,
 				next,
 				except,
@@ -138,10 +176,10 @@ impl Display for CIRStmt {
 					write!(f, "{result} = ")?;
 				}
 
-				write!(f, "call {id} with")?;
+				write!(f, "invoke {id} with")?;
 
-				if !type_args.is_empty() {
-					let mut args_iter = type_args.iter();
+				if !generic_args.is_empty() {
+					let mut args_iter = generic_args.iter();
 
 					write!(f, "<{}", args_iter.next().unwrap())?;
 
@@ -165,13 +203,7 @@ impl Display for CIRStmt {
 					write!(f, "()")?;
 				}
 
-				write!(f, " => [bb{next}")?;
-
-				if let Some(except) = except {
-					write!(f, ", bb{except}];\n")
-				} else {
-					write!(f, "];\n")
-				}
+				writeln!(f, " => [bb{next}, bb{except}];")
 			}
 
 			CIRStmt::StorageLive(idx) => write!(f, "StorageLive(_{idx});\n"),

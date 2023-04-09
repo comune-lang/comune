@@ -56,12 +56,9 @@ impl CIRPassMut for SimplifyCFG {
 						*else_branch = block_map[else_branch];
 					}
 
-					CIRStmt::FnCall { next, except, .. } => {
+					CIRStmt::Invoke { next, except, .. } => {
 						*next = block_map[next];
-
-						if let Some(except) = except {
-							*except = block_map[except];
-						}
+						*except = block_map[except];
 					}
 
 					_ => {}

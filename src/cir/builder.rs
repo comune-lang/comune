@@ -197,15 +197,11 @@ impl CIRModuleBuilder {
 
 		for i in 0..func.blocks.len() {
 			let succs = match func.blocks[i].items.last().unwrap() {
-				CIRStmt::FnCall {
+				CIRStmt::Invoke {
 					next,
-					except: Some(except),
+					except,
 					..
 				} => vec![*next, *except],
-
-				CIRStmt::FnCall {
-					next, except: None, ..
-				} => vec![*next],
 
 				CIRStmt::Jump(jmp) => vec![*jmp],
 
@@ -1175,31 +1171,23 @@ impl CIRModuleBuilder {
 
 		match resolved {
 			FnRef::Direct(resolved) => {
-				let ret = resolved.read().unwrap().ret.1.get_concrete_type(type_args);
-
-				let current_block = self.current_block;
-				let next = self.append_block();
-				self.current_block = current_block;
-
+				let (ret_props, ret) = resolved.read().unwrap().ret.clone();
+				let ret = ret.get_concrete_type(type_args);
+				
 				let result = if ret == Type::Basic(Basic::Void) {
 					None
 				} else {
-					// TODO: BindingProps for return type
-					Some(self.insert_variable(None, BindingProps::default(), ret.clone()))
+					Some(self.insert_variable(None, ret_props, ret.clone()))
 				};
 
 				let id = self.get_prototype(&*resolved.read().unwrap());
 
-				self.write(CIRStmt::FnCall {
+				self.write(CIRStmt::Call {
 					id: CIRCallId::Direct(id, SrcSpan::new()),
 					args: cir_args,
-					type_args: type_args.clone(),
+					generic_args: type_args.clone(),
 					result: result.clone(),
-					next,
-					except: None,
 				});
-
-				self.current_block = next;
 
 				if let Some(result) = result {
 					Some(RValue::Atom(ret, None, Operand::LValue(result, span), span))
@@ -1229,11 +1217,7 @@ impl CIRModuleBuilder {
 					Some(self.insert_variable(None, BindingProps::default(), *ret.clone()))
 				};
 
-				let current_block = self.current_block;
-				let next = self.append_block();
-				self.current_block = current_block;
-
-				self.write(CIRStmt::FnCall {
+				self.write(CIRStmt::Call {
 					id: CIRCallId::Indirect {
 						local,
 						ret: *ret.clone(),
@@ -1241,13 +1225,9 @@ impl CIRModuleBuilder {
 						span: expr.get_node_data().tk,
 					},
 					args: cir_args,
-					type_args: vec![],
+					generic_args: vec![],
 					result: result.clone(),
-					next,
-					except: None,
 				});
-
-				self.current_block = next;
 
 				if let Some(result) = result {
 					Some(RValue::Atom(

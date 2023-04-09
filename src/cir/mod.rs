@@ -124,14 +124,25 @@ pub enum CIRStmt {
 	Jump(BlockIndex),
 	Switch(Operand, Vec<(Type, Operand, BlockIndex)>, BlockIndex),
 	Return,//(Option<Operand>),
-	FnCall {
+	
+	// Non-throwing fn call, not a terminator
+	Call {
 		id: CIRCallId,
 		args: Vec<(LValue, SrcSpan)>,
-		type_args: Vec<Type>,
+		generic_args: Vec<Type>,
+		result: Option<LValue>,
+	},
+
+	// Throwing fn call, terminator
+	Invoke {
+		id: CIRCallId,
+		args: Vec<(LValue, SrcSpan)>,
+		generic_args: Vec<Type>,
 		result: Option<LValue>,
 		next: BlockIndex,
-		except: Option<BlockIndex>,
+		except: BlockIndex,
 	},
+
 	StorageLive(VarIndex),
 	StorageDead(VarIndex),
 }
