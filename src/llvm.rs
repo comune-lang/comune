@@ -403,7 +403,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 						}
 					}
 
-					CIRStmt::StorageLive(_) | CIRStmt::StorageDead(_) => {}
+					CIRStmt::StorageLive(_) | CIRStmt::StorageDead { .. } => {}
 				}
 			}
 		}

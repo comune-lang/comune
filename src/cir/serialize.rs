@@ -206,8 +206,8 @@ impl Display for CIRStmt {
 				writeln!(f, " => [bb{next}, bb{except}];")
 			}
 
-			CIRStmt::StorageLive(idx) => write!(f, "StorageLive(_{idx});\n"),
-			CIRStmt::StorageDead(idx) => write!(f, "StorageDead(_{idx});\n"),
+			CIRStmt::StorageLive(var) => write!(f, "StorageLive(_{var});\n"),
+			CIRStmt::StorageDead { var, next } => write!(f, "StorageDead(_{var}) => {next};\n"),
 		}
 	}
 }

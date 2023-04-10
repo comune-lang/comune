@@ -216,6 +216,8 @@ impl CIRModuleBuilder {
 
 				CIRStmt::Return => vec![],
 
+				CIRStmt::StorageDead { next, .. } => vec![*next],
+
 				term => panic!("invalid terminator in cIR: {term:?}"),
 			};
 
@@ -422,8 +424,17 @@ impl CIRModuleBuilder {
 
 	fn generate_scope_end(&mut self) {
 		for (_, var) in self.name_map_stack.pop().unwrap().into_iter().rev() {
-			self.write(CIRStmt::StorageDead(var));
+			self.generate_drop_marker(var);
 		}
+	}
+	
+	fn generate_drop_marker(&mut self, var: VarIndex) {
+		let current = self.current_block;
+		let next = self.append_block();
+
+		self.current_block = current;
+		self.write(CIRStmt::StorageDead { var, next });
+		self.current_block = next;
 	}
 
 	// generate_expr only returns None if `expr` is a "never expression"

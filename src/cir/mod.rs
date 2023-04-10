@@ -119,13 +119,27 @@ pub enum CIRCallId {
 
 #[derive(Debug, Clone)]
 pub enum CIRStmt {
+	// Plain expression. Non-terminator.
+	// Has no side effects by definition, and may be optimized out.
 	Expression(RValue),
+
+	// Assignment to a variable. Non-terminator.
 	Assignment((LValue, SrcSpan), RValue),
+
+	// Unconditional jump to the block at BlockIndex. Terminator.
 	Jump(BlockIndex),
+
+	// Generalized version of a conditional jump. Terminator.
+	//
+	// Reads the value from the first Operand, and matches it 
+	// against the others. The final BlockIndex denotes the 
+	// `else` case; where to jump if no arms were matched.
 	Switch(Operand, Vec<(Type, Operand, BlockIndex)>, BlockIndex),
-	Return,//(Option<Operand>),
 	
-	// Non-throwing fn call, not a terminator
+	// Return statement. Terminator.
+	Return,
+	
+	// Non-throwing fn call. Non-terminator.
 	Call {
 		id: CIRCallId,
 		args: Vec<(LValue, SrcSpan)>,
@@ -133,7 +147,7 @@ pub enum CIRStmt {
 		result: Option<LValue>,
 	},
 
-	// Throwing fn call, terminator
+	// Throwing fn call. Terminator.
 	Invoke {
 		id: CIRCallId,
 		args: Vec<(LValue, SrcSpan)>,
@@ -143,8 +157,20 @@ pub enum CIRStmt {
 		except: BlockIndex,
 	},
 
+	// Defines the start of a variable's lifetime. Non-terminator.
+	//
+	// NOTE: Must dominate *all* Assignments to the VarIndex.
 	StorageLive(VarIndex),
-	StorageDead(VarIndex),
+
+	// Defines the end of a variable's lifetime. Terminator.
+	//
+	// NOTE: Unlike StorageLive, Drop is a terminator, as
+	// it is used to build the destructor code for a variable,
+	// which may involve non-trivial CFG construction.
+	StorageDead {
+		var: VarIndex,
+		next: BlockIndex,
+	},
 }
 
 #[derive(Debug, Clone)]

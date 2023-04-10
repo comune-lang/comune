@@ -238,9 +238,9 @@ impl Analysis for VarInitCheck {
 				);
 			}
 
-			CIRStmt::StorageDead(local) => {
+			CIRStmt::StorageDead { var, .. }=> {
 				let lval = LValue {
-					local: *local,
+					local: *var,
 					projection: vec![],
 				};
 				// Clear all sublocation states
@@ -341,52 +341,65 @@ fn validate_mutations(result: ResultVisitor<VarInitCheck>, func: &CIRFunction) -
 	errors
 }
 
+enum DropStyle {
+	Live,
+	Conditional,
+	Open,
+	Dead,
+}
+
 fn elaborate_drops(result: ResultVisitor<VarInitCheck>, func: &CIRFunction) -> Result<CIRFunction, Vec<ComuneError>> {
-	let mut errors = vec![];
+	let errors = vec![];
 	let mut func_out = func.clone();
 
-	//let mut block_obligations = vec![];
+	let mut block_obligations = vec![];
 
 	for (i, block) in func.blocks.iter().enumerate() {
-		//let mut obligations = vec![];
+		let mut obligations = vec![];
 
-		for (j, stmt) in block.items.iter().enumerate() {
-			match stmt {
-				CIRStmt::StorageDead(local) => {
-					let lvalue = LValue { local: *local, projection: vec![] };
+		if let CIRStmt::StorageDead { var, next } = block.items.last().unwrap() {
+			let lvalue = LValue { local: *var, projection: vec![] };
+			let state = result.get_state_before(i, block.items.len() - 1);
 
-					let state = result.get_state_before(i, j);
-
-					match state.get_liveness(&lvalue) {
-						None | Some(LivenessState::Moved) | Some(LivenessState::Uninit) => {
-							// Don't emit drop
-						}
-
-						Some(LivenessState::Live) => {
-							// Emit drop + sublocation drop
-						}
-
-						Some(LivenessState::PartialMoved) => {
-							// Emit sublocation drop only
-						}
-
-						Some(LivenessState::MaybeUninit) => {
-							// Emit conditional drop
-						}
-
-						_ => todo!()
-					}
-				}
-				_ => {}
-			}
+			get_drop_obligations(&state, &lvalue, &mut obligations);
 		}
 
-		//block_obligations.push(obligations);
+		block_obligations.push(obligations);
 	}
 
 	if !errors.is_empty() {
 		Err(errors)
 	} else {
 		Ok(func_out)
+	}
+}
+
+fn get_drop_obligations(
+	state: &LiveVarCheckState, 
+	lvalue: &LValue, 
+	obligations: &mut Vec<(LValue, DropStyle)>
+) {
+	match state.get_liveness(&lvalue) {
+		None | Some(LivenessState::Moved) | Some(LivenessState::Uninit) => {
+			// Don't emit drop
+			obligations.push((lvalue.clone(), DropStyle::Dead));
+			return
+		}
+
+		Some(LivenessState::Live) | Some(LivenessState::PartialMoved) => {
+			// Emit drop + sublocation drops
+			obligations.push((lvalue.clone(), DropStyle::Live));
+		}
+
+		Some(LivenessState::MaybeUninit) => {
+			// Emit conditional drop
+			obligations.push((lvalue.clone(), DropStyle::Conditional));
+		}
+
+		_ => return,
+	}
+
+	for (subloc, _) in state.get_active_sublocations(&lvalue) {
+		get_drop_obligations(state, subloc, obligations);
 	}
 }
