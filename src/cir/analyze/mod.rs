@@ -2,7 +2,7 @@ use std::{collections::{BTreeMap, VecDeque}, sync::RwLock};
 
 use rayon::prelude::{IntoParallelRefIterator, ParallelIterator};
 
-use crate::errors::ComuneError;
+use crate::{errors::ComuneError, ast::traits::ImplSolver};
 
 use super::{BlockIndex, CIRFunction, CIRModule, CIRStmt, StmtIndex};
 
@@ -178,7 +178,7 @@ impl Direction for Backward {
 }
 
 pub trait AnalysisResultHandler: Analysis {
-	fn process_result(result: ResultVisitor<Self>, func: &CIRFunction) -> Result<Option<CIRFunction>, Vec<ComuneError>>
+	fn process_result(result: ResultVisitor<Self>, func: &CIRFunction, impl_solver: &ImplSolver) -> Result<Option<CIRFunction>, Vec<ComuneError>>
 	where
 		Self: Sized;
 }
@@ -203,105 +203,115 @@ impl<T> CIRPassMut for DataFlowPass<T>
 where
 	T: AnalysisResultHandler + Send + Sync,
 {
-	fn on_function(&self, func: &mut CIRFunction) -> Vec<ComuneError> {
-		let mut entry_state = self.analysis.bottom_value(func);
+	fn on_module(&self, module: &mut CIRModule) -> Vec<ComuneError> {
+		let mut errors = vec![];
 
-		self.analysis.initialize_start_block(func, &mut entry_state);
-
-		// Prevent entry_state from being mutated
-		let entry_state = entry_state;
-
-		let mut in_states = BTreeMap::new();
-		let mut out_states = BTreeMap::new();
-		let mut work_list = VecDeque::new();
-
-		// Initialize blocks
-
-		in_states.insert(0, entry_state.clone());
-
-		let mut block_state = entry_state.clone();
-
-		for (j, stmt) in func.blocks[0].items.iter().enumerate() {
-			self.analysis
-				.apply_before_effect(stmt, (0, j), &mut block_state);
-			self.analysis.apply_effect(stmt, (0, j), &mut block_state);
-		}
-
-		out_states.insert(0, block_state.clone());
-
-		work_list.extend(func.blocks[0].succs.iter().cloned());
-
-		// While we haven't reached fixpoint, update blocks iteratively
-		// If a block's in-state changes, process it and its successors
-
-		while let Some(i) = work_list.pop_front() {
-			let block = &func.blocks[i];
-			let mut changed = false;
-
-			if !block.preds.is_empty() {
-				let mut preds = block.preds.iter();
-
-				let mut in_state = out_states[preds.next().unwrap()].clone();
-
-				for pred in preds {
-					if let Some(out_state) = out_states.get(pred) {
-						in_state.join(out_state);
-					}
-				}
-
-				// check if in_state is different from in_states[i]
-				if let Some(prev_state) = in_states.get(&i) {
-					changed |= in_state.clone().join(prev_state);
-				} else {
-					changed = true;
-				}
-
-				in_states.insert(i, in_state);
+		for (_, func) in &mut module.functions {
+			if func.is_extern {
+				continue
 			}
 
-			if changed {
-				let block_state: &T::Domain = &in_states[&i];
+			let mut entry_state = self.analysis.bottom_value(func);
 
-				let mut block_state = block_state.clone();
+			self.analysis.initialize_start_block(func, &mut entry_state);
 
-				for (j, stmt) in block.items.iter().enumerate() {
-					self.analysis
-						.apply_before_effect(stmt, (i, j), &mut block_state);
-					self.analysis.apply_effect(stmt, (i, j), &mut block_state);
+			// Prevent entry_state from being mutated
+			let entry_state = entry_state;
+
+			let mut in_states = BTreeMap::new();
+			let mut out_states = BTreeMap::new();
+			let mut work_list = VecDeque::new();
+
+			// Initialize blocks
+
+			in_states.insert(0, entry_state.clone());
+
+			let mut block_state = entry_state.clone();
+
+			for (j, stmt) in func.blocks[0].items.iter().enumerate() {
+				self.analysis
+					.apply_before_effect(stmt, (0, j), &mut block_state);
+				self.analysis.apply_effect(stmt, (0, j), &mut block_state);
+			}
+
+			out_states.insert(0, block_state.clone());
+
+			work_list.extend(func.blocks[0].succs.iter().cloned());
+
+			// While we haven't reached fixpoint, update blocks iteratively
+			// If a block's in-state changes, process it and its successors
+
+			while let Some(i) = work_list.pop_front() {
+				let block = &func.blocks[i];
+				let mut changed = false;
+
+				if !block.preds.is_empty() {
+					let mut preds = block.preds.iter();
+
+					let mut in_state = out_states[preds.next().unwrap()].clone();
+
+					for pred in preds {
+						if let Some(out_state) = out_states.get(pred) {
+							in_state.join(out_state);
+						}
+					}
+
+					// check if in_state is different from in_states[i]
+					if let Some(prev_state) = in_states.get(&i) {
+						changed |= in_state.clone().join(prev_state);
+					} else {
+						changed = true;
+					}
+
+					in_states.insert(i, in_state);
 				}
 
-				if let Some(out_state) = out_states.get(&i) {
-					if out_state.clone().join(&block_state) {
+				if changed {
+					let block_state: &T::Domain = &in_states[&i];
+
+					let mut block_state = block_state.clone();
+
+					for (j, stmt) in block.items.iter().enumerate() {
+						self.analysis
+							.apply_before_effect(stmt, (i, j), &mut block_state);
+						self.analysis.apply_effect(stmt, (i, j), &mut block_state);
+					}
+
+					if let Some(out_state) = out_states.get(&i) {
+						if out_state.clone().join(&block_state) {
+							out_states.insert(i, block_state.clone());
+							work_list.extend(block.succs.clone().into_iter());
+						}
+					} else {
 						out_states.insert(i, block_state.clone());
 						work_list.extend(block.succs.clone().into_iter());
 					}
-				} else {
-					out_states.insert(i, block_state.clone());
-					work_list.extend(block.succs.clone().into_iter());
 				}
 			}
-		}
 
-		// Fill unreachable blocks with bottom value
-		for i in 0..func.blocks.len() {
-			if !in_states.contains_key(&i) {
-				in_states.insert(i, self.analysis.bottom_value(func));
+			// Fill unreachable blocks with bottom value
+			for i in 0..func.blocks.len() {
+				if !in_states.contains_key(&i) {
+					in_states.insert(i, self.analysis.bottom_value(func));
+				}
+			}
+
+			let in_states = in_states.into_iter().map(|(_, state)| state).collect();
+			
+			let visitor = ResultVisitor::new(func, &self.analysis, in_states);
+
+			match T::process_result(visitor, func, &module.impl_solver) {
+				Ok(None) => {},
+
+				Ok(Some(transformed)) => {
+					*func = transformed;
+				},
+				
+				Err(mut func_errors) => errors.append(&mut func_errors),
 			}
 		}
 
-		let in_states = in_states.into_iter().map(|(_, state)| state).collect();
-
-		match T::process_result(ResultVisitor::new(func, &self.analysis, in_states), func) {
-			Ok(None) => vec![],
-
-			Ok(Some(transformed)) => {
-				*func = transformed;
-				
-				vec![]
-			},
-			
-			Err(errors) => errors,
-		}
+		errors
 	}
 }
 

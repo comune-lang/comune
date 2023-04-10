@@ -267,7 +267,7 @@ pub fn resolve_method_call(
 	let mut candidates = vec![];
 
 	// Go through all the impls in scope and find method candidates
-	for (ty, im) in &scope.context.trait_solver.local_impls {
+	for (ty, im) in &scope.context.impl_solver.local_impls {
 		let name = name.expect_scopeless().unwrap();
 
 		let im = &*im.read().unwrap();

@@ -409,7 +409,7 @@ impl<'ctx> Parser {
 					}
 
 					// Register impl to solver
-					self.interface.trait_solver.register_impl(
+					self.interface.impl_solver.register_impl(
 						impl_ty.clone(),
 						ImplBlockInterface {
 							implements: trait_name.clone(),

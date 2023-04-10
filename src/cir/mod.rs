@@ -12,7 +12,7 @@ use crate::{
 		expression::Operator,
 		module::{Identifier, Name},
 		types::{Basic, BindingProps, Type, TypeDef, GenericParam},
-		Attribute,
+		Attribute, traits::ImplSolver,
 	},
 	lexer::SrcSpan,
 };
@@ -207,6 +207,7 @@ pub struct CIRModule {
 	pub types: HashMap<String, Arc<RwLock<TypeDef>>>,
 	pub globals: HashMap<Identifier, (Type, RValue)>,
 	pub functions: CIRFnMap,
+	pub impl_solver: ImplSolver,
 }
 
 impl RValue {

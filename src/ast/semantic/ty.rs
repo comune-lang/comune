@@ -84,7 +84,7 @@ pub fn resolve_interface_types(interface: &ModuleInterface) -> ComuneResult<()> 
 		};
 	}
 
-	for (ty, im) in &interface.trait_solver.local_impls {
+	for (ty, im) in &interface.impl_solver.local_impls {
 		// Create type parameter list with empty Self param
 		let mut generics = vec![("Self".to_string(), vec![], None)];
 		generics.append(&mut im.read().unwrap().params.clone());

@@ -36,6 +36,7 @@ impl CIRModuleBuilder {
 				types: HashMap::new(),
 				globals: HashMap::new(),
 				functions: HashMap::new(),
+				impl_solver: ast.interface.impl_solver.clone(),
 			},
 
 			current_fn: None,
@@ -54,7 +55,7 @@ impl CIRModuleBuilder {
 	fn register_module(&mut self, module: &ModuleInterface) {
 		assert!(module.is_typed);
 
-		for (_, im) in &module.trait_solver.local_impls {
+		for (_, im) in &module.impl_solver.local_impls {
 			let im = &*im.read().unwrap();
 
 			for (_, fns) in &im.functions {

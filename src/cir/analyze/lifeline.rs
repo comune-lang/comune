@@ -7,8 +7,8 @@ use super::{
 	ResultVisitor,
 };
 use crate::{
-	cir::{CIRCallId, CIRFunction, CIRStmt, LValue, Operand, PlaceElem, RValue, Type},
-	errors::{ComuneErrCode, ComuneError},
+	cir::{CIRCallId, CIRFunction, CIRStmt, LValue, Operand, PlaceElem, RValue, Type, CIRBlock, CIRModule},
+	errors::{ComuneErrCode, ComuneError}, ast::{types::{BindingProps, Basic}, traits::ImplSolver},
 };
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -255,10 +255,10 @@ impl Analysis for VarInitCheck {
 }
 
 impl AnalysisResultHandler for VarInitCheck {
-	fn process_result(result: ResultVisitor<Self>, func: &CIRFunction) -> Result<Option<CIRFunction>, Vec<ComuneError>> {
+	fn process_result(result: ResultVisitor<Self>, func: &CIRFunction, impl_solver: &ImplSolver) -> Result<Option<CIRFunction>, Vec<ComuneError>> {
 		let mut errors = vec![];
 
-		errors.append(&mut validate_mutations(result, func));
+		errors.append(&mut validate_mutations(result, func, impl_solver));
 		
 		if !errors.is_empty() {
 			Err(errors)
@@ -269,7 +269,7 @@ impl AnalysisResultHandler for VarInitCheck {
 }
 
 
-fn validate_mutations(result: ResultVisitor<VarInitCheck>, func: &CIRFunction) -> Vec<ComuneError> {
+fn validate_mutations(result: ResultVisitor<VarInitCheck>, func: &CIRFunction, impl_solver: &ImplSolver) -> Vec<ComuneError> {
 	let mut errors = vec![];
 
 	for (i, block) in func.blocks.iter().enumerate() {
@@ -348,7 +348,7 @@ enum DropStyle {
 	Dead,
 }
 
-fn elaborate_drops(result: ResultVisitor<VarInitCheck>, func: &CIRFunction) -> Result<CIRFunction, Vec<ComuneError>> {
+fn elaborate_drops(result: ResultVisitor<VarInitCheck>, func: &CIRFunction, module: &CIRModule) -> Result<CIRFunction, Vec<ComuneError>> {
 	let errors = vec![];
 	let mut func_out = func.clone();
 
@@ -357,7 +357,7 @@ fn elaborate_drops(result: ResultVisitor<VarInitCheck>, func: &CIRFunction) -> R
 	for (i, block) in func.blocks.iter().enumerate() {
 		let mut obligations = vec![];
 
-		if let CIRStmt::StorageDead { var, next } = block.items.last().unwrap() {
+		if let CIRStmt::StorageDead { var, .. } = block.items.last().unwrap() {
 			let lvalue = LValue { local: *var, projection: vec![] };
 			let state = result.get_state_before(i, block.items.len() - 1);
 
@@ -365,6 +365,44 @@ fn elaborate_drops(result: ResultVisitor<VarInitCheck>, func: &CIRFunction) -> R
 		}
 
 		block_obligations.push(obligations);
+	}
+
+	let mut drop_flags = HashMap::new();
+
+	for (i, obligations) in block_obligations.into_iter().enumerate() {
+		if obligations.is_empty() {
+			continue
+		}
+		
+		for (lvalue, style) in obligations {
+			match style {
+				DropStyle::Live => {
+
+				}
+
+				DropStyle::Conditional => {
+					let flag = if let Some(flag) = drop_flags.get(&lvalue) {
+						*flag
+					} else {
+						func_out.variables.push((
+							Type::Basic(Basic::Bool), 
+							BindingProps::default(),
+							None
+						));
+
+						drop_flags.insert(lvalue, func_out.variables.len() - 1);
+
+						func_out.variables.len() - 1
+					};
+					
+					//func_out.blocks.push(value)
+				}
+
+				DropStyle::Dead | DropStyle::Open => {
+					todo!()
+				}
+			}
+		}
 	}
 
 	if !errors.is_empty() {

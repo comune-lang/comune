@@ -1,3 +1,6 @@
+// Just to shut up rust-analyzer for the time being
+#![allow(dead_code, unused_variables)]
+
 use std::hash::{Hash, Hasher};
 use std::{
 	collections::HashMap,
@@ -83,8 +86,8 @@ pub enum TraitDeduction {
 pub struct ImplSolver {
 	lang_traits: HashMap<LangTrait, TraitRef>,
 	impls: Vec<(Type, Arc<RwLock<ImplBlockInterface>>)>,
-	pub local_impls: Vec<(Arc<RwLock<Type>>, Arc<RwLock<ImplBlockInterface>>)>,
 	answer_cache: HashMap<Type, HashMap<TraitRef, TraitDeduction>>,
+	pub local_impls: Vec<(Arc<RwLock<Type>>, Arc<RwLock<ImplBlockInterface>>)>,
 }
 
 impl ImplSolver {

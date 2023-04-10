@@ -55,7 +55,7 @@ pub struct ModuleInterface {
 	pub children: HashMap<Identifier, ModuleItemInterface>,
 	pub import_names: HashSet<ModuleImportKind>,
 	pub imported: HashMap<Name, ModuleImport>,
-	pub trait_solver: ImplSolver,
+	pub impl_solver: ImplSolver,
 	pub is_typed: bool,
 }
 
@@ -98,7 +98,7 @@ impl ModuleInterface {
 			children: HashMap::new(),
 			import_names: HashSet::from([ModuleImportKind::Language("core".into())]),
 			imported: HashMap::new(),
-			trait_solver: ImplSolver::new(),
+			impl_solver: ImplSolver::new(),
 			is_typed: false,
 		}
 	}
@@ -116,7 +116,7 @@ impl ModuleInterface {
 				.map(|(k, v)| (k.clone(), v.clone()))
 				.collect(),
 
-			trait_solver: self.trait_solver.clone(),
+			impl_solver: self.impl_solver.clone(),
 			is_typed: self.is_typed,
 		};
 

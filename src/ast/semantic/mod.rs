@@ -70,7 +70,7 @@ fn validate_attributes(interface: &mut ModuleInterface) -> ComuneResult<()> {
 						_ => panic!(),
 					};
 
-					interface.trait_solver.register_lang_trait(
+					interface.impl_solver.register_lang_trait(
 						lang_trait,
 						TraitRef {
 							def: Arc::downgrade(tr),
