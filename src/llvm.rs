@@ -403,7 +403,11 @@ impl<'ctx> LLVMBackend<'ctx> {
 						}
 					}
 
-					CIRStmt::StorageLive(_) | CIRStmt::StorageDead { .. } => {}
+					CIRStmt::StorageLive(_) => {}
+
+					CIRStmt::StorageDead { next, .. } => {
+						self.builder.build_unconditional_branch(self.blocks[*next]);
+					}
 				}
 			}
 		}
