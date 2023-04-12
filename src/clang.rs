@@ -11,7 +11,7 @@ use crate::{
 	ast::{
 		get_attribute,
 		module::{Identifier, ModuleImportKind, ModuleInterface, ModuleItemInterface},
-		types::{Basic, TupleKind, Type, TypeDefKind},
+		types::{Basic, TupleKind, Type, TypeDef},
 	},
 	driver::{await_imports_ready, get_module_out_path, CompilerState, ModuleState},
 	errors::{CMNMessageLog, ComuneError},
@@ -157,7 +157,7 @@ pub fn generate_cpp_header(
 	for (name, item) in &input.children {
 		match item {
 			ModuleItemInterface::Type(def) => {
-				generate_cpp_type(name, &def.read().unwrap().def, &mut result, true)?;
+				generate_cpp_type(name, &def.read().unwrap(), &mut result, true)?;
 			}
 
 			ModuleItemInterface::TypeAlias(aliased) => {
@@ -236,47 +236,41 @@ pub fn generate_cpp_header(
 
 fn generate_cpp_type(
 	name: &Identifier,
-	def: &TypeDefKind,
+	def: &TypeDef,
 	result: &mut impl std::fmt::Write,
 	generate_body: bool,
 ) -> std::fmt::Result {
-	match def {
-		TypeDefKind::Algebraic(alg) => {
-			// check if the typedef has type parameters
+	// check if the typedef has type parameters
 
-			if !alg.params.is_empty() {
-				let mut iter = alg.params.iter();
+	if !def.params.is_empty() {
+		let mut iter = def.params.iter();
 
-				write!(result, "template<typename {}", iter.next().unwrap().0)?;
+		write!(result, "template<typename {}", iter.next().unwrap().0)?;
 
-				for (param, ..) in iter {
-					write!(result, ", typename {param}")?;
-				}
-
-				write!(result, "> ")?;
-			}
-
-			write!(result, "class {name}")?;
-
-			if generate_body {
-				writeln!(result, " {{")?;
-
-				for (name, ty, _) in &alg.members {
-					write!(result, "\t")?;
-
-					ty.cpp_format(result)?;
-
-					writeln!(result, " {name};")?;
-				}
-
-				write!(result, "}}")?;
-			}
-
-			writeln!(result, ";\n")
+		for (param, ..) in iter {
+			write!(result, ", typename {param}")?;
 		}
 
-		_ => todo!(),
+		write!(result, "> ")?;
 	}
+
+	write!(result, "class {name}")?;
+
+	if generate_body {
+		writeln!(result, " {{")?;
+
+		for (name, ty, _) in &def.members {
+			write!(result, "\t")?;
+
+			ty.cpp_format(result)?;
+
+			writeln!(result, " {name};")?;
+		}
+
+		write!(result, "}}")?;
+	}
+
+	writeln!(result, ";\n")
 }
 
 impl Type {

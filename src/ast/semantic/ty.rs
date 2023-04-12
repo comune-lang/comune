@@ -8,9 +8,7 @@ use crate::{
 		get_attribute,
 		module::{ItemRef, ModuleInterface, ModuleItemInterface},
 		traits::{TraitInterface, TraitRef},
-		types::{
-			self, AlgebraicDef, BindingProps, FnPrototype, Generics, Type, TypeDef, TypeDefKind,
-		},
+		types::{self, BindingProps, FnPrototype, Generics, Type, TypeDef},
 		FnScope,
 	},
 	constexpr::{ConstEval, ConstExpr},
@@ -51,7 +49,7 @@ pub fn resolve_interface_types(interface: &ModuleInterface) -> ComuneResult<()> 
 			}
 
 			ModuleItemInterface::Type(t) => {
-				resolve_type_def(&mut t.write().unwrap().def, interface, &vec![])?
+				resolve_type_def(&mut t.write().unwrap(), interface, &vec![])?
 			}
 
 			ModuleItemInterface::TypeAlias(ty) => {
@@ -346,26 +344,25 @@ pub fn resolve_type(
 		}
 	}
 }
-
-pub fn resolve_algebraic_def(
-	agg: &mut AlgebraicDef,
+pub fn resolve_type_def(
+	ty: &mut TypeDef,
 	namespace: &ModuleInterface,
 	base_generics: &Generics,
 ) -> ComuneResult<()> {
 	let mut generics = base_generics.clone();
-	generics.extend(agg.params.clone());
+	generics.extend(ty.params.clone());
 
-	for (_, types) in &mut agg.variants {
+	for (_, types) in &mut ty.variants {
 		for ty in types {
 			resolve_type(ty, namespace, base_generics)?;
 		}
 	}
 
-	for (_, ty, _) in &mut agg.members {
+	for (_, ty, _) in &mut ty.members {
 		resolve_type(ty, namespace, &generics)?;
 	}
 
-	if let Some(layout) = get_attribute(&agg.attributes, "layout") {
+	if let Some(layout) = get_attribute(&ty.attributes, "layout") {
 		if layout.args.len() != 1 {
 			return Err(ComuneError::new(
 				ComuneErrCode::ParamCountMismatch {
@@ -386,7 +383,7 @@ pub fn resolve_algebraic_def(
 		}
 
 		if let Token::Name(layout_name) = &layout.args[0][0] {
-			agg.layout = match &**layout_name {
+			ty.layout = match &**layout_name {
 				"declared" => types::DataLayout::Declared,
 				"optimized" => types::DataLayout::Optimized,
 				"packed" => types::DataLayout::Packed,
@@ -403,43 +400,32 @@ pub fn resolve_algebraic_def(
 	Ok(())
 }
 
-pub fn resolve_type_def(
-	ty: &mut TypeDefKind,
-	namespace: &ModuleInterface,
-	base_generics: &Generics,
-) -> ComuneResult<()> {
-	match ty {
-		TypeDefKind::Algebraic(agg) => resolve_algebraic_def(agg, namespace, base_generics),
-
-		_ => todo!(),
-	}
-}
-
 pub fn check_cyclical_deps(
 	ty: &Arc<RwLock<TypeDef>>,
 	parent_types: &mut Vec<Arc<RwLock<TypeDef>>>,
 ) -> ComuneResult<()> {
-	if let TypeDefKind::Algebraic(agg) = &ty.read().unwrap().def {
-		for member in agg.members.iter() {
-			if let Type::TypeRef { def: ref_t, .. } = &member.1 {
-				// Member is of a user-defined type
+	let def = ty.read().unwrap();
 
-				if parent_types
-					.iter()
-					.any(|elem| Arc::ptr_eq(elem, &ref_t.upgrade().unwrap()))
-				{
-					return Err(ComuneError::new(
-						ComuneErrCode::InfiniteSizeType,
-						SrcSpan::new(),
-					));
-				}
+	for member in def.members.iter() {
+		if let Type::TypeRef { def: ref_t, .. } = &member.1 {
+			// Member is of a user-defined type
 
-				parent_types.push(ty.clone());
-				check_cyclical_deps(&ref_t.upgrade().unwrap(), parent_types)?;
-				parent_types.pop();
+			if parent_types
+				.iter()
+				.any(|elem| Arc::ptr_eq(elem, &ref_t.upgrade().unwrap()))
+			{
+				return Err(ComuneError::new(
+					ComuneErrCode::InfiniteSizeType,
+					SrcSpan::new(),
+				));
 			}
+
+			parent_types.push(ty.clone());
+			check_cyclical_deps(&ref_t.upgrade().unwrap(), parent_types)?;
+			parent_types.pop();
 		}
 	}
+
 	Ok(())
 }
 

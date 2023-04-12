@@ -16,8 +16,7 @@ use crate::ast::module::{
 use crate::ast::statement::Stmt;
 use crate::ast::traits::{ImplBlockInterface, TraitInterface, TraitRef};
 use crate::ast::types::{
-	AlgebraicDef, Basic, BindingProps, FnParamList, FnPrototype, Generics, TupleKind, Type,
-	TypeDef, TypeDefKind, Visibility,
+	Basic, BindingProps, FnParamList, FnPrototype, Generics, TupleKind, Type, TypeDef, Visibility,
 };
 use crate::ast::{Attribute, FnScope};
 
@@ -141,12 +140,12 @@ impl<'ctx> Parser {
 				}
 
 				Token::Keyword("enum") => {
-					let mut aggregate = AlgebraicDef::new();
+					let mut def = TypeDef::new();
 					let Token::Name(name) = self.get_next()? else { return self.err(ComuneErrCode::ExpectedIdentifier) };
 
 					self.get_next()?;
 
-					aggregate.params = self.parse_generic_param_list(None)?;
+					def.params = self.parse_generic_param_list(None)?;
 
 					let mut next = self.get_current()?;
 
@@ -172,7 +171,7 @@ impl<'ctx> Parser {
 							todo!("enum variants with data of sum type are not supported!")
 						}
 
-						aggregate.variants.push((variant_name, tuple_types));
+						def.variants.push((variant_name, tuple_types));
 
 						next = self.get_current()?;
 
@@ -187,28 +186,25 @@ impl<'ctx> Parser {
 
 					self.get_next()?; // Consume closing brace
 
-					aggregate.attributes = current_attributes;
+					def.attributes = current_attributes;
 
 					let full_name = Identifier::from_parent(scope, name);
 
 					self.interface.children.insert(
 						full_name.clone(),
-						ModuleItemInterface::Type(Arc::new(RwLock::new(TypeDef {
-							def: TypeDefKind::Algebraic(aggregate),
-							name: full_name,
-						}))),
+						ModuleItemInterface::Type(Arc::new(RwLock::new(def))),
 					);
 				}
 
 				Token::Keyword("struct") => {
 					// Register algebraic type
 					let mut current_visibility = Visibility::Public;
-					let mut aggregate = AlgebraicDef::new();
+					let mut def = TypeDef::new();
 					let Token::Name(name) = self.get_next()? else { return self.err(ComuneErrCode::ExpectedIdentifier) };
 
 					self.get_next()?;
 
-					aggregate.params = self.parse_generic_param_list(None)?;
+					def.params = self.parse_generic_param_list(None)?;
 
 					let mut next = self.get_current()?;
 
@@ -226,11 +222,9 @@ impl<'ctx> Parser {
 								current_attributes = vec![];
 
 								match result.1 {
-									ModuleItemInterface::Variable(t) => aggregate.members.push((
-										result.0,
-										t,
-										current_visibility.clone(),
-									)),
+									ModuleItemInterface::Variable(t) => {
+										def.members.push((result.0, t, current_visibility.clone()))
+									}
 
 									_ => todo!(),
 								}
@@ -261,16 +255,13 @@ impl<'ctx> Parser {
 
 					self.get_next()?; // Consume closing brace
 
-					aggregate.attributes = current_attributes;
+					def.attributes = current_attributes;
 
 					let full_name = Identifier::from_parent(scope, name);
 
 					self.interface.children.insert(
 						full_name.clone(),
-						ModuleItemInterface::Type(Arc::new(RwLock::new(TypeDef {
-							def: TypeDefKind::Algebraic(aggregate),
-							name: full_name,
-						}))),
+						ModuleItemInterface::Type(Arc::new(RwLock::new(def))),
 					);
 				}
 
@@ -1083,43 +1074,36 @@ impl<'ctx> Parser {
 			let id = self.parse_identifier(Some(scope))?;
 
 			if let Some(Type::TypeRef { def, mut args }) = scope.find_type(&id) {
-				match &def.upgrade().unwrap().read().unwrap().def {
-					// Parse with algebraic typename
-					TypeDefKind::Algebraic(_) => {
-						if let Token::Operator("<") = self.get_current()? {
-							args = self.parse_type_argument_list(Some(scope))?;
-						}
+				if let Token::Operator("<") = self.get_current()? {
+					args = self.parse_type_argument_list(Some(scope))?;
+				}
 
-						if let Token::Other('{') = self.get_current()? {
-							// Parse struct literal
+				if let Token::Other('{') = self.get_current()? {
+					// Parse struct literal
 
-							let mut inits = vec![];
+					let mut inits = vec![];
 
-							while self.get_current()? != Token::Other('}') {
-								self.get_next()?;
+					while self.get_current()? != Token::Other('}') {
+						self.get_next()?;
 
-								if let Token::Name(member_name) = self.get_current()? {
-									self.get_next()?;
+						if let Token::Name(member_name) = self.get_current()? {
+							self.get_next()?;
 
-									self.consume(&Token::Other(':'))?;
+							self.consume(&Token::Other(':'))?;
 
-									let expr = self.parse_expression(scope)?;
+							let expr = self.parse_expression(scope)?;
 
-									inits.push((member_name, expr));
-								} else if self.get_current()? != Token::Other('}') {
-									return self.err(ComuneErrCode::UnexpectedToken);
-								}
-							}
-
-							self.consume(&Token::Other('}'))?;
-
-							result = Some(Atom::AlgebraicLit(Type::TypeRef { def, args }, inits));
-						} else {
+							inits.push((member_name, expr));
+						} else if self.get_current()? != Token::Other('}') {
 							return self.err(ComuneErrCode::UnexpectedToken);
 						}
 					}
 
-					TypeDefKind::Class => todo!(),
+					self.consume(&Token::Other('}'))?;
+
+					result = Some(Atom::AlgebraicLit(Type::TypeRef { def, args }, inits));
+				} else {
+					return self.err(ComuneErrCode::UnexpectedToken);
 				}
 			}
 

@@ -7,7 +7,7 @@ use crate::{
 		module::{ModuleASTElem, ModuleImpl, ModuleInterface, ModuleItemInterface, Name},
 		pattern::{Binding, Pattern},
 		statement::Stmt,
-		types::{AlgebraicDef, Basic, BindingProps, FnPrototype, TupleKind, Type, TypeDefKind},
+		types::{Basic, BindingProps, FnPrototype, TupleKind, Type},
 	},
 	lexer::SrcSpan,
 	parser::Parser,
@@ -507,16 +507,18 @@ impl CIRModuleBuilder {
 						panic!()
 					};
 
-					let def_up = def.upgrade().unwrap();
-
-					let TypeDefKind::Algebraic(AlgebraicDef { members, .. }) = &def_up.read().unwrap().def else {
-						panic!()
-					};
+					let def = def.upgrade().unwrap();
+					let def = def.read().unwrap();
 
 					let mut indices = vec![];
 
 					for (elem, _) in elems {
-						indices.push(members.iter().position(|(name, ..)| name == elem).unwrap());
+						indices.push(
+							def.members
+								.iter()
+								.position(|(name, ..)| name == elem)
+								.unwrap(),
+						);
 					}
 
 					let tmp = self.insert_temporary(
@@ -1276,13 +1278,14 @@ impl CIRModuleBuilder {
 					let lhs_ty = lhs.get_type();
 
 					let Type::TypeRef { def, .. } = lhs_ty else { panic!() };
-					let def_up = def.upgrade().unwrap();
 
-					let TypeDefKind::Algebraic(AlgebraicDef { members, .. }) = &def_up.read().unwrap().def else { panic!() };
+					let def = def.upgrade().unwrap();
+					let def = def.read().unwrap();
 
 					let Expr::Atom(Atom::Identifier(id), _) = &**rhs else { panic!() };
 
-					let idx = members
+					let idx = def
+						.members
 						.iter()
 						.position(|(name, ..)| name == id.expect_scopeless().unwrap())
 						.unwrap();

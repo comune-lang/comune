@@ -60,14 +60,20 @@ pub enum Basic {
 
 #[derive(Debug, Clone)]
 pub struct TypeDef {
-	pub def: TypeDefKind,
+	pub kind: TypeDefKind,
 	pub name: Identifier,
+
+	pub members: Vec<(Name, Type, Visibility)>,
+	pub variants: Vec<(Name, Vec<Type>)>,
+	pub layout: DataLayout,
+	pub params: Generics,
+	pub attributes: Vec<Attribute>,
 }
 
 #[derive(Debug, Clone)]
 pub enum TypeDefKind {
-	Algebraic(AlgebraicDef),
-	Class, // TODO: Implement classes
+	Algebraic,
+	Objective, // TODO: Implement classes
 }
 
 #[derive(Default, Debug, Clone, Copy)]
@@ -101,20 +107,6 @@ pub enum TupleKind {
 	Empty,
 }
 
-// The internal representation of algebraic types, like structs, enums, and (shocker) struct enums
-//
-// Algebraics (strums?) can contain member variables, inner type aliases, variants (aka subtype definitions), etc...
-// Hence we give them the same data structure as Namespaces, a list of `String`s and `NamespaceEntry`s
-// However, since declaration order *is* meaningful in strums, we store them as a Vec, rather than a HashMap
-#[derive(Debug, Clone)]
-pub struct AlgebraicDef {
-	pub members: Vec<(Name, Type, Visibility)>,
-	pub variants: Vec<(Name, Vec<Type>)>,
-	pub layout: DataLayout,
-	pub params: Generics,
-	pub attributes: Vec<Attribute>,
-}
-
 #[derive(Clone, Debug)]
 pub enum Visibility {
 	Public,
@@ -129,9 +121,11 @@ pub enum DataLayout {
 	Packed,    // Layout is packed in declaration order with no padding (inner alignment is 1 byte)
 }
 
-impl AlgebraicDef {
+impl TypeDef {
 	pub fn new() -> Self {
-		AlgebraicDef {
+		TypeDef {
+			kind: TypeDefKind::Algebraic,
+			name: Identifier::new(true),
 			layout: DataLayout::Declared,
 			members: vec![],
 			variants: vec![],
@@ -424,11 +418,7 @@ impl Type {
 		let def = def.upgrade().unwrap();
 		let def = def.read().unwrap();
 
-		match &def.def {
-			TypeDefKind::Algebraic(alg) => alg.members[field].1.get_concrete_type(args),
-
-			TypeDefKind::Class => todo!(),
-		}
+		def.members[field].1.get_concrete_type(args)
 	}
 
 	pub fn ptr_type(&self, mutable: bool) -> Self {
@@ -643,16 +633,6 @@ impl PartialEq for Type {
 
 impl Eq for Type {}
 
-impl Hash for AlgebraicDef {
-	fn hash<H: Hasher>(&self, state: &mut H) {
-		// We hash based on Type only, so two aggregates with the same layout have the same Hash
-		// Hashing is only relevant for LLVM codegen, so semantic analysis will already have happened
-		for (_, ty, _) in &self.members {
-			ty.hash(state)
-		}
-	}
-}
-
 impl Hash for Type {
 	fn hash<H: Hasher>(&self, state: &mut H) {
 		match self {
@@ -809,18 +789,6 @@ impl Display for Type {
 	}
 }
 
-impl Display for TypeDef {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		match &self.def {
-			TypeDefKind::Algebraic(agg) => {
-				write!(f, "{}", agg)?;
-			}
-			TypeDefKind::Class => todo!(),
-		}
-		Ok(())
-	}
-}
-
 impl Display for FnPrototype {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		write!(f, "{}(", self.ret.1)?;
@@ -884,7 +852,7 @@ impl FnPrototype {
 	}
 }
 
-impl Display for AlgebraicDef {
+impl Display for TypeDef {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		if self.members.is_empty() {
 			write!(f, "{{ }};\n\n")

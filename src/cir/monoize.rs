@@ -10,7 +10,7 @@ use crate::{
 	ast::{
 		get_attribute,
 		module::Identifier,
-		types::{AlgebraicDef, Basic, TypeDef, TypeDefKind},
+		types::{Basic, TypeDef},
 	},
 	lexer::Token,
 };
@@ -104,10 +104,7 @@ impl MonomorphServer {
 			.types
 			.iter()
 			.filter_map(|(k, v)| {
-				let is_generic = match &v.read().unwrap().def {
-					TypeDefKind::Algebraic(alg) => !alg.params.is_empty(),
-					TypeDefKind::Class => todo!(),
-				};
+				let is_generic = v.read().unwrap().params.is_empty();
 
 				if is_generic {
 					Some(k.clone())
@@ -181,7 +178,7 @@ impl MonomorphServer {
 		) = func else { panic!() };
 
 		if generic_args.is_empty() {
-			return
+			return;
 		}
 
 		if let CIRCallId::Direct(id, _) = id {
@@ -323,18 +320,8 @@ impl MonomorphServer {
 	) -> Weak<RwLock<TypeDef>> {
 		let mut instance = def.read().unwrap().clone();
 
-		match &mut instance.def {
-			TypeDefKind::Algebraic(AlgebraicDef {
-				members, params, ..
-			}) => {
-				for (_, member, _) in members {
-					self.monoize_type(types, member, param_map);
-				}
-
-				params.clear();
-			}
-
-			TypeDefKind::Class {} => todo!(),
+		for (_, member, _) in &mut instance.members {
+			self.monoize_type(types, member, param_map);
 		}
 
 		let mut iter = param_map.iter();

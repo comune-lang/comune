@@ -7,13 +7,10 @@ use super::{
 };
 use crate::{
 	ast::{
-		traits::{ImplSolver, LangTrait, TraitRef},
+		traits::{ImplSolver, LangTrait},
 		types::{Basic, BindingProps},
 	},
-	cir::{
-		CIRBlock, CIRCallId, CIRFunction, CIRModule, CIRStmt, LValue, Operand, PlaceElem, RValue,
-		Type,
-	},
+	cir::{CIRBlock, CIRCallId, CIRFunction, CIRStmt, LValue, Operand, PlaceElem, RValue, Type},
 	errors::{ComuneErrCode, ComuneError},
 	lexer::SrcSpan,
 };

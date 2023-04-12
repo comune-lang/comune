@@ -157,7 +157,7 @@ impl ImplSolver {
 				param.iter().any(|param_trait| {
 					if let ItemRef::Resolved(param_trait) = param_trait {
 						if param_trait == tr {
-							return true;	
+							return true;
 						}
 					}
 					false
@@ -165,9 +165,7 @@ impl ImplSolver {
 			}
 
 			_ => {
-				for (im_ty, im) in self.impls.iter() {
-
-				}
+				for (im_ty, im) in self.impls.iter() {}
 
 				false
 			}

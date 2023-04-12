@@ -22,7 +22,7 @@ use inkwell::{
 use crate::{
 	ast::{
 		expression::Operator,
-		types::{AlgebraicDef, Basic, BindingProps, DataLayout, TupleKind, Type, TypeDefKind},
+		types::{Basic, BindingProps, DataLayout, TupleKind, Type},
 	},
 	cir::{
 		CIRCallId, CIRFnPrototype, CIRFunction, CIRModule, CIRStmt, LValue, Operand, PlaceElem,
@@ -126,23 +126,16 @@ impl<'ctx> LLVMBackend<'ctx> {
 		// Define type bodies
 
 		for (i, ty) in &module.types {
-			match &ty.read().unwrap().def {
-				TypeDefKind::Algebraic(AlgebraicDef {
-					members, layout, ..
-				}) => {
-					let mut members_ir = vec![];
+			let ty = ty.read().unwrap();
+			let mut members_ir = vec![];
 
-					for (_, mem, _) in members {
-						members_ir.push(Self::to_basic_type(self.get_llvm_type(mem)));
-					}
-
-					let type_ir = self.type_map[i].into_struct_type();
-
-					type_ir.set_body(&members_ir, *layout == DataLayout::Packed);
-				}
-
-				TypeDefKind::Class {} => todo!(),
+			for (_, mem, _) in &ty.members {
+				members_ir.push(Self::to_basic_type(self.get_llvm_type(mem)));
 			}
+
+			let type_ir = self.type_map[i].into_struct_type();
+
+			type_ir.set_body(&members_ir, ty.layout == DataLayout::Packed);
 		}
 
 		for (proto, func) in &module.functions {

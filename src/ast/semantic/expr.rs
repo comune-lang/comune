@@ -6,7 +6,7 @@ use crate::{
 		controlflow::ControlFlow,
 		expression::{Atom, Expr, FnRef, NodeData, OnceAtom, Operator},
 		pattern::Binding,
-		types::{Basic, TupleKind, TypeDefKind},
+		types::{Basic, TupleKind},
 		FnScope,
 	},
 	constexpr::{ConstExpr, ConstValue},
@@ -262,40 +262,38 @@ impl Expr {
 		let Type::TypeRef { def: lhs_def, args: lhs_args } = lhs_ty else {
 			return Err(ComuneError::new(ComuneErrCode::InvalidSubscriptLHS { t: lhs_ty.clone() }, meta.tk));
 		};
+		let lhs_def = lhs_def.upgrade().unwrap();
+		let lhs_def = lhs_def.read().unwrap();
 
-		match &lhs_def.upgrade().unwrap().read().unwrap().def {
-			// Dot operator is on an algebraic type, so check if it's a member access or method call
-			TypeDefKind::Algebraic(t) => match rhs {
-				// Member access on algebraic type
-				Expr::Atom(Atom::Identifier(id), _) => {
-					if let Some((_, m)) = t.get_member(id.name(), Some(lhs_args)) {
-						rhs.get_node_data_mut().ty = Some(m.clone());
+		match rhs {
+			// Member access
+			Expr::Atom(Atom::Identifier(id), _) => {
+				if let Some((_, m)) = lhs_def.get_member(id.name(), Some(lhs_args)) {
+					rhs.get_node_data_mut().ty = Some(m.clone());
 
-						Ok(m)
-					} else {
-						Err(ComuneError::new(
-							ComuneErrCode::InvalidMemberAccess {
-								t: lhs_ty.clone(),
-								idx: id.name().to_string(),
-							},
-							rhs.get_node_data().tk,
-						))
-					}
+					Ok(m)
+				} else {
+					Err(ComuneError::new(
+						ComuneErrCode::InvalidMemberAccess {
+							t: lhs_ty.clone(),
+							idx: id.name().to_string(),
+						},
+						rhs.get_node_data().tk,
+					))
 				}
+			}
 
-				// Method call on algebraic type
-				// jesse. we have to call METHods
-				Expr::Atom(Atom::FnCall { .. }, _) => {
-					let Expr::Atom(rhs_atom, ..) = rhs else { panic!() };
-					let ret = resolve_method_call(lhs_ty, lhs, rhs_atom, scope)?;
+			// Method call
+			// jesse. we have to call METHods
+			Expr::Atom(Atom::FnCall { .. }, _) => {
+				let Expr::Atom(rhs_atom, ..) = rhs else { panic!() };
+				let ret = resolve_method_call(lhs_ty, lhs, rhs_atom, scope)?;
 
-					rhs.get_node_data_mut().ty = Some(ret.clone());
+				rhs.get_node_data_mut().ty = Some(ret.clone());
 
-					Ok(ret)
-				}
+				Ok(ret)
+			}
 
-				_ => panic!(),
-			},
 			_ => panic!(),
 		}
 	}
@@ -418,54 +416,53 @@ impl Atom {
 			}
 
 			Atom::AlgebraicLit(ty, elems) => {
-				if let Type::TypeRef { def, args } = ty {
-					if let TypeDefKind::Algebraic(alg) = &def.upgrade().unwrap().read().unwrap().def
-					{
-						for (name, expr) in elems.iter_mut() {
-							let member_ty = if let Some((_, ty)) = alg.get_member(name, Some(args))
-							{
-								ty
-							} else {
-								// Invalid member in strenum literal
-								todo!()
-							};
+				let Type::TypeRef { def, args } = ty else {
+					panic!()
+				};
 
-							expr.get_node_data_mut().ty.replace(member_ty.clone());
-							let expr_ty = expr.validate(scope)?;
+				let def = def.upgrade().unwrap();
+				let def = def.read().unwrap();
 
-							if !expr.coercable_to(&expr_ty, &member_ty, scope) {
-								return Err(ComuneError::new(
-									ComuneErrCode::AssignTypeMismatch {
-										expr: expr_ty,
-										to: member_ty,
-									},
-									expr.get_node_data().tk,
-								));
-							}
-						}
-						let mut missing_members = vec![];
+				for (name, expr) in elems.iter_mut() {
+					let member_ty = if let Some((_, ty)) = def.get_member(name, Some(args)) {
+						ty
+					} else {
+						// Invalid member in strenum literal
+						todo!()
+					};
 
-						for (member, ..) in &alg.members {
-							if !elems.iter().any(|(m, _)| member == m) {
-								missing_members.push(member.clone());
-							}
-						}
+					expr.get_node_data_mut().ty.replace(member_ty.clone());
+					let expr_ty = expr.validate(scope)?;
 
-						if !missing_members.is_empty() {
-							return Err(ComuneError::new(
-								ComuneErrCode::MissingInitializers {
-									ty: ty.clone(),
-									members: missing_members,
-								},
-								meta.tk,
-							));
-						}
+					if !expr.coercable_to(&expr_ty, &member_ty, scope) {
+						return Err(ComuneError::new(
+							ComuneErrCode::AssignTypeMismatch {
+								expr: expr_ty,
+								to: member_ty,
+							},
+							expr.get_node_data().tk,
+						));
+					}
+				}
+				let mut missing_members = vec![];
 
-						return Ok(ty.clone());
+				for (member, ..) in &def.members {
+					if !elems.iter().any(|(m, _)| member == m) {
+						missing_members.push(member.clone());
 					}
 				}
 
-				todo!()
+				if !missing_members.is_empty() {
+					return Err(ComuneError::new(
+						ComuneErrCode::MissingInitializers {
+							ty: ty.clone(),
+							members: missing_members,
+						},
+						meta.tk,
+					));
+				}
+
+				return Ok(ty.clone());
 			}
 
 			Atom::Block {
