@@ -843,11 +843,7 @@ impl<'ctx> Parser {
 
 			props.span = span;
 
-			let stmt_result = Stmt::Decl(
-				vec![(ty, name, props)],
-				expr,
-				span,
-			);
+			let stmt_result = Stmt::Decl(vec![(ty, name, props)], expr, span);
 
 			Ok(stmt_result)
 		} else {
@@ -1689,7 +1685,7 @@ impl<'ctx> Parser {
 			}
 
 			let end = self.get_prev_end_index();
-			
+
 			param.2.span = SrcSpan {
 				start,
 				len: end - start,
@@ -1804,7 +1800,7 @@ impl<'ctx> Parser {
 					} else {
 						let Some(scope) = scope else { panic!() };
 						let const_expr = self.parse_expression(scope)?;
-						
+
 						result = Type::Array(
 							Box::new(result),
 							Arc::new(RwLock::new(ConstExpr::Expr(const_expr))),
@@ -1827,7 +1823,7 @@ impl<'ctx> Parser {
 						let ty = self.parse_type(scope)?;
 						let mut props = self.parse_binding_props()?.unwrap_or_default();
 						let end = self.get_prev_end_index();
-						
+
 						props.span = SrcSpan {
 							start,
 							len: end - start,
@@ -1936,10 +1932,7 @@ impl<'ctx> Parser {
 		Ok(result)
 	}
 
-	fn parse_generic_param_list(
-		&self,
-		scope: Option<&FnScope<'ctx>>,
-	) -> ComuneResult<Generics> {
+	fn parse_generic_param_list(&self, scope: Option<&FnScope<'ctx>>) -> ComuneResult<Generics> {
 		if self.get_current()? != Token::Operator("<") {
 			return Ok(vec![]);
 		}

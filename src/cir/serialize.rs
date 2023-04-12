@@ -27,7 +27,6 @@ impl Display for CIRFnPrototype {
 
 		// Print type parameters
 		if !self.type_params.is_empty() {
-
 			for (i, (param, traits, ty)) in self.type_params.iter().enumerate() {
 				if i == 0 {
 					write!(f, "<")?;
@@ -46,7 +45,7 @@ impl Display for CIRFnPrototype {
 						write!(f, " + {tr:?}")?;
 					}
 				}
-				
+
 				if let Some(ty) = ty {
 					write!(f, " = {ty}")?;
 				}
@@ -130,7 +129,7 @@ impl Display for CIRStmt {
 				id,
 				args,
 				generic_args,
-				result
+				result,
 			} => {
 				if let Some(result) = result {
 					write!(f, "{result} = ")?;
@@ -162,7 +161,7 @@ impl Display for CIRStmt {
 				} else {
 					writeln!(f, "();")
 				}
-			},
+			}
 
 			CIRStmt::Invoke {
 				id,

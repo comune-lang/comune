@@ -180,11 +180,7 @@ impl CIRModuleBuilder {
 			let mut props = proto.ret.0;
 			props.is_mut = true;
 
-			self.insert_variable(
-				Some("return".to_string()),
-				props, 
-				proto.ret.1.clone()
-			);
+			self.insert_variable(Some("return".to_string()), props, proto.ret.1.clone());
 		}
 
 		// Generate function body
@@ -198,11 +194,7 @@ impl CIRModuleBuilder {
 
 		for i in 0..func.blocks.len() {
 			let succs = match func.blocks[i].items.last().unwrap() {
-				CIRStmt::Invoke {
-					next,
-					except,
-					..
-				} => vec![*next, *except],
+				CIRStmt::Invoke { next, except, .. } => vec![*next, *except],
 
 				CIRStmt::Jump(jmp) => vec![*jmp],
 
@@ -428,7 +420,7 @@ impl CIRModuleBuilder {
 			self.generate_drop_marker(var);
 		}
 	}
-	
+
 	fn generate_drop_marker(&mut self, var: VarIndex) {
 		let current = self.current_block;
 		let next = self.append_block();
@@ -601,14 +593,16 @@ impl CIRModuleBuilder {
 						if let Some(expr) = expr {
 							let expr_ir = self.generate_expr(expr)?;
 
-							if let Some(lval) = self.current_fn.as_ref().unwrap().get_return_lvalue() {	
+							if let Some(lval) =
+								self.current_fn.as_ref().unwrap().get_return_lvalue()
+							{
 								self.write(CIRStmt::Assignment(
 									(lval.clone(), expr.get_node_data().tk),
-									expr_ir
+									expr_ir,
 								));
 							}
 						}
-						
+
 						self.write(CIRStmt::Return);
 						None
 					}
@@ -1185,7 +1179,7 @@ impl CIRModuleBuilder {
 			FnRef::Direct(resolved) => {
 				let (ret_props, ret) = resolved.read().unwrap().ret.clone();
 				let ret = ret.get_concrete_type(type_args);
-				
+
 				let result = if ret == Type::Basic(Basic::Void) {
 					None
 				} else {
@@ -1339,8 +1333,8 @@ impl CIRModuleBuilder {
 					derefee.projection.push(PlaceElem::Deref);
 					Some((derefee, meta))
 				}
-			}
-			
+			},
+
 			_ => panic!(),
 		}
 	}

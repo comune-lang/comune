@@ -19,10 +19,8 @@ impl CIRPass for Verify {
 				if !matches!(
 					last,
 					CIRStmt::Return
-						| CIRStmt::Switch(..)
-						| CIRStmt::Jump(_)
-						| CIRStmt::Invoke { .. }
-						| CIRStmt::StorageDead { .. }
+						| CIRStmt::Switch(..) | CIRStmt::Jump(_)
+						| CIRStmt::Invoke { .. } | CIRStmt::StorageDead { .. }
 				) {
 					errors.push(ComuneError::new(
 						ComuneErrCode::Custom("cIR block doesn't have a terminator".to_string()),

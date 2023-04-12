@@ -3,12 +3,19 @@
 use std::{collections::HashMap, fmt::Display};
 
 use super::{
-	Analysis, AnalysisDomain, AnalysisResultHandler, Forward, JoinSemiLattice,
-	ResultVisitor,
+	Analysis, AnalysisDomain, AnalysisResultHandler, Forward, JoinSemiLattice, ResultVisitor,
 };
 use crate::{
-	cir::{CIRCallId, CIRFunction, CIRStmt, LValue, Operand, PlaceElem, RValue, Type, CIRBlock, CIRModule},
-	errors::{ComuneErrCode, ComuneError}, ast::{types::{BindingProps, Basic}, traits::ImplSolver},
+	ast::{
+		traits::{ImplSolver, LangTrait, TraitRef},
+		types::{Basic, BindingProps},
+	},
+	cir::{
+		CIRBlock, CIRCallId, CIRFunction, CIRModule, CIRStmt, LValue, Operand, PlaceElem, RValue,
+		Type,
+	},
+	errors::{ComuneErrCode, ComuneError},
+	lexer::SrcSpan,
 };
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -223,8 +230,12 @@ impl Analysis for VarInitCheck {
 				state.set_liveness(lval, LivenessState::Live);
 			}
 
-			CIRStmt::Invoke { result: Some(lval), .. } |
-			CIRStmt::Call { result: Some(lval), .. } => {
+			CIRStmt::Invoke {
+				result: Some(lval), ..
+			}
+			| CIRStmt::Call {
+				result: Some(lval), ..
+			} => {
 				state.set_liveness(lval, LivenessState::Live);
 			}
 
@@ -238,7 +249,7 @@ impl Analysis for VarInitCheck {
 				);
 			}
 
-			CIRStmt::StorageDead { var, .. }=> {
+			CIRStmt::StorageDead { var, .. } => {
 				let lval = LValue {
 					local: *var,
 					projection: vec![],
@@ -255,21 +266,23 @@ impl Analysis for VarInitCheck {
 }
 
 impl AnalysisResultHandler for VarInitCheck {
-	fn process_result(result: ResultVisitor<Self>, func: &CIRFunction, impl_solver: &ImplSolver) -> Result<Option<CIRFunction>, Vec<ComuneError>> {
-		let mut errors = vec![];
+	fn process_result(
+		mut result: ResultVisitor<Self>,
+		func: &CIRFunction,
+		impl_solver: &ImplSolver,
+	) -> Result<Option<CIRFunction>, Vec<ComuneError>> {
+		validate_uses(&mut result, func, impl_solver)?;
+		let new_func = elaborate_drops(&mut result, func, impl_solver)?;
 
-		errors.append(&mut validate_mutations(result, func, impl_solver));
-		
-		if !errors.is_empty() {
-			Err(errors)
-		} else {
-			Ok(None)
-		}
+		Ok(Some(new_func))
 	}
 }
 
-
-fn validate_mutations(result: ResultVisitor<VarInitCheck>, func: &CIRFunction, impl_solver: &ImplSolver) -> Vec<ComuneError> {
+fn validate_uses(
+	result: &mut ResultVisitor<VarInitCheck>,
+	func: &CIRFunction,
+	_impl_solver: &ImplSolver,
+) -> Result<(), Vec<ComuneError>> {
 	let mut errors = vec![];
 
 	for (i, block) in func.blocks.iter().enumerate() {
@@ -280,10 +293,26 @@ fn validate_mutations(result: ResultVisitor<VarInitCheck>, func: &CIRFunction, i
 			match stmt {
 				CIRStmt::Assignment(_, RValue::Atom(_, _, Operand::LValue(lval, _), span))
 				| CIRStmt::Switch(Operand::LValue(lval, span), ..)
-				| CIRStmt::Assignment(_, RValue::Cons(_, [(_, Operand::LValue(lval, span)), _], ..))
-				| CIRStmt::Assignment(_, RValue::Cons(_, [_, (_, Operand::LValue(lval, span))], ..))
-				| CIRStmt::Invoke { id: CIRCallId::Indirect { local: lval, span, .. }, .. }
-				| CIRStmt::Call { id: CIRCallId::Indirect { local: lval, span, .. }, .. } => {
+				| CIRStmt::Assignment(
+					_,
+					RValue::Cons(_, [(_, Operand::LValue(lval, span)), _], ..),
+				)
+				| CIRStmt::Assignment(
+					_,
+					RValue::Cons(_, [_, (_, Operand::LValue(lval, span))], ..),
+				)
+				| CIRStmt::Invoke {
+					id: CIRCallId::Indirect {
+						local: lval, span, ..
+					},
+					..
+				}
+				| CIRStmt::Call {
+					id: CIRCallId::Indirect {
+						local: lval, span, ..
+					},
+					..
+				} => {
 					let liveness = state.get_liveness(lval);
 
 					match liveness {
@@ -338,7 +367,11 @@ fn validate_mutations(result: ResultVisitor<VarInitCheck>, func: &CIRFunction, i
 		}
 	}
 
-	errors
+	if errors.is_empty() {
+		Ok(())
+	} else {
+		Err(errors)
+	}
 }
 
 enum DropStyle {
@@ -348,17 +381,26 @@ enum DropStyle {
 	Dead,
 }
 
-fn elaborate_drops(result: ResultVisitor<VarInitCheck>, func: &CIRFunction, module: &CIRModule) -> Result<CIRFunction, Vec<ComuneError>> {
+fn elaborate_drops(
+	result: &mut ResultVisitor<VarInitCheck>,
+	func: &CIRFunction,
+	impl_solver: &ImplSolver,
+) -> Result<CIRFunction, Vec<ComuneError>> {
 	let errors = vec![];
-	let mut func_out = func.clone();
+	let drop_trait = impl_solver.get_lang_trait(LangTrait::Drop);
 
+	let mut func_out = func.clone();
 	let mut block_obligations = vec![];
+	let mut drop_flags = HashMap::new();
 
 	for (i, block) in func.blocks.iter().enumerate() {
 		let mut obligations = vec![];
 
 		if let CIRStmt::StorageDead { var, .. } = block.items.last().unwrap() {
-			let lvalue = LValue { local: *var, projection: vec![] };
+			let lvalue = LValue {
+				local: *var,
+				projection: vec![],
+			};
 			let state = result.get_state_before(i, block.items.len() - 1);
 
 			get_drop_obligations(&state, &lvalue, &mut obligations);
@@ -367,17 +409,27 @@ fn elaborate_drops(result: ResultVisitor<VarInitCheck>, func: &CIRFunction, modu
 		block_obligations.push(obligations);
 	}
 
-	let mut drop_flags = HashMap::new();
-
 	for (i, obligations) in block_obligations.into_iter().enumerate() {
 		if obligations.is_empty() {
-			continue
+			continue;
 		}
-		
+
 		for (lvalue, style) in obligations {
+			let var_ty = func.get_lvalue_type(&lvalue);
+			let needs_drop = impl_solver.is_trait_implemented(&var_ty, &drop_trait, &vec![]);
+
+			let CIRStmt::StorageDead { next, .. } = func_out.blocks[i].items.pop().unwrap() else {
+				panic!()
+			};
+
+			if !needs_drop {
+				func_out.blocks[i].items.push(CIRStmt::Jump(next));
+				continue;
+			}
+
 			match style {
 				DropStyle::Live => {
-
+					func_out.blocks[i].items.push(CIRStmt::Jump(next));
 				}
 
 				DropStyle::Conditional => {
@@ -385,21 +437,45 @@ fn elaborate_drops(result: ResultVisitor<VarInitCheck>, func: &CIRFunction, modu
 						*flag
 					} else {
 						func_out.variables.push((
-							Type::Basic(Basic::Bool), 
+							Type::Basic(Basic::Bool),
 							BindingProps::default(),
-							None
+							None,
 						));
 
 						drop_flags.insert(lvalue, func_out.variables.len() - 1);
 
 						func_out.variables.len() - 1
 					};
-					
-					//func_out.blocks.push(value)
+
+					let drop_block = CIRBlock {
+						items: vec![CIRStmt::Jump(next)],
+						preds: vec![i],
+						succs: vec![next],
+					};
+
+					let flag_lval = LValue {
+						local: flag,
+						projection: vec![],
+					};
+					let drop_idx = func_out.blocks.len();
+
+					func_out.blocks.push(drop_block);
+
+					func_out.blocks[i].items.push(CIRStmt::Switch(
+						Operand::LValue(flag_lval, SrcSpan::new()),
+						vec![(
+							Type::bool_type(),
+							Operand::BoolLit(true, SrcSpan::new()),
+							drop_idx,
+						)],
+						next,
+					));
+
+					func_out.blocks[i].succs.push(drop_idx);
 				}
 
 				DropStyle::Dead | DropStyle::Open => {
-					todo!()
+					func_out.blocks[i].items.push(CIRStmt::Jump(next));
 				}
 			}
 		}
@@ -413,15 +489,15 @@ fn elaborate_drops(result: ResultVisitor<VarInitCheck>, func: &CIRFunction, modu
 }
 
 fn get_drop_obligations(
-	state: &LiveVarCheckState, 
-	lvalue: &LValue, 
-	obligations: &mut Vec<(LValue, DropStyle)>
+	state: &LiveVarCheckState,
+	lvalue: &LValue,
+	obligations: &mut Vec<(LValue, DropStyle)>,
 ) {
 	match state.get_liveness(&lvalue) {
 		None | Some(LivenessState::Moved) | Some(LivenessState::Uninit) => {
 			// Don't emit drop
 			obligations.push((lvalue.clone(), DropStyle::Dead));
-			return
+			return;
 		}
 
 		Some(LivenessState::Live) | Some(LivenessState::PartialMoved) => {

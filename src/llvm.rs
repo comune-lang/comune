@@ -200,8 +200,11 @@ impl<'ctx> LLVMBackend<'ctx> {
 				ty_ll = Self::to_basic_type(self.get_llvm_type(&ty.ptr_type(props.is_mut)));
 			}
 
-			self.variables
-				.push((self.create_entry_block_alloca(&format!("_{i}"), ty_ll), *props, ty.clone()));
+			self.variables.push((
+				self.create_entry_block_alloca(&format!("_{i}"), ty_ll),
+				*props,
+				ty.clone(),
+			));
 		}
 
 		// Build parameter stores
@@ -247,10 +250,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 					CIRStmt::Switch(cond, branches, else_block) => {
 						let cond_ir = self
-							.generate_operand(
-								&Type::i32_type(true),
-								cond,
-							)
+							.generate_operand(&Type::i32_type(true), cond)
 							.as_basic_value_enum()
 							.into_int_value();
 
@@ -283,7 +283,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 						id,
 						args,
 						generic_args,
-						result
+						result,
 					} => {
 						assert!(
 							generic_args.is_empty(),
@@ -329,7 +329,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 							.collect();
 
 						let callsite = self.builder.build_call(fn_v, &args_mapped, "");
-						
+
 						if let Some(result) = result {
 							self.builder.build_store(
 								self.generate_lvalue(result),
@@ -392,7 +392,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 							self.blocks[*except],
 							"",
 						);
-					
+
 						if let Some(result) = result {
 							self.builder.position_at_end(self.blocks[*next]);
 
@@ -411,7 +411,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 				}
 			}
 		}
-		
+
 		if !t.type_params.is_empty() {
 			self.fn_value_opt.unwrap().set_linkage(Linkage::LinkOnceODR);
 		}
@@ -434,10 +434,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 						self.builder.build_store(
 							store,
 							self.builder
-								.build_load(
-									atom_ir.as_basic_value_enum().into_pointer_value(),
-									"",
-								)
+								.build_load(atom_ir.as_basic_value_enum().into_pointer_value(), "")
 								.as_basic_value_enum(),
 						)
 					}
@@ -523,12 +520,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 						result = self
 							.builder
-							.build_float_compare(
-								Self::to_float_predicate(op),
-								lhs_f,
-								rhs_f,
-								"",
-							)
+							.build_float_compare(Self::to_float_predicate(op), lhs_f, rhs_f, "")
 							.as_basic_value_enum();
 					} else {
 						panic!()
@@ -567,9 +559,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 							.as_basic_value_enum();
 
 						self.builder.build_store(
-							self.builder
-								.build_struct_gep(store, 0, "")
-								.unwrap(),
+							self.builder.build_struct_gep(store, 0, "").unwrap(),
 							discriminant,
 						);
 
@@ -614,18 +604,14 @@ impl<'ctx> LLVMBackend<'ctx> {
 													self.builder.build_store(
 														store,
 														self.builder
-															.build_signed_int_to_float(
-																i, t, "",
-															)
+															.build_signed_int_to_float(i, t, "")
 															.as_basic_value_enum(),
 													)
 												} else {
 													self.builder.build_store(
 														store,
 														self.builder
-															.build_unsigned_int_to_float(
-																i, t, "",
-															)
+															.build_unsigned_int_to_float(i, t, "")
 															.as_basic_value_enum(),
 													)
 												}
@@ -670,7 +656,6 @@ impl<'ctx> LLVMBackend<'ctx> {
 								// Not numeric, match other Basics
 
 								match b {
-
 									Basic::Bool => {
 										if let Type::Basic(Basic::Integral { signed, .. }) = to {
 											let val = self
@@ -734,9 +719,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 							self.builder.build_store(
 								store,
-								self.builder
-									.build_load(cast, "")
-									.as_basic_value_enum(),
+								self.builder.build_load(cast, "").as_basic_value_enum(),
 							)
 						}
 
@@ -848,11 +831,8 @@ impl<'ctx> LLVMBackend<'ctx> {
 					.build_load(local, "")
 					.as_basic_value_enum()
 					.into_pointer_value(),
-				
-				PlaceElem::Field(i) => self
-					.builder
-					.build_struct_gep(local, *i as u32, "")
-					.unwrap(),
+
+				PlaceElem::Field(i) => self.builder.build_struct_gep(local, *i as u32, "").unwrap(),
 
 				PlaceElem::Index(index_ty, expr, op) => {
 					let mut idx = self
@@ -866,10 +846,8 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 					local = self.builder.build_load(local, "").into_pointer_value();
 
-					unsafe {
-						self.builder.build_gep(local, &[idx], "")
-					}
-				},
+					unsafe { self.builder.build_gep(local, &[idx], "") }
+				}
 			}
 		}
 
@@ -1004,31 +982,28 @@ impl<'ctx> LLVMBackend<'ctx> {
 					},
 				)
 				.as_any_type_enum(),
-			
+
 			// Hack to make some ABI/optimization code work. Don't actually use this in codegen
 			Type::Slice(slicee) => Self::to_basic_type(self.get_llvm_type(slicee))
-										.ptr_type(AddressSpace::Generic)
-										.as_any_type_enum(),
+				.ptr_type(AddressSpace::Generic)
+				.as_any_type_enum(),
 
 			Type::Pointer { pointee, .. } => {
 				match &**pointee {
-					Type::Slice(slicee) => {
-						self.slice_type(&Self::to_basic_type(self.get_llvm_type(slicee))).as_any_type_enum()
-					}
+					Type::Slice(slicee) => self
+						.slice_type(&Self::to_basic_type(self.get_llvm_type(slicee)))
+						.as_any_type_enum(),
 
 					// void* isn't valid in LLVM, so we generate an i8* type instead
-					Type::Basic(Basic::Void) => {
-						self.context
-							.i8_type()
-							.ptr_type(AddressSpace::Generic)
-							.as_any_type_enum()
-					}
+					Type::Basic(Basic::Void) => self
+						.context
+						.i8_type()
+						.ptr_type(AddressSpace::Generic)
+						.as_any_type_enum(),
 
-					_ => {
-						Self::to_basic_type(self.get_llvm_type(pointee))
-							.ptr_type(AddressSpace::Generic)
-							.as_any_type_enum()
-					}
+					_ => Self::to_basic_type(self.get_llvm_type(pointee))
+						.ptr_type(AddressSpace::Generic)
+						.as_any_type_enum(),
 				}
 			}
 
@@ -1102,7 +1077,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 			Type::Unresolved { .. } => panic!(),
 
-			Type::Never => panic!()
+			Type::Never => panic!(),
 		}
 	}
 

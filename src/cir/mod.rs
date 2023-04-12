@@ -11,8 +11,9 @@ use crate::{
 	ast::{
 		expression::Operator,
 		module::{Identifier, Name},
-		types::{Basic, BindingProps, Type, TypeDef, GenericParam},
-		Attribute, traits::ImplSolver,
+		traits::ImplSolver,
+		types::{Basic, BindingProps, GenericParam, Type, TypeDef},
+		Attribute,
 	},
 	lexer::SrcSpan,
 };
@@ -131,14 +132,14 @@ pub enum CIRStmt {
 
 	// Generalized version of a conditional jump. Terminator.
 	//
-	// Reads the value from the first Operand, and matches it 
-	// against the others. The final BlockIndex denotes the 
+	// Reads the value from the first Operand, and matches it
+	// against the others. The final BlockIndex denotes the
 	// `else` case; where to jump if no arms were matched.
 	Switch(Operand, Vec<(Type, Operand, BlockIndex)>, BlockIndex),
-	
+
 	// Return statement. Terminator.
 	Return,
-	
+
 	// Non-throwing fn call. Non-terminator.
 	Call {
 		id: CIRCallId,
@@ -240,6 +241,36 @@ impl CIRFunction {
 		)
 	}
 
+	pub fn get_lvalue_type(&self, lval: &LValue) -> Type {
+		let mut ty = self.variables[lval.local].0.clone();
+
+		for proj in &lval.projection {
+			match proj {
+				PlaceElem::Deref => {
+					let Type::Pointer { pointee, .. } = ty else {
+						panic!()
+					};
+
+					ty = *pointee;
+				}
+
+				PlaceElem::Index(..) => {
+					let (Type::Array(sub, _) | Type::Slice(sub)) = ty else {
+						panic!()
+					};
+
+					ty = *sub;
+				}
+
+				PlaceElem::Field(field) => {
+					ty = ty.get_field_type(*field);
+				}
+			}
+		}
+
+		ty
+	}
+
 	pub fn get_extern(&self) -> CIRFunction {
 		CIRFunction {
 			variables: self.variables[0..self.arg_count].to_vec(),
@@ -258,7 +289,10 @@ impl CIRFunction {
 		if self.ret.1.is_void() {
 			None
 		} else {
-			Some(LValue { local: self.arg_count, projection: vec![] })
+			Some(LValue {
+				local: self.arg_count,
+				projection: vec![],
+			})
 		}
 	}
 }

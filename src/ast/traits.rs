@@ -8,8 +8,10 @@ use std::{
 	sync::{Arc, RwLock, Weak},
 };
 
-use super::module::{ItemRef, ModuleImpl};
-use super::types::{FnPrototype, Generics, GenericParam};
+use crate::parser::ComuneResult;
+
+use super::module::ItemRef;
+use super::types::{FnPrototype, GenericParam, Generics};
 use super::Attribute;
 use super::{
 	module::{Identifier, Name},
@@ -100,6 +102,16 @@ impl ImplSolver {
 		}
 	}
 
+	pub fn join_imported_solver(&mut self, imported: &ImplSolver) -> ComuneResult<()> {
+		for (key, lang_trait) in &imported.lang_traits {
+			if !self.lang_traits.contains_key(key) {
+				self.lang_traits.insert(key.clone(), lang_trait.clone());
+			}
+		}
+
+		Ok(())
+	}
+
 	pub fn finalize(&mut self) {
 		// Move local_impls into impls
 		self.impls.extend(
@@ -123,18 +135,21 @@ impl ImplSolver {
 		self.lang_traits.insert(lang, tr);
 	}
 
-	pub fn type_implements_trait(
-		&self,
-		ty: &Type,
-		tr: &TraitRef,
-		type_params: &Generics,
-	) -> bool {
+	pub fn get_lang_trait(&self, lang_trait: LangTrait) -> TraitRef {
+		self.lang_traits[&lang_trait].clone()
+	}
+
+	pub fn is_trait_implemented(&self, ty: &Type, tr: &TraitRef, generics: &Generics) -> bool {
+		if !self.local_impls.is_empty() {
+			panic!("finalize the ImplSolver before querying it!");
+		}
+
 		match ty {
 			Type::TypeParam(idx) => {
-				let Some((_, param, concrete)) = type_params.get(*idx) else { panic!() };
+				let Some((_, param, concrete)) = generics.get(*idx) else { panic!() };
 
 				if let Some(concrete) = concrete {
-					if self.type_implements_trait(concrete, tr, type_params) {
+					if self.is_trait_implemented(concrete, tr, generics) {
 						return true;
 					}
 				}
@@ -142,23 +157,28 @@ impl ImplSolver {
 				param.iter().any(|param_trait| {
 					if let ItemRef::Resolved(param_trait) = param_trait {
 						if param_trait == tr {
-							return true;
+							return true;	
 						}
 					}
 					false
 				})
 			}
 
-			_ => todo!(),
+			_ => {
+				for (im_ty, im) in self.impls.iter() {
+
+				}
+
+				false
+			}
 		}
 	}
 
 	pub fn is_impl_applicable(
-		&mut self,
+		&self,
 		im: &ImplBlockInterface,
 		ty: Type,
-		type_params: &Generics,
-		root: &ModuleImpl,
+		generics: &Generics,
 	) -> Option<TraitDeduction> {
 		// for a given impl, test if it applies
 

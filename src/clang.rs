@@ -290,7 +290,9 @@ impl Type {
 				Basic::Void => write!(f, "void"),
 
 				Basic::Integral { signed, size_bytes } => {
-					write!(f, "{}int{}_t",
+					write!(
+						f,
+						"{}int{}_t",
 						if *signed { "" } else { "u" },
 						size_bytes * 8,
 					)

@@ -1,11 +1,16 @@
-use std::{sync::{Arc, RwLock}, collections::HashSet};
+use std::{
+	collections::HashSet,
+	sync::{Arc, RwLock},
+};
 
 use crate::{
 	ast::{
 		get_attribute,
 		module::{ItemRef, ModuleInterface, ModuleItemInterface},
 		traits::{TraitInterface, TraitRef},
-		types::{self, AlgebraicDef, FnPrototype, Generics, Type, TypeDef, TypeDefKind, BindingProps},
+		types::{
+			self, AlgebraicDef, BindingProps, FnPrototype, Generics, Type, TypeDef, TypeDefKind,
+		},
 		FnScope,
 	},
 	constexpr::{ConstEval, ConstExpr},
@@ -124,10 +129,13 @@ pub fn resolve_interface_types(interface: &ModuleInterface) -> ComuneResult<()> 
 			None
 		};
 
-		let trait_qualif = (Some(Box::new(ty.read().unwrap().clone())), resolved_trait.clone());
+		let trait_qualif = (
+			Some(Box::new(ty.read().unwrap().clone())),
+			resolved_trait.clone(),
+		);
 
 		im.write().unwrap().canonical_root.qualifier = trait_qualif.clone();
-		
+
 		let mut trait_functions_found = HashSet::new();
 
 		let im = im.read().unwrap();
@@ -194,19 +202,21 @@ pub fn resolve_interface_types(interface: &ModuleInterface) -> ComuneResult<()> 
 								if params.params[i].2 != *props {
 									continue 'overloads;
 								}
-								
+
 								let concrete_self = params.params[i].0.get_concrete_type(&args);
 								let concrete_other = ty.get_concrete_type(&args);
 
 								if concrete_self != concrete_other {
-									println!("mismatch between {concrete_self} and {concrete_other}");
+									println!(
+										"mismatch between {concrete_self} and {concrete_other}"
+									);
 									println!("type args: {:?}", args);
 
 									continue 'overloads;
 								}
 							}
 
-							// Checks out! 
+							// Checks out!
 							found_match = true;
 							trait_functions_found.insert(func.clone());
 							break;
@@ -214,26 +224,26 @@ pub fn resolve_interface_types(interface: &ModuleInterface) -> ComuneResult<()> 
 					}
 
 					if !found_match {
-						return Err(
-							ComuneError::new(
-								ComuneErrCode::TraitFunctionMismatch,
-								SrcSpan::new(),
-							)
-						)
+						return Err(ComuneError::new(
+							ComuneErrCode::TraitFunctionMismatch,
+							SrcSpan::new(),
+						));
 					}
 				}
 			}
 		}
 
-		if let Some(ItemRef::Resolved(tr)) = &resolved_trait.and_then(|t| Some(*t)) { 
+		if let Some(ItemRef::Resolved(tr)) = &resolved_trait.and_then(|t| Some(*t)) {
 			// Now go through all the trait's functions and check for missing impls
 			for (_, funcs) in &tr.def.upgrade().unwrap().read().unwrap().items {
 				for func in funcs {
 					if !trait_functions_found.contains(&*func.read().unwrap()) {
 						return Err(ComuneError::new(
-							ComuneErrCode::MissingTraitFuncImpl(func.read().unwrap().get_pretty_name()),
-							SrcSpan::new()
-						))
+							ComuneErrCode::MissingTraitFuncImpl(
+								func.read().unwrap().get_pretty_name(),
+							),
+							SrcSpan::new(),
+						));
 					}
 				}
 			}
@@ -249,7 +259,7 @@ pub fn check_dst_indirection(ty: &Type, props: &BindingProps) -> ComuneResult<()
 			if !props.is_ref {
 				return Err(ComuneError::new(
 					ComuneErrCode::DSTWithoutIndirection,
-					props.span
+					props.span,
 				));
 			}
 
@@ -277,7 +287,7 @@ pub fn resolve_type(
 		Type::Pointer { pointee, .. } => resolve_type(pointee, namespace, generics),
 
 		Type::Array(pointee, _size) => resolve_type(pointee, namespace, generics),
-		
+
 		Type::Slice(slicee) => resolve_type(slicee, namespace, generics),
 
 		Type::Unresolved {

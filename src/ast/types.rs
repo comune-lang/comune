@@ -1,5 +1,5 @@
-use std::fmt::Write;
 use std::fmt::Display;
+use std::fmt::Write;
 use std::hash::{Hash, Hasher};
 use std::ptr;
 use std::sync::{Arc, RwLock, Weak};
@@ -299,9 +299,7 @@ impl Type {
 				Type::Array(Box::new(arr_ty.get_concrete_type(type_args)), size.clone())
 			}
 
-			Type::Slice(slicee) => {
-				Type::Slice(Box::new(slicee.get_concrete_type(type_args)))
-			}
+			Type::Slice(slicee) => Type::Slice(Box::new(slicee.get_concrete_type(type_args))),
 
 			Type::TypeRef { def, args } => Type::TypeRef {
 				def: def.clone(),
@@ -415,6 +413,21 @@ impl Type {
 
 				_ => self == generic_ty,
 			}
+		}
+	}
+
+	pub fn get_field_type(&self, field: usize) -> Type {
+		let Type::TypeRef { def, args } = self else {
+			panic!()
+		};
+
+		let def = def.upgrade().unwrap();
+		let def = def.read().unwrap();
+
+		match &def.def {
+			TypeDefKind::Algebraic(alg) => alg.members[field].1.get_concrete_type(args),
+
+			TypeDefKind::Class => todo!(),
 		}
 	}
 
@@ -549,30 +562,45 @@ impl Type {
 
 	#[allow(dead_code)]
 	pub fn i8_type(signed: bool) -> Self {
-		Type::Basic(Basic::Integral { signed, size_bytes: 1 })
+		Type::Basic(Basic::Integral {
+			signed,
+			size_bytes: 1,
+		})
 	}
-	
+
 	#[allow(dead_code)]
 	pub fn i16_type(signed: bool) -> Self {
-		Type::Basic(Basic::Integral { signed, size_bytes: 2 })
+		Type::Basic(Basic::Integral {
+			signed,
+			size_bytes: 2,
+		})
 	}
 
 	#[allow(dead_code)]
 	pub fn i32_type(signed: bool) -> Self {
-		Type::Basic(Basic::Integral { signed, size_bytes: 4 })
+		Type::Basic(Basic::Integral {
+			signed,
+			size_bytes: 4,
+		})
 	}
-	
+
 	#[allow(dead_code)]
 	pub fn i64_type(signed: bool) -> Self {
-		Type::Basic(Basic::Integral { signed, size_bytes: 8 })
+		Type::Basic(Basic::Integral {
+			signed,
+			size_bytes: 8,
+		})
 	}
-	
+
 	#[allow(dead_code)]
 	pub fn isize_type(signed: bool) -> Self {
 		Type::Basic(Basic::PtrSizeInt { signed })
 	}
-}
 
+	pub fn bool_type() -> Self {
+		Type::Basic(Basic::Bool)
+	}
+}
 
 impl PartialEq for Type {
 	fn eq(&self, other: &Self) -> bool {
@@ -602,10 +630,12 @@ impl PartialEq for Type {
 
 			(Self::Slice(l0), Self::Slice(r0)) => l0 == r0,
 
-			_ => if std::mem::discriminant(self) == std::mem::discriminant(other) {
-				panic!("unimplemented PartialEq variant for Type!")
-			} else {
-				false
+			_ => {
+				if std::mem::discriminant(self) == std::mem::discriminant(other) {
+					panic!("unimplemented PartialEq variant for Type!")
+				} else {
+					false
+				}
 			}
 		}
 	}
@@ -809,13 +839,13 @@ impl FnPrototype {
 		let f = &mut result;
 
 		write!(f, "{}{} {}", self.ret.1, self.ret.0, self.path).unwrap();
-		
+
 		if !self.generics.is_empty() {
 			let mut iter = self.generics.iter();
 			let first = iter.next().unwrap();
 
 			write!(f, "<{}", first.0).unwrap();
-			
+
 			if let Some(t) = &first.2 {
 				write!(f, " = {t}").unwrap();
 			}
@@ -920,7 +950,10 @@ impl std::fmt::Debug for Type {
 				.field(arg1)
 				.field(arg2)
 				.finish(),
-			Type::TypeRef { def: arg0, args: arg1 } => f.debug_tuple("TypeRef").field(arg0).field(arg1).finish(),
+			Type::TypeRef {
+				def: arg0,
+				args: arg1,
+			} => f.debug_tuple("TypeRef").field(arg0).field(arg1).finish(),
 			Type::TypeParam(arg0) => f.debug_tuple("TypeParam").field(arg0).finish(),
 			Type::Never => f.debug_tuple("Never").finish(),
 			Type::Tuple(kind, types) => f.debug_tuple("Tuple").field(kind).field(types).finish(),

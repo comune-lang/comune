@@ -1,8 +1,11 @@
-use std::{collections::{BTreeMap, VecDeque}, sync::RwLock};
+use std::{
+	collections::{BTreeMap, VecDeque},
+	sync::RwLock,
+};
 
 use rayon::prelude::{IntoParallelRefIterator, ParallelIterator};
 
-use crate::{errors::ComuneError, ast::traits::ImplSolver};
+use crate::{ast::traits::ImplSolver, errors::ComuneError};
 
 use super::{BlockIndex, CIRFunction, CIRModule, CIRStmt, StmtIndex};
 
@@ -178,7 +181,11 @@ impl Direction for Backward {
 }
 
 pub trait AnalysisResultHandler: Analysis {
-	fn process_result(result: ResultVisitor<Self>, func: &CIRFunction, impl_solver: &ImplSolver) -> Result<Option<CIRFunction>, Vec<ComuneError>>
+	fn process_result(
+		result: ResultVisitor<Self>,
+		func: &CIRFunction,
+		impl_solver: &ImplSolver,
+	) -> Result<Option<CIRFunction>, Vec<ComuneError>>
 	where
 		Self: Sized;
 }
@@ -208,7 +215,7 @@ where
 
 		for (_, func) in &mut module.functions {
 			if func.is_extern {
-				continue
+				continue;
 			}
 
 			let mut entry_state = self.analysis.bottom_value(func);
@@ -297,16 +304,16 @@ where
 			}
 
 			let in_states = in_states.into_iter().map(|(_, state)| state).collect();
-			
+
 			let visitor = ResultVisitor::new(func, &self.analysis, in_states);
 
 			match T::process_result(visitor, func, &module.impl_solver) {
-				Ok(None) => {},
+				Ok(None) => {}
 
 				Ok(Some(transformed)) => {
 					*func = transformed;
-				},
-				
+				}
+
 				Err(mut func_errors) => errors.append(&mut func_errors),
 			}
 		}
@@ -343,7 +350,7 @@ where
 			self.block_start_states[block].clone()
 		} else {
 			let cache_guard = self.cache.read().unwrap();
-			
+
 			if let Some((cache_block, cache_idx, cache_state)) = &*cache_guard {
 				if *cache_block == block && *cache_idx <= stmt {
 					// Update cache to current statement
@@ -360,8 +367,8 @@ where
 					drop(cache_guard);
 
 					*self.cache.write().unwrap() = Some((block, stmt, result.clone()));
-					
-					return result
+
+					return result;
 				}
 			}
 
@@ -383,6 +390,5 @@ where
 
 			result
 		}
-			
 	}
 }

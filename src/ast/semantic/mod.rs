@@ -40,6 +40,13 @@ pub fn validate_interface(_state: &Arc<CompilerState>, parser: &mut Parser) -> C
 	// TODO: Nice error reporting for this
 	ty::check_module_cyclical_deps(&mut parser.interface)?;
 
+	for (_, import) in &parser.interface.imported {
+		parser
+			.interface
+			.impl_solver
+			.join_imported_solver(&import.interface.impl_solver)?;
+	}
+
 	validate_attributes(&mut parser.interface)?;
 
 	parser.interface.is_typed = true;

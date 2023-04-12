@@ -54,7 +54,11 @@ impl<'ctx> FnScope<'ctx> {
 		}
 	}
 
-	pub fn new(context: &'ctx ModuleInterface, scope: Identifier, ret: (BindingProps, Type)) -> Self {
+	pub fn new(
+		context: &'ctx ModuleInterface,
+		scope: Identifier,
+		ret: (BindingProps, Type),
+	) -> Self {
 		FnScope {
 			context,
 			scope,

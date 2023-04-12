@@ -152,8 +152,7 @@ impl MonomorphServer {
 						self.monoize_rvalue_types(types, expr, param_map);
 					}
 
-					CIRStmt::Invoke { generic_args, .. } |
-					CIRStmt::Call { generic_args, .. } => {
+					CIRStmt::Invoke { generic_args, .. } | CIRStmt::Call { generic_args, .. } => {
 						for arg in generic_args.iter_mut() {
 							self.monoize_type(types, arg, param_map);
 						}
@@ -176,11 +175,13 @@ impl MonomorphServer {
 		func: &mut CIRStmt,
 		types: &mut HashMap<TypeName, Arc<RwLock<TypeDef>>>,
 	) {
-		let (CIRStmt::Invoke { id, generic_args, .. } 
-			| CIRStmt::Call { id, generic_args, .. }) = func else { panic!() };
+		let (
+			CIRStmt::Invoke { id, generic_args, .. }
+			| CIRStmt::Call { id, generic_args, .. }
+		) = func else { panic!() };
 
 		if generic_args.is_empty() {
-			return;
+			return
 		}
 
 		if let CIRCallId::Direct(id, _) = id {
@@ -282,7 +283,7 @@ impl MonomorphServer {
 					}
 
 					let typename = name.to_string();
-					
+
 					*def = self.instantiate_type_def(types, def.upgrade().unwrap(), typename, args);
 					args.clear();
 				}
@@ -346,11 +347,11 @@ impl MonomorphServer {
 		insert_idx += ">";
 
 		// Check if the current module has this instance already
-		
+
 		if let Some(instance) = types.get(&insert_idx) {
 			return Arc::downgrade(instance);
 		}
-		
+
 		// Nope, check if the global instance map has it instead
 
 		let global_types = self.ty_instances.read().unwrap();
@@ -369,7 +370,7 @@ impl MonomorphServer {
 		let global_types = &mut *self.ty_instances.write().unwrap();
 
 		global_types.insert(insert_idx.clone(), Arc::new(RwLock::new(instance)));
-		
+
 		let instance = &global_types[&insert_idx];
 
 		types.insert(insert_idx, instance.clone());
@@ -444,7 +445,7 @@ impl Type {
 	fn mangle(&self) -> String {
 		match self {
 			Type::Basic(b) => String::from(b.mangle()),
-			
+
 			Type::Pointer { pointee, .. } => {
 				if let Type::Slice(slicee) = &**pointee {
 					String::from("P") + &slicee.mangle() + "y"
@@ -454,7 +455,7 @@ impl Type {
 			}
 
 			Type::TypeRef { .. } => String::from("S_"),
-			
+
 			Type::Function(ret, args) => {
 				let mut result = String::from("PF");
 
