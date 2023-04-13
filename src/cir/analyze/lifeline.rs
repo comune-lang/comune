@@ -25,6 +25,10 @@ pub enum LivenessState {
 	MaybeUninit,
 }
 
+pub struct DefInitFlow;
+pub struct VarInitCheck;
+pub struct ElaborateDrops;
+
 #[derive(Debug, Clone)]
 pub struct LiveVarCheckState {
 	// TODO: Create Path type, for canonicalized LValues
@@ -140,8 +144,6 @@ impl LiveVarCheckState {
 	}
 }
 
-pub struct VarInitCheck;
-
 impl JoinSemiLattice for LiveVarCheckState {
 	fn join(&mut self, other: &Self) -> bool {
 		let mut changed = false;
@@ -190,7 +192,7 @@ impl JoinSemiLattice for LiveVarCheckState {
 	}
 }
 
-impl AnalysisDomain for VarInitCheck {
+impl AnalysisDomain for DefInitFlow {
 	type Domain = LiveVarCheckState;
 	type Direction = Forward;
 
@@ -214,7 +216,7 @@ impl AnalysisDomain for VarInitCheck {
 	}
 }
 
-impl Analysis for VarInitCheck {
+impl Analysis for DefInitFlow {
 	fn apply_effect(
 		&self,
 		stmt: &CIRStmt,
@@ -262,21 +264,32 @@ impl Analysis for VarInitCheck {
 	}
 }
 
-impl AnalysisResultHandler for VarInitCheck {
+impl AnalysisResultHandler<DefInitFlow> for VarInitCheck {
 	fn process_result(
-		mut result: ResultVisitor<Self>,
+		&self,
+		mut result: ResultVisitor<DefInitFlow>,
 		func: &CIRFunction,
 		impl_solver: &ImplSolver,
 	) -> Result<Option<CIRFunction>, Vec<ComuneError>> {
 		validate_uses(&mut result, func, impl_solver)?;
-		let new_func = elaborate_drops(&mut result, func, impl_solver)?;
+		Ok(None)
+	}
+}
 
+impl AnalysisResultHandler<DefInitFlow> for ElaborateDrops {
+	fn process_result(
+			&self,
+			mut result: ResultVisitor<DefInitFlow>,
+			func: &CIRFunction,
+			impl_solver: &ImplSolver,
+	) -> Result<Option<CIRFunction>, Vec<ComuneError>> {
+		let new_func = elaborate_drops(&mut result, func, impl_solver)?;
 		Ok(Some(new_func))
 	}
 }
 
 fn validate_uses(
-	result: &mut ResultVisitor<VarInitCheck>,
+	result: &mut ResultVisitor<DefInitFlow>,
 	func: &CIRFunction,
 	_impl_solver: &ImplSolver,
 ) -> Result<(), Vec<ComuneError>> {
@@ -379,7 +392,7 @@ enum DropStyle {
 }
 
 fn elaborate_drops(
-	result: &mut ResultVisitor<VarInitCheck>,
+	result: &mut ResultVisitor<DefInitFlow>,
 	func: &CIRFunction,
 	impl_solver: &ImplSolver,
 ) -> Result<CIRFunction, Vec<ComuneError>> {
@@ -413,6 +426,7 @@ fn elaborate_drops(
 
 		for (lvalue, style) in obligations {
 			let var_ty = func.get_lvalue_type(&lvalue);
+
 			let needs_drop = impl_solver.is_trait_implemented(&var_ty, &drop_trait, &vec![]);
 
 			let CIRStmt::StorageDead { next, .. } = func_out.blocks[i].items.pop().unwrap() else {

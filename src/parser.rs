@@ -190,8 +190,10 @@ impl<'ctx> Parser {
 
 					let full_name = Identifier::from_parent(scope, name);
 
+					def.name = full_name.clone();
+
 					self.interface.children.insert(
-						full_name.clone(),
+						full_name,
 						ModuleItemInterface::Type(Arc::new(RwLock::new(def))),
 					);
 				}
@@ -258,9 +260,11 @@ impl<'ctx> Parser {
 					def.attributes = current_attributes;
 
 					let full_name = Identifier::from_parent(scope, name);
+					
+					def.name = full_name.clone();
 
 					self.interface.children.insert(
-						full_name.clone(),
+						full_name,
 						ModuleItemInterface::Type(Arc::new(RwLock::new(def))),
 					);
 				}

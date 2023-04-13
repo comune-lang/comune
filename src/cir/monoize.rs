@@ -104,7 +104,7 @@ impl MonomorphServer {
 			.types
 			.iter()
 			.filter_map(|(k, v)| {
-				let is_generic = v.read().unwrap().params.is_empty();
+				let is_generic = !v.read().unwrap().params.is_empty();
 
 				if is_generic {
 					Some(k.clone())
@@ -323,6 +323,8 @@ impl MonomorphServer {
 		for (_, member, _) in &mut instance.members {
 			self.monoize_type(types, member, param_map);
 		}
+
+		instance.params.clear();
 
 		let mut iter = param_map.iter();
 		let mut insert_idx = name + "<" + &iter.next().unwrap().to_string();

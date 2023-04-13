@@ -1,6 +1,6 @@
 use std::{
 	collections::{BTreeMap, VecDeque},
-	sync::RwLock,
+	sync::RwLock, marker::PhantomData,
 };
 
 use rayon::prelude::{IntoParallelRefIterator, ParallelIterator};
@@ -180,35 +180,38 @@ impl Direction for Backward {
 	const IS_FORWARD: bool = false;
 }
 
-pub trait AnalysisResultHandler: Analysis {
+pub trait AnalysisResultHandler<T: Analysis> {
 	fn process_result(
-		result: ResultVisitor<Self>,
+		&self,
+		result: ResultVisitor<T>,
 		func: &CIRFunction,
 		impl_solver: &ImplSolver,
-	) -> Result<Option<CIRFunction>, Vec<ComuneError>>
-	where
-		Self: Sized;
+	) -> Result<Option<CIRFunction>, Vec<ComuneError>>;
 }
 
-pub struct DataFlowPass<T>
+pub struct DataFlowPass<D, H>
 where
-	T: AnalysisResultHandler + Send + Sync,
+	D: Analysis + Send + Sync,
+	H: AnalysisResultHandler<D> + Send + Sync,
 {
-	analysis: T,
+	analysis: D,
+	handler: H,
 }
 
-impl<T> DataFlowPass<T>
+impl<D, H> DataFlowPass<D, H>
 where
-	T: AnalysisResultHandler + Send + Sync,
+	D: Analysis + Send + Sync,
+	H: AnalysisResultHandler<D> + Send + Sync,
 {
-	pub fn new(analysis: T) -> Self {
-		Self { analysis }
+	pub fn new(analysis: D, handler: H) -> Self {
+		Self { analysis, handler }
 	}
 }
 
-impl<T> CIRPassMut for DataFlowPass<T>
+impl<D, H> CIRPassMut for DataFlowPass<D, H>
 where
-	T: AnalysisResultHandler + Send + Sync,
+	D: Analysis + Send + Sync,
+	H: AnalysisResultHandler<D> + Send + Sync,
 {
 	fn on_module(&self, module: &mut CIRModule) -> Vec<ComuneError> {
 		let mut errors = vec![];
@@ -274,7 +277,7 @@ where
 				}
 
 				if changed {
-					let block_state: &T::Domain = &in_states[&i];
+					let block_state: &D::Domain = &in_states[&i];
 
 					let mut block_state = block_state.clone();
 
@@ -307,7 +310,7 @@ where
 
 			let visitor = ResultVisitor::new(func, &self.analysis, in_states);
 
-			match T::process_result(visitor, func, &module.impl_solver) {
+			match self.handler.process_result(visitor, func, &module.impl_solver) {
 				Ok(None) => {}
 
 				Ok(Some(transformed)) => {

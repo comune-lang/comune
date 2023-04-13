@@ -144,32 +144,51 @@ impl ImplSolver {
 			panic!("finalize the ImplSolver before querying it!");
 		}
 
-		match ty {
-			Type::TypeParam(idx) => {
-				let Some((_, param, concrete)) = generics.get(*idx) else { panic!() };
+		if let Type::TypeParam(idx) = ty {
+			// Type parameter, check if it has the trait bound
 
-				if let Some(concrete) = concrete {
-					if self.is_trait_implemented(concrete, tr, generics) {
+			let Some((_, param, concrete)) = generics.get(*idx) else { panic!() };
+
+			if let Some(concrete) = concrete {
+				if self.is_trait_implemented(concrete, tr, generics) {
+					return true;
+				}
+			}
+
+			if param.iter().any(|param_trait| {
+				if let ItemRef::Resolved(param_trait) = param_trait {
+					if param_trait == tr {
 						return true;
 					}
 				}
-
-				param.iter().any(|param_trait| {
-					if let ItemRef::Resolved(param_trait) = param_trait {
-						if param_trait == tr {
-							return true;
-						}
-					}
-					false
-				})
-			}
-
-			_ => {
-				for (im_ty, im) in self.impls.iter() {}
-
 				false
+			}) {
+				// Type parameter has trait bound, easy result
+				return true
 			}
+			
+			// Type param doesn't have trait bound, do the normal lookup
 		}
+
+		for (im_ty, im) in self.impls.iter() {
+			let im = im.read().unwrap();
+			
+			let Some(ItemRef::Resolved(implements)) = &im.implements else {
+				continue
+			};
+			
+			if implements != tr || !ty.fits_generic(im_ty) {
+				continue
+			}
+
+			if ty == im_ty {
+				return true
+			}
+
+			todo!()
+		}
+
+		false
 	}
 
 	pub fn is_impl_applicable(

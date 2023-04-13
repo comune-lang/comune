@@ -15,7 +15,7 @@ use crate::{
 		module::{Identifier, ModuleImport, ModuleImportKind, ModuleInterface, Name},
 	},
 	cir::{
-		analyze::{lifeline::VarInitCheck, verify, CIRPassManager, DataFlowPass},
+		analyze::{lifeline::{DefInitFlow, VarInitCheck}, verify, CIRPassManager, DataFlowPass},
 		builder::CIRModuleBuilder,
 		monoize::MonomorphServer,
 		CIRModule,
@@ -584,7 +584,7 @@ pub fn generate_code<'ctx>(
 	let mut cir_man = CIRPassManager::new();
 
 	cir_man.add_pass(verify::Verify);
-	cir_man.add_mut_pass(DataFlowPass::new(VarInitCheck));
+	cir_man.add_mut_pass(DataFlowPass::new(DefInitFlow, VarInitCheck));
 	cir_man.add_pass(verify::Verify);
 
 	let cir_errors = cir_man.run_on_module(&mut cir_module);
