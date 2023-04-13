@@ -68,6 +68,8 @@ pub struct TypeDef {
 	pub layout: DataLayout,
 	pub params: Generics,
 	pub attributes: Vec<Attribute>,
+
+	pub destructor: Option<Arc<RwLock<FnPrototype>>>,
 }
 
 #[derive(Debug, Clone)]
@@ -131,6 +133,7 @@ impl TypeDef {
 			variants: vec![],
 			params: vec![],
 			attributes: vec![],
+			destructor: None,
 		}
 	}
 

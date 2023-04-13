@@ -1,6 +1,6 @@
 use std::{
 	collections::{BTreeMap, VecDeque},
-	sync::RwLock, marker::PhantomData,
+	sync::RwLock
 };
 
 use rayon::prelude::{IntoParallelRefIterator, ParallelIterator};
