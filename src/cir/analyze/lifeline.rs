@@ -267,79 +267,40 @@ impl Analysis for DefInitFlow {
 impl AnalysisResultHandler<DefInitFlow> for VarInitCheck {
 	fn process_result(
 		&self,
-		mut result: ResultVisitor<DefInitFlow>,
+		result: ResultVisitor<DefInitFlow>,
 		func: &CIRFunction,
-		impl_solver: &ImplSolver,
+		_: &ImplSolver,
 	) -> Result<Option<CIRFunction>, Vec<ComuneError>> {
-		validate_uses(&mut result, func, impl_solver)?;
-		Ok(None)
-	}
-}
+		let mut errors = vec![];
 
-impl AnalysisResultHandler<DefInitFlow> for ElaborateDrops {
-	fn process_result(
-			&self,
-			mut result: ResultVisitor<DefInitFlow>,
-			func: &CIRFunction,
-			impl_solver: &ImplSolver,
-	) -> Result<Option<CIRFunction>, Vec<ComuneError>> {
-		let new_func = elaborate_drops(&mut result, func, impl_solver)?;
-		Ok(Some(new_func))
-	}
-}
+		for (i, block) in func.blocks.iter().enumerate() {
+			for (j, stmt) in block.items.iter().enumerate() {
+				let state = result.get_state_before(i, j);
 
-fn validate_uses(
-	result: &mut ResultVisitor<DefInitFlow>,
-	func: &CIRFunction,
-	_impl_solver: &ImplSolver,
-) -> Result<(), Vec<ComuneError>> {
-	let mut errors = vec![];
-
-	for (i, block) in func.blocks.iter().enumerate() {
-		for (j, stmt) in block.items.iter().enumerate() {
-			let state = result.get_state_before(i, j);
-
-			// Check for uses of uninit/moved lvalues
-			match stmt {
-				CIRStmt::Assignment(_, RValue::Atom(_, _, Operand::LValue(lval, _), span))
-				| CIRStmt::Switch(Operand::LValue(lval, span), ..)
-				| CIRStmt::Assignment(
-					_,
-					RValue::Cons(_, [(_, Operand::LValue(lval, span)), _], ..),
-				)
-				| CIRStmt::Assignment(
-					_,
-					RValue::Cons(_, [_, (_, Operand::LValue(lval, span))], ..),
-				)
-				| CIRStmt::Invoke {
-					id: CIRCallId::Indirect {
-						local: lval, span, ..
-					},
-					..
-				}
-				| CIRStmt::Call {
-					id: CIRCallId::Indirect {
-						local: lval, span, ..
-					},
-					..
-				} => {
-					let liveness = state.get_liveness(lval);
-
-					match liveness {
-						Some(LivenessState::Live) => {}
-
-						_ => errors.push(ComuneError::new(
-							ComuneErrCode::InvalidUse {
-								variable: func.get_variable_name(lval.local),
-								state: liveness.unwrap_or(LivenessState::Uninit),
-							},
-							*span,
-						)),
+				// Check for uses of uninit/moved lvalues
+				match stmt {
+					CIRStmt::Assignment(_, RValue::Atom(_, _, Operand::LValue(lval, _), span))
+					| CIRStmt::Switch(Operand::LValue(lval, span), ..)
+					| CIRStmt::Assignment(
+						_,
+						RValue::Cons(_, [(_, Operand::LValue(lval, span)), _], ..),
+					)
+					| CIRStmt::Assignment(
+						_,
+						RValue::Cons(_, [_, (_, Operand::LValue(lval, span))], ..),
+					)
+					| CIRStmt::Invoke {
+						id: CIRCallId::Indirect {
+							local: lval, span, ..
+						},
+						..
 					}
-				}
-
-				CIRStmt::Invoke { args, .. } | CIRStmt::Call { args, .. } => {
-					for (lval, span) in args {
+					| CIRStmt::Call {
+						id: CIRCallId::Indirect {
+							local: lval, span, ..
+						},
+						..
+					} => {
 						let liveness = state.get_liveness(lval);
 
 						match liveness {
@@ -354,33 +315,53 @@ fn validate_uses(
 							)),
 						}
 					}
+
+					CIRStmt::Invoke { args, .. } | CIRStmt::Call { args, .. } => {
+						for (lval, span) in args {
+							let liveness = state.get_liveness(lval);
+
+							match liveness {
+								Some(LivenessState::Live) => {}
+
+								_ => errors.push(ComuneError::new(
+									ComuneErrCode::InvalidUse {
+										variable: func.get_variable_name(lval.local),
+										state: liveness.unwrap_or(LivenessState::Uninit),
+									},
+									*span,
+								)),
+							}
+						}
+					}
+
+					_ => {}
 				}
 
-				_ => {}
-			}
+				// Check for mutation of immutable lvalues
+				if let CIRStmt::Assignment((lval, tk), _) = stmt {
+					let is_var_mut = func.variables[lval.local].1.is_mut;
+					let is_var_init = !matches!(
+						state.get_liveness(lval),
+						None | Some(LivenessState::Uninit | LivenessState::Moved)
+					);
 
-			// Check for mutation of immutable lvalues
-			if let CIRStmt::Assignment((lval, tk), _) = stmt {
-				if !matches!(
-					state.get_liveness(lval),
-					None | Some(LivenessState::Uninit) | Some(LivenessState::Moved)
-				) && !func.variables[lval.local].1.is_mut
-				{
-					errors.push(ComuneError::new(
-						ComuneErrCode::ImmutVarMutation {
-							variable: func.get_variable_name(lval.local),
-						},
-						*tk,
-					))
+					if is_var_init && !is_var_mut {
+						errors.push(ComuneError::new(
+							ComuneErrCode::ImmutVarMutation {
+								variable: func.get_variable_name(lval.local),
+							},
+							*tk,
+						))
+					}
 				}
 			}
 		}
-	}
 
-	if errors.is_empty() {
-		Ok(())
-	} else {
-		Err(errors)
+		if errors.is_empty() {
+			Ok(None)
+		} else {
+			Err(errors)
+		}
 	}
 }
 
@@ -391,111 +372,115 @@ enum DropStyle {
 	Dead,
 }
 
-fn elaborate_drops(
-	result: &mut ResultVisitor<DefInitFlow>,
-	func: &CIRFunction,
-	impl_solver: &ImplSolver,
-) -> Result<CIRFunction, Vec<ComuneError>> {
-	let errors = vec![];
-	let drop_trait = impl_solver.get_lang_trait(LangTrait::Drop);
 
-	let mut func_out = func.clone();
-	let mut block_obligations = vec![];
-	let mut drop_flags = HashMap::new();
+impl AnalysisResultHandler<DefInitFlow> for ElaborateDrops {
+	fn process_result(
+			&self,
+			result: ResultVisitor<DefInitFlow>,
+			func: &CIRFunction,
+			impl_solver: &ImplSolver,
+	) -> Result<Option<CIRFunction>, Vec<ComuneError>> {
+		let errors = vec![];
+		let drop_trait = impl_solver.get_lang_trait(LangTrait::Drop);
 
-	for (i, block) in func.blocks.iter().enumerate() {
-		let mut obligations = vec![];
+		let mut func_out = func.clone();
+		let mut block_obligations = vec![];
+		let mut drop_flags = HashMap::new();
 
-		if let CIRStmt::StorageDead { var, .. } = block.items.last().unwrap() {
-			let lvalue = LValue {
-				local: *var,
-				projection: vec![],
-			};
-			let state = result.get_state_before(i, block.items.len() - 1);
+		for (i, block) in func.blocks.iter().enumerate() {
+			let mut obligations = vec![];
 
-			get_drop_obligations(&state, &lvalue, &mut obligations);
+			if let CIRStmt::StorageDead { var, .. } = block.items.last().unwrap() {
+				let lvalue = LValue {
+					local: *var,
+					projection: vec![],
+				};
+				let state = result.get_state_before(i, block.items.len() - 1);
+
+				get_drop_obligations(&state, &lvalue, &mut obligations);
+			}
+
+			block_obligations.push(obligations);
 		}
 
-		block_obligations.push(obligations);
-	}
-
-	for (i, obligations) in block_obligations.into_iter().enumerate() {
-		if obligations.is_empty() {
-			continue;
-		}
-
-		for (lvalue, style) in obligations {
-			let var_ty = func.get_lvalue_type(&lvalue);
-
-			let needs_drop = impl_solver.is_trait_implemented(&var_ty, &drop_trait, &vec![]);
-
-			let CIRStmt::StorageDead { next, .. } = func_out.blocks[i].items.pop().unwrap() else {
-				panic!()
-			};
-
-			if !needs_drop {
-				func_out.blocks[i].items.push(CIRStmt::Jump(next));
+		for (i, obligations) in block_obligations.into_iter().enumerate() {
+			if obligations.is_empty() {
 				continue;
 			}
 
-			match style {
-				DropStyle::Live => {
+			for (lvalue, style) in obligations {
+				let var_ty = func.get_lvalue_type(&lvalue);
+
+				let needs_drop = impl_solver.is_trait_implemented(&var_ty, &drop_trait, &vec![]);
+
+				let CIRStmt::StorageDead { next, .. } = func_out.blocks[i].items.pop().unwrap() else {
+					panic!()
+				};
+
+				if !needs_drop {
 					func_out.blocks[i].items.push(CIRStmt::Jump(next));
+					continue;
 				}
 
-				DropStyle::Conditional => {
-					let flag = if let Some(flag) = drop_flags.get(&lvalue) {
-						*flag
-					} else {
-						func_out.variables.push((
-							Type::Basic(Basic::Bool),
-							BindingProps::default(),
-							None,
+				match style {
+					DropStyle::Live => {
+						func_out.blocks[i].items.push(CIRStmt::Jump(next));
+					}
+
+					DropStyle::Conditional => {
+						let flag = if let Some(flag) = drop_flags.get(&lvalue) {
+							*flag
+						} else {
+							func_out.variables.push((
+								Type::Basic(Basic::Bool),
+								BindingProps::default(),
+								None,
+							));
+
+							drop_flags.insert(lvalue, func_out.variables.len() - 1);
+
+							func_out.variables.len() - 1
+						};
+
+						let drop_block = CIRBlock {
+							items: vec![CIRStmt::Jump(next)],
+							preds: vec![i],
+							succs: vec![next],
+						};
+
+						let flag_lval = LValue {
+							local: flag,
+							projection: vec![],
+						};
+						let drop_idx = func_out.blocks.len();
+
+						func_out.blocks.push(drop_block);
+
+						func_out.blocks[i].items.push(CIRStmt::Switch(
+							Operand::LValue(flag_lval, SrcSpan::new()),
+							vec![(
+								Type::bool_type(),
+								Operand::BoolLit(true, SrcSpan::new()),
+								drop_idx,
+							)],
+							next,
 						));
 
-						drop_flags.insert(lvalue, func_out.variables.len() - 1);
+						func_out.blocks[i].succs.push(drop_idx);
+					}
 
-						func_out.variables.len() - 1
-					};
-
-					let drop_block = CIRBlock {
-						items: vec![CIRStmt::Jump(next)],
-						preds: vec![i],
-						succs: vec![next],
-					};
-
-					let flag_lval = LValue {
-						local: flag,
-						projection: vec![],
-					};
-					let drop_idx = func_out.blocks.len();
-
-					func_out.blocks.push(drop_block);
-
-					func_out.blocks[i].items.push(CIRStmt::Switch(
-						Operand::LValue(flag_lval, SrcSpan::new()),
-						vec![(
-							Type::bool_type(),
-							Operand::BoolLit(true, SrcSpan::new()),
-							drop_idx,
-						)],
-						next,
-					));
-
-					func_out.blocks[i].succs.push(drop_idx);
-				}
-
-				DropStyle::Dead | DropStyle::Open => {
-					func_out.blocks[i].items.push(CIRStmt::Jump(next));
+					DropStyle::Dead | DropStyle::Open => {
+						func_out.blocks[i].items.push(CIRStmt::Jump(next));
+					}
 				}
 			}
 		}
-	}
 
-	if !errors.is_empty() {
-		Err(errors)
-	} else {
-		Ok(func_out)
+		if !errors.is_empty() {
+			Err(errors)
+		} else {
+			Ok(Some(func_out))
+		}
 	}
 }
 

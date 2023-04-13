@@ -267,13 +267,13 @@ pub fn resolve_method_call(
 	let mut candidates = vec![];
 
 	// Go through all the impls in scope and find method candidates
-	for (ty, im) in &scope.context.impl_solver.local_impls {
+	for (ty, im) in &scope.context.impl_solver.impls {
 		let name = name.expect_scopeless().unwrap();
 
 		let im = &*im.read().unwrap();
 
 		if let Some(fns) = im.functions.get(name) {
-			if receiver.fits_generic(&*ty.read().unwrap()) {
+			if receiver.fits_generic(ty) {
 				for func in fns {
 					candidates.push((
 						ty.clone(),

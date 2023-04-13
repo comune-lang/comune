@@ -15,7 +15,7 @@ use crate::{
 		module::{Identifier, ModuleImport, ModuleImportKind, ModuleInterface, Name},
 	},
 	cir::{
-		analyze::{lifeline::{DefInitFlow, VarInitCheck}, verify, CIRPassManager, DataFlowPass},
+		analyze::{lifeline::{DefInitFlow, VarInitCheck, ElaborateDrops}, verify, CIRPassManager, DataFlowPass},
 		builder::CIRModuleBuilder,
 		monoize::MonomorphServer,
 		CIRModule,
@@ -526,8 +526,8 @@ pub fn generate_code<'ctx>(
 	src_path: &Path,
 	input_module: &Identifier,
 ) -> Result<LLVMBackend<'ctx>, ComuneError> {
-	// Generate AST
 
+	// Generate AST
 	match parser.generate_ast() {
 		Ok(()) => {
 			if state.verbose_output {
@@ -543,14 +543,18 @@ pub fn generate_code<'ctx>(
 		}
 	};
 
-	// Validate code
+	// Finalize impl solver, so we can query it
+	parser.interface.impl_solver.finalize();
 
+	// Validate code
+	
 	match ast::semantic::validate_module_impl(&parser.interface, &mut parser.module_impl) {
 		Ok(()) => {
 			if state.verbose_output {
 				println!("generating code...");
 			}
 		}
+
 		Err(e) => {
 			parser
 				.lexer
@@ -565,14 +569,9 @@ pub fn generate_code<'ctx>(
 	let module_name = input_module.to_string();
 	let mut cir_module = CIRModuleBuilder::from_ast(parser).module;
 
-	// Note: we currently write the output of a lot of
-	// intermediate stages to the build directory. This is
-	// mostly for debugging purposes; when the compiler is
-	// at a more mature stage, most of these writes could be
-	// removed or turned into an opt-in CLI option.
-
 	if state.emit_types.contains(&EmitType::ComuneIr) {
 		// Write cIR to file
+
 		fs::write(
 			get_module_out_path(state, input_module).with_extension("cir"),
 			cir_module.to_string(),
@@ -581,6 +580,7 @@ pub fn generate_code<'ctx>(
 	}
 
 	// Analyze & optimize cIR
+
 	let mut cir_man = CIRPassManager::new();
 
 	cir_man.add_pass(verify::Verify);
@@ -589,6 +589,8 @@ pub fn generate_code<'ctx>(
 
 	let cir_errors = cir_man.run_on_module(&mut cir_module);
 
+	// Handle any errors from cIR passes
+	
 	if !cir_errors.is_empty() {
 		let mut return_errors = vec![];
 
@@ -603,7 +605,33 @@ pub fn generate_code<'ctx>(
 		));
 	}
 
-	let module_mono = state.monomorph_server.monoize_module(cir_module);
+	// Monomorphize the module
+
+	let mut module_mono = state.monomorph_server.monoize_module(cir_module);
+	
+	// Now perform post-monomorphization passes, including drop elaboration
+
+	let mut cir_man = CIRPassManager::new();
+	
+	cir_man.add_mut_pass(DataFlowPass::new(DefInitFlow, ElaborateDrops));
+	
+	let cir_errors = cir_man.run_on_module(&mut module_mono);
+
+	// And handle any errors again
+
+	if !cir_errors.is_empty() {
+		let mut return_errors = vec![];
+
+		for error in cir_errors {
+			return_errors.push(error.clone());
+			parser.lexer.borrow().log_msg(ComuneMessage::Error(error));
+		}
+
+		return Err(ComuneError::new(
+			ComuneErrCode::Pack(return_errors),
+			SrcSpan::new(),
+		));
+	}
 
 	if state.emit_types.contains(&EmitType::ComuneIrMono) {
 		// Write monomorphized cIR to file

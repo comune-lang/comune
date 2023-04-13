@@ -87,8 +87,9 @@ pub enum TraitDeduction {
 #[derive(Clone, Debug, Default)]
 pub struct ImplSolver {
 	lang_traits: HashMap<LangTrait, TraitRef>,
-	impls: Vec<(Type, Arc<RwLock<ImplBlockInterface>>)>,
 	answer_cache: HashMap<Type, HashMap<TraitRef, TraitDeduction>>,
+	finalized: bool,
+	pub impls: Vec<(Type, Arc<RwLock<ImplBlockInterface>>)>,
 	pub local_impls: Vec<(Arc<RwLock<Type>>, Arc<RwLock<ImplBlockInterface>>)>,
 }
 
@@ -96,9 +97,10 @@ impl ImplSolver {
 	pub fn new() -> Self {
 		Self {
 			lang_traits: HashMap::new(),
-			impls: vec![],
-			local_impls: vec![],
 			answer_cache: HashMap::new(),
+			finalized: false,
+			local_impls: vec![],
+			impls: vec![],
 		}
 	}
 
@@ -119,6 +121,8 @@ impl ImplSolver {
 				.iter()
 				.map(|(ty, im)| (ty.read().unwrap().clone(), im.clone())),
 		);
+
+		self.finalized = true;
 	}
 
 	pub fn register_impl(&mut self, ty: Type, im: ImplBlockInterface) {
@@ -140,7 +144,7 @@ impl ImplSolver {
 	}
 
 	pub fn is_trait_implemented(&self, ty: &Type, tr: &TraitRef, generics: &Generics) -> bool {
-		if !self.local_impls.is_empty() {
+		if !self.finalized {
 			panic!("finalize the ImplSolver before querying it!");
 		}
 
