@@ -23,7 +23,6 @@ static KEYWORDS: [&str; 32] = [
 	"static",
 	"const",
 	"mut",
-	"ref",
 	"for",
 	"while",
 	"using",
@@ -36,12 +35,13 @@ static KEYWORDS: [&str; 32] = [
 	"unsafe",
 	"import",
 	"export",
-	"compile",
 	"trait",
 	"impl",
 	"enum",
 	"match",
 	"type",
+	"init",
+	"drop",
 ];
 
 static OPERATORS: [&str; 42] = [
