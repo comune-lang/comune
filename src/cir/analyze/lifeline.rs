@@ -381,7 +381,6 @@ impl AnalysisResultHandler<DefInitFlow> for ElaborateDrops {
 			impl_solver: &ImplSolver,
 	) -> Result<Option<CIRFunction>, Vec<ComuneError>> {
 		let errors = vec![];
-		let drop_trait = impl_solver.get_lang_trait(LangTrait::Drop);
 
 		let mut func_out = func.clone();
 		let mut block_obligations = vec![];
@@ -411,7 +410,7 @@ impl AnalysisResultHandler<DefInitFlow> for ElaborateDrops {
 			for (lvalue, style) in obligations {
 				let var_ty = func.get_lvalue_type(&lvalue);
 
-				let needs_drop = impl_solver.is_trait_implemented(&var_ty, &drop_trait, &vec![]);
+				let needs_drop = true;
 
 				let CIRStmt::StorageDead { next, .. } = func_out.blocks[i].items.pop().unwrap() else {
 					panic!()

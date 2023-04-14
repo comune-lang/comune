@@ -10,11 +10,6 @@ trait Clone {
 	Self clone(&self);
 }
 
-@lang(Drop)
-trait Drop {
-	void drop(mut& self);
-}
-
 @lang(Sized)
 trait Sized {}
 

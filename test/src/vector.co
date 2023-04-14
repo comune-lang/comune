@@ -5,10 +5,10 @@ struct Vector<type T> {
 	usize len;
 	usize capacity;
 
-	init(init& self) {
-		// Literal initialization - move elision guaranteed
-		self = Vector {
-			data: nullptr,
+	init(mut& self) {
+		// TODO: guarantee move elision
+		self = Vector<T> {
+			data: malloc(0) as T mut*,
 			len: 0,
 			capacity: 0,
 		};
@@ -16,10 +16,6 @@ struct Vector<type T> {
 	
 	drop(mut& self) {
 		if self.capacity > 0 {
-			for (usize i = 0; i < self.len; i++) {
-				*(self.data + i).~T();
-			}
-
 			free(self.data as void mut*);
 		}
 	}
@@ -28,13 +24,13 @@ struct Vector<type T> {
 using Test = Vector<int>;
 
 void foo() {
-	Test a = Vector<int>();
+	//Test a = Vector<int>();
 	// God this could use some syntactic sugar lol
 	usize size = size_of<Test>();
 	Test mut* b = malloc(size) as Test mut*;
 
 	// Direct constructor call - equivalent of C++'s placement-new
-	(*b).init();
+	//(*b).init();
 }
 
 @no_mangle
@@ -75,16 +71,6 @@ impl<type T> Vector<T> {
 		unsafe { *(self.data + i) }
 	}
 
-}
-
-impl<type T> Drop for Vector<T> {
-	void drop(mut& self) {
-		printf(c"<Vector<T> as Drop>::drop() called!\n");
-	
-		if self.capacity > 0 {
-			free(self.data as void mut*);
-		}
-	}
 }
 
 void vector_test(Vector<float> test) {

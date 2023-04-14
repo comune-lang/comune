@@ -85,6 +85,18 @@ impl CIRModuleBuilder {
 
 				ModuleItemInterface::Type(ty) => {
 					self.module.types.insert(name.to_string(), ty.clone());
+
+					if let Some(drop) = &ty.read().unwrap().drop {
+						let (proto, cir_fn) = self.generate_prototype(&*drop.read().unwrap());
+
+						self.module.functions.insert(proto, cir_fn);
+					}
+
+					for init in &ty.read().unwrap().init {
+						let (proto, cir_fn) = self.generate_prototype(&*init.read().unwrap());
+
+						self.module.functions.insert(proto, cir_fn);
+					}
 				}
 
 				_ => {}
@@ -93,7 +105,8 @@ impl CIRModuleBuilder {
 	}
 
 	fn generate_module(&mut self, module_impl: &ModuleImpl) {
-		for (func, ast) in module_impl.fn_impls.iter() {
+
+		for (func, ast) in &module_impl.fn_impls {
 			let ModuleASTElem::Parsed(ast) = ast else { panic!() };
 
 			let proto = self.get_prototype(&*func.read().unwrap());

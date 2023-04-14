@@ -344,6 +344,7 @@ pub fn resolve_type(
 		}
 	}
 }
+
 pub fn resolve_type_def(
 	ty: &mut TypeDef,
 	namespace: &ModuleInterface,
@@ -372,6 +373,7 @@ pub fn resolve_type_def(
 				SrcSpan::new(),
 			));
 		}
+		
 		if layout.args[0].len() != 1 {
 			return Err(ComuneError::new(
 				ComuneErrCode::ParamCountMismatch {

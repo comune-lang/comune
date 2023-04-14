@@ -201,23 +201,37 @@ impl<'ctx> Parser {
 				Token::Keyword("struct") => {
 					// Register algebraic type
 					let mut current_visibility = Visibility::Public;
-					let mut def = TypeDef::new();
-					let Token::Name(name) = self.get_next()? else { return self.err(ComuneErrCode::ExpectedIdentifier) };
+					
+					let def = Arc::new(RwLock::new(TypeDef::new()));
+					let mut def_write = def.write().unwrap();
+					let mut self_ty = Type::TypeRef { def: Arc::downgrade(&def), args: vec![] };
+
+					let Token::Name(name) = self.get_next()? else { 
+						return self.err(ComuneErrCode::ExpectedIdentifier) 
+					};
+
+					let full_name = Identifier::from_parent(scope, name);
 
 					self.get_next()?;
-
-					def.params = self.parse_generic_param_list(None)?;
-
-					let mut next = self.get_current()?;
-
-					if !token_compare(&next, "{") {
-						return self.err(ComuneErrCode::UnexpectedToken);
+					
+					// Get the generic params
+					def_write.params = self.parse_generic_param_list(None)?;
+					
+					// Add every param as an arg to self_ty
+					// This is analogous to doing `impl<type T, type U> MyType<T, U>`
+					for i in 0..def_write.params.len() {
+						let Type::TypeRef { args, .. } = &mut self_ty else { 
+							unreachable!() 
+						};
+						
+						args.push(Type::TypeParam(i));
 					}
 
-					next = self.get_next()?; // Consume brace
 
-					while !token_compare(&next, "}") {
-						match next {
+					self.consume(&Token::Other('{'))?; // Consume brace
+
+					loop {
+						match self.get_current()? {
 							Token::Name(_) => {
 								let result =
 									self.parse_namespace_declaration(current_attributes, None)?;
@@ -225,16 +239,14 @@ impl<'ctx> Parser {
 
 								match result.1 {
 									ModuleItemInterface::Variable(t) => {
-										def.members.push((result.0, t, current_visibility.clone()))
+										def_write.members.push((result.0, t, current_visibility.clone()))
 									}
 
 									_ => todo!(),
 								}
-
-								next = self.get_current()?;
 							}
 
-							Token::Keyword(k) => {
+							Token::Keyword(k @ ("public" | "private" | "protected")) => {
 								match k {
 									"public" => {
 										current_visibility = Visibility::Public;
@@ -245,27 +257,69 @@ impl<'ctx> Parser {
 									"protected" => {
 										current_visibility = Visibility::Protected;
 									}
-									_ => return self.err(ComuneErrCode::UnexpectedKeyword),
+									_ => unreachable!()
 								}
+
 								self.consume(&Token::Other(':'))?;
-								next = self.get_next()?;
 							}
+
+							Token::Keyword(k @ ("init" | "drop")) => {
+								self.get_next()?;
+
+								let mut generics = def_write.params.clone();
+								generics.append(&mut self.parse_generic_param_list(None)?);
+
+								let params = self.parse_parameter_list(Some(&self_ty), None)?;
+								
+								let mut path = Identifier::from_parent(&scope, k.to_string());
+								path.qualifier.0 = Some(Box::new(self_ty.clone()));
+
+								let func = Arc::new(RwLock::new(FnPrototype {
+									path,
+									params,
+									generics,
+									ret: (BindingProps::default(), Type::Basic(Basic::Void)),
+									attributes: vec![]
+								}));
+
+								// Skip c'tor/d'tor body
+								let ast = self.get_current_token_index();
+								self.skip_block()?;
+
+								// Add fn to module impl
+								self.module_impl.fn_impls.push((func.clone(), ModuleASTElem::Unparsed(ast)));
+
+								match k {
+									"init" => {
+										def_write.init.push(func);
+									}
+
+									"drop" => {
+										def_write.drop = Some(func);
+									}
+
+									_ => unreachable!()
+								}
+							}
+
+							Token::Keyword(_) => return self.err(ComuneErrCode::UnexpectedKeyword),
+
+							Token::Other('}') => break,
 
 							_ => return self.err(ComuneErrCode::ExpectedIdentifier),
 						}
 					}
 
-					self.get_next()?; // Consume closing brace
-
-					def.attributes = current_attributes;
-
-					let full_name = Identifier::from_parent(scope, name);
+					self.consume(&Token::Other('}'))?; // Consume brace
 					
-					def.name = full_name.clone();
+					def_write.name = full_name.clone();
+					def_write.attributes = current_attributes;
+
+					drop(def_write);
 
 					self.interface.children.insert(
 						full_name,
-						ModuleItemInterface::Type(Arc::new(RwLock::new(def))),
+						ModuleItemInterface::Type(def),
 					);
 				}
 
@@ -724,16 +778,16 @@ impl<'ctx> Parser {
 
 					// Past the parameter list, check if we're at a function body or not
 
-					let ast_elem;
+					let ast; 
 
 					match self.get_current()? {
 						Token::Other('{') => {
-							ast_elem = ModuleASTElem::Unparsed(self.get_current_token_index());
+							ast = ModuleASTElem::Unparsed(self.get_current_token_index());
 							self.skip_block()?;
 						}
 
 						Token::Other(';') => {
-							ast_elem = ModuleASTElem::NoElem;
+							ast = ModuleASTElem::NoElem;
 							self.get_next()?;
 						}
 
@@ -743,7 +797,7 @@ impl<'ctx> Parser {
 					let proto = Arc::new(RwLock::new(t));
 
 					interface = ModuleItemInterface::Functions(vec![proto.clone()]);
-					item = ModuleItemImpl::Function(proto, ast_elem);
+					item = ModuleItemImpl::Function(proto, ast);
 				}
 
 				"=" => {
