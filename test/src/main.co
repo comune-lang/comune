@@ -52,7 +52,7 @@ impl Hello for Test {
 
 
 void impl_test() {
-	Test test = Test { a: 413, b: 612, };
+	Test test = new Test { a: 413, b: 612, };
 	test.hello();
 	printf(c"The sum of a and b is %i!\n", test.sum());
 }
@@ -79,11 +79,11 @@ void overload_test(i64 a) {
 }
 
 Vector<i32> generic_ret() {
-	return Vector<i32> {
+	new Vector<i32> {
 		data: malloc(4) as i32 mut*,
 		len: 1,
 		capacity: 1,
-	};
+	}
 }
 
 using TestSumType = (i32 | f32);
@@ -94,7 +94,7 @@ TestSumType sum_type_test(i32& value) {
 
 // In lieu of properly working static functions
 Vector<T> vec<type T>() {
-	Vector<T> {
+	new Vector<T> {
 		data: malloc(0) as T mut*,
 		capacity: 0,
 		len: 0,
@@ -178,7 +178,7 @@ int main() {
 	ref_test(int_ref_test);
 	printf(c"int_ref_test: %i\n", int_ref_test);
 
-	printf(c"Temporary->lvalue promotion: %i\n", Test { a: 23, b: 35 }.sum());
+	printf(c"Temporary->lvalue promotion: %i\n", new Test { a: 23, b: 35 }.sum());
 
 	printf(c"bit_cast<f32, u32>: %i\n", bit_cast<f32, u32>(10.0f32));
 	return 0;

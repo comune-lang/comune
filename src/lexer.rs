@@ -40,7 +40,7 @@ static KEYWORDS: [&str; 32] = [
 	"enum",
 	"match",
 	"type",
-	"init",
+	"new",
 	"drop",
 ];
 

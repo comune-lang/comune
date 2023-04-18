@@ -4,7 +4,7 @@ use crate::{
 	ast::types::Type,
 	ast::{
 		controlflow::ControlFlow,
-		expression::{Atom, Expr, FnRef, NodeData, OnceAtom, Operator},
+		expression::{Atom, Expr, FnRef, NodeData, OnceAtom, Operator, XtorKind},
 		pattern::Binding,
 		types::{Basic, TupleKind},
 		FnScope,
@@ -224,7 +224,6 @@ impl Expr {
 					}
 
 					Atom::Cast(_, cast_t) => target == cast_t,
-					Atom::AlgebraicLit(alg_ty, _) => target == alg_ty,
 
 					Atom::Once(once) => {
 						if let OnceAtom::Uneval(expr) = &*once.read().unwrap() {
@@ -415,16 +414,12 @@ impl Atom {
 				}
 			}
 
-			Atom::AlgebraicLit(ty, elems) => {
-				let Type::TypeRef { def, args } = ty else {
-					panic!()
-				};
-
-				let def = def.upgrade().unwrap();
+			Atom::Constructor { def: def_weak, kind: XtorKind::Literal { fields }, generic_args, placement } => {
+				let def = def_weak.upgrade().unwrap();
 				let def = def.read().unwrap();
 
-				for (name, expr) in elems.iter_mut() {
-					let member_ty = if let Some((_, ty)) = def.get_member(name, Some(args)) {
+				for (name, expr) in fields.iter_mut() {
+					let member_ty = if let Some((_, ty)) = def.get_member(name, Some(generic_args)) {
 						ty
 					} else {
 						// Invalid member in strenum literal
@@ -447,10 +442,15 @@ impl Atom {
 				let mut missing_members = vec![];
 
 				for (member, ..) in &def.members {
-					if !elems.iter().any(|(m, _)| member == m) {
+					if !fields.iter().any(|(m, _)| member == m) {
 						missing_members.push(member.clone());
 					}
 				}
+
+				let ty = Type::TypeRef {
+					def: def_weak.clone(),
+					args: generic_args.clone(),
+				};
 
 				if !missing_members.is_empty() {
 					return Err(ComuneError::new(
@@ -462,7 +462,34 @@ impl Atom {
 					));
 				}
 
-				return Ok(ty.clone());
+				if let Some(placement) = placement {
+					// If this is a placement-new expression, check if the
+					// location exists and matches our type.
+					let Some((_, place_ty)) = scope.find_symbol(&placement, true) else {
+						return Err(ComuneError::new(
+							ComuneErrCode::UndeclaredIdentifier(placement.to_string()),
+							meta.tk,
+						))
+					};
+
+					if !ty.is_subtype_of(&place_ty) {
+						return Err(ComuneError::new(
+							ComuneErrCode::AssignTypeMismatch { expr: ty, to: place_ty },
+							meta.tk,
+						))
+					}
+
+					// Placement-new does not return the constructed value,
+					// so we return void as the type here
+					Ok(Type::Basic(Basic::Void))
+				} else {
+					// Not a placement-new expr, just return the type
+					Ok(ty)
+				}
+			}
+
+			Atom::Constructor { .. } => {
+				todo!()
 			}
 
 			Atom::Block {

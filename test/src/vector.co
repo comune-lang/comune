@@ -5,7 +5,11 @@ struct Vector<type T> {
 	usize len;
 	usize capacity;
 
-	init(mut& self) {
+	// `init` and `drop` are special functions
+	// that handle construction and destruction.
+
+	// TODO: Add `init&` binding
+	/*new(mut& self) {
 		// TODO: guarantee move elision
 		self = Vector<T> {
 			data: malloc(0) as T mut*,
@@ -18,7 +22,7 @@ struct Vector<type T> {
 		if self.capacity > 0 {
 			free(self.data as void mut*);
 		}
-	}
+	}*/
 }
 
 using Test = Vector<int>;
@@ -28,6 +32,8 @@ void foo() {
 	// God this could use some syntactic sugar lol
 	usize size = size_of<Test>();
 	Test mut* b = malloc(size) as Test mut*;
+	
+	//*b.drop();
 
 	// Direct constructor call - equivalent of C++'s placement-new
 	//(*b).init();

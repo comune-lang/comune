@@ -3,7 +3,7 @@ use std::{borrow::BorrowMut, collections::HashMap};
 use crate::{
 	ast::{
 		controlflow::ControlFlow,
-		expression::{Atom, Expr, FnRef, OnceAtom, Operator},
+		expression::{Atom, Expr, FnRef, OnceAtom, Operator, XtorKind},
 		module::{ModuleASTElem, ModuleImpl, ModuleInterface, ModuleItemInterface, Name},
 		pattern::{Binding, Pattern},
 		statement::Stmt,
@@ -515,52 +515,6 @@ impl CIRModuleBuilder {
 					))
 				}
 
-				Atom::AlgebraicLit(ty, elems) => {
-					let Type::TypeRef { def, .. } = ty else {
-						panic!()
-					};
-
-					let def = def.upgrade().unwrap();
-					let def = def.read().unwrap();
-
-					let mut indices = vec![];
-
-					for (elem, _) in elems {
-						indices.push(
-							def.members
-								.iter()
-								.position(|(name, ..)| name == elem)
-								.unwrap(),
-						);
-					}
-
-					let tmp = self.insert_temporary(
-						ty.clone(),
-						RValue::Atom(ty.clone(), None, Operand::Undef, SrcSpan::new()),
-					);
-
-					for i in 0..indices.len() {
-						let mem_expr = self.generate_expr(&elems[i].1);
-						let mut mem_lval = tmp.clone();
-
-						mem_lval.projection.push(PlaceElem::Field(indices[i]));
-
-						if let Some(mem_expr) = mem_expr {
-							self.write(CIRStmt::Assignment(
-								(mem_lval, elems[i].1.get_node_data().tk),
-								mem_expr,
-							))
-						}
-					}
-
-					Some(RValue::Atom(
-						ty.clone(),
-						None,
-						Operand::LValue(tmp, span),
-						span,
-					))
-				}
-
 				Atom::Identifier(id) => {
 					let idx = self
 						.get_var_index(id.expect_scopeless().unwrap())
@@ -599,8 +553,79 @@ impl CIRModuleBuilder {
 					})
 				}
 
-				call @ Atom::FnCall { .. } => self.generate_fn_call(call, span),
+				Atom::FnCall { 
+					resolved, 
+					args, 
+					generic_args, 
+					.. 
+				} => self.generate_fn_call(args, generic_args, resolved, span),
 
+				Atom::Constructor { kind, def, generic_args, placement } => {
+					let ty = Type::TypeRef { 
+						def: def.clone(), 
+						args: generic_args.clone() 
+					};
+
+					let location = if let Some(placement) = placement {
+						LValue { 
+							local: self.get_var_index(placement.expect_scopeless().unwrap())
+								.unwrap_or_else(|| {
+									panic!(
+										"cIR error: failed to fetch variable {}",
+										placement.expect_scopeless().unwrap()
+								)}),
+							projection: vec![]
+						}
+					} else {
+						self.insert_temporary(ty.clone(), RValue::Atom(ty.clone(), None, Operand::Undef, SrcSpan::new()))
+					};
+
+
+					match kind {
+						XtorKind::Literal { fields } => {
+							// Literal constructor, like `new Type { field: expr, }`
+
+							let mut indices = vec![];
+
+							let def = def.upgrade().unwrap();
+							let def = def.read().unwrap();
+	
+							for (field, _) in fields {
+								indices.push(
+									def.members
+										.iter()
+										.position(|(name, ..)| name == field)
+										.unwrap(),
+								);
+							}
+
+							for i in 0..indices.len() {
+								let mem_expr = self.generate_expr(&fields[i].1);
+								let mut mem_lval = location.clone();
+
+								mem_lval.projection.push(PlaceElem::Field(indices[i]));
+
+								if let Some(mem_expr) = mem_expr {
+									self.write(CIRStmt::Assignment(
+										(mem_lval, fields[i].1.get_node_data().tk),
+										mem_expr,
+									))
+								}
+							}
+
+							Some(RValue::Atom(
+								ty.clone(),
+								None,
+								Operand::LValue(location, span),
+								span,
+							))
+						}
+
+						_ => todo!()
+					}
+				}
+
+ 
 				Atom::Block { items, result, .. } => self.generate_block(items, result, true).1,
 
 				Atom::CtrlFlow(ctrl) => match &**ctrl {
@@ -1081,8 +1106,8 @@ impl CIRModuleBuilder {
 				} else {
 					match op {
 						Operator::MemberAccess => match &**rhs {
-							Expr::Atom(call @ Atom::FnCall { .. }, _) => {
-								self.generate_fn_call(call, rhs.get_node_data().tk)
+							Expr::Atom(Atom::FnCall { resolved, args, generic_args, .. }, _) => {
+								self.generate_fn_call(args, generic_args, resolved, rhs.get_node_data().tk)
 							}
 
 							Expr::Atom(Atom::Identifier(_), _) => {
@@ -1161,14 +1186,12 @@ impl CIRModuleBuilder {
 		}
 	}
 
-	fn generate_fn_call(&mut self, call: &Atom, span: SrcSpan) -> Option<RValue> {
-		let Atom::FnCall {
-			name: _,
-			args,
-			type_args,
-			resolved,
-		} = call else { panic!() };
-
+	fn generate_fn_call(&mut self, 
+		args: &Vec<Expr>,
+		generic_args: &Vec<Type>, 
+		resolved: &FnRef, 
+		span: SrcSpan
+	) -> Option<RValue> {
 		let cir_args: Vec<_> = args
 			.iter()
 			.map_while(|arg| {
@@ -1193,7 +1216,7 @@ impl CIRModuleBuilder {
 		match resolved {
 			FnRef::Direct(resolved) => {
 				let (ret_props, ret) = resolved.read().unwrap().ret.clone();
-				let ret = ret.get_concrete_type(type_args);
+				let ret = ret.get_concrete_type(generic_args);
 
 				let result = if ret == Type::Basic(Basic::Void) {
 					None
@@ -1206,7 +1229,7 @@ impl CIRModuleBuilder {
 				self.write(CIRStmt::Call {
 					id: CIRCallId::Direct(id, SrcSpan::new()),
 					args: cir_args,
-					generic_args: type_args.clone(),
+					generic_args: generic_args.clone(),
 					result: result.clone(),
 				});
 

@@ -8,7 +8,7 @@ use crate::errors::{ComuneErrCode, ComuneError};
 use crate::lexer::{Lexer, SrcSpan, Token};
 
 use crate::ast::controlflow::ControlFlow;
-use crate::ast::expression::{Atom, Expr, FnRef, NodeData, Operator};
+use crate::ast::expression::{Atom, Expr, FnRef, NodeData, Operator, XtorKind};
 use crate::ast::module::{
 	Identifier, ItemRef, ModuleASTElem, ModuleImpl, ModuleImportKind, ModuleInterface,
 	ModuleItemImpl, ModuleItemInterface, Name,
@@ -223,7 +223,7 @@ impl<'ctx> Parser {
 						let Type::TypeRef { args, .. } = &mut self_ty else { 
 							unreachable!() 
 						};
-						
+
 						args.push(Type::TypeParam(i));
 					}
 
@@ -1125,107 +1125,69 @@ impl<'ctx> Parser {
 	}
 
 	fn parse_atom(&self, scope: &FnScope<'ctx>) -> ComuneResult<Atom> {
-		let mut result = None;
-		let mut current = self.get_current()?;
+		let mut result;
 
 		if self.is_at_identifier_token()? {
 			let id = self.parse_identifier(Some(scope))?;
 
-			if let Some(Type::TypeRef { def, mut args }) = scope.find_type(&id) {
-				if let Token::Operator("<") = self.get_current()? {
-					args = self.parse_type_argument_list(Some(scope))?;
+			// Variable or function name
+			result = Some(Atom::Identifier(id.clone()));
+
+			if let Token::Operator("(" | "<") = self.get_current()? {
+				let start_token = self.get_current_token_index();
+				let mut type_args = vec![];
+
+				if self.get_current()? == Token::Operator("<") {
+					// Here lies the Turbofish, vanquished after a battle
+					// lasting months on end, at the cost of tuple syntax.
+
+					type_args = match self.parse_type_argument_list(Some(scope)) {
+						Ok(args) => args,
+
+						Err(ComuneError {
+							code:
+								ComuneErrCode::UnexpectedToken | ComuneErrCode::ExpectedIdentifier,
+							..
+						}) => {
+							self.lexer.borrow_mut().seek_token_idx(start_token);
+
+							return Ok(Atom::Identifier(id));
+						}
+
+						Err(e) => return Err(e),
+					}
 				}
 
-				if let Token::Other('{') = self.get_current()? {
-					// Parse struct literal
+				// Function call
+				let mut args = vec![];
 
-					let mut inits = vec![];
+				if self.get_next()? != Token::Operator(")") {
+					loop {
+						args.push(self.parse_expression(scope)?);
 
-					while self.get_current()? != Token::Other('}') {
-						self.get_next()?;
-
-						if let Token::Name(member_name) = self.get_current()? {
+						if self.get_current()? == Token::Other(',') {
 							self.get_next()?;
-
-							self.consume(&Token::Other(':'))?;
-
-							let expr = self.parse_expression(scope)?;
-
-							inits.push((member_name, expr));
-						} else if self.get_current()? != Token::Other('}') {
+						} else if self.get_current()? == Token::Operator(")") {
+							break;
+						} else {
 							return self.err(ComuneErrCode::UnexpectedToken);
 						}
 					}
-
-					self.consume(&Token::Other('}'))?;
-
-					result = Some(Atom::AlgebraicLit(Type::TypeRef { def, args }, inits));
-				} else {
-					return self.err(ComuneErrCode::UnexpectedToken);
 				}
+				self.get_next()?;
+
+				result = Some(Atom::FnCall {
+					name: id,
+					args,
+					generic_args: type_args,
+					resolved: FnRef::None,
+				});
 			}
-
-			if result.is_none() {
-				// Variable or function name
-				result = Some(Atom::Identifier(id.clone()));
-
-				if let Token::Operator("(" | "<") = self.get_current()? {
-					let start_token = self.get_current_token_index();
-					let mut type_args = vec![];
-
-					if self.get_current()? == Token::Operator("<") {
-						// Here lies the Turbofish, vanquished after a battle
-						// lasting months on end, at the cost of tuple syntax.
-
-						type_args = match self.parse_type_argument_list(Some(scope)) {
-							Ok(args) => args,
-
-							Err(ComuneError {
-								code:
-									ComuneErrCode::UnexpectedToken | ComuneErrCode::ExpectedIdentifier,
-								..
-							}) => {
-								self.lexer.borrow_mut().seek_token_idx(start_token);
-
-								return Ok(Atom::Identifier(id));
-							}
-
-							Err(e) => return Err(e),
-						}
-					}
-
-					// Function call
-					let mut args = vec![];
-
-					if self.get_next()? != Token::Operator(")") {
-						loop {
-							args.push(self.parse_expression(scope)?);
-
-							current = self.get_current()?;
-
-							if let Token::Other(',') = current {
-								self.get_next()?;
-							} else if current == Token::Operator(")") {
-								break;
-							} else {
-								return self.err(ComuneErrCode::UnexpectedToken);
-							}
-						}
-					}
-					self.get_next()?;
-
-					result = Some(Atom::FnCall {
-						name: id,
-						args,
-						type_args,
-						resolved: FnRef::None,
-					});
-				}
-			}
+		
 		} else {
 			// Not at an identifier, parse the other kinds of Atom
 
-			match current {
+			match self.get_current()? {
 				Token::StringLiteral(s) => {
 					self.get_next()?;
 
@@ -1299,6 +1261,64 @@ impl<'ctx> Parser {
 				}
 
 				Token::Keyword(keyword) => match keyword {
+
+					"new" => {
+						self.get_next()?;
+
+						let ty_id = self.parse_identifier(Some(scope))?;
+
+						let Some(Type::TypeRef { def, .. }) = scope.find_type(&ty_id) else {
+							return self.err(
+								ComuneErrCode::UnresolvedTypename(ty_id.to_string())
+							)
+						};
+
+						let generic_args = if let Token::Operator("<") = self.get_current()? {
+							self.parse_type_argument_list(Some(scope))?
+						} else {
+							vec![]
+						};
+		
+						if let Token::Other('{') = self.get_current()? {
+							// Parse literal constructor
+		
+							let mut inits = vec![];
+		
+							while self.get_current()? != Token::Other('}') {
+								self.get_next()?;
+		
+								if let Token::Name(member_name) = self.get_current()? {
+									self.get_next()?;
+		
+									self.consume(&Token::Other(':'))?;
+		
+									let expr = self.parse_expression(scope)?;
+		
+									inits.push((member_name, expr));
+								} else if self.get_current()? != Token::Other('}') {
+									return self.err(ComuneErrCode::UnexpectedToken);
+								}
+							}
+		
+							self.consume(&Token::Other('}'))?;
+		
+							result = Some(Atom::Constructor { 
+								def, 
+								generic_args, 
+								kind: XtorKind::Literal { fields: inits },
+								placement: None,
+							});
+						} else {
+							return self.err(
+								ComuneErrCode::UnexpectedToken
+							)
+						}
+					}
+
+					"drop" => {
+						todo!()
+					}
+
 					"return" => {
 						// Parse return statement
 						let next = self.get_next()?;
@@ -1333,17 +1353,16 @@ impl<'ctx> Parser {
 						self.get_next()?;
 
 						let scrutinee = self.parse_expression(scope)?;
-						current = self.get_current()?;
 
-						if current != Token::Other('{') {
+						if self.get_current()? != Token::Other('{') {
 							return self.err(ComuneErrCode::UnexpectedToken);
 						}
 
-						current = self.get_next()?;
+						self.get_next()?;
 
 						let mut branches = vec![];
 
-						while current != Token::Other('}') {
+						while self.get_current()? != Token::Other('}') {
 							let branch_pat = self.parse_pattern(scope)?;
 							let branch_block;
 
@@ -1368,7 +1387,6 @@ impl<'ctx> Parser {
 								self.get_next()?;
 							}
 
-							current = self.get_current()?;
 							branches.push((branch_pat, branch_block));
 						}
 
@@ -1440,45 +1458,35 @@ impl<'ctx> Parser {
 						let mut cond = None;
 						let mut iter = None;
 
-						if token_compare(&current, ";") {
+						if self.get_current()? == Token::Other(';') {
 							// No init statement, skip
-							current = self.get_next()?;
+							self.get_next()?;
 						} else {
 							init = Some(self.parse_statement(scope)?); // TODO: Restrict to declaration?
 							self.check_semicolon()?;
-							current = self.get_current()?;
+							self.get_current()?;
 						}
 
-						if token_compare(&current, ";") {
+						if self.get_current()? == Token::Other(';') {
 							// No iter expression, skip
-							current = self.get_next()?;
+							self.get_next()?;
 						} else {
 							cond = Some(self.parse_expression(scope)?);
 							self.check_semicolon()?;
-							current = self.get_current()?;
 						}
 
-						if token_compare(&current, ";") {
+						if self.get_current()? == Token::Other(';') {
 							// No cond expression, skip
-							current = self.get_next()?;
-						} else if !token_compare(&current, ")") {
+							self.get_next()?;
+						} else if self.get_current()? != Token::Other(')') {
 							iter = Some(self.parse_expression(scope)?);
-							current = self.get_current()?;
 						}
 
 						// Check closing brace
-						if token_compare(&current, ")") {
-							current = self.get_next()?;
-						} else {
-							return self.err(ComuneErrCode::UnexpectedToken);
-						}
+						self.consume(&Token::Operator(")"))?;
 
 						// Parse body
-						let body = if token_compare(&current, "{") {
-							self.parse_block(scope)?
-						} else {
-							self.parse_statement(scope)?.wrap_in_block()
-						};
+						let body = self.parse_block(scope)?;
 
 						result = Some(Atom::CtrlFlow(Box::new(ControlFlow::For {
 							init,

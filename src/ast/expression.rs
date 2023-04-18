@@ -2,7 +2,7 @@ use std::{
 	ffi::CString,
 	fmt::Display,
 	ptr,
-	sync::{Arc, RwLock},
+	sync::{Arc, RwLock, Weak},
 };
 
 use crate::lexer::SrcSpan;
@@ -11,7 +11,7 @@ use super::{
 	controlflow::ControlFlow,
 	module::{Identifier, Name},
 	statement::Stmt,
-	types::{Basic, FnPrototype, Type},
+	types::{Basic, FnPrototype, Type, TypeDef},
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -415,7 +415,7 @@ pub enum Atom {
 
 	// Advanced literals
 	ArrayLit(Vec<Expr>),
-	AlgebraicLit(Type, Vec<(Name, Expr)>),
+	//AlgebraicLit(Type, Vec<(Name, Expr)>),
 
 	Identifier(Identifier),
 
@@ -424,11 +424,32 @@ pub enum Atom {
 	FnCall {
 		name: Identifier,
 		args: Vec<Expr>,
-		type_args: Vec<Type>,
+		generic_args: Vec<Type>,
 		resolved: FnRef,
 	},
 
+	// Constructor call
+	Constructor {
+		def: Weak<RwLock<TypeDef>>,
+		generic_args: Vec<Type>,
+		kind: XtorKind,
+		placement: Option<Identifier>,
+	},
+
+
 	Once(Arc<RwLock<OnceAtom>>),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum XtorKind {
+	Literal { 
+		fields: Vec<(Name, Expr)>
+	},
+
+	Constructor {
+		args: Vec<Expr>,
+		resolved: FnRef,
+	},
 }
 
 #[derive(Clone, Debug)]
@@ -449,16 +470,16 @@ impl PartialEq for Atom {
 		match (self, other) {
 			(
 				Self::Block {
-					items: l_items,
-					result: l_result,
-					is_unsafe: l_unsafe,
+					items: l0,
+					result: l1,
+					is_unsafe: l2,
 				},
 				Self::Block {
-					items: r_items,
-					result: r_result,
-					is_unsafe: r_unsafe,
+					items: r0,
+					result: r1,
+					is_unsafe: r2,
 				},
-			) => l_items == r_items && l_result == r_result && l_unsafe == r_unsafe,
+			) => l0 == r0 && l1 == r1 && l2 == r2,
 			(Self::CtrlFlow(l0), Self::CtrlFlow(r0)) => l0 == r0,
 			(Self::IntegerLit(l0, l1), Self::IntegerLit(r0, r1)) => l0 == r0 && l1 == r1,
 			(Self::FloatLit(l0, l1), Self::FloatLit(r0, r1)) => l0 == r0 && l1 == r1,
@@ -466,35 +487,55 @@ impl PartialEq for Atom {
 			(Self::StringLit(l0), Self::StringLit(r0)) => l0 == r0,
 			(Self::CStringLit(l0), Self::CStringLit(r0)) => l0 == r0,
 			(Self::ArrayLit(l0), Self::ArrayLit(r0)) => l0 == r0,
-			(Self::AlgebraicLit(l0, l1), Self::AlgebraicLit(r0, r1)) => l0 == r0 && l1 == r1,
 			(Self::Identifier(l0), Self::Identifier(r0)) => l0 == r0,
 			(Self::Cast(l0, l1), Self::Cast(r0, r1)) => l0 == r0 && l1 == r1,
+
+			(
+				Self::Constructor { def: l0, kind: l1, generic_args: l2, placement: l3 },
+				Self::Constructor { def: r0, kind: r1, generic_args: r2, placement: r3 }
+			) => {
+				Arc::ptr_eq(&l0.upgrade().unwrap(), &r0.upgrade().unwrap()) && 
+				l1 == r1 && l2 == r2 && l3 == r3
+			}
+
 			(
 				Self::FnCall {
 					name: l_name,
 					args: l_args,
-					type_args: l_type_args,
+					generic_args: l_type_args,
 					resolved: l_res,
 				},
 				Self::FnCall {
 					name: r_name,
 					args: r_args,
-					type_args: r_type_args,
+					generic_args: r_type_args,
 					resolved: r_res,
 				},
-			) => {
-				l_name == r_name && l_args == r_args && l_type_args == r_type_args && {
-					match (l_res, r_res) {
-						(FnRef::Direct(l), FnRef::Direct(r)) => {
-							&*l.read().unwrap() == &*r.read().unwrap()
-						}
-						(FnRef::Indirect(l0), FnRef::Indirect(r0)) => l0 == r0,
-						(FnRef::None, FnRef::None) => true,
-						_ => false,
-					}
+			) => l_name == r_name && l_args == r_args && l_type_args == r_type_args && l_res == r_res,
+			
+			
+			(Self::Once(l0), Self::Once(r0)) => *l0.read().unwrap() == *r0.read().unwrap(),
+			
+			// you don't want to know how much this shit's bitten me in the ass.
+			_ => {
+				if std::mem::discriminant(self) == std::mem::discriminant(other) {
+					panic!("unimplemented PartialEq variant for Expr!")
+				} else {
+					false
 				}
 			}
-			(Self::Once(l0), Self::Once(r0)) => *l0.read().unwrap() == *r0.read().unwrap(),
+		}
+	}
+}
+
+impl PartialEq for FnRef {
+	fn eq(&self, other: &Self) -> bool {
+		match (self, other) {
+			(FnRef::Direct(l), FnRef::Direct(r)) => {
+				&*l.read().unwrap() == &*r.read().unwrap()
+			}
+			(FnRef::Indirect(l0), FnRef::Indirect(r0)) => l0 == r0,
+			(FnRef::None, FnRef::None) => true,
 			_ => false,
 		}
 	}
@@ -561,11 +602,7 @@ impl Display for Atom {
 				writeln!(f, "}}")
 			}
 
-			Atom::CtrlFlow(_) => todo!(),
-
-			Atom::AlgebraicLit(_, _) => todo!(),
-
-			Atom::Once(_) => todo!(),
+			_ => todo!()
 		}
 	}
 }

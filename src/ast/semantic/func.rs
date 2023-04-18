@@ -99,7 +99,7 @@ pub fn validate_fn_call(
 	node_data: &NodeData,
 ) -> ComuneResult<Type> {
 	let mut candidates = vec![];
-	let Atom::FnCall { name, args, type_args, resolved } = call else { panic!() };
+	let Atom::FnCall { name, args, generic_args: type_args, resolved } = call else { panic!() };
 
 	if let FnRef::Direct(resolved) = resolved {
 		return Ok(resolved.read().unwrap().ret.1.clone());
@@ -232,7 +232,7 @@ pub fn resolve_method_call(
 	fn_call: &mut Atom,
 	scope: &mut FnScope,
 ) -> ComuneResult<Type> {
-	let Atom::FnCall { name, args, type_args, resolved } = fn_call else { panic!() };
+	let Atom::FnCall { name, args, generic_args: type_args, resolved } = fn_call else { panic!() };
 
 	// Already validated
 	if let FnRef::Direct(resolved) = resolved {
