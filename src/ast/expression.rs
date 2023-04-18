@@ -433,7 +433,7 @@ pub enum Atom {
 		def: Weak<RwLock<TypeDef>>,
 		generic_args: Vec<Type>,
 		kind: XtorKind,
-		placement: Option<Identifier>,
+		placement: Option<Box<Expr>>,
 	},
 
 

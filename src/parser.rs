@@ -1265,6 +1265,18 @@ impl<'ctx> Parser {
 					"new" => {
 						self.get_next()?;
 
+						let placement = if self.get_current()? == Token::Operator("(") {
+							// Placement-new
+							self.get_next()?;
+							let expr = self.parse_expression(scope)?;
+							self.consume(&Token::Operator(")"))?;
+
+							Some(Box::new(expr))
+						} else {
+							// Regular new
+							None
+						};
+
 						let ty_id = self.parse_identifier(Some(scope))?;
 
 						let Some(Type::TypeRef { def, .. }) = scope.find_type(&ty_id) else {
@@ -1306,7 +1318,7 @@ impl<'ctx> Parser {
 								def, 
 								generic_args, 
 								kind: XtorKind::Literal { fields: inits },
-								placement: None,
+								placement,
 							});
 						} else {
 							return self.err(

@@ -567,15 +567,7 @@ impl CIRModuleBuilder {
 					};
 
 					let location = if let Some(placement) = placement {
-						LValue { 
-							local: self.get_var_index(placement.expect_scopeless().unwrap())
-								.unwrap_or_else(|| {
-									panic!(
-										"cIR error: failed to fetch variable {}",
-										placement.expect_scopeless().unwrap()
-								)}),
-							projection: vec![]
-						}
+						self.generate_lvalue_expr(&placement)?.0
 					} else {
 						self.insert_temporary(ty.clone(), RValue::Atom(ty.clone(), None, Operand::Undef, SrcSpan::new()))
 					};

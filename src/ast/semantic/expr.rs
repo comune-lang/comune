@@ -465,12 +465,7 @@ impl Atom {
 				if let Some(placement) = placement {
 					// If this is a placement-new expression, check if the
 					// location exists and matches our type.
-					let Some((_, place_ty)) = scope.find_symbol(&placement, true) else {
-						return Err(ComuneError::new(
-							ComuneErrCode::UndeclaredIdentifier(placement.to_string()),
-							meta.tk,
-						))
-					};
+					let place_ty = placement.validate(scope)?;
 
 					if !ty.is_subtype_of(&place_ty) {
 						return Err(ComuneError::new(
