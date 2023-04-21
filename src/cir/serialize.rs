@@ -3,7 +3,7 @@ use std::fmt::{Display, Write};
 use crate::{ast::types::DataLayout, lexer};
 
 use super::{
-	CIRCallId, CIRFnPrototype, CIRFunction, CIRModule, CIRStmt, LValue, Operand, PlaceElem, RValue,
+	CIRCallId, CIRFunction, CIRModule, CIRStmt, LValue, Operand, PlaceElem, RValue,
 };
 
 impl Display for CIRModule {
@@ -18,58 +18,6 @@ impl Display for CIRModule {
 		}
 
 		Ok(())
-	}
-}
-
-impl Display for CIRFnPrototype {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		write!(f, "{}", self.name)?;
-
-		// Print type parameters
-		if !self.type_params.is_empty() {
-			for (i, (param, traits, ty)) in self.type_params.iter().enumerate() {
-				if i == 0 {
-					write!(f, "<")?;
-				} else {
-					write!(f, ", ")?;
-				}
-
-				write!(f, "{param}")?;
-
-				if !traits.is_empty() {
-					let mut traits_iter = traits.iter();
-
-					write!(f, ": {:?}", traits_iter.next().unwrap())?;
-
-					for tr in traits_iter {
-						write!(f, " + {tr:?}")?;
-					}
-				}
-
-				if let Some(ty) = ty {
-					write!(f, " = {ty}")?;
-				}
-			}
-
-			write!(f, ">")?;
-		}
-
-		// Print parameters
-		if self.params.is_empty() {
-			write!(f, "()")?;
-		} else {
-			let mut iter = self.params.iter();
-			let (props, param) = iter.next().unwrap();
-			write!(f, "({param}{props}")?;
-
-			for (props, param) in iter {
-				write!(f, ", {param}{props}")?;
-			}
-
-			write!(f, ")")?;
-		}
-
-		write!(f, " -> {}{}", self.ret.1, self.ret.0)
 	}
 }
 
@@ -206,7 +154,8 @@ impl Display for CIRStmt {
 			}
 
 			CIRStmt::StorageLive(var) => write!(f, "StorageLive(_{var});\n"),
-			CIRStmt::StorageDead { var, next } => write!(f, "StorageDead(_{var}) => {next};\n"),
+			CIRStmt::StorageDead(var) => write!(f, "StorageDead(_{var});\n"),
+			CIRStmt::DropShim { var, next } => write!(f, "drop {var} => bb{next};\n"),
 		}
 	}
 }
@@ -304,11 +253,11 @@ impl Display for CIRCallId {
 
 				if !args.is_empty() {
 					let mut iter = args.iter();
-					let (props, ty) = iter.next().unwrap();
+					let (ty, _, props) = iter.next().unwrap();
 
 					write!(f, "{props}{ty}")?;
 
-					for (props, ty) in iter {
+					for (ty, _, props) in iter {
 						write!(f, ", {ty}{props}")?;
 					}
 				}

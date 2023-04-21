@@ -436,6 +436,8 @@ pub enum Atom {
 		placement: Option<Box<Expr>>,
 	},
 
+	// Drop shim
+	Drop(Box<Expr>),
 
 	Once(Arc<RwLock<OnceAtom>>),
 }

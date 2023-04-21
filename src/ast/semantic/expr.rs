@@ -487,6 +487,11 @@ impl Atom {
 				todo!()
 			}
 
+			Atom::Drop(dropped) => {
+				dropped.validate(scope)?;
+				Ok(Type::Basic(Basic::Void))
+			}
+
 			Atom::Block {
 				items,
 				result,

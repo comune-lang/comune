@@ -1,4 +1,4 @@
-use std::{borrow::BorrowMut, collections::HashMap};
+use std::{borrow::BorrowMut, collections::HashMap, sync::Arc};
 
 use crate::{
 	ast::{
@@ -14,7 +14,7 @@ use crate::{
 };
 
 use super::{
-	BlockIndex, CIRBlock, CIRCallId, CIRFnPrototype, CIRFunction, CIRModule, CIRStmt, LValue,
+	BlockIndex, CIRBlock, CIRCallId, CIRFunction, CIRModule, CIRStmt, LValue,
 	Operand, PlaceElem, RValue, VarIndex,
 };
 
@@ -60,7 +60,8 @@ impl CIRModuleBuilder {
 
 			for (_, fns) in &im.functions {
 				for func in fns {
-					let (proto, cir_fn) = self.generate_prototype(&*func.read().unwrap());
+					let proto = Arc::new(func.read().unwrap().clone());
+					let cir_fn = self.generate_prototype(&proto);
 
 					self.module.functions.insert(proto, cir_fn);
 				}
@@ -77,7 +78,8 @@ impl CIRModuleBuilder {
 			match item {
 				ModuleItemInterface::Functions(fns) => {
 					for func in fns {
-						let (proto, cir_fn) = self.generate_prototype(&*func.read().unwrap());
+						let proto = Arc::new(func.read().unwrap().clone());
+						let cir_fn = self.generate_prototype(&proto);
 
 						self.module.functions.insert(proto, cir_fn);
 					}
@@ -87,13 +89,15 @@ impl CIRModuleBuilder {
 					self.module.types.insert(name.to_string(), ty.clone());
 
 					if let Some(drop) = &ty.read().unwrap().drop {
-						let (proto, cir_fn) = self.generate_prototype(&*drop.read().unwrap());
+						let proto = Arc::new(drop.read().unwrap().clone());
+						let cir_fn = self.generate_prototype(&proto);
 
 						self.module.functions.insert(proto, cir_fn);
 					}
 
 					for init in &ty.read().unwrap().init {
-						let (proto, cir_fn) = self.generate_prototype(&*init.read().unwrap());
+						let proto = Arc::new(init.read().unwrap().clone());
+						let cir_fn = self.generate_prototype(&proto);
 
 						self.module.functions.insert(proto, cir_fn);
 					}
@@ -109,32 +113,19 @@ impl CIRModuleBuilder {
 		for (func, ast) in &module_impl.fn_impls {
 			let ModuleASTElem::Parsed(ast) = ast else { panic!() };
 
-			let proto = self.get_prototype(&*func.read().unwrap());
-
-			self.generate_function(proto, ast);
+			self.generate_function(&*func.read().unwrap(), ast);
 		}
 	}
 
-	pub fn get_prototype(&mut self, func: &FnPrototype) -> CIRFnPrototype {
-		let ret = func.ret.clone();
-		let params = func
-			.params
-			.params
-			.iter()
-			.map(|(param, _, props)| (*props, param.clone()))
-			.collect();
-
-		CIRFnPrototype {
-			name: func.path.clone(),
-			ret,
-			params,
-			type_params: func.generics.clone(),
-		}
+	pub fn get_prototype(&mut self, func: &FnPrototype) -> Arc<FnPrototype> {
+		let Some((proto, _)) = self.module.functions.get_key_value(func) else {
+			panic!()
+		};
+		
+		proto.clone()
 	}
 
-	pub fn generate_prototype(&mut self, func: &FnPrototype) -> (CIRFnPrototype, CIRFunction) {
-		let proto = self.get_prototype(func);
-
+	pub fn generate_prototype(&mut self, func: &FnPrototype) -> CIRFunction {
 		self.current_fn = Some(CIRFunction {
 			variables: func
 				.params
@@ -143,7 +134,7 @@ impl CIRModuleBuilder {
 				.map(|(ty, name, props)| (ty.clone(), *props, name.clone()))
 				.collect(),
 			blocks: vec![],
-			ret: proto.ret.clone(),
+			ret: func.ret.clone(),
 			arg_count: func.params.params.len(),
 			type_params: func.generics.clone(),
 			attributes: func.attributes.clone(),
@@ -152,18 +143,18 @@ impl CIRModuleBuilder {
 			mangled_name: None,
 		});
 
-		(proto, self.current_fn.take().unwrap())
+		self.current_fn.take().unwrap()
 	}
 
-	pub fn generate_function(&mut self, proto: CIRFnPrototype, fn_block: &Expr) {
-		self.current_fn = if let Some(func) = self.module.functions.remove(&proto) {
-			Some(func)
-		} else {
+	pub fn generate_function(&mut self, proto: &FnPrototype, fn_block: &Expr) {
+		let Some((proto, func)) = self.module.functions.remove_entry(proto) else {
 			panic!(
 				"failed to get cIR function {proto} from module! function list:\n\n{:?}\n",
 				self.module.functions.keys()
 			)
 		};
+
+		self.current_fn = Some(func);
 
 		self.name_map_stack.clear();
 		self.current_block = 0;
@@ -222,7 +213,7 @@ impl CIRModuleBuilder {
 
 				CIRStmt::Return => vec![],
 
-				CIRStmt::StorageDead { next, .. } => vec![*next],
+				CIRStmt::DropShim { next, .. } => vec![*next],
 
 				term => panic!("invalid terminator in cIR: {term:?}"),
 			};
@@ -428,18 +419,24 @@ impl CIRModuleBuilder {
 		}
 	}
 
+	fn generate_drop_and_assign(&mut self, location: (LValue, SrcSpan), expr: RValue) {
+		self.generate_drop_shim(location.0.clone());
+
+		self.write(CIRStmt::Assignment(location, expr));
+	}
+
 	fn generate_scope_end(&mut self) {
 		for (_, var) in self.name_map_stack.pop().unwrap().into_iter().rev() {
-			self.generate_drop_marker(var);
+			self.generate_drop_shim(LValue { local: var, projection: vec![] });
 		}
 	}
 
-	fn generate_drop_marker(&mut self, var: VarIndex) {
+	fn generate_drop_shim(&mut self, var: LValue) {
 		let current = self.current_block;
 		let next = self.append_block();
 
 		self.current_block = current;
-		self.write(CIRStmt::StorageDead { var, next });
+		self.write(CIRStmt::DropShim { var, next });
 		self.current_block = next;
 	}
 
@@ -560,6 +557,14 @@ impl CIRModuleBuilder {
 					.. 
 				} => self.generate_fn_call(args, generic_args, resolved, span),
 
+				Atom::Drop(dropped) => {
+					let (lvalue, _) = self.generate_lvalue_expr(dropped)?;
+
+					self.generate_drop_shim(lvalue);
+
+					Some(Self::get_void_rvalue())
+				}
+
 				Atom::Constructor { kind, def, generic_args, placement } => {
 					let ty = Type::TypeRef { 
 						def: def.clone(), 
@@ -605,12 +610,16 @@ impl CIRModuleBuilder {
 								}
 							}
 
-							Some(RValue::Atom(
-								ty.clone(),
-								None,
-								Operand::LValue(location, span),
-								span,
-							))
+							if placement.is_some() {
+								Some(Self::get_void_rvalue())
+							} else {
+								Some(RValue::Atom(
+									ty.clone(),
+									None,
+									Operand::LValue(location, span),
+									span,
+								))
+							}
 						}
 
 						_ => todo!()
@@ -1084,10 +1093,10 @@ impl CIRModuleBuilder {
 
 					let expr_tmp = self.get_as_operand(l_ty, expr_ir);
 
-					self.write(CIRStmt::Assignment(
+					self.generate_drop_and_assign(
 						(lval_ir.clone(), lval_span),
 						RValue::Atom(r_ty.clone(), None, expr_tmp, rhs.get_node_data().tk),
-					));
+					);
 
 					Some(RValue::Atom(
 						l_ty.clone(),
@@ -1133,10 +1142,10 @@ impl CIRModuleBuilder {
 
 							let r_tmp = self.get_as_operand(r_ty, rval_ir);
 
-							self.write(CIRStmt::Assignment(
-								(lval_ir.clone(), lval_span),
-								RValue::Atom(r_ty.clone(), None, r_tmp, rhs.get_node_data().tk),
-							));
+							self.generate_drop_and_assign(
+								(lval_ir.clone(), lval_span), 
+								RValue::Atom(r_ty.clone(), None, r_tmp, rhs.get_node_data().tk)
+							);
 
 							Some(RValue::Atom(
 								l_ty.clone(),
@@ -1257,7 +1266,10 @@ impl CIRModuleBuilder {
 					id: CIRCallId::Indirect {
 						local,
 						ret: *ret.clone(),
-						args,
+						args: args
+								.into_iter()
+								.map(|(props, ty)| (ty, None, props))
+								.collect(),
 						span: expr.get_node_data().tk,
 					},
 					args: cir_args,

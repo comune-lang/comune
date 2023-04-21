@@ -12,7 +12,7 @@ use crate::{
 		expression::Operator,
 		module::{Identifier, Name},
 		traits::ImplSolver,
-		types::{Basic, BindingProps, GenericParam, Type, TypeDef},
+		types::{Basic, BindingProps, GenericParam, Type, TypeDef, FnPrototype},
 		Attribute,
 	},
 	lexer::SrcSpan,
@@ -24,7 +24,7 @@ pub mod monoize;
 pub mod serialize;
 
 // Bunch of type aliases to make code more readable
-type CIRFnMap = HashMap<CIRFnPrototype, CIRFunction>;
+type CIRFnMap = HashMap<Arc<FnPrototype>, CIRFunction>;
 type CIRTyMap = HashMap<TypeName, Arc<RwLock<TypeDef>>>;
 type BlockIndex = usize;
 type StmtIndex = usize;
@@ -32,7 +32,7 @@ type VarIndex = usize;
 type FieldIndex = usize;
 type TypeName = String;
 type TypeParamIndex = usize;
-type FuncID = CIRFnPrototype;
+type FuncID = Arc<FnPrototype>;
 
 pub type CIRTypeParamList = Vec<(Name, GenericParam, Option<Type>)>;
 
@@ -113,7 +113,7 @@ pub enum CIRCallId {
 	Indirect {
 		local: LValue,
 		ret: Type,
-		args: Vec<(BindingProps, Type)>,
+		args: Vec<(Type, Option<Name>, BindingProps)>,
 		span: SrcSpan,
 	},
 }
@@ -163,13 +163,16 @@ pub enum CIRStmt {
 	// NOTE: Must dominate *all* Assignments to the VarIndex.
 	StorageLive(VarIndex),
 
-	// Defines the end of a variable's lifetime. Terminator.
+	// Defines the end of a variable's lifetime. Non-terminator.
+	StorageDead(VarIndex),
+
+	// Defines an implicit or explicit destructor call. Terminator.
 	//
-	// NOTE: Unlike StorageLive, Drop is a terminator, as
+	// NOTE: Unlike StorageDead, DropShim is a terminator, as
 	// it is used to build the destructor code for a variable,
 	// which may involve non-trivial CFG construction.
-	StorageDead {
-		var: VarIndex,
+	DropShim {
+		var: LValue,
 		next: BlockIndex,
 	},
 }
@@ -179,14 +182,6 @@ pub struct CIRBlock {
 	pub items: Vec<CIRStmt>,
 	pub preds: Vec<BlockIndex>,
 	pub succs: Vec<BlockIndex>,
-}
-
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
-pub struct CIRFnPrototype {
-	pub name: Identifier,
-	pub ret: (BindingProps, Type),
-	pub params: Vec<(BindingProps, Type)>,
-	pub type_params: CIRTypeParamList,
 }
 
 #[derive(Clone)]
@@ -255,7 +250,7 @@ impl CIRFunction {
 				}
 
 				PlaceElem::Index(..) => {
-					let (Type::Array(sub, _) | Type::Slice(sub)) = ty else {
+					let (Type::Array(sub, _) | Type::Slice(sub) | Type::Pointer { pointee: sub, .. }) = ty else {
 						panic!()
 					};
 

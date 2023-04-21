@@ -7,7 +7,7 @@ use crate::{
 };
 
 use super::{
-	expression::{Atom, Expr, NodeData},
+	expression::Expr,
 	module::Name,
 	types::{BindingProps, Type},
 	FnScope,
@@ -65,21 +65,6 @@ impl Stmt {
 			}
 
 			Stmt::Expr(expr) => expr.validate(scope),
-		}
-	}
-
-	pub fn wrap_in_block(self) -> Expr {
-		match self {
-			Stmt::Expr(expr) => expr.wrap_in_block(),
-
-			Stmt::Decl(_, _, tk) => Expr::Atom(
-				Atom::Block {
-					items: vec![self],
-					result: None,
-					is_unsafe: false,
-				},
-				NodeData { ty: None, tk },
-			),
 		}
 	}
 }

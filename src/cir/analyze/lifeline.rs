@@ -248,15 +248,8 @@ impl Analysis for DefInitFlow {
 				);
 			}
 
-			CIRStmt::StorageDead { var, .. } => {
-				let lval = LValue {
-					local: *var,
-					projection: vec![],
-				};
-				// Clear all sublocation states
-				state.set_liveness(&lval, LivenessState::Dropped);
-
-				state.liveness.remove(&lval);
+			CIRStmt::DropShim { var, .. } => {
+				state.set_liveness(var, LivenessState::Dropped);
 			}
 
 			_ => {}
@@ -340,9 +333,10 @@ impl AnalysisResultHandler<DefInitFlow> for VarInitCheck {
 				// Check for mutation of immutable lvalues
 				if let CIRStmt::Assignment((lval, tk), _) = stmt {
 					let is_var_mut = func.variables[lval.local].1.is_mut;
+
 					let is_var_init = !matches!(
 						state.get_liveness(lval),
-						None | Some(LivenessState::Uninit | LivenessState::Moved)
+						None | Some(LivenessState::Uninit | LivenessState::Moved | LivenessState::Dropped)
 					);
 
 					if is_var_init && !is_var_mut {
@@ -368,7 +362,6 @@ impl AnalysisResultHandler<DefInitFlow> for VarInitCheck {
 enum DropStyle {
 	Live,
 	Conditional,
-	Open,
 	Dead,
 }
 
@@ -378,7 +371,7 @@ impl AnalysisResultHandler<DefInitFlow> for ElaborateDrops {
 			&self,
 			result: ResultVisitor<DefInitFlow>,
 			func: &CIRFunction,
-			impl_solver: &ImplSolver,
+			_: &ImplSolver,
 	) -> Result<Option<CIRFunction>, Vec<ComuneError>> {
 		let errors = vec![];
 
@@ -389,14 +382,10 @@ impl AnalysisResultHandler<DefInitFlow> for ElaborateDrops {
 		for (i, block) in func.blocks.iter().enumerate() {
 			let mut obligations = vec![];
 
-			if let CIRStmt::StorageDead { var, .. } = block.items.last().unwrap() {
-				let lvalue = LValue {
-					local: *var,
-					projection: vec![],
-				};
+			if let CIRStmt::DropShim { var, .. } = block.items.last().unwrap() {
 				let state = result.get_state_before(i, block.items.len() - 1);
 
-				get_drop_obligations(&state, &lvalue, &mut obligations);
+				get_drop_obligations(&state, var, &mut obligations);
 			}
 
 			block_obligations.push(obligations);
@@ -408,18 +397,9 @@ impl AnalysisResultHandler<DefInitFlow> for ElaborateDrops {
 			}
 
 			for (lvalue, style) in obligations {
-				let var_ty = func.get_lvalue_type(&lvalue);
-
-				let needs_drop = true;
-
-				let CIRStmt::StorageDead { next, .. } = func_out.blocks[i].items.pop().unwrap() else {
+				let CIRStmt::DropShim { next, .. } = func_out.blocks[i].items.pop().unwrap() else {
 					panic!()
 				};
-
-				if !needs_drop {
-					func_out.blocks[i].items.push(CIRStmt::Jump(next));
-					continue;
-				}
 
 				match style {
 					DropStyle::Live => {
@@ -451,6 +431,7 @@ impl AnalysisResultHandler<DefInitFlow> for ElaborateDrops {
 							local: flag,
 							projection: vec![],
 						};
+
 						let drop_idx = func_out.blocks.len();
 
 						func_out.blocks.push(drop_block);
@@ -468,7 +449,7 @@ impl AnalysisResultHandler<DefInitFlow> for ElaborateDrops {
 						func_out.blocks[i].succs.push(drop_idx);
 					}
 
-					DropStyle::Dead | DropStyle::Open => {
+					DropStyle::Dead => {
 						func_out.blocks[i].items.push(CIRStmt::Jump(next));
 					}
 				}
@@ -489,14 +470,14 @@ fn get_drop_obligations(
 	obligations: &mut Vec<(LValue, DropStyle)>,
 ) {
 	match state.get_liveness(&lvalue) {
-		None | Some(LivenessState::Moved) | Some(LivenessState::Uninit) => {
+		None | Some(LivenessState::Moved | LivenessState::Uninit | LivenessState::Dropped | LivenessState::PartialMoved) => {
 			// Don't emit drop
 			obligations.push((lvalue.clone(), DropStyle::Dead));
 			return;
 		}
 
-		Some(LivenessState::Live) | Some(LivenessState::PartialMoved) => {
-			// Emit drop + sublocation drops
+		Some(LivenessState::Live) => {
+			// Emit drop
 			obligations.push((lvalue.clone(), DropStyle::Live));
 		}
 
@@ -504,11 +485,30 @@ fn get_drop_obligations(
 			// Emit conditional drop
 			obligations.push((lvalue.clone(), DropStyle::Conditional));
 		}
-
-		_ => return,
 	}
+}
 
-	for (subloc, _) in state.get_active_sublocations(&lvalue) {
-		get_drop_obligations(state, subloc, obligations);
+fn build_destructor(
+	block: &mut CIRBlock,
+	lvalue: &LValue,
+	ty: &Type,
+) {
+	match ty {
+		Type::TypeRef { def, args } => {
+			let def = def.upgrade().unwrap();
+			let def = def.read().unwrap();
+			
+			if let Some(drop) = &def.drop {
+				//block.items.push(CIRStmt::Call { 
+				//	id: CIRCallId::Direct(drop, SrcSpan::new()), 
+				//	args: vec![(lvalue.clone(), SrcSpan::new())], 
+				//	generic_args: args.clone(),
+				//	result: None,
+				//});
+			}
+
+		}
+
+		_ => return
 	}
 }

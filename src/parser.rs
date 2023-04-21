@@ -1328,7 +1328,11 @@ impl<'ctx> Parser {
 					}
 
 					"drop" => {
-						todo!()
+						self.get_next()?;
+						
+						let dropped = self.parse_expression(scope)?;
+
+						result = Some(Atom::Drop(Box::new(dropped)));
 					}
 
 					"return" => {

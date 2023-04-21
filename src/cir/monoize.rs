@@ -70,7 +70,7 @@ impl MonomorphServer {
 
 		let generics: Vec<_> = function_protos
 			.iter()
-			.filter(|k| !module.functions[k].type_params.is_empty())
+			.filter(|k| !module.functions[*k].type_params.is_empty())
 			.collect();
 
 		for proto in generics {
@@ -182,21 +182,23 @@ impl MonomorphServer {
 		}
 
 		if let CIRCallId::Direct(id, _) = id {
-			let mut insert_id = id.clone();
+			let mut insert_id = id.as_ref().clone();
 
 			for (i, type_arg) in generic_args.iter().enumerate() {
-				insert_id.type_params[i].2 = Some(type_arg.clone())
+				insert_id.generics[i].2 = Some(type_arg.clone())
 			}
 
-			for (_, param) in &mut insert_id.params {
+			for (param, ..) in &mut insert_id.params.params {
 				self.monoize_type(types, param, generic_args);
 			}
 
 			self.monoize_type(types, &mut insert_id.ret.1, generic_args);
 
-			if let (Some(qualifier), _) = &mut insert_id.name.qualifier {
+			if let (Some(qualifier), _) = &mut insert_id.path.qualifier {
 				self.monoize_type(types, qualifier, generic_args);
 			}
+
+			let insert_id = Arc::new(insert_id);
 
 			// If the function template isn't available yet, wait for it
 			while !self.fn_templates.read().unwrap().contains_key(id) {
@@ -373,9 +375,9 @@ impl MonomorphServer {
 		for (id, func) in &mut module.functions {
 			// Check if the function has a `no_mangle` or `export_as` attribute, or if it's `main`. If not, mangle the name
 			if get_attribute(&func.attributes, "no_mangle").is_some()
-				|| (&**id.name.name() == "main" && !id.name.is_qualified())
+				|| (&**id.path.name() == "main" && !id.path.is_qualified())
 			{
-				func.mangled_name = Some(id.name.name().to_string());
+				func.mangled_name = Some(id.path.name().to_string());
 			} else if let Some(export_name) = get_attribute(&func.attributes, "export_as") {
 				// Export with custom symbol name
 				if let Some(first_arg) = export_name.args.get(0) {
@@ -387,7 +389,7 @@ impl MonomorphServer {
 				}
 			} else {
 				// Mangle name
-				func.mangled_name = Some(mangle_name(&id.name, func));
+				func.mangled_name = Some(mangle_name(&id.path, func));
 			}
 		}
 	}

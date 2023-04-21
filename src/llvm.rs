@@ -1,4 +1,4 @@
-use std::{collections::HashMap, rc::Rc};
+use std::{collections::HashMap, rc::Rc, sync::Arc};
 
 use inkwell::{
 	attributes::{Attribute, AttributeLoc},
@@ -22,10 +22,10 @@ use inkwell::{
 use crate::{
 	ast::{
 		expression::Operator,
-		types::{Basic, BindingProps, DataLayout, TupleKind, Type},
+		types::{Basic, BindingProps, DataLayout, TupleKind, Type, FnPrototype},
 	},
 	cir::{
-		CIRCallId, CIRFnPrototype, CIRFunction, CIRModule, CIRStmt, LValue, Operand, PlaceElem,
+		CIRCallId, CIRFunction, CIRModule, CIRStmt, LValue, Operand, PlaceElem,
 		RValue,
 	},
 	constexpr::{ConstExpr, ConstValue},
@@ -56,7 +56,7 @@ pub struct LLVMBackend<'ctx> {
 	di_builder: Option<DebugInfoBuilder<'ctx>>,
 	fn_value_opt: Option<FunctionValue<'ctx>>,
 	type_map: HashMap<String, AnyTypeEnum<'ctx>>,
-	fn_map: HashMap<CIRFnPrototype, String>,
+	fn_map: HashMap<Arc<FnPrototype>, String>,
 	blocks: Vec<BasicBlock<'ctx>>,
 	variables: Vec<(PointerValue<'ctx>, BindingProps, Type)>,
 }
@@ -288,7 +288,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 								let mangled = &self.fn_map[id];
 								let fn_v = self.module.get_function(mangled).unwrap();
 
-								(fn_v.into(), &id.params)
+								(fn_v.into(), &id.params.params)
 							}
 
 							CIRCallId::Indirect { args, local, .. } => {
@@ -305,7 +305,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 							.iter()
 							.enumerate()
 							.map(|(i, (x, _))| {
-								let is_ref = if let Some((props, ty)) = params.get(i) {
+								let is_ref = if let Some((ty, _, props)) = params.get(i) {
 									self.pass_by_ptr(ty, props)
 								} else {
 									false
@@ -349,7 +349,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 								let mangled = &self.fn_map[id];
 								let fn_v = self.module.get_function(mangled).unwrap();
 
-								(fn_v.into(), &id.params)
+								(fn_v.into(), &id.params.params)
 							}
 
 							CIRCallId::Indirect { args, local, .. } => {
@@ -366,7 +366,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 							.iter()
 							.enumerate()
 							.map(|(i, (x, _))| {
-								let (props, ty) = &params[i];
+								let (ty, _, props) = &params[i];
 
 								if self.pass_by_ptr(ty, props) {
 									self.generate_lvalue(x).as_basic_value_enum()
@@ -396,11 +396,12 @@ impl<'ctx> LLVMBackend<'ctx> {
 						}
 					}
 
+					// TODO: Generate LLVM intrinsics for these
 					CIRStmt::StorageLive(_) => {}
 
-					CIRStmt::StorageDead { next, .. } => {
-						self.builder.build_unconditional_branch(self.blocks[*next]);
-					}
+					CIRStmt::StorageDead(_) => {}
+
+					CIRStmt::DropShim { .. } => panic!("encountered DropShim in LLVM codegen!")
 				}
 			}
 		}
