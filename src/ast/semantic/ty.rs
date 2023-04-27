@@ -238,7 +238,7 @@ pub fn resolve_interface_types(interface: &ModuleInterface) -> ComuneResult<()> 
 					if !trait_functions_found.contains(&*func.read().unwrap()) {
 						return Err(ComuneError::new(
 							ComuneErrCode::MissingTraitFuncImpl(
-								func.read().unwrap().get_pretty_name(),
+								func.read().unwrap().to_string(),
 							),
 							SrcSpan::new(),
 						));

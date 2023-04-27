@@ -17,12 +17,12 @@ struct Vector<type T> {
 			capacity: 0,
 		};
 	}
-	
+	*/
 	drop(mut& self) {
 		if self.capacity > 0 {
 			free(self.data as void mut*);
 		}
-	}*/
+	}
 }
 
 using Test = Vector<int>;
@@ -45,9 +45,9 @@ void foo() {
 	}
 }
 
+
 @no_mangle
 int printf(u8* fmt, ...);
-
 
 
 impl<type T> Vector<T> {

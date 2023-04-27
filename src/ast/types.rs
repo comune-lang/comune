@@ -796,21 +796,7 @@ impl Display for Type {
 
 impl Display for FnPrototype {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		write!(f, "{}(", self.ret.1)?;
-
-		for param in &self.params.params {
-			write!(f, "{}, ", param.0)?;
-		}
-
-		write!(f, ")")
-	}
-}
-
-impl FnPrototype {
-	pub fn get_pretty_name(&self) -> String {
-		let mut result = String::new();
-		let f = &mut result;
-
+		
 		write!(f, "{}{} {}", self.ret.1, self.ret.0, self.path).unwrap();
 
 		if !self.generics.is_empty() {
@@ -853,7 +839,7 @@ impl FnPrototype {
 			write!(f, "()").unwrap();
 		}
 
-		result
+		Ok(())
 	}
 }
 

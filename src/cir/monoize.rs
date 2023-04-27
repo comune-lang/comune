@@ -90,11 +90,11 @@ impl MonomorphServer {
 			}
 
 			let function_monoized = self.monoize_function(
-				&module.functions,
-				&mut functions_mono,
 				&module.functions[&proto],
 				&mut module.types,
 				&vec![],
+				&module.functions,
+				&mut functions_mono,
 			);
 
 			functions_mono.insert(proto, function_monoized);
@@ -124,19 +124,19 @@ impl MonomorphServer {
 
 	fn monoize_function(
 		&self,
-		functions_in: &CIRFnMap,
-		functions_out: &mut CIRFnMap,
 		func: &CIRFunction,
 		types: &mut HashMap<TypeName, Arc<RwLock<TypeDef>>>,
 		param_map: &TypeSubstitutions,
+		fns_in: &CIRFnMap,
+		fns_out: &mut CIRFnMap,
 	) -> CIRFunction {
 		let mut func = func.clone();
 
 		for (var, ..) in &mut func.variables {
-			self.monoize_type(types, var, param_map);
+			self.monoize_type(types, var, param_map, fns_in, fns_out);
 		}
 
-		self.monoize_type(types, &mut func.ret.1, param_map);
+		self.monoize_type(types, &mut func.ret.1, param_map, fns_in, fns_out);
 
 		for block in &mut func.blocks {
 			for stmt in block.items.iter_mut() {
@@ -146,15 +146,15 @@ impl MonomorphServer {
 
 				match stmt {
 					CIRStmt::Expression(expr) | CIRStmt::Assignment(_, expr) => {
-						self.monoize_rvalue_types(types, expr, param_map);
+						self.monoize_rvalue_types(types, expr, param_map, fns_in, fns_out);
 					}
 
 					CIRStmt::Invoke { generic_args, .. } | CIRStmt::Call { generic_args, .. } => {
 						for arg in generic_args.iter_mut() {
-							self.monoize_type(types, arg, param_map);
+							self.monoize_type(types, arg, param_map, fns_in, fns_out);
 						}
 
-						self.monoize_call(functions_in, functions_out, stmt, types);
+						self.monoize_call(fns_in, fns_out, stmt, types);
 					}
 
 					_ => {}
@@ -167,8 +167,8 @@ impl MonomorphServer {
 
 	fn monoize_call(
 		&self,
-		functions_in: &CIRFnMap,
-		functions_out: &mut CIRFnMap,
+		fns_in: &CIRFnMap,
+		fns_out: &mut CIRFnMap,
 		func: &mut CIRStmt,
 		types: &mut HashMap<TypeName, Arc<RwLock<TypeDef>>>,
 	) {
@@ -189,13 +189,13 @@ impl MonomorphServer {
 			}
 
 			for (param, ..) in &mut insert_id.params.params {
-				self.monoize_type(types, param, generic_args);
+				self.monoize_type(types, param, generic_args, fns_in, fns_out);
 			}
 
-			self.monoize_type(types, &mut insert_id.ret.1, generic_args);
+			self.monoize_type(types, &mut insert_id.ret.1, generic_args, fns_in, fns_out);
 
 			if let (Some(qualifier), _) = &mut insert_id.path.qualifier {
-				self.monoize_type(types, qualifier, generic_args);
+				self.monoize_type(types, qualifier, generic_args, fns_in, fns_out);
 			}
 
 			let insert_id = Arc::new(insert_id);
@@ -216,7 +216,7 @@ impl MonomorphServer {
 				drop(fn_instances);
 
 				let monoized =
-					self.monoize_function(functions_in, functions_out, fn_in, types, generic_args);
+					self.monoize_function(fn_in, types, generic_args, fns_in, fns_out);
 
 				drop(fn_templates);
 
@@ -229,7 +229,7 @@ impl MonomorphServer {
 
 			let extern_fn = self.fn_instances.read().unwrap()[id].clone();
 
-			functions_out.insert(id.clone(), extern_fn);
+			fns_out.insert(id.clone(), extern_fn);
 
 			generic_args.clear();
 		}
@@ -240,35 +240,44 @@ impl MonomorphServer {
 		types: &mut TypeMap,
 		rval: &mut RValue,
 		param_map: &TypeSubstitutions,
+		fns_in: &CIRFnMap,
+		fns_out: &mut CIRFnMap,
 	) {
 		match rval {
 			RValue::Atom(ty, ..) => {
-				self.monoize_type(types, ty, param_map);
+				self.monoize_type(types, ty, param_map, fns_in, fns_out);
 			}
 
 			RValue::Cons(ty, [(lty, _), (rty, _)], ..) => {
-				self.monoize_type(types, lty, param_map);
-				self.monoize_type(types, rty, param_map);
+				self.monoize_type(types, lty, param_map, fns_in, fns_out);
+				self.monoize_type(types, rty, param_map, fns_in, fns_out);
 
-				self.monoize_type(types, ty, param_map);
+				self.monoize_type(types, ty, param_map, fns_in, fns_out);
 			}
 
 			RValue::Cast { from, to, .. } => {
-				self.monoize_type(types, from, param_map);
-				self.monoize_type(types, to, param_map);
+				self.monoize_type(types, from, param_map, fns_in, fns_out);
+				self.monoize_type(types, to, param_map, fns_in, fns_out);
 			}
 		}
 	}
 
-	fn monoize_type(&self, types: &mut TypeMap, ty: &mut Type, param_map: &TypeSubstitutions) {
+	fn monoize_type(
+		&self,
+		types: &mut TypeMap, 
+		ty: &mut Type, 
+		param_map: &TypeSubstitutions,
+		fns_in: &CIRFnMap,
+		fns_out: &mut CIRFnMap,
+	) {
 		match ty {
 			Type::Basic(_) => {}
 
-			Type::Pointer { pointee, .. } => self.monoize_type(types, pointee, param_map),
+			Type::Pointer { pointee, .. } => self.monoize_type(types, pointee, param_map, fns_in, fns_out),
 
-			Type::Array(arr_ty, _) => self.monoize_type(types, arr_ty, param_map),
+			Type::Array(arr_ty, _) => self.monoize_type(types, arr_ty, param_map, fns_in, fns_out),
 
-			Type::Slice(slicee) => self.monoize_type(types, slicee, param_map),
+			Type::Slice(slicee) => self.monoize_type(types, slicee, param_map, fns_in, fns_out),
 
 			Type::TypeRef { def, args } => {
 				// If we're referring to a type with generics, check if the
@@ -278,12 +287,12 @@ impl MonomorphServer {
 
 				if !args.is_empty() {
 					for arg in args.iter_mut() {
-						self.monoize_type(types, arg, param_map);
+						self.monoize_type(types, arg, param_map, fns_in, fns_out);
 					}
 
 					let typename = name.to_string();
 
-					*def = self.instantiate_type_def(types, def.upgrade().unwrap(), typename, args);
+					*def = self.instantiate_type_def(types, def.upgrade().unwrap(), typename, args, fns_in, fns_out);
 					args.clear();
 				}
 			}
@@ -294,15 +303,15 @@ impl MonomorphServer {
 
 			Type::Tuple(_, tuple_types) => {
 				for ty in tuple_types {
-					self.monoize_type(types, ty, param_map);
+					self.monoize_type(types, ty, param_map, fns_in, fns_out);
 				}
 			}
 
 			Type::Function(ret, args) => {
-				self.monoize_type(types, ret, param_map);
+				self.monoize_type(types, ret, param_map, fns_in, fns_out);
 
 				for (_, arg) in args {
-					self.monoize_type(types, arg, param_map);
+					self.monoize_type(types, arg, param_map, fns_in, fns_out);
 				}
 			}
 
@@ -319,11 +328,19 @@ impl MonomorphServer {
 		def: Arc<RwLock<TypeDef>>,
 		name: TypeName,
 		param_map: &TypeSubstitutions,
+		fns_in: &CIRFnMap,
+		fns_out: &mut CIRFnMap,
 	) -> Weak<RwLock<TypeDef>> {
 		let mut instance = def.read().unwrap().clone();
 
 		for (_, member, _) in &mut instance.members {
-			self.monoize_type(types, member, param_map);
+			self.monoize_type(types, member, param_map, fns_in, fns_out);
+		}
+
+		if let Some(drop) = &mut instance.drop {
+			let drop = &*drop.read().unwrap();
+
+			self.monoize_function(&fns_in[drop], types, param_map, fns_in, fns_out);
 		}
 
 		instance.params.clear();

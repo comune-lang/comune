@@ -1,16 +1,16 @@
 // lifeline - the comune liveness & borrow checker
 
-use std::{collections::HashMap, fmt::Display};
+use std::{collections::HashMap, fmt::Display, sync::Arc};
 
 use super::{
 	Analysis, AnalysisDomain, AnalysisResultHandler, Forward, JoinSemiLattice, ResultVisitor,
 };
 use crate::{
 	ast::{
-		traits::{ImplSolver, LangTrait},
-		types::{Basic, BindingProps},
+		traits::ImplSolver,
+		types::{Basic, BindingProps, TupleKind},
 	},
-	cir::{CIRBlock, CIRCallId, CIRFunction, CIRStmt, LValue, Operand, PlaceElem, RValue, Type},
+	cir::{CIRBlock, CIRCallId, CIRFunction, CIRStmt, LValue, Operand, PlaceElem, RValue, Type, VarIndex, BlockIndex},
 	errors::{ComuneErrCode, ComuneError},
 	lexer::SrcSpan,
 };
@@ -376,83 +376,23 @@ impl AnalysisResultHandler<DefInitFlow> for ElaborateDrops {
 		let errors = vec![];
 
 		let mut func_out = func.clone();
-		let mut block_obligations = vec![];
 		let mut drop_flags = HashMap::new();
 
 		for (i, block) in func.blocks.iter().enumerate() {
-			let mut obligations = vec![];
+			if let CIRStmt::DropShim { var, next } = block.items.last().unwrap() {
+				func_out.blocks[i].items.pop();
 
-			if let CIRStmt::DropShim { var, .. } = block.items.last().unwrap() {
 				let state = result.get_state_before(i, block.items.len() - 1);
-
-				get_drop_obligations(&state, var, &mut obligations);
-			}
-
-			block_obligations.push(obligations);
-		}
-
-		for (i, obligations) in block_obligations.into_iter().enumerate() {
-			if obligations.is_empty() {
-				continue;
-			}
-
-			for (lvalue, style) in obligations {
-				let CIRStmt::DropShim { next, .. } = func_out.blocks[i].items.pop().unwrap() else {
-					panic!()
+								
+				let mut elaborator = DropElaborator {
+					current_block: i,
+					current_fn: &mut func_out,
+					drop_flags: &mut drop_flags,
+					state: &state,
 				};
 
-				match style {
-					DropStyle::Live => {
-						func_out.blocks[i].items.push(CIRStmt::Jump(next));
-					}
-
-					DropStyle::Conditional => {
-						let flag = if let Some(flag) = drop_flags.get(&lvalue) {
-							*flag
-						} else {
-							func_out.variables.push((
-								Type::Basic(Basic::Bool),
-								BindingProps::default(),
-								None,
-							));
-
-							drop_flags.insert(lvalue, func_out.variables.len() - 1);
-
-							func_out.variables.len() - 1
-						};
-
-						let drop_block = CIRBlock {
-							items: vec![CIRStmt::Jump(next)],
-							preds: vec![i],
-							succs: vec![next],
-						};
-
-						let flag_lval = LValue {
-							local: flag,
-							projection: vec![],
-						};
-
-						let drop_idx = func_out.blocks.len();
-
-						func_out.blocks.push(drop_block);
-
-						func_out.blocks[i].items.push(CIRStmt::Switch(
-							Operand::LValue(flag_lval, SrcSpan::new()),
-							vec![(
-								Type::bool_type(),
-								Operand::BoolLit(true, SrcSpan::new()),
-								drop_idx,
-							)],
-							next,
-						));
-
-						func_out.blocks[i].succs.push(drop_idx);
-					}
-
-					DropStyle::Dead => {
-						func_out.blocks[i].items.push(CIRStmt::Jump(next));
-					}
-				}
+				elaborator.elaborate_drop(&var, &func.get_lvalue_type(var), *next);
+				elaborator.write(CIRStmt::Jump(*next));
 			}
 		}
 
@@ -464,51 +404,134 @@ impl AnalysisResultHandler<DefInitFlow> for ElaborateDrops {
 	}
 }
 
-fn get_drop_obligations(
-	state: &LiveVarCheckState,
-	lvalue: &LValue,
-	obligations: &mut Vec<(LValue, DropStyle)>,
-) {
-	match state.get_liveness(&lvalue) {
-		None | Some(LivenessState::Moved | LivenessState::Uninit | LivenessState::Dropped | LivenessState::PartialMoved) => {
-			// Don't emit drop
-			obligations.push((lvalue.clone(), DropStyle::Dead));
-			return;
-		}
-
-		Some(LivenessState::Live) => {
-			// Emit drop
-			obligations.push((lvalue.clone(), DropStyle::Live));
-		}
-
-		Some(LivenessState::MaybeUninit) => {
-			// Emit conditional drop
-			obligations.push((lvalue.clone(), DropStyle::Conditional));
-		}
-	}
+struct DropElaborator<'func> {
+	current_block: BlockIndex,
+	current_fn: &'func mut CIRFunction,
+	drop_flags: &'func mut HashMap<LValue, VarIndex>,
+	state: &'func LiveVarCheckState,
 }
 
-fn build_destructor(
-	block: &mut CIRBlock,
-	lvalue: &LValue,
-	ty: &Type,
-) {
-	match ty {
-		Type::TypeRef { def, args } => {
-			let def = def.upgrade().unwrap();
-			let def = def.read().unwrap();
-			
-			if let Some(drop) = &def.drop {
-				//block.items.push(CIRStmt::Call { 
-				//	id: CIRCallId::Direct(drop, SrcSpan::new()), 
-				//	args: vec![(lvalue.clone(), SrcSpan::new())], 
-				//	generic_args: args.clone(),
-				//	result: None,
-				//});
+impl<'func> DropElaborator<'func> {
+	fn write(&mut self, stmt: CIRStmt) {
+		self.current_fn.blocks[self.current_block]
+			.items
+			.push(stmt)
+	}
+
+	fn append_block(&mut self) -> BlockIndex {
+		self.current_fn.blocks.push(CIRBlock {
+			items: vec![],
+			preds: vec![],
+			succs: vec![],
+		});
+		self.current_block = self.current_fn.blocks.len() - 1;
+		self.current_block
+	}
+
+	fn elaborate_drop(&mut self, lval: &LValue, ty: &Type, next: BlockIndex) {
+		match self.state.get_liveness(lval) {
+			Some(LivenessState::Live) => {
+				self.build_destructor(lval, ty, next);
 			}
+	
+			Some(LivenessState::MaybeUninit) => {
+				let flag = if let Some(flag) = self.drop_flags.get(&lval) {
+					*flag
+				} else {
+					self.current_fn.variables.push((
+						Type::Basic(Basic::Bool),
+						BindingProps::default(),
+						None,
+					));
+	
+					self.drop_flags.insert(lval.clone(), self.current_fn.variables.len() - 1);
+	
+					self.current_fn.variables.len() - 1
+				};
+				
+				let start_idx = self.current_block;
+				let drop_idx = self.current_fn.blocks.len();
 
+				let drop_block = CIRBlock {
+					items: vec![],
+					preds: vec![self.current_block],
+					succs: vec![next],
+				};
+	
+				let flag_lval = LValue {
+					local: flag,
+					projection: vec![],
+				};
+	
+				self.current_fn.blocks.push(drop_block);
+				self.current_block = drop_idx;
+
+				self.build_destructor(lval, ty, next);
+
+				self.current_block = start_idx;
+				self.write(CIRStmt::Switch(
+					Operand::LValue(flag_lval, SrcSpan::new()),
+					vec![(
+						Type::bool_type(),
+						Operand::BoolLit(true, SrcSpan::new()),
+						drop_idx,
+					)],
+					next,
+				));
+				
+				self.current_fn.blocks[self.current_block].succs.push(drop_idx);
+				self.current_block = self.current_fn.blocks.len() - 1;
+			}
+	
+			_ => {}
 		}
+	}
 
-		_ => return
+	fn build_destructor(&mut self, lval: &LValue, ty: &Type, next: BlockIndex) {
+		match ty {
+			Type::TypeRef { def, args } => {
+				let def = def.upgrade().unwrap();
+				let def = def.read().unwrap();
+				
+				if let Some(drop) = &def.drop {
+					if self.state.get_liveness(lval) == Some(LivenessState::Live) {
+						let drop = Arc::new(drop.read().unwrap().clone());
+	
+						self.write(CIRStmt::Call { 
+							id: CIRCallId::Direct(drop, SrcSpan::new()), 
+							args: vec![(lval.clone(), SrcSpan::new())], 
+							generic_args: args.clone(),
+							result: None,
+						});
+					}
+				}
+	
+				for (_, member, _) in def.members.iter() {
+					self.elaborate_drop(lval, member, next);
+				}
+	
+			}
+	
+			Type::Tuple(TupleKind::Sum, _) => {}
+	
+			Type::Tuple(TupleKind::Product, types) => {
+				for (i, ty) in types.iter().enumerate() {
+					let mut lval = lval.clone();
+					lval.projection.push(PlaceElem::Field(i));
+					
+					self.elaborate_drop(&lval, ty, next);
+				}
+			}
+	
+			Type::Tuple(TupleKind::Newtype, types) => {
+				let [ty] = types.as_slice() else {
+					panic!()
+				};
+	
+				self.elaborate_drop(lval, ty, next);
+			}
+	
+			_ => {}
+		}
 	}
 }

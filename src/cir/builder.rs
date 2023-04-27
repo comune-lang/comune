@@ -109,7 +109,6 @@ impl CIRModuleBuilder {
 	}
 
 	fn generate_module(&mut self, module_impl: &ModuleImpl) {
-
 		for (func, ast) in &module_impl.fn_impls {
 			let ModuleASTElem::Parsed(ast) = ast else { panic!() };
 
@@ -641,6 +640,12 @@ impl CIRModuleBuilder {
 									(lval.clone(), expr.get_node_data().tk),
 									expr_ir,
 								));
+							}
+						}
+
+						for scope in self.name_map_stack.clone().into_iter().rev() {
+							for (_, var) in scope.iter().rev() {
+								self.generate_drop_shim(LValue { local: *var, projection: vec![] });
 							}
 						}
 
