@@ -285,7 +285,10 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 						let (fn_v, params) = match id {
 							CIRCallId::Direct(id, _) => {
-								let mangled = &self.fn_map[id];
+								let Some(mangled) = &self.fn_map.get(id) else {
+									panic!("could not fetch function {id} from function map!");
+								};
+
 								let fn_v = self.module.get_function(mangled).unwrap();
 
 								(fn_v.into(), &id.params.params)

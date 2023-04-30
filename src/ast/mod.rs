@@ -77,7 +77,7 @@ impl<'ctx> FnScope<'ctx> {
 	}
 
 	pub fn find_type(&self, id: &Identifier) -> Option<Type> {
-		if !id.is_qualified() {
+		if !id.is_scoped() {
 			for (i, (name, ..)) in self.generic_params.iter().enumerate().rev() {
 				if name == id.name() {
 					return Some(Type::TypeParam(i));
@@ -95,7 +95,7 @@ impl<'ctx> FnScope<'ctx> {
 	) -> Option<(Identifier, Type)> {
 		let mut result = None;
 
-		if !id.is_qualified() {
+		if !id.is_scoped() {
 			// Unqualified name, perform scope-level lookup first
 			let local_lookup;
 

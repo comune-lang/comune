@@ -159,7 +159,7 @@ impl ModuleInterface {
 	}
 
 	pub fn resolve_type(&self, id: &Identifier, scope: &Identifier) -> Option<Type> {
-		if !id.is_qualified() {
+		if !id.is_scoped() {
 			if let Some(basic) = Basic::get_basic_type(id.name()) {
 				return Some(Type::Basic(basic));
 			}
@@ -309,8 +309,12 @@ impl Identifier {
 		self.path.last().unwrap()
 	}
 
-	pub fn is_qualified(&self) -> bool {
+	pub fn is_scoped(&self) -> bool {
 		self.path.len() > 1
+	}
+
+	pub fn is_qualified(&self) -> bool {
+		self.is_scoped() || self.qualifier.0.is_some() || self.qualifier.1.is_some()
 	}
 
 	pub fn expect_scopeless(&self) -> ComuneResult<&Name> {

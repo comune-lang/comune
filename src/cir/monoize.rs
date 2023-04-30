@@ -10,9 +10,9 @@ use crate::{
 	ast::{
 		get_attribute,
 		module::Identifier,
-		types::{Basic, TypeDef},
+		types::{Basic, TypeDef, FnPrototype},
 	},
-	lexer::Token,
+	lexer::{Token, SrcSpan},
 };
 
 use super::{
@@ -149,12 +149,20 @@ impl MonomorphServer {
 						self.monoize_rvalue_types(types, expr, param_map, fns_in, fns_out);
 					}
 
-					CIRStmt::Invoke { generic_args, .. } | CIRStmt::Call { generic_args, .. } => {
+					CIRStmt::Invoke { id: CIRCallId::Direct(fn_id, _), generic_args, .. } 
+					| CIRStmt::Call { id: CIRCallId::Direct(fn_id, _), generic_args, .. }
+					 => {
 						for arg in generic_args.iter_mut() {
 							self.monoize_type(types, arg, param_map, fns_in, fns_out);
 						}
+						
+						let mut id = fn_id.as_ref().clone();
+						
+						self.monoize_call(&mut id, generic_args, fns_in, fns_out, types);
+						
+						*fn_id = Arc::new(id);
 
-						self.monoize_call(fns_in, fns_out, stmt, types);
+						generic_args.clear();
 					}
 
 					_ => {}
@@ -167,72 +175,65 @@ impl MonomorphServer {
 
 	fn monoize_call(
 		&self,
+		id: &mut FnPrototype,
+		generic_args: &Vec<Type>,
 		fns_in: &CIRFnMap,
 		fns_out: &mut CIRFnMap,
-		func: &mut CIRStmt,
 		types: &mut HashMap<TypeName, Arc<RwLock<TypeDef>>>,
 	) {
-		let (
-			CIRStmt::Invoke { id, generic_args, .. }
-			| CIRStmt::Call { id, generic_args, .. }
-		) = func else { panic!() };
-
 		if generic_args.is_empty() {
-			return;
+			return
 		}
 
-		if let CIRCallId::Direct(id, _) = id {
-			let mut insert_id = id.as_ref().clone();
+		let mut insert_id = id.clone();
 
-			for (i, type_arg) in generic_args.iter().enumerate() {
-				insert_id.generics[i].2 = Some(type_arg.clone())
-			}
-
-			for (param, ..) in &mut insert_id.params.params {
-				self.monoize_type(types, param, generic_args, fns_in, fns_out);
-			}
-
-			self.monoize_type(types, &mut insert_id.ret.1, generic_args, fns_in, fns_out);
-
-			if let (Some(qualifier), _) = &mut insert_id.path.qualifier {
-				self.monoize_type(types, qualifier, generic_args, fns_in, fns_out);
-			}
-
-			let insert_id = Arc::new(insert_id);
-
-			// If the function template isn't available yet, wait for it
-			while !self.fn_templates.read().unwrap().contains_key(id) {
-				std::thread::sleep(Duration::from_millis(1));
-			}
-
-			let fn_instances = self.fn_instances.read().unwrap();
-			let fn_templates = self.fn_templates.read().unwrap();
-
-			if !fn_instances.contains_key(&insert_id) {
-				let Some(fn_in) = fn_templates.get(id) else {
-					unreachable!()
-				};
-
-				drop(fn_instances);
-
-				let monoized =
-					self.monoize_function(fn_in, types, generic_args, fns_in, fns_out);
-
-				drop(fn_templates);
-
-				let fn_instances = &mut *self.fn_instances.write().unwrap();
-
-				fn_instances.insert(insert_id.clone(), monoized);
-			}
-
-			*id = insert_id;
-
-			let extern_fn = self.fn_instances.read().unwrap()[id].clone();
-
-			fns_out.insert(id.clone(), extern_fn);
-
-			generic_args.clear();
+		for (i, type_arg) in generic_args.iter().enumerate() {
+			insert_id.generics[i].2 = Some(type_arg.clone())
 		}
+
+		for (param, ..) in &mut insert_id.params.params {
+			self.monoize_type(types, param, generic_args, fns_in, fns_out);
+		}
+
+		self.monoize_type(types, &mut insert_id.ret.1, generic_args, fns_in, fns_out);
+
+		if let (Some(qualifier), _) = &mut insert_id.path.qualifier {
+			self.monoize_type(types, qualifier, generic_args, fns_in, fns_out);
+		}
+
+		let insert_id = Arc::new(insert_id);
+
+		// If the function template isn't available yet, wait for it
+		while !self.fn_templates.read().unwrap().contains_key(id) {
+			std::thread::sleep(Duration::from_millis(1));
+		}
+
+		let fn_instances = self.fn_instances.read().unwrap();
+		let fn_templates = self.fn_templates.read().unwrap();
+
+		if !fn_instances.contains_key(&insert_id) {
+			let Some(fn_in) = fn_templates.get(id) else {
+				unreachable!()
+			};
+
+			drop(fn_instances);
+
+			let monoized =
+				self.monoize_function(fn_in, types, generic_args, fns_in, fns_out);
+
+			drop(fn_templates);
+
+			let fn_instances = &mut *self.fn_instances.write().unwrap();
+
+			fn_instances.insert(insert_id.clone(), monoized);
+		}
+
+		*id = insert_id.as_ref().clone();
+
+		let extern_fn = self.fn_instances.read().unwrap()[id].clone();
+
+		fns_out.insert(insert_id.clone(), extern_fn);
+	
 	}
 
 	fn monoize_rvalue_types(
@@ -337,12 +338,6 @@ impl MonomorphServer {
 			self.monoize_type(types, member, param_map, fns_in, fns_out);
 		}
 
-		if let Some(drop) = &mut instance.drop {
-			let drop = &*drop.read().unwrap();
-
-			self.monoize_function(&fns_in[drop], types, param_map, fns_in, fns_out);
-		}
-
 		instance.params.clear();
 
 		let mut iter = param_map.iter();
@@ -362,28 +357,59 @@ impl MonomorphServer {
 
 		// Nope, check if the global instance map has it instead
 
-		let global_types = self.ty_instances.read().unwrap();
-
-		if let Some(instance) = global_types.get(&insert_idx) {
-			types.insert(insert_idx, instance.clone());
-			return Arc::downgrade(instance);
-		}
-
-		// Couldn't find this instance in the global map either, so store it
-
 		*instance.name.path.last_mut().unwrap() = insert_idx.clone().into();
 
-		drop(global_types);
+		
+		if self.ty_instances.read().unwrap().contains_key(&insert_idx) {
+			let instance_arc = self.ty_instances.read().unwrap()[&insert_idx].clone();
 
-		let global_types = &mut *self.ty_instances.write().unwrap();
+			types.insert(insert_idx.clone(), instance_arc.clone());
 
-		global_types.insert(insert_idx.clone(), Arc::new(RwLock::new(instance)));
+			if let Some(drop) = &instance_arc.read().unwrap().drop {
+				let drop_fn = drop.read().unwrap().clone();
+				let drop_body = self.fn_instances.read().unwrap()[&drop_fn].clone();
+			
+				fns_out.insert(Arc::new(drop.read().unwrap().clone()), drop_body);
+			}
 
-		let instance = &global_types[&insert_idx];
+			Arc::downgrade(&instance_arc)
+		} else {
+			// Couldn't find this instance in the global map either, so store it
+			let instance_arc = Arc::new(RwLock::new(instance));
+	
+			self.ty_instances.write().unwrap().insert(insert_idx.clone(), instance_arc.clone());
+			
+			types.insert(insert_idx.clone(), instance_arc.clone());
 
-		types.insert(insert_idx, instance.clone());
+			// Monoize dtor
+			if instance_arc.read().unwrap().drop.is_some() {
+				let instance_lock = instance_arc.read().unwrap();
+				let drop_fn = instance_lock.drop.as_ref().unwrap();
 
-		Arc::downgrade(instance)
+				if !self.fn_templates.read().unwrap().contains_key(&*drop_fn.read().unwrap()) {
+					// Add dtor to fn_templates
+					let drop = drop_fn.read().unwrap().clone();
+	
+					if let Some(drop_body) = fns_in.get(&drop) {
+						self.fn_templates.write().unwrap().insert(Arc::new(drop), drop_body.clone());
+					} else {
+						while !self.fn_templates.read().unwrap().contains_key(&drop) {
+							std::thread::sleep(Duration::from_millis(1));
+						}
+					}
+				}
+	
+				let mut drop_clone = drop_fn.read().unwrap().clone();
+
+				drop(instance_lock);
+	
+				self.monoize_call(&mut drop_clone, param_map, fns_in, fns_out, types);
+				
+				instance_arc.write().unwrap().drop = Some(Arc::new(RwLock::new(drop_clone)));
+			}
+	
+			Arc::downgrade(&instance_arc)
+		}
 	}
 
 	fn mangle(&self, module: &mut CIRModule) {
@@ -392,7 +418,7 @@ impl MonomorphServer {
 		for (id, func) in &mut module.functions {
 			// Check if the function has a `no_mangle` or `export_as` attribute, or if it's `main`. If not, mangle the name
 			if get_attribute(&func.attributes, "no_mangle").is_some()
-				|| (&**id.path.name() == "main" && !id.path.is_qualified())
+				|| (&**id.path.name() == "main" && !id.path.is_scoped())
 			{
 				func.mangled_name = Some(id.path.name().to_string());
 			} else if let Some(export_name) = get_attribute(&func.attributes, "export_as") {
@@ -419,16 +445,33 @@ fn mangle_name(name: &Identifier, func: &CIRFunction) -> String {
 	let mut result = String::from("_Z");
 
 	assert!(name.absolute);
-
+	
 	if !name.is_qualified() {
 		result.push_str(&name.name().len().to_string());
 		result.push_str(name.name());
 	} else {
 		result.push('N');
+		
+		if let Some(ty_qualifier) = &name.qualifier.0 {
+			let Type::TypeRef { def, .. } = &**ty_qualifier else {
+				unimplemented!()
+			};
+
+			let def = def.upgrade().unwrap();
+			let typename = &def.read().unwrap().name;
+
+
+			for scope in &typename.path {
+				result.push_str(&scope.len().to_string());
+				result.push_str(scope);
+			}
+		}
+
 		for scope in &name.path {
 			result.push_str(&scope.len().to_string());
 			result.push_str(scope);
 		}
+
 		result.push('E');
 	}
 

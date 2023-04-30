@@ -5,10 +5,10 @@ struct Vector<type T> {
 	usize len;
 	usize capacity;
 
-	// `init` and `drop` are special functions
+	// `new` and `drop` are special functions
 	// that handle construction and destruction.
 
-	// TODO: Add `init&` binding
+	// TODO: Add `new&` binding
 	/*new(mut& self) {
 		// TODO: guarantee move elision
 		self = Vector<T> {
