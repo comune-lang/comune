@@ -426,7 +426,7 @@ impl CIRModuleBuilder {
 
 	fn generate_scope_end(&mut self) {
 		for (_, var) in self.name_map_stack.pop().unwrap().into_iter().rev() {
-			if !self.is_return_location(var) {
+			if self.needs_drop(var) {
 				self.generate_drop_shim(LValue { local: var, projection: vec![] });
 			}
 		}
@@ -439,6 +439,12 @@ impl CIRModuleBuilder {
 		self.current_block = current;
 		self.write(CIRStmt::DropShim { var, next });
 		self.current_block = next;
+	}
+
+	fn needs_drop(&self, var: VarIndex) -> bool {
+		let (_, props, _) = &self.current_fn.as_ref().unwrap().variables[var];
+		
+		!props.is_ref && !self.is_return_location(var)
 	}
 
 	fn is_return_location(&self, var: VarIndex) -> bool {
@@ -651,7 +657,9 @@ impl CIRModuleBuilder {
 
 						for scope in self.name_map_stack.clone().into_iter().rev() {
 							for (_, var) in scope.iter().rev() {
-								self.generate_drop_shim(LValue { local: *var, projection: vec![] });
+								if self.needs_drop(*var) {
+									self.generate_drop_shim(LValue { local: *var, projection: vec![] });
+								}
 							}
 						}
 
