@@ -426,7 +426,9 @@ impl CIRModuleBuilder {
 
 	fn generate_scope_end(&mut self) {
 		for (_, var) in self.name_map_stack.pop().unwrap().into_iter().rev() {
-			self.generate_drop_shim(LValue { local: var, projection: vec![] });
+			if !self.is_return_location(var) {
+				self.generate_drop_shim(LValue { local: var, projection: vec![] });
+			}
 		}
 	}
 
@@ -437,6 +439,10 @@ impl CIRModuleBuilder {
 		self.current_block = current;
 		self.write(CIRStmt::DropShim { var, next });
 		self.current_block = next;
+	}
+
+	fn is_return_location(&self, var: VarIndex) -> bool {
+		var == 0 && !self.current_fn.as_ref().unwrap().ret.1.is_void()
 	}
 
 	// generate_expr only returns None if `expr` is a "never expression"

@@ -365,11 +365,29 @@ impl MonomorphServer {
 
 			types.insert(insert_idx.clone(), instance_arc.clone());
 
-			if let Some(drop) = &instance_arc.read().unwrap().drop {
-				let drop_fn = drop.read().unwrap().clone();
+			if instance_arc.read().unwrap().drop.is_some() {
+				// We have to do this for stupid bullshit reasons
+				// that are stupid and also bullshit.
+
+				loop {
+					let instance_lock = instance_arc.read().unwrap();
+					let drop_fn = instance_lock.drop.as_ref().unwrap();
+					let drop_fn = &*drop_fn.read().unwrap();
+
+					if self.fn_instances.read().unwrap().contains_key(drop_fn) {
+						break
+					} else {
+						std::thread::sleep(Duration::from_millis(1));
+					}
+				}
+
+				let instance_lock = instance_arc.read().unwrap();
+				let drop_fn = instance_lock.drop.as_ref().unwrap();
+				let drop_fn = drop_fn.read().unwrap().clone();
+
 				let drop_body = self.fn_instances.read().unwrap()[&drop_fn].clone();
 			
-				fns_out.insert(Arc::new(drop.read().unwrap().clone()), drop_body);
+				fns_out.insert(Arc::new(drop_fn), drop_body);
 			}
 
 			Arc::downgrade(&instance_arc)
@@ -401,10 +419,10 @@ impl MonomorphServer {
 	
 				let mut drop_clone = drop_fn.read().unwrap().clone();
 
-				drop(instance_lock);
-	
 				self.monoize_call(&mut drop_clone, param_map, fns_in, fns_out, types);
-				
+
+				drop(instance_lock);
+
 				instance_arc.write().unwrap().drop = Some(Arc::new(RwLock::new(drop_clone)));
 			}
 	

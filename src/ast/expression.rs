@@ -363,24 +363,6 @@ impl Expr {
 			Expr::Atom(_, data) | Expr::Unary(_, _, data) | Expr::Cons(_, _, data) => data,
 		}
 	}
-
-	pub fn wrap_in_block(self) -> Self {
-		match self {
-			Expr::Atom(Atom::Block { .. }, _) => self,
-
-			_ => {
-				let node_data = self.get_node_data().clone();
-				Expr::Atom(
-					Atom::Block {
-						items: vec![],
-						result: Some(Box::new(self)),
-						is_unsafe: false,
-					},
-					node_data,
-				)
-			}
-		}
-	}
 }
 
 impl Display for Expr {
