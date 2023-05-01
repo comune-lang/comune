@@ -614,7 +614,11 @@ pub fn generate_code<'ctx>(
 	let mut cir_man = CIRPassManager::new();
 	
 	cir_man.add_mut_pass(DataFlowPass::new(DefInitFlow, ElaborateDrops));
-	
+
+	// Sanity checks for ElaborateDrops
+	cir_man.add_mut_pass(DataFlowPass::new(DefInitFlow, VarInitCheck));
+	cir_man.add_pass(verify::Verify);
+
 	let cir_errors = cir_man.run_on_module(&mut module_mono);
 
 	// And handle any errors again

@@ -118,26 +118,26 @@ impl LiveVarCheckState {
 
 	fn eval_rvalue(&mut self, rval: &RValue) {
 		match rval {
-			RValue::Atom(ty, _, op, _) => self.eval_operand(ty, op),
+			RValue::Atom(.., op, _) => self.eval_operand(op),
 
-			RValue::Cons(_, _, ..) => {
-				//self.eval_operand(lty, lhs);
-				//self.eval_operand(rty, rhs);
+			RValue::Cons(..) => {
+				//self.eval_operand(lhs);
+				//self.eval_operand(rhs);
 			}
 
-			RValue::Cast { from, val, .. } => self.eval_operand(from, val),
+			RValue::Cast { val, .. } => self.eval_operand(val),
 		}
 	}
 
-	fn eval_operand(&mut self, _ty: &Type, op: &Operand) {
+	fn eval_operand(&mut self, op: &Operand) {
 		match op {
-			Operand::LValue(lval, _) => self.eval_lvalue(_ty, lval),
+			Operand::LValue(lval, _) => self.eval_lvalue(lval),
 
 			_ => {}
 		}
 	}
 
-	fn eval_lvalue(&mut self, _ty: &Type, lval: &LValue) {
+	fn eval_lvalue(&mut self, lval: &LValue) {
 		// TODO: Check for `Copy` types? Might be handled earlier
 
 		self.set_liveness(lval, LivenessState::Moved);
@@ -230,11 +230,15 @@ impl Analysis for DefInitFlow {
 			}
 
 			CIRStmt::Invoke {
-				result: Some(lval), ..
+				result: Some(lval), args, ..
 			}
 			| CIRStmt::Call {
-				result: Some(lval), ..
+				result: Some(lval), args, ..
 			} => {
+				for (arg, _) in args {
+					state.eval_lvalue(arg);
+				}
+
 				state.set_liveness(lval, LivenessState::Live);
 			}
 

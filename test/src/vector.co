@@ -19,6 +19,7 @@ struct Vector<type T> {
 	}
 	*/
 	drop(mut& self) {
+		printf(c"Vector<T>::drop(mut& self) called!\n");
 		if self.capacity > 0 {
 			free(self.data as void mut*);
 		}
