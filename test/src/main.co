@@ -110,8 +110,9 @@ void slice_test(i32[] &test) { }
 int main() {
 	submodule_test::bar();
 
-	Vector<float> a = vec<float>();
+	Vector<float> mut a = vec<float>();
 	vector::vector_test(a);
+	a.len = 2;
 
 	int i;
 

@@ -206,10 +206,7 @@ impl AnalysisDomain for DefInitFlow {
 		// There is *definitely* a way to do this with bit math but fuck if i know lol
 		for var in 0..func.arg_count {
 			state.liveness.insert(
-				LValue {
-					local: var,
-					projection: vec![],
-				},
+				LValue::new(var),
 				LivenessState::Live,
 			);
 		}
@@ -229,25 +226,19 @@ impl Analysis for DefInitFlow {
 				state.set_liveness(lval, LivenessState::Live);
 			}
 
-			CIRStmt::Invoke {
-				result: Some(lval), args, ..
-			}
-			| CIRStmt::Call {
-				result: Some(lval), args, ..
-			} => {
+			CIRStmt::Invoke { result, args, .. } | CIRStmt::Call { result, args, .. } => {
 				for (arg, _) in args {
 					state.eval_lvalue(arg);
 				}
 
-				state.set_liveness(lval, LivenessState::Live);
+				if let Some(result) = result {
+					state.set_liveness(result, LivenessState::Live);
+				}
 			}
 
 			CIRStmt::StorageLive(local) => {
 				state.set_liveness(
-					&LValue {
-						local: *local,
-						projection: vec![],
-					},
+					&LValue::new(*local),
 					LivenessState::Uninit,
 				);
 			}
@@ -462,10 +453,7 @@ impl<'func> DropElaborator<'func> {
 					succs: vec![next],
 				};
 	
-				let flag_lval = LValue {
-					local: flag,
-					projection: vec![],
-				};
+				let flag_lval = LValue::new(flag);
 	
 				self.current_fn.blocks.push(drop_block);
 				self.current_block = drop_idx;

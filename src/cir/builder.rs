@@ -314,10 +314,7 @@ impl CIRModuleBuilder {
 					.unwrap()
 					.push((name.clone(), idx));
 
-				let store_place = LValue {
-					local: self.get_fn().variables.len() - 1,
-					projection: vec![],
-				};
+				let store_place = LValue::new(self.get_fn().variables.len() - 1);
 
 				if &ty != value_ty {
 					self.write(CIRStmt::Assignment(
@@ -362,10 +359,7 @@ impl CIRModuleBuilder {
 			.push((ty.clone(), props, Some(name.clone())));
 		self.name_map_stack.last_mut().unwrap().push((name, idx));
 
-		let lval = LValue {
-			local: self.get_fn().variables.len() - 1,
-			projection: vec![],
-		};
+		let lval = LValue::new(self.get_fn().variables.len() - 1);
 
 		if let Some(elem) = elem {
 			if let Some(rval) = self.generate_expr(elem) {
@@ -427,7 +421,7 @@ impl CIRModuleBuilder {
 	fn generate_scope_end(&mut self) {
 		for (_, var) in self.name_map_stack.pop().unwrap().into_iter().rev() {
 			if self.needs_drop(var) {
-				self.generate_drop_shim(LValue { local: var, projection: vec![] });
+				self.generate_drop_shim(LValue::new(var));
 			}
 		}
 	}
@@ -539,10 +533,7 @@ impl CIRModuleBuilder {
 						lval_ty.clone(),
 						None,
 						Operand::LValue(
-							LValue {
-								local: idx,
-								projection: vec![],
-							},
+							LValue::new(idx),
 							span,
 						),
 						span,
@@ -658,7 +649,7 @@ impl CIRModuleBuilder {
 						for scope in self.name_map_stack.clone().into_iter().rev() {
 							for (_, var) in scope.iter().rev() {
 								if self.needs_drop(*var) {
-									self.generate_drop_shim(LValue { local: *var, projection: vec![] });
+									self.generate_drop_shim(LValue::new(*var));
 								}
 							}
 						}
@@ -1060,10 +1051,7 @@ impl CIRModuleBuilder {
 							expr_ty.clone(),
 							None,
 							Operand::LValue(
-								LValue {
-									local,
-									projection: vec![],
-								},
+								LValue::new(local),
 								SrcSpan::new(),
 							),
 							SrcSpan::new(),
@@ -1316,10 +1304,7 @@ impl CIRModuleBuilder {
 		match expr {
 			Expr::Atom(atom, meta) => match atom {
 				Atom::Identifier(id) => Some((
-					LValue {
-						local: self.get_var_index(id.expect_scopeless().unwrap()).unwrap(),
-						projection: vec![],
-					},
+					LValue::new(self.get_var_index(id.expect_scopeless().unwrap()).unwrap()),
 					meta.tk,
 				)),
 
@@ -1468,6 +1453,7 @@ impl CIRModuleBuilder {
 									LValue {
 										local: value.local,
 										projection: vec![PlaceElem::Field(0)],
+										binding: BindingProps::default(),
 									},
 									SrcSpan::new(),
 								),
@@ -1522,10 +1508,7 @@ impl CIRModuleBuilder {
 
 		self.get_fn_mut().variables.push((ty, props, name));
 
-		LValue {
-			local: idx,
-			projection: vec![],
-		}
+		LValue::new(idx)
 	}
 
 	fn get_as_operand(&mut self, ty: &Type, rval: RValue) -> Operand {
@@ -1548,10 +1531,7 @@ impl CIRModuleBuilder {
 			None,
 		));
 
-		let lval = LValue {
-			local: self.get_fn().variables.len() - 1,
-			projection: vec![],
-		};
+		let lval = LValue::new(self.get_fn().variables.len() - 1);
 
 		self.write(CIRStmt::Assignment((lval.clone(), SrcSpan::new()), rval));
 

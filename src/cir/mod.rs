@@ -41,6 +41,17 @@ pub type CIRTypeParamList = Vec<(Name, GenericParam, Option<Type>)>;
 pub struct LValue {
 	pub local: VarIndex,
 	pub projection: Vec<PlaceElem>,
+	pub binding: BindingProps,
+}
+
+impl LValue {
+	pub fn new(local: VarIndex) -> Self {
+		LValue { 
+			local, 
+			projection: vec![], 
+			binding: BindingProps::default()
+		}
+	}
 }
 
 // A PlaceELem describes an element of an LValue expression, such as a deref or member access operation.
@@ -284,10 +295,7 @@ impl CIRFunction {
 		if self.ret.1.is_void() {
 			None
 		} else {
-			Some(LValue {
-				local: self.arg_count,
-				projection: vec![],
-			})
+			Some(LValue::new(self.arg_count))
 		}
 	}
 }
