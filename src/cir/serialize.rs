@@ -59,7 +59,7 @@ impl Display for CIRStmt {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match self {
 			CIRStmt::Expression(expr) => writeln!(f, "{expr};"),
-			CIRStmt::Assignment((lval, _), expr) => writeln!(f, "{lval} = {expr};"),
+			CIRStmt::Assignment(lval, expr) => writeln!(f, "{lval} = {expr};"),
 			CIRStmt::Jump(block) => writeln!(f, "jmp bb{block};"),
 			CIRStmt::Switch(expr, branches, else_branch) => {
 				writeln!(f, "switch {expr} {{")?;
@@ -222,7 +222,9 @@ impl Display for Operand {
 				write!(f, "{s:#?}")
 			}
 			Operand::BoolLit(b, _) => write!(f, "{b}"),
-			Operand::LValue(lval, _) => write!(f, "{lval}"),
+			Operand::Move(lval) => write!(f, "move {lval}"),
+			Operand::Copy(lval) => write!(f, "copy {lval}"),
+			Operand::Borrow(lval, props) => write!(f, "borrow {lval} as {props}"),
 			Operand::Undef => write!(f, "undef"),
 		}
 	}

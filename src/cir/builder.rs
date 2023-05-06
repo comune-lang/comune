@@ -265,7 +265,7 @@ impl CIRModuleBuilder {
 				self.generate_expr(expr).map(|_| ())
 			}
 
-			Stmt::Decl(bindings, expr, tk) => {
+			Stmt::Decl(bindings, expr, _) => {
 				if bindings.len() != 1 {
 					todo!()
 				}
@@ -287,7 +287,7 @@ impl CIRModuleBuilder {
 				self.write(CIRStmt::StorageLive(var.local));
 
 				if let Some(val) = val {
-					self.write(CIRStmt::Assignment((var.clone(), *tk), val));
+					self.write(CIRStmt::Assignment(var, val));
 				}
 
 				Some(())
@@ -314,25 +314,29 @@ impl CIRModuleBuilder {
 					.unwrap()
 					.push((name.clone(), idx));
 
-				let store_place = LValue::new(self.get_fn().variables.len() - 1);
+				let store_place = LValue {
+					local: self.get_fn().variables.len() - 1,
+					projection: vec![],
+					binding: props,
+				};
 
 				if &ty != value_ty {
 					self.write(CIRStmt::Assignment(
-						(store_place, SrcSpan::new()),
+						store_place,
 						RValue::Cast {
 							to: ty.clone(),
 							from: value_ty.clone(),
-							val: Operand::LValue(value, SrcSpan::new()),
+							val: Operand::Move(value),
 							span: SrcSpan::new(),
 						},
 					));
 				} else {
 					self.write(CIRStmt::Assignment(
-						(store_place, SrcSpan::new()),
+						store_place,
 						RValue::Atom(
 							ty,
 							None,
-							Operand::LValue(value, SrcSpan::new()),
+							Operand::Move(value),
 							SrcSpan::new(),
 						),
 					));
@@ -359,11 +363,15 @@ impl CIRModuleBuilder {
 			.push((ty.clone(), props, Some(name.clone())));
 		self.name_map_stack.last_mut().unwrap().push((name, idx));
 
-		let lval = LValue::new(self.get_fn().variables.len() - 1);
+		let lval = LValue {
+			local: self.get_fn().variables.len() - 1,
+			projection: vec![],
+			binding: props,
+		};
 
 		if let Some(elem) = elem {
 			if let Some(rval) = self.generate_expr(elem) {
-				self.write(CIRStmt::Assignment((lval, elem.get_node_data().tk), rval));
+				self.write(CIRStmt::Assignment(lval, rval));
 			}
 		}
 	}
@@ -412,8 +420,8 @@ impl CIRModuleBuilder {
 		}
 	}
 
-	fn generate_drop_and_assign(&mut self, location: (LValue, SrcSpan), expr: RValue) {
-		self.generate_drop_shim(location.0.clone());
+	fn generate_drop_and_assign(&mut self, location: LValue, expr: RValue) {
+		self.generate_drop_shim(location.clone());
 
 		self.write(CIRStmt::Assignment(location, expr));
 	}
@@ -421,7 +429,7 @@ impl CIRModuleBuilder {
 	fn generate_scope_end(&mut self) {
 		for (_, var) in self.name_map_stack.pop().unwrap().into_iter().rev() {
 			if self.needs_drop(var) {
-				self.generate_drop_shim(LValue::new(var));
+				self.generate_drop_shim(self.get_local_lvalue(var));
 			}
 		}
 	}
@@ -436,7 +444,7 @@ impl CIRModuleBuilder {
 	}
 
 	fn needs_drop(&self, var: VarIndex) -> bool {
-		let (_, props, _) = &self.current_fn.as_ref().unwrap().variables[var];
+		let (_, props, _) = &self.get_fn().variables[var];
 		
 		!props.is_ref && !self.is_return_location(var)
 	}
@@ -506,13 +514,13 @@ impl CIRModuleBuilder {
 							Operator::Add,
 						));
 
-						self.write(CIRStmt::Assignment((tmp_idx, SrcSpan::new()), expr_ir))
+						self.write(CIRStmt::Assignment(tmp_idx, expr_ir))
 					}
 
 					Some(RValue::Atom(
 						expr_ty.clone(),
 						None,
-						Operand::LValue(tmp, SrcSpan::new()),
+						Operand::Move(tmp),
 						span,
 					))
 				}
@@ -527,14 +535,20 @@ impl CIRModuleBuilder {
 							)
 						});
 
-					let lval_ty = &self.get_fn().variables[idx].0;
+					let (lval_ty, props, _) = &self.get_fn().variables[idx];
+					
+					let mut props = *props;
+					props.span = span;
 
 					Some(RValue::Atom(
 						lval_ty.clone(),
 						None,
-						Operand::LValue(
-							LValue::new(idx),
-							span,
+						Operand::Move(
+							LValue { 
+								local: idx,
+								projection: vec![],
+								binding: props,
+							},
 						),
 						span,
 					))
@@ -560,7 +574,7 @@ impl CIRModuleBuilder {
 				} => self.generate_fn_call(args, generic_args, resolved, span),
 
 				Atom::Drop(dropped) => {
-					let (lvalue, _) = self.generate_lvalue_expr(dropped)?;
+					let lvalue = self.generate_lvalue_expr(dropped)?;
 
 					self.generate_drop_shim(lvalue);
 
@@ -574,7 +588,7 @@ impl CIRModuleBuilder {
 					};
 
 					let location = if let Some(placement) = placement {
-						self.generate_lvalue_expr(&placement)?.0
+						self.generate_lvalue_expr(&placement)?
 					} else {
 						self.insert_temporary(ty.clone(), RValue::Atom(ty.clone(), None, Operand::Undef, SrcSpan::new()))
 					};
@@ -603,10 +617,11 @@ impl CIRModuleBuilder {
 								let mut mem_lval = location.clone();
 
 								mem_lval.projection.push(PlaceElem::Field(indices[i]));
+								mem_lval.binding.span = fields[i].1.get_node_data().tk;
 
 								if let Some(mem_expr) = mem_expr {
 									self.write(CIRStmt::Assignment(
-										(mem_lval, fields[i].1.get_node_data().tk),
+										mem_lval,
 										mem_expr,
 									))
 								}
@@ -618,7 +633,7 @@ impl CIRModuleBuilder {
 								Some(RValue::Atom(
 									ty.clone(),
 									None,
-									Operand::LValue(location, span),
+									Operand::Move(location),
 									span,
 								))
 							}
@@ -640,7 +655,7 @@ impl CIRModuleBuilder {
 								self.current_fn.as_ref().unwrap().get_return_lvalue()
 							{
 								self.write(CIRStmt::Assignment(
-									(lval.clone(), expr.get_node_data().tk),
+									lval,
 									expr_ir,
 								));
 							}
@@ -649,7 +664,7 @@ impl CIRModuleBuilder {
 						for scope in self.name_map_stack.clone().into_iter().rev() {
 							for (_, var) in scope.iter().rev() {
 								if self.needs_drop(*var) {
-									self.generate_drop_shim(LValue::new(*var));
+									self.generate_drop_shim(self.get_local_lvalue(*var));
 								}
 							}
 						}
@@ -660,7 +675,7 @@ impl CIRModuleBuilder {
 
 					ControlFlow::If {
 						cond,
-						body: Expr::Atom(Atom::Block { items, result, .. }, body_meta),
+						body: Expr::Atom(Atom::Block { items, result, .. }, _),
 						else_body,
 					} => {
 						let result_loc = if !expr_ty.is_void() {
@@ -686,7 +701,7 @@ impl CIRModuleBuilder {
 						if let Some(if_val) = block_ir {
 							if let Some(result) = &result_loc {
 								self.write(CIRStmt::Assignment(
-									(result.clone(), body_meta.tk),
+									result.clone(),
 									if_val,
 								));
 							}
@@ -706,7 +721,7 @@ impl CIRModuleBuilder {
 								result: else_result,
 								..
 							},
-							else_meta,
+							_,
 						)) = else_body
 						{
 							let (else_idx, else_ir) =
@@ -715,7 +730,7 @@ impl CIRModuleBuilder {
 							if let Some(else_val) = else_ir {
 								if let Some(result) = &result_loc {
 									self.write(CIRStmt::Assignment(
-										(result.clone(), else_meta.tk),
+										result.clone(),
 										else_val,
 									));
 								}
@@ -751,7 +766,7 @@ impl CIRModuleBuilder {
 								Some(RValue::Atom(
 									expr_ty.clone(),
 									None,
-									Operand::LValue(result, span),
+									Operand::Move(result),
 									span,
 								))
 							} else {
@@ -959,13 +974,13 @@ impl CIRModuleBuilder {
 								);
 
 								let add_ir = CIRStmt::Assignment(
-									(disc_lval.clone(), SrcSpan::new()),
+									disc_lval.clone(),
 									RValue::Cons(
 										disc_ty.clone(),
 										[
 											(
 												disc_ty.clone(),
-												Operand::LValue(disc_lval.clone(), SrcSpan::new()),
+												Operand::Move(disc_lval.clone()),
 											),
 											(disc_ty.clone(), mult_ir.clone()),
 										],
@@ -989,7 +1004,7 @@ impl CIRModuleBuilder {
 						// Generate branches
 
 						for (i, (pattern, branch)) in branches.iter().enumerate() {
-							let Expr::Atom(Atom::Block { items, result, .. }, branch_meta) = branch else { panic!() };
+							let Expr::Atom(Atom::Block { items, result, .. }, _) = branch else { panic!() };
 
 							let binding_idx = self.append_block();
 
@@ -1004,7 +1019,7 @@ impl CIRModuleBuilder {
 							if let Some(match_result) = match_result {
 								if let Some(result_loc) = &result_loc {
 									self.write(CIRStmt::Assignment(
-										(result_loc.clone(), branch_meta.tk),
+										result_loc.clone(),
 										match_result,
 									));
 								}
@@ -1020,7 +1035,7 @@ impl CIRModuleBuilder {
 
 						self.current_block = start_block;
 						self.write(CIRStmt::Switch(
-							Operand::LValue(disc_lval, SrcSpan::new()),
+							Operand::Move(disc_lval),
 							branches_ir,
 							cont_block,
 						));
@@ -1031,7 +1046,7 @@ impl CIRModuleBuilder {
 								Some(RValue::Atom(
 									expr_ty.clone(),
 									None,
-									Operand::LValue(result_loc, span),
+									Operand::Move(result_loc),
 									span,
 								))
 							} else {
@@ -1050,9 +1065,8 @@ impl CIRModuleBuilder {
 						return Some(RValue::Atom(
 							expr_ty.clone(),
 							None,
-							Operand::LValue(
-								LValue::new(local),
-								SrcSpan::new(),
+							Operand::Move(
+								self.get_local_lvalue(local)
 							),
 							SrcSpan::new(),
 						));
@@ -1071,7 +1085,7 @@ impl CIRModuleBuilder {
 					Some(RValue::Atom(
 						expr_ty.clone(),
 						None,
-						Operand::LValue(local, span),
+						Operand::Move(local),
 						span,
 					))
 				}
@@ -1080,7 +1094,7 @@ impl CIRModuleBuilder {
 			Expr::Cons([lhs, rhs], op, _) => {
 				if op.is_compound_assignment() {
 					let op = op.get_compound_operator();
-					let (lval_ir, lval_span) = self.generate_lvalue_expr(lhs)?;
+					let lval_ir = self.generate_lvalue_expr(lhs)?;
 					let rval_ir = self.generate_expr(rhs)?;
 
 					let l_ty = lhs.get_type();
@@ -1091,7 +1105,7 @@ impl CIRModuleBuilder {
 					let expr_ir = RValue::Cons(
 						expr_ty.clone(),
 						[
-							(l_ty.clone(), Operand::LValue(lval_ir.clone(), lval_span)),
+							(l_ty.clone(), Operand::Move(lval_ir.clone())),
 							(r_ty.clone(), r_tmp),
 						],
 						op,
@@ -1101,14 +1115,14 @@ impl CIRModuleBuilder {
 					let expr_tmp = self.get_as_operand(l_ty, expr_ir);
 
 					self.generate_drop_and_assign(
-						(lval_ir.clone(), lval_span),
+						lval_ir.clone(),
 						RValue::Atom(r_ty.clone(), None, expr_tmp, rhs.get_node_data().tk),
 					);
 
 					Some(RValue::Atom(
 						l_ty.clone(),
 						None,
-						Operand::LValue(lval_ir, lval_span),
+						Operand::Move(lval_ir),
 						span,
 					))
 				} else {
@@ -1119,11 +1133,11 @@ impl CIRModuleBuilder {
 							}
 
 							Expr::Atom(Atom::Identifier(_), _) => {
-								let (lval, lval_span) = self.generate_lvalue_expr(expr)?;
+								let lval = self.generate_lvalue_expr(expr)?;
 								Some(RValue::Atom(
 									rhs.get_type().clone(),
 									None,
-									Operand::LValue(lval, lval_span),
+									Operand::Move(lval),
 									span,
 								))
 							}
@@ -1132,17 +1146,17 @@ impl CIRModuleBuilder {
 						},
 
 						Operator::Subscr => {
-							let (lval, lval_span) = self.generate_lvalue_expr(expr)?;
+							let lval = self.generate_lvalue_expr(expr)?;
 							Some(RValue::Atom(
 								expr_ty.clone(),
 								None,
-								Operand::LValue(lval, lval_span),
+								Operand::Move(lval),
 								span,
 							))
 						}
 
 						Operator::Assign => {
-							let (lval_ir, lval_span) = self.generate_lvalue_expr(lhs)?;
+							let lval_ir = self.generate_lvalue_expr(lhs)?;
 							let rval_ir = self.generate_expr(rhs)?;
 							let l_ty = lhs.get_type();
 							let r_ty = rhs.get_type();
@@ -1150,14 +1164,14 @@ impl CIRModuleBuilder {
 							let r_tmp = self.get_as_operand(r_ty, rval_ir);
 
 							self.generate_drop_and_assign(
-								(lval_ir.clone(), lval_span), 
+								lval_ir.clone(), 
 								RValue::Atom(r_ty.clone(), None, r_tmp, rhs.get_node_data().tk)
 							);
 
 							Some(RValue::Atom(
 								l_ty.clone(),
 								None,
-								Operand::LValue(lval_ir, lval_span),
+								Operand::Move(lval_ir),
 								span,
 							))
 						}
@@ -1205,7 +1219,7 @@ impl CIRModuleBuilder {
 			.map_while(|arg| {
 				let cir_expr = self.generate_expr(arg)?;
 
-				if let RValue::Atom(_, None, Operand::LValue(lval, _), _) = cir_expr {
+				if let RValue::Atom(_, None, Operand::Move(lval), _) = cir_expr {
 					Some((lval, arg.get_node_data().tk))
 				} else {
 					Some((
@@ -1242,7 +1256,7 @@ impl CIRModuleBuilder {
 				});
 
 				if let Some(result) = result {
-					Some(RValue::Atom(ret, None, Operand::LValue(result, span), span))
+					Some(RValue::Atom(ret, None, Operand::Move(result), span))
 				} else {
 					Some(Self::get_void_rvalue())
 				}
@@ -1252,7 +1266,7 @@ impl CIRModuleBuilder {
 				let fn_val_ir = self.generate_expr(expr)?;
 				let fn_val_ty = fn_val_ir.get_type().clone();
 
-				let local = if let RValue::Atom(_, None, Operand::LValue(lval, _), _) = fn_val_ir {
+				let local = if let RValue::Atom(_, None, Operand::Move(lval), _) = fn_val_ir {
 					lval
 				} else {
 					self.insert_temporary(fn_val_ir.get_type().clone(), fn_val_ir.clone())
@@ -1288,7 +1302,7 @@ impl CIRModuleBuilder {
 					Some(RValue::Atom(
 						*ret,
 						None,
-						Operand::LValue(result, span),
+						Operand::Move(result),
 						span,
 					))
 				} else {
@@ -1300,17 +1314,21 @@ impl CIRModuleBuilder {
 		}
 	}
 
-	fn generate_lvalue_expr(&mut self, expr: &Expr) -> Option<(LValue, SrcSpan)> {
+	fn generate_lvalue_expr(&mut self, expr: &Expr) -> Option<LValue> {
 		match expr {
 			Expr::Atom(atom, meta) => match atom {
-				Atom::Identifier(id) => Some((
-					LValue::new(self.get_var_index(id.expect_scopeless().unwrap()).unwrap()),
-					meta.tk,
-				)),
+				Atom::Identifier(id) => {
+					let local = self.get_var_index(id.expect_scopeless().unwrap()).unwrap();
+
+					let mut lval = self.get_local_lvalue(local);
+					lval.binding.span = meta.tk;
+
+					Some(self.get_local_lvalue(local))
+				},
 
 				Atom::Once(_) => {
-					let RValue::Atom(_, None, Operand::LValue(lvalue, _), span) = self.generate_expr(expr)? else { panic!() };
-					Some((lvalue, span))
+					let RValue::Atom(_, None, Operand::Move(lvalue), _) = self.generate_expr(expr)? else { panic!() };
+					Some(lvalue)
 				}
 
 				_ => panic!(),
@@ -1318,7 +1336,7 @@ impl CIRModuleBuilder {
 
 			Expr::Cons([lhs, rhs], op, _) => match op {
 				Operator::MemberAccess => {
-					let (mut lhs_ir, meta) = self.generate_lvalue_expr(lhs)?;
+					let mut lhs_ir = self.generate_lvalue_expr(lhs)?;
 					let lhs_ty = lhs.get_type();
 
 					let Type::TypeRef { def, .. } = lhs_ty else { panic!() };
@@ -1336,11 +1354,11 @@ impl CIRModuleBuilder {
 
 					lhs_ir.projection.push(PlaceElem::Field(idx));
 
-					Some((lhs_ir, meta))
+					Some(lhs_ir)
 				}
 
 				Operator::Subscr => {
-					let (mut indexed, meta) = self.generate_lvalue_expr(lhs)?;
+					let mut indexed = self.generate_lvalue_expr(lhs)?;
 					let index = self.generate_expr(rhs)?;
 					let index_ty = rhs.get_type();
 
@@ -1350,7 +1368,7 @@ impl CIRModuleBuilder {
 						Operator::Add,
 					));
 
-					Some((indexed, meta))
+					Some(indexed)
 				}
 
 				// Not a valid lvalue without an outer deref, handled by case below
@@ -1362,7 +1380,7 @@ impl CIRModuleBuilder {
 			Expr::Unary(val, Operator::Deref, _) => match &**val {
 				// Special case for *(ptr + n)
 				Expr::Cons([lhs, rhs], op @ Operator::Add | op @ Operator::Sub, _) => {
-					let (mut indexed, meta) = self.generate_lvalue_expr(lhs)?;
+					let mut indexed = self.generate_lvalue_expr(lhs)?;
 					let index = self.generate_expr(rhs)?;
 					let index_ty = rhs.get_type();
 
@@ -1372,13 +1390,13 @@ impl CIRModuleBuilder {
 						op.clone(),
 					));
 
-					Some((indexed, meta))
+					Some(indexed)
 				}
 
 				_ => {
-					let (mut derefee, meta) = self.generate_lvalue_expr(val)?;
+					let mut derefee = self.generate_lvalue_expr(val)?;
 					derefee.projection.push(PlaceElem::Deref);
-					Some((derefee, meta))
+					Some(derefee)
 				}
 			},
 
@@ -1449,13 +1467,12 @@ impl CIRModuleBuilder {
 						[
 							(
 								disc_type.clone(),
-								Operand::LValue(
+								Operand::Move(
 									LValue {
 										local: value.local,
 										projection: vec![PlaceElem::Field(0)],
 										binding: BindingProps::default(),
-									},
-									SrcSpan::new(),
+									}									
 								),
 							),
 							(
@@ -1496,6 +1513,14 @@ impl CIRModuleBuilder {
 		None
 	}
 
+	fn get_local_lvalue(&self, local: VarIndex) -> LValue {
+		LValue {
+			local,
+			projection: vec![],
+			binding: self.get_fn().variables[local].1
+		}
+	}
+
 	fn insert_variable(&mut self, name: Option<Name>, props: BindingProps, ty: Type) -> LValue {
 		let idx = self.get_fn().variables.len();
 
@@ -1508,32 +1533,42 @@ impl CIRModuleBuilder {
 
 		self.get_fn_mut().variables.push((ty, props, name));
 
-		LValue::new(idx)
+		LValue {
+			local: idx,
+			projection: vec![],
+			binding: props,
+		}
 	}
 
 	fn get_as_operand(&mut self, ty: &Type, rval: RValue) -> Operand {
 		if let RValue::Atom(_, None, operand, _) = rval {
 			operand
 		} else {
-			Operand::LValue(self.insert_temporary(ty.clone(), rval), SrcSpan::new())
+			Operand::Move(self.insert_temporary(ty.clone(), rval))
 		}
 	}
 
 	fn insert_temporary(&mut self, ty: Type, rval: RValue) -> LValue {
+		let props = BindingProps {
+			is_mut: true,
+			is_ref: false,
+			is_unsafe: false,
+			span: SrcSpan::new(),
+		};
+
 		self.get_fn_mut().variables.push((
 			ty,
-			BindingProps {
-				is_mut: true,
-				is_ref: false,
-				is_unsafe: false,
-				span: SrcSpan::new(),
-			},
+			props,
 			None,
 		));
 
-		let lval = LValue::new(self.get_fn().variables.len() - 1);
+		let lval = LValue {
+			local: self.get_fn().variables.len() - 1,
+			projection: vec![],
+			binding: props,
+		};
 
-		self.write(CIRStmt::Assignment((lval.clone(), SrcSpan::new()), rval));
+		self.write(CIRStmt::Assignment(lval.clone(), rval));
 
 		lval
 	}

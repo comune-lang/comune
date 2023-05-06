@@ -114,7 +114,9 @@ pub enum Operand {
 	StringLit(String, SrcSpan),
 	CStringLit(CString, SrcSpan),
 	BoolLit(bool, SrcSpan),
-	LValue(LValue, SrcSpan),
+	Move(LValue),
+	Copy(LValue),
+	Borrow(LValue, BindingProps),
 	Undef,
 }
 
@@ -136,7 +138,7 @@ pub enum CIRStmt {
 	Expression(RValue),
 
 	// Assignment to a variable. Non-terminator.
-	Assignment((LValue, SrcSpan), RValue),
+	Assignment(LValue, RValue),
 
 	// Unconditional jump to the block at BlockIndex. Terminator.
 	Jump(BlockIndex),
@@ -295,7 +297,11 @@ impl CIRFunction {
 		if self.ret.1.is_void() {
 			None
 		} else {
-			Some(LValue::new(self.arg_count))
+			Some(LValue { 
+				local: self.arg_count,
+				projection: vec![],
+				binding: self.ret.0, 
+			})
 		}
 	}
 }

@@ -12,7 +12,7 @@ use crate::{
 		module::Identifier,
 		types::{Basic, TypeDef, FnPrototype},
 	},
-	lexer::{Token, SrcSpan},
+	lexer::Token,
 };
 
 use super::{
@@ -140,7 +140,7 @@ impl MonomorphServer {
 
 		for block in &mut func.blocks {
 			for stmt in block.items.iter_mut() {
-				if let CIRStmt::Assignment((_lval, _), _) = stmt {
+				if let CIRStmt::Assignment(_lval, _) = stmt {
 					// TODO: Find RValues in LValue projection
 				}
 

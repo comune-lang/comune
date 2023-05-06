@@ -131,7 +131,7 @@ impl LiveVarCheckState {
 
 	fn eval_operand(&mut self, op: &Operand) {
 		match op {
-			Operand::LValue(lval, _) => self.eval_lvalue(lval),
+			Operand::Move(lval) => self.eval_lvalue(lval),
 
 			_ => {}
 		}
@@ -139,8 +139,9 @@ impl LiveVarCheckState {
 
 	fn eval_lvalue(&mut self, lval: &LValue) {
 		// TODO: Check for `Copy` types? Might be handled earlier
-
-		self.set_liveness(lval, LivenessState::Moved);
+		if !lval.binding.is_ref {
+			self.set_liveness(lval, LivenessState::Moved);
+		}
 	}
 }
 
@@ -206,7 +207,11 @@ impl AnalysisDomain for DefInitFlow {
 		// There is *definitely* a way to do this with bit math but fuck if i know lol
 		for var in 0..func.arg_count {
 			state.liveness.insert(
-				LValue::new(var),
+				LValue { 
+					local: var,
+					projection: vec![],
+					binding: func.variables[var].1
+				},
 				LivenessState::Live,
 			);
 		}
@@ -221,7 +226,7 @@ impl Analysis for DefInitFlow {
 		state: &mut Self::Domain,
 	) {
 		match stmt {
-			CIRStmt::Assignment((lval, _), rval) => {
+			CIRStmt::Assignment(lval, rval) => {
 				state.eval_rvalue(rval);
 				state.set_liveness(lval, LivenessState::Live);
 			}
@@ -244,7 +249,11 @@ impl Analysis for DefInitFlow {
 			}
 
 			CIRStmt::DropShim { var, .. } => {
-				state.set_liveness(var, LivenessState::Dropped);
+				// `drop` is a no-op for uninitialized variables, so only update the
+				// liveness state if the variable is (potentially) initialized
+				if !matches!(state.get_liveness(var), None | Some(LivenessState::Uninit)) {
+					state.set_liveness(var, LivenessState::Dropped);
+				}
 			}
 
 			_ => {}
@@ -267,25 +276,25 @@ impl AnalysisResultHandler<DefInitFlow> for VarInitCheck {
 
 				// Check for uses of uninit/moved lvalues
 				match stmt {
-					CIRStmt::Assignment(_, RValue::Atom(_, _, Operand::LValue(lval, _), span))
-					| CIRStmt::Switch(Operand::LValue(lval, span), ..)
+					CIRStmt::Assignment(_, RValue::Atom(_, _, Operand::Move(lval), _))
+					| CIRStmt::Switch(Operand::Move(lval), ..)
 					| CIRStmt::Assignment(
 						_,
-						RValue::Cons(_, [(_, Operand::LValue(lval, span)), _], ..),
+						RValue::Cons(_, [(_, Operand::Move(lval)), _], ..),
 					)
 					| CIRStmt::Assignment(
 						_,
-						RValue::Cons(_, [_, (_, Operand::LValue(lval, span))], ..),
+						RValue::Cons(_, [_, (_, Operand::Move(lval))], ..),
 					)
 					| CIRStmt::Invoke {
 						id: CIRCallId::Indirect {
-							local: lval, span, ..
+							local: lval, ..
 						},
 						..
 					}
 					| CIRStmt::Call {
 						id: CIRCallId::Indirect {
-							local: lval, span, ..
+							local: lval, ..
 						},
 						..
 					} => {
@@ -299,7 +308,7 @@ impl AnalysisResultHandler<DefInitFlow> for VarInitCheck {
 									variable: func.get_variable_name(lval.local),
 									state: liveness.unwrap_or(LivenessState::Uninit),
 								},
-								*span,
+								lval.binding.span,
 							)),
 						}
 					}
@@ -326,20 +335,18 @@ impl AnalysisResultHandler<DefInitFlow> for VarInitCheck {
 				}
 
 				// Check for mutation of immutable lvalues
-				if let CIRStmt::Assignment((lval, tk), _) = stmt {
-					let is_var_mut = func.variables[lval.local].1.is_mut;
-
+				if let CIRStmt::Assignment(lval, _) = stmt {
 					let is_var_init = !matches!(
 						state.get_liveness(lval),
-						None | Some(LivenessState::Uninit | LivenessState::Moved | LivenessState::Dropped)
+						None | Some(LivenessState::Uninit)
 					);
 
-					if is_var_init && !is_var_mut {
+					if is_var_init && !lval.binding.is_mut {
 						errors.push(ComuneError::new(
 							ComuneErrCode::ImmutVarMutation {
 								variable: func.get_variable_name(lval.local),
 							},
-							*tk,
+							lval.binding.span,
 						))
 					}
 				}
@@ -462,7 +469,7 @@ impl<'func> DropElaborator<'func> {
 
 				self.current_block = start_idx;
 				self.write(CIRStmt::Switch(
-					Operand::LValue(flag_lval, SrcSpan::new()),
+					Operand::Move(flag_lval),
 					vec![(
 						Type::bool_type(),
 						Operand::BoolLit(true, SrcSpan::new()),

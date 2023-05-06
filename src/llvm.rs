@@ -233,7 +233,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 						panic!("loose Expression found in LLVM codegen!")
 					}
 
-					CIRStmt::Assignment((lval, _), expr) => {
+					CIRStmt::Assignment(lval, expr) => {
 						self.generate_expr(self.generate_lvalue(lval), expr);
 					}
 
@@ -437,7 +437,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 					}
 
 					Some(Operator::Ref) => {
-						if let Operand::LValue(lval, _) = atom {
+						if let Operand::Move(lval) = atom {
 							self.builder.build_store(
 								store,
 								self.generate_lvalue(lval).as_basic_value_enum(),
@@ -805,7 +805,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 				.const_int(u64::from(*b), false)
 				.as_basic_value_enum(),
 
-			Operand::LValue(l, _) => self.builder.build_load(self.generate_lvalue(l), ""),
+			Operand::Move(l) | Operand::Copy(l) => self.builder.build_load(self.generate_lvalue(l), ""),
 			Operand::Undef => self.get_undef(&Self::to_basic_type(self.get_llvm_type(ty))),
 		}
 	}

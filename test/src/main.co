@@ -124,7 +124,7 @@ int main() {
 
 	int mut i = i;
 
-	i = 12;
+	int i = 12;
 
 	{
 		int explicit_scope_test = 23;
