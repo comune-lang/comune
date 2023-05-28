@@ -54,21 +54,21 @@ pub fn validate_function_body(
 
 			if scope.fn_return_type.1.is_void() {
 				items.push(Stmt::Expr(expr));
-				
-				items.push(
-					Stmt::Expr(Expr::Atom(Atom::CtrlFlow(Box::new(ControlFlow::Return { expr: None })), 
-					node_data
-				)));
 
+				items.push(Stmt::Expr(Expr::Atom(
+					Atom::CtrlFlow(Box::new(ControlFlow::Return { expr: None })),
+					node_data,
+				)));
 			} else {
 				items.push(Stmt::Expr(Expr::Atom(
 					Atom::CtrlFlow(Box::new(ControlFlow::Return { expr: Some(expr) })),
 					node_data,
-				)));				
+				)));
 			}
 		}
 
-		let has_return = if let Some(Stmt::Expr(Expr::Atom(Atom::CtrlFlow(ctrl), _))) = items.last() {
+		let has_return = if let Some(Stmt::Expr(Expr::Atom(Atom::CtrlFlow(ctrl), _))) = items.last()
+		{
 			matches!(&**ctrl, ControlFlow::Return { .. })
 		} else {
 			false

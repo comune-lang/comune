@@ -10,7 +10,7 @@ use crate::{
 	ast::{
 		get_attribute,
 		module::Identifier,
-		types::{Basic, TypeDef, FnPrototype},
+		types::{Basic, FnPrototype, TypeDef},
 	},
 	lexer::Token,
 };
@@ -149,17 +149,24 @@ impl MonomorphServer {
 						self.monoize_rvalue_types(types, expr, param_map, fns_in, fns_out);
 					}
 
-					CIRStmt::Invoke { id: CIRCallId::Direct(fn_id, _), generic_args, .. } 
-					| CIRStmt::Call { id: CIRCallId::Direct(fn_id, _), generic_args, .. }
-					 => {
+					CIRStmt::Invoke {
+						id: CIRCallId::Direct(fn_id, _),
+						generic_args,
+						..
+					}
+					| CIRStmt::Call {
+						id: CIRCallId::Direct(fn_id, _),
+						generic_args,
+						..
+					} => {
 						for arg in generic_args.iter_mut() {
 							self.monoize_type(types, arg, param_map, fns_in, fns_out);
 						}
-						
+
 						let mut id = fn_id.as_ref().clone();
-						
+
 						self.monoize_call(&mut id, generic_args, fns_in, fns_out, types);
-						
+
 						*fn_id = Arc::new(id);
 
 						generic_args.clear();
@@ -182,7 +189,7 @@ impl MonomorphServer {
 		types: &mut HashMap<TypeName, Arc<RwLock<TypeDef>>>,
 	) {
 		if generic_args.is_empty() {
-			return
+			return;
 		}
 
 		let mut insert_id = id.clone();
@@ -218,8 +225,7 @@ impl MonomorphServer {
 
 			drop(fn_instances);
 
-			let monoized =
-				self.monoize_function(fn_in, types, generic_args, fns_in, fns_out);
+			let monoized = self.monoize_function(fn_in, types, generic_args, fns_in, fns_out);
 
 			drop(fn_templates);
 
@@ -233,7 +239,6 @@ impl MonomorphServer {
 		let extern_fn = self.fn_instances.read().unwrap()[id].clone();
 
 		fns_out.insert(insert_id.clone(), extern_fn);
-	
 	}
 
 	fn monoize_rvalue_types(
@@ -265,8 +270,8 @@ impl MonomorphServer {
 
 	fn monoize_type(
 		&self,
-		types: &mut TypeMap, 
-		ty: &mut Type, 
+		types: &mut TypeMap,
+		ty: &mut Type,
 		param_map: &TypeSubstitutions,
 		fns_in: &CIRFnMap,
 		fns_out: &mut CIRFnMap,
@@ -274,7 +279,9 @@ impl MonomorphServer {
 		match ty {
 			Type::Basic(_) => {}
 
-			Type::Pointer { pointee, .. } => self.monoize_type(types, pointee, param_map, fns_in, fns_out),
+			Type::Pointer { pointee, .. } => {
+				self.monoize_type(types, pointee, param_map, fns_in, fns_out)
+			}
 
 			Type::Array(arr_ty, _) => self.monoize_type(types, arr_ty, param_map, fns_in, fns_out),
 
@@ -293,7 +300,14 @@ impl MonomorphServer {
 
 					let typename = name.to_string();
 
-					*def = self.instantiate_type_def(types, def.upgrade().unwrap(), typename, args, fns_in, fns_out);
+					*def = self.instantiate_type_def(
+						types,
+						def.upgrade().unwrap(),
+						typename,
+						args,
+						fns_in,
+						fns_out,
+					);
 					args.clear();
 				}
 			}
@@ -359,7 +373,6 @@ impl MonomorphServer {
 
 		*instance.name.path.last_mut().unwrap() = insert_idx.clone().into();
 
-		
 		if self.ty_instances.read().unwrap().contains_key(&insert_idx) {
 			let instance_arc = self.ty_instances.read().unwrap()[&insert_idx].clone();
 
@@ -375,7 +388,7 @@ impl MonomorphServer {
 					let drop_fn = &*drop_fn.read().unwrap();
 
 					if self.fn_instances.read().unwrap().contains_key(drop_fn) {
-						break
+						break;
 					} else {
 						std::thread::sleep(Duration::from_millis(1));
 					}
@@ -386,7 +399,7 @@ impl MonomorphServer {
 				let drop_fn = drop_fn.read().unwrap().clone();
 
 				let drop_body = self.fn_instances.read().unwrap()[&drop_fn].clone();
-			
+
 				fns_out.insert(Arc::new(drop_fn), drop_body);
 			}
 
@@ -394,9 +407,12 @@ impl MonomorphServer {
 		} else {
 			// Couldn't find this instance in the global map either, so store it
 			let instance_arc = Arc::new(RwLock::new(instance));
-	
-			self.ty_instances.write().unwrap().insert(insert_idx.clone(), instance_arc.clone());
-			
+
+			self.ty_instances
+				.write()
+				.unwrap()
+				.insert(insert_idx.clone(), instance_arc.clone());
+
 			types.insert(insert_idx.clone(), instance_arc.clone());
 
 			// Monoize dtor
@@ -404,19 +420,27 @@ impl MonomorphServer {
 				let instance_lock = instance_arc.read().unwrap();
 				let drop_fn = instance_lock.drop.as_ref().unwrap();
 
-				if !self.fn_templates.read().unwrap().contains_key(&*drop_fn.read().unwrap()) {
+				if !self
+					.fn_templates
+					.read()
+					.unwrap()
+					.contains_key(&*drop_fn.read().unwrap())
+				{
 					// Add dtor to fn_templates
 					let drop = drop_fn.read().unwrap().clone();
-	
+
 					if let Some(drop_body) = fns_in.get(&drop) {
-						self.fn_templates.write().unwrap().insert(Arc::new(drop), drop_body.clone());
+						self.fn_templates
+							.write()
+							.unwrap()
+							.insert(Arc::new(drop), drop_body.clone());
 					} else {
 						while !self.fn_templates.read().unwrap().contains_key(&drop) {
 							std::thread::sleep(Duration::from_millis(1));
 						}
 					}
 				}
-	
+
 				let mut drop_clone = drop_fn.read().unwrap().clone();
 
 				self.monoize_call(&mut drop_clone, param_map, fns_in, fns_out, types);
@@ -425,7 +449,7 @@ impl MonomorphServer {
 
 				instance_arc.write().unwrap().drop = Some(Arc::new(RwLock::new(drop_clone)));
 			}
-	
+
 			Arc::downgrade(&instance_arc)
 		}
 	}
@@ -463,13 +487,13 @@ fn mangle_name(name: &Identifier, func: &CIRFunction) -> String {
 	let mut result = String::from("_Z");
 
 	assert!(name.absolute);
-	
+
 	if !name.is_qualified() {
 		result.push_str(&name.name().len().to_string());
 		result.push_str(name.name());
 	} else {
 		result.push('N');
-		
+
 		if let Some(ty_qualifier) = &name.qualifier.0 {
 			let Type::TypeRef { def, .. } = &**ty_qualifier else {
 				unimplemented!()
@@ -477,7 +501,6 @@ fn mangle_name(name: &Identifier, func: &CIRFunction) -> String {
 
 			let def = def.upgrade().unwrap();
 			let typename = &def.read().unwrap().name;
-
 
 			for scope in &typename.path {
 				result.push_str(&scope.len().to_string());

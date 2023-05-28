@@ -393,12 +393,18 @@ impl Atom {
 				}
 			}
 
-			Atom::Constructor { def: def_weak, kind: XtorKind::Literal { fields }, generic_args, placement } => {
+			Atom::Constructor {
+				def: def_weak,
+				kind: XtorKind::Literal { fields },
+				generic_args,
+				placement,
+			} => {
 				let def = def_weak.upgrade().unwrap();
 				let def = def.read().unwrap();
 
 				for (name, expr) in fields.iter_mut() {
-					let member_ty = if let Some((_, ty)) = def.get_member(name, Some(generic_args)) {
+					let member_ty = if let Some((_, ty)) = def.get_member(name, Some(generic_args))
+					{
 						ty
 					} else {
 						// Invalid member in strenum literal
@@ -448,9 +454,12 @@ impl Atom {
 
 					if !ty.is_subtype_of(&place_ty) {
 						return Err(ComuneError::new(
-							ComuneErrCode::AssignTypeMismatch { expr: ty, to: place_ty },
+							ComuneErrCode::AssignTypeMismatch {
+								expr: ty,
+								to: place_ty,
+							},
 							meta.tk,
-						))
+						));
 					}
 
 					// Placement-new does not return the constructed value,

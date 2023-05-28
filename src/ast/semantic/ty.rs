@@ -237,9 +237,7 @@ pub fn resolve_interface_types(interface: &ModuleInterface) -> ComuneResult<()> 
 				for func in funcs {
 					if !trait_functions_found.contains(&*func.read().unwrap()) {
 						return Err(ComuneError::new(
-							ComuneErrCode::MissingTraitFuncImpl(
-								func.read().unwrap().to_string(),
-							),
+							ComuneErrCode::MissingTraitFuncImpl(func.read().unwrap().to_string()),
 							SrcSpan::new(),
 						));
 					}
@@ -373,7 +371,7 @@ pub fn resolve_type_def(
 				SrcSpan::new(),
 			));
 		}
-		
+
 		if layout.args[0].len() != 1 {
 			return Err(ComuneError::new(
 				ComuneErrCode::ParamCountMismatch {

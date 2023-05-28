@@ -15,7 +15,10 @@ use crate::{
 		module::{Identifier, ModuleImport, ModuleImportKind, ModuleInterface, Name},
 	},
 	cir::{
-		analyze::{lifeline::{DefInitFlow, VarInitCheck, ElaborateDrops}, verify, CIRPassManager, DataFlowPass},
+		analyze::{
+			lifeline::{DefInitFlow, ElaborateDrops, VarInitCheck},
+			verify, CIRPassManager, DataFlowPass,
+		},
 		builder::CIRModuleBuilder,
 		monoize::MonomorphServer,
 		CIRModule,
@@ -526,7 +529,6 @@ pub fn generate_code<'ctx>(
 	src_path: &Path,
 	input_module: &Identifier,
 ) -> Result<LLVMBackend<'ctx>, ComuneError> {
-
 	// Generate AST
 	match parser.generate_ast() {
 		Ok(()) => {
@@ -547,7 +549,7 @@ pub fn generate_code<'ctx>(
 	parser.interface.impl_solver.finalize();
 
 	// Validate code
-	
+
 	match ast::semantic::validate_module_impl(&parser.interface, &mut parser.module_impl) {
 		Ok(()) => {
 			if state.verbose_output {
@@ -590,7 +592,7 @@ pub fn generate_code<'ctx>(
 	let cir_errors = cir_man.run_on_module(&mut cir_module);
 
 	// Handle any errors from cIR passes
-	
+
 	if !cir_errors.is_empty() {
 		let mut return_errors = vec![];
 
@@ -608,11 +610,11 @@ pub fn generate_code<'ctx>(
 	// Monomorphize the module
 
 	let mut module_mono = state.monomorph_server.monoize_module(cir_module);
-	
+
 	// Now perform post-monomorphization passes, including drop elaboration
 
 	let mut cir_man = CIRPassManager::new();
-	
+
 	cir_man.add_mut_pass(DataFlowPass::new(DefInitFlow, ElaborateDrops));
 
 	// Sanity checks for ElaborateDrops

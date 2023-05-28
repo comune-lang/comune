@@ -149,21 +149,40 @@ impl TypeDef {
 
 impl BindingProps {
 	pub fn value() -> Self {
-		BindingProps { is_ref: false, is_mut: false, is_unsafe: false, span: SrcSpan::new() }
+		BindingProps {
+			is_ref: false,
+			is_mut: false,
+			is_unsafe: false,
+			span: SrcSpan::new(),
+		}
 	}
-	
+
 	pub fn reference() -> Self {
-		BindingProps { is_ref: true, is_mut: false, is_unsafe: false, span: SrcSpan::new() }
+		BindingProps {
+			is_ref: true,
+			is_mut: false,
+			is_unsafe: false,
+			span: SrcSpan::new(),
+		}
 	}
 
 	pub fn mut_value() -> Self {
-		BindingProps { is_ref: false, is_mut: true, is_unsafe: false, span: SrcSpan::new() }
-	}
-	
-	pub fn mut_reference() -> Self {
-		BindingProps { is_ref: true, is_mut: true, is_unsafe: false, span: SrcSpan::new() }
+		BindingProps {
+			is_ref: false,
+			is_mut: true,
+			is_unsafe: false,
+			span: SrcSpan::new(),
+		}
 	}
 
+	pub fn mut_reference() -> Self {
+		BindingProps {
+			is_ref: true,
+			is_mut: true,
+			is_unsafe: false,
+			span: SrcSpan::new(),
+		}
+	}
 }
 
 impl Basic {
@@ -808,7 +827,6 @@ impl Display for Type {
 
 impl Display for FnPrototype {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		
 		write!(f, "{}{} {}", self.ret.1, self.ret.0, self.path).unwrap();
 
 		if !self.generics.is_empty() {

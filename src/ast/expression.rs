@@ -374,7 +374,6 @@ pub enum Atom {
 	// Advanced literals
 	ArrayLit(Vec<Expr>),
 	//AlgebraicLit(Type, Vec<(Name, Expr)>),
-
 	Identifier(Identifier),
 
 	Cast(Box<Expr>, Type),
@@ -400,14 +399,9 @@ pub enum Atom {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum XtorKind {
-	Literal { 
-		fields: Vec<(Name, Expr)>
-	},
+	Literal { fields: Vec<(Name, Expr)> },
 
-	Constructor {
-		args: Vec<Expr>,
-		resolved: FnRef,
-	},
+	Constructor { args: Vec<Expr>, resolved: FnRef },
 }
 
 #[derive(Clone, Debug)]
@@ -443,11 +437,22 @@ impl PartialEq for Atom {
 			(Self::Cast(l0, l1), Self::Cast(r0, r1)) => l0 == r0 && l1 == r1,
 
 			(
-				Self::Constructor { def: l0, kind: l1, generic_args: l2, placement: l3 },
-				Self::Constructor { def: r0, kind: r1, generic_args: r2, placement: r3 }
+				Self::Constructor {
+					def: l0,
+					kind: l1,
+					generic_args: l2,
+					placement: l3,
+				},
+				Self::Constructor {
+					def: r0,
+					kind: r1,
+					generic_args: r2,
+					placement: r3,
+				},
 			) => {
-				Arc::ptr_eq(&l0.upgrade().unwrap(), &r0.upgrade().unwrap()) && 
-				l1 == r1 && l2 == r2 && l3 == r3
+				Arc::ptr_eq(&l0.upgrade().unwrap(), &r0.upgrade().unwrap())
+					&& l1 == r1 && l2 == r2
+					&& l3 == r3
 			}
 
 			(
@@ -463,8 +468,10 @@ impl PartialEq for Atom {
 					generic_args: r_type_args,
 					resolved: r_res,
 				},
-			) => l_name == r_name && l_args == r_args && l_type_args == r_type_args && l_res == r_res,
-			
+			) => {
+				l_name == r_name && l_args == r_args && l_type_args == r_type_args && l_res == r_res
+			}
+
 			// you don't want to know how much this shit's bitten me in the ass.
 			_ => {
 				if std::mem::discriminant(self) == std::mem::discriminant(other) {
@@ -480,9 +487,7 @@ impl PartialEq for Atom {
 impl PartialEq for FnRef {
 	fn eq(&self, other: &Self) -> bool {
 		match (self, other) {
-			(FnRef::Direct(l), FnRef::Direct(r)) => {
-				&*l.read().unwrap() == &*r.read().unwrap()
-			}
+			(FnRef::Direct(l), FnRef::Direct(r)) => &*l.read().unwrap() == &*r.read().unwrap(),
 			(FnRef::Indirect(l0), FnRef::Indirect(r0)) => l0 == r0,
 			(FnRef::None, FnRef::None) => true,
 			_ => false,
@@ -551,7 +556,7 @@ impl Display for Atom {
 				writeln!(f, "}}")
 			}
 
-			_ => writeln!(f, "(display unimplemented: {self:?})")
+			_ => writeln!(f, "(display unimplemented: {self:?})"),
 		}
 	}
 }

@@ -22,12 +22,9 @@ use inkwell::{
 use crate::{
 	ast::{
 		expression::Operator,
-		types::{Basic, BindingProps, DataLayout, TupleKind, Type, FnPrototype},
+		types::{Basic, BindingProps, DataLayout, FnPrototype, TupleKind, Type},
 	},
-	cir::{
-		CIRCallId, CIRFunction, CIRModule, CIRStmt, LValue, Operand, PlaceElem,
-		RValue,
-	},
+	cir::{CIRCallId, CIRFunction, CIRModule, CIRStmt, LValue, Operand, PlaceElem, RValue},
 	constexpr::{ConstExpr, ConstValue},
 };
 
@@ -234,16 +231,21 @@ impl<'ctx> LLVMBackend<'ctx> {
 					}
 
 					CIRStmt::Assignment(lval, expr) => {
-						self.generate_expr(self.generate_lvalue_use(lval, BindingProps::mut_reference()).into_pointer_value(), expr);
+						self.generate_expr(
+							self.generate_lvalue_use(lval, BindingProps::mut_reference())
+								.into_pointer_value(),
+							expr,
+						);
 					}
 
 					CIRStmt::RefInit(var, lval) => {
 						let reference = self.variables[*var].0;
 						let props = self.variables[*var].1;
-						
+
 						assert!(props.is_ref);
 
-						self.builder.build_store(reference, self.generate_lvalue_use(lval, props));
+						self.builder
+							.build_store(reference, self.generate_lvalue_use(lval, props));
 					}
 
 					CIRStmt::Jump(block) => {
@@ -303,7 +305,9 @@ impl<'ctx> LLVMBackend<'ctx> {
 							}
 
 							CIRCallId::Indirect { local, .. } => {
-								let ptr = self.generate_lvalue_use(local, BindingProps::value()).into_pointer_value();
+								let ptr = self
+									.generate_lvalue_use(local, BindingProps::value())
+									.into_pointer_value();
 
 								CallableValue::try_from(ptr).unwrap()
 							}
@@ -311,14 +315,19 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 						let args_mapped: Vec<_> = args
 							.iter()
-							.map(|(lval, _, props)| Self::to_basic_metadata_value(self.generate_lvalue_use(lval, *props).into()))
+							.map(|(lval, _, props)| {
+								Self::to_basic_metadata_value(
+									self.generate_lvalue_use(lval, *props).into(),
+								)
+							})
 							.collect();
 
 						let callsite = self.builder.build_call(fn_v, &args_mapped, "");
 
 						if let Some(result) = result {
 							self.builder.build_store(
-								self.generate_lvalue_use(result, BindingProps::mut_reference()).into_pointer_value(),
+								self.generate_lvalue_use(result, BindingProps::mut_reference())
+									.into_pointer_value(),
 								callsite.try_as_basic_value().unwrap_left(),
 							);
 						}
@@ -346,7 +355,9 @@ impl<'ctx> LLVMBackend<'ctx> {
 							}
 
 							CIRCallId::Indirect { local, .. } => {
-								let ptr = self.generate_lvalue_use(local, BindingProps::value()).into_pointer_value();
+								let ptr = self
+									.generate_lvalue_use(local, BindingProps::value())
+									.into_pointer_value();
 
 								CallableValue::try_from(ptr).unwrap()
 							}
@@ -369,7 +380,8 @@ impl<'ctx> LLVMBackend<'ctx> {
 							self.builder.position_at_end(self.blocks[*next]);
 
 							self.builder.build_store(
-								self.generate_lvalue_use(result, BindingProps::mut_reference()).into_pointer_value(),
+								self.generate_lvalue_use(result, BindingProps::mut_reference())
+									.into_pointer_value(),
 								callsite.try_as_basic_value().unwrap_left(),
 							);
 						}
@@ -380,7 +392,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 					CIRStmt::StorageDead(_) => {}
 
-					CIRStmt::DropShim { .. } => panic!("encountered DropShim in LLVM codegen!")
+					CIRStmt::DropShim { .. } => panic!("encountered DropShim in LLVM codegen!"),
 				}
 			}
 		}
@@ -418,10 +430,8 @@ impl<'ctx> LLVMBackend<'ctx> {
 							let mut props = *props;
 							props.is_ref = true;
 
-							self.builder.build_store(
-								store,
-								self.generate_lvalue_use(lval, props),
-							)
+							self.builder
+								.build_store(store, self.generate_lvalue_use(lval, props))
 						} else {
 							panic!()
 						}
@@ -667,7 +677,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 							if to.is_boolean() {
 								self.builder.build_store(
 									store,
-									self.builder.build_is_not_null(val.into_pointer_value(), "")
+									self.builder.build_is_not_null(val.into_pointer_value(), ""),
 								)
 							} else {
 								self.builder.build_store(
@@ -794,7 +804,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 				.as_basic_value_enum(),
 
 			Operand::LValueUse(lval, props) => self.generate_lvalue_use(lval, *props),
-			
+
 			Operand::Undef => self.get_undef(&Self::to_basic_type(self.get_llvm_type(ty))),
 		}
 	}
@@ -803,7 +813,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 		// Get the variable pointer from the function
 		let (mut local, lprops, ty) = &self.variables[expr.local];
 
-		// If the lvalue is a reference, perform a load 
+		// If the lvalue is a reference, perform a load
 		// so we're left with a single indirection
 		if self.pass_by_ptr(ty, lprops) {
 			local = self
@@ -860,7 +870,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 				}
 			})
 			.collect();
-		
+
 		let ret = if self.pass_by_ptr(&t.ret.1, &t.ret.0) {
 			self.get_llvm_type(&t.ret.1.ptr_type(t.ret.0.is_mut))
 		} else {

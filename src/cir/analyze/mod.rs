@@ -1,6 +1,6 @@
 use std::{
 	collections::{BTreeMap, VecDeque},
-	sync::RwLock
+	sync::RwLock,
 };
 
 use rayon::prelude::{IntoParallelRefIterator, ParallelIterator};
@@ -243,9 +243,20 @@ where
 			let mut block_state = entry_state.clone();
 
 			for (j, stmt) in func.blocks[0].items.iter().enumerate() {
-				self.analysis
-					.apply_before_effect(stmt, (0, j), &mut block_state, &func, &module.impl_solver);
-				self.analysis.apply_effect(stmt, (0, j), &mut block_state, &func, &module.impl_solver);
+				self.analysis.apply_before_effect(
+					stmt,
+					(0, j),
+					&mut block_state,
+					&func,
+					&module.impl_solver,
+				);
+				self.analysis.apply_effect(
+					stmt,
+					(0, j),
+					&mut block_state,
+					&func,
+					&module.impl_solver,
+				);
 			}
 
 			out_states.insert(0, block_state.clone());
@@ -260,7 +271,7 @@ where
 				let mut changed = false;
 
 				if !block.preds.is_empty() {
-					let mut in_state = self.analysis.bottom_value(func);//out_states[preds.next().unwrap()].clone();
+					let mut in_state = self.analysis.bottom_value(func); //out_states[preds.next().unwrap()].clone();
 
 					for pred in &block.preds {
 						if let Some(out_state) = out_states.get(pred) {
@@ -284,9 +295,20 @@ where
 					let mut block_state = block_state.clone();
 
 					for (j, stmt) in block.items.iter().enumerate() {
-						self.analysis
-							.apply_before_effect(stmt, (i, j), &mut block_state, &func, &module.impl_solver);
-						self.analysis.apply_effect(stmt, (i, j), &mut block_state, &func, &module.impl_solver);
+						self.analysis.apply_before_effect(
+							stmt,
+							(i, j),
+							&mut block_state,
+							&func,
+							&module.impl_solver,
+						);
+						self.analysis.apply_effect(
+							stmt,
+							(i, j),
+							&mut block_state,
+							&func,
+							&module.impl_solver,
+						);
 					}
 
 					if let Some(out_state) = out_states.get(&i) {
@@ -312,7 +334,10 @@ where
 
 			let visitor = ResultVisitor::new(func, &module.impl_solver, &self.analysis, in_states);
 
-			match self.handler.process_result(visitor, func, &module.impl_solver) {
+			match self
+				.handler
+				.process_result(visitor, func, &module.impl_solver)
+			{
 				Ok(None) => {}
 
 				Ok(Some(transformed)) => {
@@ -342,7 +367,12 @@ impl<'a, T> ResultVisitor<'a, T>
 where
 	T: Analysis,
 {
-	fn new(func: &'a CIRFunction, solver: &'a ImplSolver, analysis: &'a T, block_start_states: Vec<T::Domain>) -> Self {
+	fn new(
+		func: &'a CIRFunction,
+		solver: &'a ImplSolver,
+		analysis: &'a T,
+		block_start_states: Vec<T::Domain>,
+	) -> Self {
 		Self {
 			func,
 			solver,
@@ -366,9 +396,20 @@ where
 
 					for i in *cache_idx..stmt {
 						let s = &self.func.blocks[block].items[i];
-						self.analysis
-							.apply_before_effect(s, (block, i), &mut result, &self.func, &self.solver);
-						self.analysis.apply_effect(s, (block, i), &mut result, &self.func, &self.solver);
+						self.analysis.apply_before_effect(
+							s,
+							(block, i),
+							&mut result,
+							&self.func,
+							&self.solver,
+						);
+						self.analysis.apply_effect(
+							s,
+							(block, i),
+							&mut result,
+							&self.func,
+							&self.solver,
+						);
 					}
 
 					drop(cache_guard);
@@ -384,30 +425,25 @@ where
 
 			for i in 0..stmt {
 				let s = &self.func.blocks[block].items[i];
-				
+
 				self.analysis.apply_before_effect(
-					s, 
-					(block, i), 
-					&mut result, 
-					&self.func, 
-					&self.solver
+					s,
+					(block, i),
+					&mut result,
+					&self.func,
+					&self.solver,
 				);
 
-				self.analysis.apply_effect(
-					s, 
-					(block, i), 
-					&mut result, 
-					&self.func, 
-					&self.solver
-				);
+				self.analysis
+					.apply_effect(s, (block, i), &mut result, &self.func, &self.solver);
 			}
 
 			self.analysis.apply_before_effect(
 				&self.func.blocks[block].items[stmt],
 				(block, stmt),
 				&mut result,
-				&self.func, 
-				&self.solver
+				&self.func,
+				&self.solver,
 			);
 
 			result

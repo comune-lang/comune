@@ -2,9 +2,7 @@ use std::fmt::{Display, Write};
 
 use crate::{ast::types::DataLayout, lexer};
 
-use super::{
-	CIRCallId, CIRFunction, CIRModule, CIRStmt, LValue, Operand, PlaceElem, RValue,
-};
+use super::{CIRCallId, CIRFunction, CIRModule, CIRStmt, LValue, Operand, PlaceElem, RValue};
 
 impl Display for CIRModule {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

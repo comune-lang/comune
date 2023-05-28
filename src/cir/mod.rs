@@ -12,7 +12,7 @@ use crate::{
 		expression::Operator,
 		module::{Identifier, Name},
 		traits::ImplSolver,
-		types::{Basic, BindingProps, GenericParam, Type, TypeDef, FnPrototype},
+		types::{Basic, BindingProps, FnPrototype, GenericParam, Type, TypeDef},
 		Attribute,
 	},
 	lexer::SrcSpan,
@@ -46,10 +46,10 @@ pub struct LValue {
 
 impl LValue {
 	pub fn new(local: VarIndex) -> Self {
-		LValue { 
-			local, 
-			projection: vec![], 
-			props: BindingProps::default()
+		LValue {
+			local,
+			projection: vec![],
+			props: BindingProps::default(),
 		}
 	}
 }
@@ -117,7 +117,7 @@ pub enum Operand {
 
 	// LValue use
 	LValueUse(LValue, BindingProps),
-	
+
 	// Undefined value. Reading from this is UB, must be reassigned first
 	Undef,
 }
@@ -141,7 +141,7 @@ pub enum CIRStmt {
 
 	// Assignment to a variable. Non-terminator.
 	Assignment(LValue, RValue),
-	
+
 	// Reference initialization. Non-terminator.
 	RefInit(VarIndex, LValue),
 
@@ -302,10 +302,10 @@ impl CIRFunction {
 		if self.ret.1.is_void() {
 			None
 		} else {
-			Some(LValue { 
+			Some(LValue {
 				local: self.arg_count,
 				projection: vec![],
-				props: self.ret.0, 
+				props: self.ret.0,
 			})
 		}
 	}

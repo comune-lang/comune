@@ -201,32 +201,34 @@ impl<'ctx> Parser {
 				Token::Keyword("struct") => {
 					// Register algebraic type
 					let mut current_visibility = Visibility::Public;
-					
+
 					let def = Arc::new(RwLock::new(TypeDef::new()));
 					let mut def_write = def.write().unwrap();
-					let mut self_ty = Type::TypeRef { def: Arc::downgrade(&def), args: vec![] };
+					let mut self_ty = Type::TypeRef {
+						def: Arc::downgrade(&def),
+						args: vec![],
+					};
 
-					let Token::Name(name) = self.get_next()? else { 
-						return self.err(ComuneErrCode::ExpectedIdentifier) 
+					let Token::Name(name) = self.get_next()? else {
+						return self.err(ComuneErrCode::ExpectedIdentifier)
 					};
 
 					let full_name = Identifier::from_parent(scope, name);
 
 					self.get_next()?;
-					
+
 					// Get the generic params
 					def_write.params = self.parse_generic_param_list(None)?;
-					
+
 					// Add every param as an arg to self_ty
 					// This is analogous to doing `impl<type T, type U> MyType<T, U>`
 					for i in 0..def_write.params.len() {
-						let Type::TypeRef { args, .. } = &mut self_ty else { 
-							unreachable!() 
+						let Type::TypeRef { args, .. } = &mut self_ty else {
+							unreachable!()
 						};
 
 						args.push(Type::TypeParam(i));
 					}
-
 
 					self.consume(&Token::Other('{'))?; // Consume brace
 
@@ -238,9 +240,11 @@ impl<'ctx> Parser {
 								current_attributes = vec![];
 
 								match result.1 {
-									ModuleItemInterface::Variable(t) => {
-										def_write.members.push((result.0, t, current_visibility.clone()))
-									}
+									ModuleItemInterface::Variable(t) => def_write.members.push((
+										result.0,
+										t,
+										current_visibility.clone(),
+									)),
 
 									_ => todo!(),
 								}
@@ -257,7 +261,7 @@ impl<'ctx> Parser {
 									"protected" => {
 										current_visibility = Visibility::Protected;
 									}
-									_ => unreachable!()
+									_ => unreachable!(),
 								}
 
 								self.consume(&Token::Other(':'))?;
@@ -270,7 +274,7 @@ impl<'ctx> Parser {
 								generics.append(&mut self.parse_generic_param_list(None)?);
 
 								let params = self.parse_parameter_list(Some(&self_ty), None)?;
-								
+
 								let mut path = Identifier::from_parent(&scope, k.to_string());
 								path.qualifier.0 = Some(Box::new(self_ty.clone()));
 
@@ -279,7 +283,7 @@ impl<'ctx> Parser {
 									params,
 									generics,
 									ret: (BindingProps::default(), Type::Basic(Basic::Void)),
-									attributes: vec![]
+									attributes: vec![],
 								}));
 
 								// Skip c'tor/d'tor body
@@ -287,7 +291,9 @@ impl<'ctx> Parser {
 								self.skip_block()?;
 
 								// Add fn to module impl
-								self.module_impl.fn_impls.push((func.clone(), ModuleASTElem::Unparsed(ast)));
+								self.module_impl
+									.fn_impls
+									.push((func.clone(), ModuleASTElem::Unparsed(ast)));
 
 								match k {
 									"init" => {
@@ -298,7 +304,7 @@ impl<'ctx> Parser {
 										def_write.drop = Some(func);
 									}
 
-									_ => unreachable!()
+									_ => unreachable!(),
 								}
 							}
 
@@ -311,16 +317,15 @@ impl<'ctx> Parser {
 					}
 
 					self.consume(&Token::Other('}'))?; // Consume brace
-					
+
 					def_write.name = full_name.clone();
 					def_write.attributes = current_attributes;
 
 					drop(def_write);
 
-					self.interface.children.insert(
-						full_name,
-						ModuleItemInterface::Type(def),
-					);
+					self.interface
+						.children
+						.insert(full_name, ModuleItemInterface::Type(def));
 				}
 
 				Token::Keyword("trait") => {
@@ -778,7 +783,7 @@ impl<'ctx> Parser {
 
 					// Past the parameter list, check if we're at a function body or not
 
-					let ast; 
+					let ast;
 
 					match self.get_current()? {
 						Token::Other('{') => {
@@ -1145,8 +1150,7 @@ impl<'ctx> Parser {
 						Ok(args) => args,
 
 						Err(ComuneError {
-							code:
-								ComuneErrCode::UnexpectedToken | ComuneErrCode::ExpectedIdentifier,
+							code: ComuneErrCode::UnexpectedToken | ComuneErrCode::ExpectedIdentifier,
 							..
 						}) => {
 							self.lexer.borrow_mut().seek_token_idx(start_token);
@@ -1183,7 +1187,6 @@ impl<'ctx> Parser {
 					resolved: FnRef::None,
 				});
 			}
-		
 		} else {
 			// Not at an identifier, parse the other kinds of Atom
 
@@ -1261,7 +1264,6 @@ impl<'ctx> Parser {
 				}
 
 				Token::Keyword(keyword) => match keyword {
-
 					"new" => {
 						self.get_next()?;
 
@@ -1290,46 +1292,44 @@ impl<'ctx> Parser {
 						} else {
 							vec![]
 						};
-		
+
 						if let Token::Other('{') = self.get_current()? {
 							// Parse literal constructor
-		
+
 							let mut inits = vec![];
-		
+
 							while self.get_current()? != Token::Other('}') {
 								self.get_next()?;
-		
+
 								if let Token::Name(member_name) = self.get_current()? {
 									self.get_next()?;
-		
+
 									self.consume(&Token::Other(':'))?;
-		
+
 									let expr = self.parse_expression(scope)?;
-		
+
 									inits.push((member_name, expr));
 								} else if self.get_current()? != Token::Other('}') {
 									return self.err(ComuneErrCode::UnexpectedToken);
 								}
 							}
-		
+
 							self.consume(&Token::Other('}'))?;
-		
-							result = Some(Atom::Constructor { 
-								def, 
-								generic_args, 
+
+							result = Some(Atom::Constructor {
+								def,
+								generic_args,
 								kind: XtorKind::Literal { fields: inits },
 								placement,
 							});
 						} else {
-							return self.err(
-								ComuneErrCode::UnexpectedToken
-							)
+							return self.err(ComuneErrCode::UnexpectedToken);
 						}
 					}
 
 					"drop" => {
 						self.get_next()?;
-						
+
 						let dropped = self.parse_expression(scope)?;
 
 						result = Some(Atom::Drop(Box::new(dropped)));

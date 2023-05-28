@@ -8,9 +8,12 @@ use super::{
 use crate::{
 	ast::{
 		traits::{ImplSolver, LangTrait},
-		types::{Basic, BindingProps, TupleKind, Generics},
+		types::{Basic, BindingProps, Generics, TupleKind},
 	},
-	cir::{CIRBlock, CIRCallId, CIRFunction, CIRStmt, LValue, Operand, PlaceElem, RValue, Type, VarIndex, BlockIndex},
+	cir::{
+		BlockIndex, CIRBlock, CIRCallId, CIRFunction, CIRStmt, LValue, Operand, PlaceElem, RValue,
+		Type, VarIndex,
+	},
 	errors::{ComuneErrCode, ComuneError},
 	lexer::SrcSpan,
 };
@@ -130,15 +133,24 @@ impl LiveVarCheckState {
 
 	fn eval_operand(&mut self, op: &Operand, ty: &Type, solver: &ImplSolver, generics: &Generics) {
 		match op {
-			Operand::LValueUse(lval, kind) => self.eval_lvalue_use(lval, ty, *kind, solver, generics),
+			Operand::LValueUse(lval, kind) => {
+				self.eval_lvalue_use(lval, ty, *kind, solver, generics)
+			}
 
 			_ => {}
 		}
 	}
 
-	fn eval_lvalue_use(&mut self, lval: &LValue, ty: &Type, props: BindingProps, solver: &ImplSolver, generics: &Generics) {
+	fn eval_lvalue_use(
+		&mut self,
+		lval: &LValue,
+		ty: &Type,
+		props: BindingProps,
+		solver: &ImplSolver,
+		generics: &Generics,
+	) {
 		let copy_trait = solver.get_lang_trait(LangTrait::Copy);
-		
+
 		if !props.is_ref && solver.is_trait_implemented(ty, &copy_trait, generics) {
 			self.set_liveness(lval, LivenessState::Moved);
 		}
@@ -207,10 +219,10 @@ impl AnalysisDomain for DefInitFlow {
 		// There is *definitely* a way to do this with bit math but fuck if i know lol
 		for var in 0..func.arg_count {
 			state.liveness.insert(
-				LValue { 
+				LValue {
 					local: var,
 					projection: vec![],
-					props: func.variables[var].1
+					props: func.variables[var].1,
 				},
 				LivenessState::Live,
 			);
@@ -244,10 +256,7 @@ impl Analysis for DefInitFlow {
 			}
 
 			CIRStmt::StorageLive(local) => {
-				state.set_liveness(
-					&LValue::new(*local),
-					LivenessState::Uninit,
-				);
+				state.set_liveness(&LValue::new(*local), LivenessState::Uninit);
 			}
 
 			CIRStmt::DropShim { var, .. } => {
@@ -289,15 +298,11 @@ impl AnalysisResultHandler<DefInitFlow> for VarInitCheck {
 						RValue::Cons(_, [_, (_, Operand::LValueUse(lval, _))], ..),
 					)
 					| CIRStmt::Invoke {
-						id: CIRCallId::Indirect {
-							local: lval, ..
-						},
+						id: CIRCallId::Indirect { local: lval, .. },
 						..
 					}
 					| CIRStmt::Call {
-						id: CIRCallId::Indirect {
-							local: lval, ..
-						},
+						id: CIRCallId::Indirect { local: lval, .. },
 						..
 					} => {
 						let liveness = state.get_liveness(lval);
@@ -305,15 +310,13 @@ impl AnalysisResultHandler<DefInitFlow> for VarInitCheck {
 						match liveness {
 							Some(LivenessState::Live) => {}
 
-							_ => {
-								errors.push(ComuneError::new(
-									ComuneErrCode::InvalidUse {
-										variable: func.get_variable_name(lval.local),
-										state: liveness.unwrap_or(LivenessState::Uninit),
-									},
-									lval.props.span,
-								))
-							}
+							_ => errors.push(ComuneError::new(
+								ComuneErrCode::InvalidUse {
+									variable: func.get_variable_name(lval.local),
+									state: liveness.unwrap_or(LivenessState::Uninit),
+								},
+								lval.props.span,
+							)),
 						}
 					}
 
@@ -340,10 +343,8 @@ impl AnalysisResultHandler<DefInitFlow> for VarInitCheck {
 
 				// Check for mutation of immutable lvalues
 				if let CIRStmt::Assignment(lval, _) = stmt {
-					let is_var_init = !matches!(
-						state.get_liveness(lval),
-						None | Some(LivenessState::Uninit)
-					);
+					let is_var_init =
+						!matches!(state.get_liveness(lval), None | Some(LivenessState::Uninit));
 
 					if is_var_init && !lval.props.is_mut {
 						errors.push(ComuneError::new(
@@ -371,13 +372,12 @@ enum DropStyle {
 	Dead,
 }
 
-
 impl AnalysisResultHandler<DefInitFlow> for ElaborateDrops {
 	fn process_result(
-			&self,
-			result: ResultVisitor<DefInitFlow>,
-			func: &CIRFunction,
-			_: &ImplSolver,
+		&self,
+		result: ResultVisitor<DefInitFlow>,
+		func: &CIRFunction,
+		_: &ImplSolver,
 	) -> Result<Option<CIRFunction>, Vec<ComuneError>> {
 		let errors = vec![];
 
@@ -389,7 +389,7 @@ impl AnalysisResultHandler<DefInitFlow> for ElaborateDrops {
 				func_out.blocks[i].items.pop();
 
 				let state = result.get_state_before(i, block.items.len() - 1);
-								
+
 				let mut elaborator = DropElaborator {
 					current_block: i,
 					current_fn: &mut func_out,
@@ -419,9 +419,7 @@ struct DropElaborator<'func> {
 
 impl<'func> DropElaborator<'func> {
 	fn write(&mut self, stmt: CIRStmt) {
-		self.current_fn.blocks[self.current_block]
-			.items
-			.push(stmt)
+		self.current_fn.blocks[self.current_block].items.push(stmt)
 	}
 
 	fn append_block(&mut self) -> BlockIndex {
@@ -439,7 +437,7 @@ impl<'func> DropElaborator<'func> {
 			Some(LivenessState::Live) => {
 				self.build_destructor(lval, ty, next);
 			}
-	
+
 			Some(LivenessState::MaybeUninit) => {
 				let flag = if let Some(flag) = self.drop_flags.get(&lval) {
 					*flag
@@ -449,12 +447,13 @@ impl<'func> DropElaborator<'func> {
 						BindingProps::default(),
 						None,
 					));
-	
-					self.drop_flags.insert(lval.clone(), self.current_fn.variables.len() - 1);
-	
+
+					self.drop_flags
+						.insert(lval.clone(), self.current_fn.variables.len() - 1);
+
 					self.current_fn.variables.len() - 1
 				};
-				
+
 				let start_idx = self.current_block;
 				let drop_idx = self.current_fn.blocks.len();
 
@@ -463,9 +462,9 @@ impl<'func> DropElaborator<'func> {
 					preds: vec![self.current_block],
 					succs: vec![next],
 				};
-	
+
 				let flag_lval = LValue::new(flag);
-	
+
 				self.current_fn.blocks.push(drop_block);
 				self.current_block = drop_idx;
 
@@ -481,11 +480,13 @@ impl<'func> DropElaborator<'func> {
 					)],
 					next,
 				));
-				
-				self.current_fn.blocks[self.current_block].succs.push(drop_idx);
+
+				self.current_fn.blocks[self.current_block]
+					.succs
+					.push(drop_idx);
 				self.current_block = self.current_fn.blocks.len() - 1;
 			}
-	
+
 			_ => {}
 		}
 	}
@@ -495,47 +496,44 @@ impl<'func> DropElaborator<'func> {
 			Type::TypeRef { def, args } => {
 				let def = def.upgrade().unwrap();
 				let def = def.read().unwrap();
-				
+
 				if let Some(drop) = &def.drop {
 					if self.state.get_liveness(lval) == Some(LivenessState::Live) {
 						let drop = Arc::new(drop.read().unwrap().clone());
-	
-						self.write(CIRStmt::Call { 
-							id: CIRCallId::Direct(drop, SrcSpan::new()), 
-							args: vec![
-								(lval.clone(), ty.clone(), BindingProps::mut_reference())
-							],
+
+						self.write(CIRStmt::Call {
+							id: CIRCallId::Direct(drop, SrcSpan::new()),
+							args: vec![(lval.clone(), ty.clone(), BindingProps::mut_reference())],
 							generic_args: args.clone(),
 							result: None,
 						});
 					}
 				}
-	
+
 				for (_, member, _) in def.members.iter() {
 					self.elaborate_drop(lval, member, next);
 				}
-	
 			}
-	
+
 			Type::Tuple(TupleKind::Sum, _) => {}
-	
+
 			Type::Tuple(TupleKind::Product, types) => {
 				for (i, ty) in types.iter().enumerate() {
 					let mut lval = lval.clone();
 					lval.projection.push(PlaceElem::Field(i));
-					
+
 					self.elaborate_drop(&lval, ty, next);
 				}
 			}
-	
+
 			Type::Tuple(TupleKind::Newtype, types) => {
 				let [ty] = types.as_slice() else {
 					panic!()
 				};
-	
+
 				self.elaborate_drop(lval, ty, next);
 			}
-	
+
 			_ => {}
 		}
 	}

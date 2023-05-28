@@ -61,10 +61,7 @@ impl Stmt {
 				} else {
 					// References must be initialized in their declaration
 					if binding_props.is_ref {
-						return Err(ComuneError::new(
-							ComuneErrCode::UninitReference,
-							*tk
-						));
+						return Err(ComuneError::new(ComuneErrCode::UninitReference, *tk));
 					}
 
 					scope.add_variable(binding_ty.clone(), binding_name, binding_props);

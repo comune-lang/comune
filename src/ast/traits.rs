@@ -178,25 +178,25 @@ impl ImplSolver {
 				false
 			}) {
 				// Type parameter has trait bound, easy result
-				return true
+				return true;
 			}
-			
+
 			// Type param doesn't have trait bound, do the normal lookup
 		}
 
 		for (im_ty, im) in self.impls.iter() {
 			let im = im.read().unwrap();
-			
+
 			let Some(ItemRef::Resolved(implements)) = &im.implements else {
 				continue
 			};
-			
+
 			if implements != tr || !ty.fits_generic(im_ty) {
-				continue
+				continue;
 			}
 
 			if ty == im_ty {
-				return true
+				return true;
 			}
 
 			todo!()
