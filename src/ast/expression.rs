@@ -551,7 +551,7 @@ impl Display for Atom {
 				writeln!(f, "}}")
 			}
 
-			_ => todo!()
+			_ => writeln!(f, "(display unimplemented: {self:?})")
 		}
 	}
 }

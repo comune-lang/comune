@@ -663,16 +663,24 @@ impl<'ctx> LLVMBackend<'ctx> {
 						Type::Pointer { .. } => {
 							let val = self.generate_operand(from, val);
 							let to_ir = self.get_llvm_type(to);
-							self.builder.build_store(
-								store,
-								self.builder
-									.build_pointer_cast(
-										val.into_pointer_value(),
-										to_ir.into_pointer_type(),
-										"",
-									)
-									.as_basic_value_enum(),
-							)
+
+							if to.is_boolean() {
+								self.builder.build_store(
+									store,
+									self.builder.build_is_not_null(val.into_pointer_value(), "")
+								)
+							} else {
+								self.builder.build_store(
+									store,
+									self.builder
+										.build_pointer_cast(
+											val.into_pointer_value(),
+											to_ir.into_pointer_type(),
+											"",
+										)
+										.as_basic_value_enum(),
+								)
+							}
 						}
 
 						Type::Tuple(TupleKind::Sum, _) => {

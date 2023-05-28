@@ -35,39 +35,44 @@ pub fn validate_function_body(
 		let Expr::Atom(Atom::Block { items, result, .. }, _) = elem else { panic!() };
 
 		// Turn result values into explicit return expressions
-		let has_result = result.is_some();
 
-		if has_result {
+		if let Some(expr) = result {
+			let expr_ty = expr.get_type();
+
+			if !expr_ty.castable_to(&scope.fn_return_type.1) && !scope.fn_return_type.1.is_void() {
+				return Err(ComuneError::new(
+					ComuneErrCode::ReturnTypeMismatch {
+						expected: scope.fn_return_type.1,
+						got: expr_ty.clone(),
+					},
+					elem.get_node_data().tk,
+				));
+			}
+
 			let expr = *result.take().unwrap();
 			let node_data = expr.get_node_data().clone();
 
-			items.push(Stmt::Expr(Expr::Atom(
-				Atom::CtrlFlow(Box::new(ControlFlow::Return { expr: Some(expr) })),
-				node_data,
-			)));
-		}
+			if scope.fn_return_type.1.is_void() {
+				items.push(Stmt::Expr(expr));
+				
+				items.push(
+					Stmt::Expr(Expr::Atom(Atom::CtrlFlow(Box::new(ControlFlow::Return { expr: None })), 
+					node_data
+				)));
 
-		let mut has_return = false;
-
-		if has_result {
-			if let Some(Stmt::Expr(expr)) = items.last() {
-				let expr_ty = expr.get_type();
-
-				if !expr_ty.castable_to(&scope.fn_return_type.1) {
-					return Err(ComuneError::new(
-						ComuneErrCode::ReturnTypeMismatch {
-							expected: scope.fn_return_type.1,
-							got: expr_ty.clone(),
-						},
-						elem.get_node_data().tk,
-					));
-				}
+			} else {
+				items.push(Stmt::Expr(Expr::Atom(
+					Atom::CtrlFlow(Box::new(ControlFlow::Return { expr: Some(expr) })),
+					node_data,
+				)));				
 			}
 		}
 
-		if let Some(Stmt::Expr(Expr::Atom(Atom::CtrlFlow(ctrl), _))) = items.last() {
-			has_return = matches!(&**ctrl, ControlFlow::Return { .. })
-		}
+		let has_return = if let Some(Stmt::Expr(Expr::Atom(Atom::CtrlFlow(ctrl), _))) = items.last() {
+			matches!(&**ctrl, ControlFlow::Return { .. })
+		} else {
+			false
+		};
 
 		if !has_return {
 			if scope.fn_return_type.1 != Type::Basic(Basic::Void) {

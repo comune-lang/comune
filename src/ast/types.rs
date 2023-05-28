@@ -459,6 +459,8 @@ impl Type {
 			// If self is a `T mut*`, it can be cast to a `T*`
 			// but if self is a `T*`, it can't be cast to a `T mut*`
 			*mutable || !target_mutable
+		} else if matches!(self, Type::Pointer { .. }) && target.is_boolean() {
+			true
 		} else {
 			false
 		}

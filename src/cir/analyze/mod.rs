@@ -260,11 +260,9 @@ where
 				let mut changed = false;
 
 				if !block.preds.is_empty() {
-					let mut preds = block.preds.iter();
+					let mut in_state = self.analysis.bottom_value(func);//out_states[preds.next().unwrap()].clone();
 
-					let mut in_state = out_states[preds.next().unwrap()].clone();
-
-					for pred in preds {
+					for pred in &block.preds {
 						if let Some(out_state) = out_states.get(pred) {
 							in_state.join(out_state);
 						}
