@@ -234,7 +234,16 @@ impl<'ctx> LLVMBackend<'ctx> {
 					}
 
 					CIRStmt::Assignment(lval, expr) => {
-						self.generate_expr(self.generate_lvalue(lval), expr);
+						self.generate_expr(self.generate_lvalue_use(lval, BindingProps::mut_reference()).into_pointer_value(), expr);
+					}
+
+					CIRStmt::RefInit(var, lval) => {
+						let reference = self.variables[*var].0;
+						let props = self.variables[*var].1;
+						
+						assert!(props.is_ref);
+
+						self.builder.build_store(reference, self.generate_lvalue_use(lval, props));
 					}
 
 					CIRStmt::Jump(block) => {
@@ -263,10 +272,9 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 					CIRStmt::Return => {
 						if let Some(lval) = t.get_return_lvalue() {
-							let ret = self.generate_lvalue(&lval);
-							let ret_ld = self.builder.build_load(ret, "");
+							let ret = self.generate_lvalue_use(&lval, t.ret.0);
 
-							self.builder.build_return(Some(&ret_ld));
+							self.builder.build_return(Some(&ret));
 						} else {
 							self.builder.build_return(None);
 						}
@@ -283,7 +291,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 							"encountered un-monoized type argument in LLVM codegen!"
 						);
 
-						let (fn_v, params) = match id {
+						let fn_v = match id {
 							CIRCallId::Direct(id, _) => {
 								let Some(mangled) = &self.fn_map.get(id) else {
 									panic!("could not fetch function {id} from function map!");
@@ -291,44 +299,26 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 								let fn_v = self.module.get_function(mangled).unwrap();
 
-								(fn_v.into(), &id.params.params)
+								fn_v.into()
 							}
 
-							CIRCallId::Indirect { args, local, .. } => {
-								let ptr = self
-									.builder
-									.build_load(self.generate_lvalue(local), "")
-									.into_pointer_value();
+							CIRCallId::Indirect { local, .. } => {
+								let ptr = self.generate_lvalue_use(local, BindingProps::value()).into_pointer_value();
 
-								(CallableValue::try_from(ptr).unwrap(), args)
+								CallableValue::try_from(ptr).unwrap()
 							}
 						};
 
 						let args_mapped: Vec<_> = args
 							.iter()
-							.enumerate()
-							.map(|(i, (x, _))| {
-								let is_ref = if let Some((ty, _, props)) = params.get(i) {
-									self.pass_by_ptr(ty, props)
-								} else {
-									false
-								};
-
-								Self::to_basic_metadata_value(if is_ref {
-									self.generate_lvalue(x).as_any_value_enum()
-								} else {
-									self.builder
-										.build_load(self.generate_lvalue(x), "")
-										.as_any_value_enum()
-								})
-							})
+							.map(|(lval, _, props)| Self::to_basic_metadata_value(self.generate_lvalue_use(lval, *props).into()))
 							.collect();
 
 						let callsite = self.builder.build_call(fn_v, &args_mapped, "");
 
 						if let Some(result) = result {
 							self.builder.build_store(
-								self.generate_lvalue(result),
+								self.generate_lvalue_use(result, BindingProps::mut_reference()).into_pointer_value(),
 								callsite.try_as_basic_value().unwrap_left(),
 							);
 						}
@@ -347,38 +337,24 @@ impl<'ctx> LLVMBackend<'ctx> {
 							"encountered un-monoized type argument in LLVM codegen!"
 						);
 
-						let (fn_v, params) = match id {
+						let fn_v = match id {
 							CIRCallId::Direct(id, _) => {
 								let mangled = &self.fn_map[id];
 								let fn_v = self.module.get_function(mangled).unwrap();
 
-								(fn_v.into(), &id.params.params)
+								fn_v.into()
 							}
 
-							CIRCallId::Indirect { args, local, .. } => {
-								let ptr = self
-									.builder
-									.build_load(self.generate_lvalue(local), "")
-									.into_pointer_value();
+							CIRCallId::Indirect { local, .. } => {
+								let ptr = self.generate_lvalue_use(local, BindingProps::value()).into_pointer_value();
 
-								(CallableValue::try_from(ptr).unwrap(), args)
+								CallableValue::try_from(ptr).unwrap()
 							}
 						};
 
 						let args_mapped: Vec<_> = args
 							.iter()
-							.enumerate()
-							.map(|(i, (x, _))| {
-								let (ty, _, props) = &params[i];
-
-								if self.pass_by_ptr(ty, props) {
-									self.generate_lvalue(x).as_basic_value_enum()
-								} else {
-									self.builder
-										.build_load(self.generate_lvalue(x), "")
-										.as_basic_value_enum()
-								}
-							})
+							.map(|(lval, _, props)| self.generate_lvalue_use(lval, *props))
 							.collect();
 
 						let callsite = self.builder.build_invoke(
@@ -393,7 +369,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 							self.builder.position_at_end(self.blocks[*next]);
 
 							self.builder.build_store(
-								self.generate_lvalue(result),
+								self.generate_lvalue_use(result, BindingProps::mut_reference()).into_pointer_value(),
 								callsite.try_as_basic_value().unwrap_left(),
 							);
 						}
@@ -409,7 +385,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 			}
 		}
 
-		if !t.type_params.is_empty() {
+		if !t.generics.is_empty() {
 			self.fn_value_opt.unwrap().set_linkage(Linkage::LinkOnceODR);
 		}
 
@@ -437,10 +413,14 @@ impl<'ctx> LLVMBackend<'ctx> {
 					}
 
 					Some(Operator::Ref) => {
-						if let Operand::Move(lval) = atom {
+						if let Operand::LValueUse(lval, props) = atom {
+							// Terrible hack
+							let mut props = *props;
+							props.is_ref = true;
+
 							self.builder.build_store(
 								store,
-								self.generate_lvalue(lval).as_basic_value_enum(),
+								self.generate_lvalue_use(lval, props),
 							)
 						} else {
 							panic!()
@@ -532,7 +512,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 							.as_basic_value_enum()
 					};
 				} else {
-					todo!()
+					panic!("unknown binary expression: {lhs_ty} {op} {rhs_ty} => {expr_ty}!");
 				}
 
 				self.builder.build_store(store, result)
@@ -805,21 +785,27 @@ impl<'ctx> LLVMBackend<'ctx> {
 				.const_int(u64::from(*b), false)
 				.as_basic_value_enum(),
 
-			Operand::Move(l) | Operand::Copy(l) => self.builder.build_load(self.generate_lvalue(l), ""),
+			Operand::LValueUse(lval, props) => self.generate_lvalue_use(lval, *props),
+			
 			Operand::Undef => self.get_undef(&Self::to_basic_type(self.get_llvm_type(ty))),
 		}
 	}
 
-	fn generate_lvalue(&self, expr: &LValue) -> PointerValue<'ctx> {
-		let (mut local, props, ty) = &self.variables[expr.local];
+	fn generate_lvalue_use(&self, expr: &LValue, props: BindingProps) -> BasicValueEnum<'ctx> {
+		// Get the variable pointer from the function
+		let (mut local, lprops, ty) = &self.variables[expr.local];
 
-		if self.pass_by_ptr(ty, props) {
+		// If the lvalue is a reference, perform a load 
+		// so we're left with a single indirection
+		if self.pass_by_ptr(ty, lprops) {
 			local = self
 				.builder
 				.build_load(local, "")
 				.as_basic_value_enum()
 				.into_pointer_value();
 		}
+
+		// Perform geps and whatnot to get a pointer to the sublocation
 
 		for proj in &expr.projection {
 			local = match proj {
@@ -848,24 +834,32 @@ impl<'ctx> LLVMBackend<'ctx> {
 			}
 		}
 
-		local
+		if props.is_ref {
+			local.as_basic_value_enum()
+		} else {
+			self.builder.build_load(local, "")
+		}
 	}
 
 	fn generate_prototype(&mut self, t: &CIRFunction) -> LLVMResult<FunctionType<'ctx>> {
 		let types_mapped: Vec<_> = t.variables[0..t.arg_count]
 			.iter()
 			.map(|(ty, props, _)| {
-				let ty_ll = self.get_llvm_type(ty);
-
 				if self.pass_by_ptr(ty, props) {
 					Self::to_basic_metadata_type(self.get_llvm_type(&ty.ptr_type(props.is_mut)))
 				} else {
-					Self::to_basic_metadata_type(ty_ll)
+					Self::to_basic_metadata_type(self.get_llvm_type(ty))
 				}
 			})
 			.collect();
+		
+		let ret = if self.pass_by_ptr(&t.ret.1, &t.ret.0) {
+			self.get_llvm_type(&t.ret.1.ptr_type(t.ret.0.is_mut))
+		} else {
+			self.get_llvm_type(&t.ret.1)
+		};
 
-		Ok(match self.get_llvm_type(&t.ret.1) {
+		Ok(match ret {
 			AnyTypeEnum::ArrayType(a) => a.fn_type(&types_mapped, t.is_variadic),
 			AnyTypeEnum::FloatType(f) => f.fn_type(&types_mapped, t.is_variadic),
 			AnyTypeEnum::IntType(i) => i.fn_type(&types_mapped, t.is_variadic),
@@ -1143,7 +1137,8 @@ impl<'ctx> LLVMBackend<'ctx> {
 			.create_enum_attribute(Attribute::get_named_enum_kind_id(name), 0)
 	}
 
-	fn pass_by_ptr(&self, ty: &Type, props: &BindingProps) -> bool {
+	fn pass_by_ptr(&self, _ty: &Type, props: &BindingProps) -> bool {
+		/*
 		// don't pass by pointer if binding is not a reference, or if it's unsafe
 		if !props.is_ref || props.is_unsafe {
 			return false;
@@ -1161,5 +1156,10 @@ impl<'ctx> LLVMBackend<'ctx> {
 		// if the data is bigger than the equivalent pointer,
 		// we pass-by-pointer. else, we pass-by-value.
 		store_size > target_data.get_store_size(&self.get_llvm_type(&ty.ptr_type(false)))
+		*/
+
+		// The above code is disabled for now,
+		// while I work on generalized reference support
+		props.is_ref
 	}
 }

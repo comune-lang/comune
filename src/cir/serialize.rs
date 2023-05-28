@@ -60,6 +60,7 @@ impl Display for CIRStmt {
 		match self {
 			CIRStmt::Expression(expr) => writeln!(f, "{expr};"),
 			CIRStmt::Assignment(lval, expr) => writeln!(f, "{lval} = {expr};"),
+			CIRStmt::RefInit(lval, expr) => writeln!(f, "{lval} := {expr};"),
 			CIRStmt::Jump(block) => writeln!(f, "jmp bb{block};"),
 			CIRStmt::Switch(expr, branches, else_branch) => {
 				writeln!(f, "switch {expr} {{")?;
@@ -99,10 +100,12 @@ impl Display for CIRStmt {
 
 				if !args.is_empty() {
 					let mut args_iter = args.iter();
-					write!(f, "({}", args_iter.next().unwrap().0)?;
+					let first = args_iter.next().unwrap();
 
-					for (arg, _) in args_iter {
-						write!(f, ", {arg}")?;
+					write!(f, "({}{} {}", first.1, first.2, first.0)?;
+
+					for (arg, ty, props) in args_iter {
+						write!(f, ", {ty}{props} {arg}")?;
 					}
 
 					writeln!(f, ");")
@@ -139,10 +142,12 @@ impl Display for CIRStmt {
 
 				if !args.is_empty() {
 					let mut args_iter = args.iter();
-					write!(f, "({}", args_iter.next().unwrap().0)?;
+					let first = args_iter.next().unwrap();
 
-					for (arg, _) in args_iter {
-						write!(f, ", {arg}")?;
+					write!(f, "({}{} {}", first.1, first.2, first.0)?;
+
+					for (arg, ty, props) in args_iter {
+						write!(f, ", {ty}{props} {arg}")?;
 					}
 
 					write!(f, ")")?;
@@ -215,16 +220,10 @@ impl Display for Operand {
 		match self {
 			Operand::IntegerLit(num, _) => write!(f, "{num}"),
 			Operand::FloatLit(num, _) => write!(f, "{num}"),
-			Operand::StringLit(s, _) => {
-				write!(f, "\"{}\"", lexer::get_unescaped(s))
-			}
-			Operand::CStringLit(s, _) => {
-				write!(f, "{s:#?}")
-			}
+			Operand::StringLit(s, _) => write!(f, "\"{}\"", lexer::get_unescaped(s)),
+			Operand::CStringLit(s, _) => write!(f, "{s:#?}"),
 			Operand::BoolLit(b, _) => write!(f, "{b}"),
-			Operand::Move(lval) => write!(f, "move {lval}"),
-			Operand::Copy(lval) => write!(f, "copy {lval}"),
-			Operand::Borrow(lval, props) => write!(f, "borrow {lval} as {props}"),
+			Operand::LValueUse(lval, props) => write!(f, "{lval}{props}"),
 			Operand::Undef => write!(f, "undef"),
 		}
 	}

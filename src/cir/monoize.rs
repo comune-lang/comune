@@ -70,7 +70,7 @@ impl MonomorphServer {
 
 		let generics: Vec<_> = function_protos
 			.iter()
-			.filter(|k| !module.functions[*k].type_params.is_empty())
+			.filter(|k| !module.functions[*k].generics.is_empty())
 			.collect();
 
 		for proto in generics {

@@ -154,6 +154,8 @@ pub trait Analysis: AnalysisDomain {
 		_stmt: &CIRStmt,
 		_position: (BlockIndex, StmtIndex),
 		_state: &mut Self::Domain,
+		_func: &CIRFunction,
+		_impl_solver: &ImplSolver,
 	) {
 	}
 
@@ -162,6 +164,8 @@ pub trait Analysis: AnalysisDomain {
 		stmt: &CIRStmt,
 		position: (BlockIndex, StmtIndex),
 		state: &mut Self::Domain,
+		func: &CIRFunction,
+		impl_solver: &ImplSolver,
 	);
 }
 
@@ -240,8 +244,8 @@ where
 
 			for (j, stmt) in func.blocks[0].items.iter().enumerate() {
 				self.analysis
-					.apply_before_effect(stmt, (0, j), &mut block_state);
-				self.analysis.apply_effect(stmt, (0, j), &mut block_state);
+					.apply_before_effect(stmt, (0, j), &mut block_state, &func, &module.impl_solver);
+				self.analysis.apply_effect(stmt, (0, j), &mut block_state, &func, &module.impl_solver);
 			}
 
 			out_states.insert(0, block_state.clone());
@@ -283,8 +287,8 @@ where
 
 					for (j, stmt) in block.items.iter().enumerate() {
 						self.analysis
-							.apply_before_effect(stmt, (i, j), &mut block_state);
-						self.analysis.apply_effect(stmt, (i, j), &mut block_state);
+							.apply_before_effect(stmt, (i, j), &mut block_state, &func, &module.impl_solver);
+						self.analysis.apply_effect(stmt, (i, j), &mut block_state, &func, &module.impl_solver);
 					}
 
 					if let Some(out_state) = out_states.get(&i) {
@@ -308,7 +312,7 @@ where
 
 			let in_states = in_states.into_iter().map(|(_, state)| state).collect();
 
-			let visitor = ResultVisitor::new(func, &self.analysis, in_states);
+			let visitor = ResultVisitor::new(func, &module.impl_solver, &self.analysis, in_states);
 
 			match self.handler.process_result(visitor, func, &module.impl_solver) {
 				Ok(None) => {}
@@ -330,6 +334,7 @@ where
 	T: Analysis,
 {
 	func: &'a CIRFunction,
+	solver: &'a ImplSolver,
 	analysis: &'a T,
 	block_start_states: Vec<T::Domain>,
 	cache: RwLock<Option<(BlockIndex, StmtIndex, T::Domain)>>,
@@ -339,9 +344,10 @@ impl<'a, T> ResultVisitor<'a, T>
 where
 	T: Analysis,
 {
-	fn new(func: &'a CIRFunction, analysis: &'a T, block_start_states: Vec<T::Domain>) -> Self {
+	fn new(func: &'a CIRFunction, solver: &'a ImplSolver, analysis: &'a T, block_start_states: Vec<T::Domain>) -> Self {
 		Self {
 			func,
+			solver,
 			analysis,
 			block_start_states,
 			cache: RwLock::default(),
@@ -363,8 +369,8 @@ where
 					for i in *cache_idx..stmt {
 						let s = &self.func.blocks[block].items[i];
 						self.analysis
-							.apply_before_effect(s, (block, i), &mut result);
-						self.analysis.apply_effect(s, (block, i), &mut result);
+							.apply_before_effect(s, (block, i), &mut result, &self.func, &self.solver);
+						self.analysis.apply_effect(s, (block, i), &mut result, &self.func, &self.solver);
 					}
 
 					drop(cache_guard);
@@ -380,15 +386,30 @@ where
 
 			for i in 0..stmt {
 				let s = &self.func.blocks[block].items[i];
-				self.analysis
-					.apply_before_effect(s, (block, i), &mut result);
-				self.analysis.apply_effect(s, (block, i), &mut result);
+				
+				self.analysis.apply_before_effect(
+					s, 
+					(block, i), 
+					&mut result, 
+					&self.func, 
+					&self.solver
+				);
+
+				self.analysis.apply_effect(
+					s, 
+					(block, i), 
+					&mut result, 
+					&self.func, 
+					&self.solver
+				);
 			}
 
 			self.analysis.apply_before_effect(
 				&self.func.blocks[block].items[stmt],
 				(block, stmt),
 				&mut result,
+				&self.func, 
+				&self.solver
 			);
 
 			result

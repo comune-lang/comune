@@ -2,6 +2,8 @@
 #![allow(dead_code, unused_variables)]
 
 use std::hash::{Hash, Hasher};
+use std::thread;
+use std::time::Duration;
 use std::{
 	collections::HashMap,
 	ptr,
@@ -17,6 +19,8 @@ use super::{
 	module::{Identifier, Name},
 	types::Type,
 };
+
+use lazy_static::lazy_static;
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum LangTrait {
@@ -84,9 +88,12 @@ pub enum TraitDeduction {
 	None,
 }
 
+lazy_static! {
+	static ref LANG_TRAITS: RwLock<HashMap<LangTrait, TraitRef>> = RwLock::new(HashMap::new());
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct ImplSolver {
-	lang_traits: HashMap<LangTrait, TraitRef>,
 	answer_cache: HashMap<Type, HashMap<TraitRef, TraitDeduction>>,
 	finalized: bool,
 	pub impls: Vec<(Type, Arc<RwLock<ImplBlockInterface>>)>,
@@ -96,7 +103,6 @@ pub struct ImplSolver {
 impl ImplSolver {
 	pub fn new() -> Self {
 		Self {
-			lang_traits: HashMap::new(),
 			answer_cache: HashMap::new(),
 			finalized: false,
 			local_impls: vec![],
@@ -105,11 +111,11 @@ impl ImplSolver {
 	}
 
 	pub fn join_imported_solver(&mut self, imported: &ImplSolver) -> ComuneResult<()> {
-		for (key, lang_trait) in &imported.lang_traits {
-			if !self.lang_traits.contains_key(key) {
-				self.lang_traits.insert(key.clone(), lang_trait.clone());
-			}
-		}
+		//for (key, lang_trait) in &imported.lang_traits {
+		//	if !self.lang_traits.contains_key(key) {
+		//		self.lang_traits.insert(key.clone(), lang_trait.clone());
+		//	}
+		//}
 
 		Ok(())
 	}
@@ -132,15 +138,19 @@ impl ImplSolver {
 
 	pub fn register_lang_trait(&mut self, lang: LangTrait, tr: TraitRef) {
 		assert!(
-			!self.lang_traits.contains_key(&lang),
+			!LANG_TRAITS.read().unwrap().contains_key(&lang),
 			"language trait {lang:?} already registered!"
 		);
 
-		self.lang_traits.insert(lang, tr);
+		LANG_TRAITS.write().unwrap().insert(lang, tr);
 	}
 
 	pub fn get_lang_trait(&self, lang_trait: LangTrait) -> TraitRef {
-		self.lang_traits[&lang_trait].clone()
+		while !LANG_TRAITS.read().unwrap().contains_key(&lang_trait) {
+			thread::sleep(Duration::from_millis(1));
+		}
+
+		LANG_TRAITS.write().unwrap()[&lang_trait].clone()
 	}
 
 	pub fn is_trait_implemented(&self, ty: &Type, tr: &TraitRef, generics: &Generics) -> bool {

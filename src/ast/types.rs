@@ -1,5 +1,4 @@
 use std::fmt::Display;
-use std::fmt::Write;
 use std::hash::{Hash, Hasher};
 use std::ptr;
 use std::sync::{Arc, RwLock, Weak};
@@ -60,7 +59,6 @@ pub enum Basic {
 
 #[derive(Debug, Clone)]
 pub struct TypeDef {
-	pub kind: TypeDefKind,
 	pub name: Identifier,
 
 	pub members: Vec<(Name, Type, Visibility)>,
@@ -71,12 +69,6 @@ pub struct TypeDef {
 
 	pub init: Vec<Arc<RwLock<FnPrototype>>>, // Zero or more constructors
 	pub drop: Option<Arc<RwLock<FnPrototype>>>, // Zero or one destructor
-}
-
-#[derive(Debug, Clone)]
-pub enum TypeDefKind {
-	Algebraic,
-	Objective, // TODO: Implement classes
 }
 
 #[derive(Default, Debug, Clone, Copy)]
@@ -127,7 +119,6 @@ pub enum DataLayout {
 impl TypeDef {
 	pub fn new() -> Self {
 		TypeDef {
-			kind: TypeDefKind::Algebraic,
 			name: Identifier::new(true),
 			layout: DataLayout::Declared,
 			members: vec![],
@@ -154,6 +145,25 @@ impl TypeDef {
 		}
 		None
 	}
+}
+
+impl BindingProps {
+	pub fn value() -> Self {
+		BindingProps { is_ref: false, is_mut: false, is_unsafe: false, span: SrcSpan::new() }
+	}
+	
+	pub fn reference() -> Self {
+		BindingProps { is_ref: true, is_mut: false, is_unsafe: false, span: SrcSpan::new() }
+	}
+
+	pub fn mut_value() -> Self {
+		BindingProps { is_ref: false, is_mut: true, is_unsafe: false, span: SrcSpan::new() }
+	}
+	
+	pub fn mut_reference() -> Self {
+		BindingProps { is_ref: true, is_mut: true, is_unsafe: false, span: SrcSpan::new() }
+	}
+
 }
 
 impl Basic {
@@ -529,10 +539,6 @@ impl Type {
 		self == &Type::Basic(Basic::Void)
 	}
 
-	pub fn is_dyn_sized(&self) -> bool {
-		matches!(self, Type::Slice(_))
-	}
-
 	pub fn get_ir_typename(&self) -> String {
 		let Type::TypeRef { def, args } = self else { panic!() };
 
@@ -594,6 +600,10 @@ impl Type {
 
 	pub fn bool_type() -> Self {
 		Type::Basic(Basic::Bool)
+	}
+
+	pub fn void_type() -> Self {
+		Type::Basic(Basic::Void)
 	}
 }
 

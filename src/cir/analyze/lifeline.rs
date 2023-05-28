@@ -7,8 +7,8 @@ use super::{
 };
 use crate::{
 	ast::{
-		traits::ImplSolver,
-		types::{Basic, BindingProps, TupleKind},
+		traits::{ImplSolver, LangTrait},
+		types::{Basic, BindingProps, TupleKind, Generics},
 	},
 	cir::{CIRBlock, CIRCallId, CIRFunction, CIRStmt, LValue, Operand, PlaceElem, RValue, Type, VarIndex, BlockIndex},
 	errors::{ComuneErrCode, ComuneError},
@@ -31,7 +31,6 @@ pub struct ElaborateDrops;
 
 #[derive(Debug, Clone)]
 pub struct LiveVarCheckState {
-	// TODO: Create Path type, for canonicalized LValues
 	liveness: HashMap<LValue, LivenessState>,
 }
 
@@ -116,30 +115,31 @@ impl LiveVarCheckState {
 		})
 	}
 
-	fn eval_rvalue(&mut self, rval: &RValue) {
+	fn eval_rvalue(&mut self, rval: &RValue, solver: &ImplSolver, generics: &Generics) {
 		match rval {
-			RValue::Atom(.., op, _) => self.eval_operand(op),
+			RValue::Atom(ty, _, op, _) => self.eval_operand(op, ty, solver, generics),
 
-			RValue::Cons(..) => {
-				//self.eval_operand(lhs);
-				//self.eval_operand(rhs);
+			RValue::Cons(_, [(lty, lhs), (rty, rhs)], ..) => {
+				self.eval_operand(lhs, lty, solver, generics);
+				self.eval_operand(rhs, rty, solver, generics);
 			}
 
-			RValue::Cast { val, .. } => self.eval_operand(val),
+			RValue::Cast { val, from, .. } => self.eval_operand(val, from, solver, generics),
 		}
 	}
 
-	fn eval_operand(&mut self, op: &Operand) {
+	fn eval_operand(&mut self, op: &Operand, ty: &Type, solver: &ImplSolver, generics: &Generics) {
 		match op {
-			Operand::Move(lval) => self.eval_lvalue(lval),
+			Operand::LValueUse(lval, kind) => self.eval_lvalue_use(lval, ty, *kind, solver, generics),
 
 			_ => {}
 		}
 	}
 
-	fn eval_lvalue(&mut self, lval: &LValue) {
-		// TODO: Check for `Copy` types? Might be handled earlier
-		if !lval.binding.is_ref {
+	fn eval_lvalue_use(&mut self, lval: &LValue, ty: &Type, props: BindingProps, solver: &ImplSolver, generics: &Generics) {
+		let copy_trait = solver.get_lang_trait(LangTrait::Copy);
+		
+		if !props.is_ref && solver.is_trait_implemented(ty, &copy_trait, generics) {
 			self.set_liveness(lval, LivenessState::Moved);
 		}
 	}
@@ -210,7 +210,7 @@ impl AnalysisDomain for DefInitFlow {
 				LValue { 
 					local: var,
 					projection: vec![],
-					binding: func.variables[var].1
+					props: func.variables[var].1
 				},
 				LivenessState::Live,
 			);
@@ -224,16 +224,18 @@ impl Analysis for DefInitFlow {
 		stmt: &CIRStmt,
 		_position: (crate::cir::BlockIndex, crate::cir::StmtIndex),
 		state: &mut Self::Domain,
+		func: &CIRFunction,
+		solver: &ImplSolver,
 	) {
 		match stmt {
 			CIRStmt::Assignment(lval, rval) => {
-				state.eval_rvalue(rval);
+				state.eval_rvalue(rval, solver, &func.generics);
 				state.set_liveness(lval, LivenessState::Live);
 			}
 
 			CIRStmt::Invoke { result, args, .. } | CIRStmt::Call { result, args, .. } => {
-				for (arg, _) in args {
-					state.eval_lvalue(arg);
+				for (arg, ty, props) in args {
+					state.eval_lvalue_use(arg, ty, *props, solver, &func.generics);
 				}
 
 				if let Some(result) = result {
@@ -276,15 +278,15 @@ impl AnalysisResultHandler<DefInitFlow> for VarInitCheck {
 
 				// Check for uses of uninit/moved lvalues
 				match stmt {
-					CIRStmt::Assignment(_, RValue::Atom(_, _, Operand::Move(lval), _))
-					| CIRStmt::Switch(Operand::Move(lval), ..)
+					CIRStmt::Assignment(_, RValue::Atom(_, _, Operand::LValueUse(lval, _), _))
+					| CIRStmt::Switch(Operand::LValueUse(lval, _), ..)
 					| CIRStmt::Assignment(
 						_,
-						RValue::Cons(_, [(_, Operand::Move(lval)), _], ..),
+						RValue::Cons(_, [(_, Operand::LValueUse(lval, _)), _], ..),
 					)
 					| CIRStmt::Assignment(
 						_,
-						RValue::Cons(_, [_, (_, Operand::Move(lval))], ..),
+						RValue::Cons(_, [_, (_, Operand::LValueUse(lval, _))], ..),
 					)
 					| CIRStmt::Invoke {
 						id: CIRCallId::Indirect {
@@ -303,18 +305,20 @@ impl AnalysisResultHandler<DefInitFlow> for VarInitCheck {
 						match liveness {
 							Some(LivenessState::Live) => {}
 
-							_ => errors.push(ComuneError::new(
-								ComuneErrCode::InvalidUse {
-									variable: func.get_variable_name(lval.local),
-									state: liveness.unwrap_or(LivenessState::Uninit),
-								},
-								lval.binding.span,
-							)),
+							_ => {
+								errors.push(ComuneError::new(
+									ComuneErrCode::InvalidUse {
+										variable: func.get_variable_name(lval.local),
+										state: liveness.unwrap_or(LivenessState::Uninit),
+									},
+									lval.props.span,
+								))
+							}
 						}
 					}
 
 					CIRStmt::Invoke { args, .. } | CIRStmt::Call { args, .. } => {
-						for (lval, span) in args {
+						for (lval, ..) in args {
 							let liveness = state.get_liveness(lval);
 
 							match liveness {
@@ -325,7 +329,7 @@ impl AnalysisResultHandler<DefInitFlow> for VarInitCheck {
 										variable: func.get_variable_name(lval.local),
 										state: liveness.unwrap_or(LivenessState::Uninit),
 									},
-									*span,
+									lval.props.span,
 								)),
 							}
 						}
@@ -341,12 +345,12 @@ impl AnalysisResultHandler<DefInitFlow> for VarInitCheck {
 						None | Some(LivenessState::Uninit)
 					);
 
-					if is_var_init && !lval.binding.is_mut {
+					if is_var_init && !lval.props.is_mut {
 						errors.push(ComuneError::new(
 							ComuneErrCode::ImmutVarMutation {
 								variable: func.get_variable_name(lval.local),
 							},
-							lval.binding.span,
+							lval.props.span,
 						))
 					}
 				}
@@ -469,7 +473,7 @@ impl<'func> DropElaborator<'func> {
 
 				self.current_block = start_idx;
 				self.write(CIRStmt::Switch(
-					Operand::Move(flag_lval),
+					Operand::LValueUse(flag_lval, BindingProps::value()),
 					vec![(
 						Type::bool_type(),
 						Operand::BoolLit(true, SrcSpan::new()),
@@ -498,7 +502,9 @@ impl<'func> DropElaborator<'func> {
 	
 						self.write(CIRStmt::Call { 
 							id: CIRCallId::Direct(drop, SrcSpan::new()), 
-							args: vec![(lval.clone(), SrcSpan::new())], 
+							args: vec![
+								(lval.clone(), ty.clone(), BindingProps::mut_reference())
+							],
 							generic_args: args.clone(),
 							result: None,
 						});

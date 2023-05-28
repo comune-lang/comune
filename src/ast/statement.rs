@@ -59,6 +59,14 @@ impl Stmt {
 					scope.add_variable(binding_ty, binding_name, binding_props);
 					Ok(expr_ty)
 				} else {
+					// References must be initialized in their declaration
+					if binding_props.is_ref {
+						return Err(ComuneError::new(
+							ComuneErrCode::UninitReference,
+							*tk
+						));
+					}
+
 					scope.add_variable(binding_ty.clone(), binding_name, binding_props);
 					Ok(binding_ty)
 				}

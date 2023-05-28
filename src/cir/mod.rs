@@ -41,7 +41,7 @@ pub type CIRTypeParamList = Vec<(Name, GenericParam, Option<Type>)>;
 pub struct LValue {
 	pub local: VarIndex,
 	pub projection: Vec<PlaceElem>,
-	pub binding: BindingProps,
+	pub props: BindingProps,
 }
 
 impl LValue {
@@ -49,7 +49,7 @@ impl LValue {
 		LValue { 
 			local, 
 			projection: vec![], 
-			binding: BindingProps::default()
+			props: BindingProps::default()
 		}
 	}
 }
@@ -106,17 +106,19 @@ pub enum RValue {
 
 // An Operand represents a single element of a CIR expression.
 // This may either be a constant, an undef value, or an lvalue access.
-// Crucially, operands do not have side effects. Yes, past Ash, I'm talking to you.
 #[derive(Clone, Debug)]
 pub enum Operand {
+	// Literals
 	IntegerLit(i128, SrcSpan),
 	FloatLit(f64, SrcSpan),
 	StringLit(String, SrcSpan),
 	CStringLit(CString, SrcSpan),
 	BoolLit(bool, SrcSpan),
-	Move(LValue),
-	Copy(LValue),
-	Borrow(LValue, BindingProps),
+
+	// LValue use
+	LValueUse(LValue, BindingProps),
+	
+	// Undefined value. Reading from this is UB, must be reassigned first
 	Undef,
 }
 
@@ -139,6 +141,9 @@ pub enum CIRStmt {
 
 	// Assignment to a variable. Non-terminator.
 	Assignment(LValue, RValue),
+	
+	// Reference initialization. Non-terminator.
+	RefInit(VarIndex, LValue),
 
 	// Unconditional jump to the block at BlockIndex. Terminator.
 	Jump(BlockIndex),
@@ -156,7 +161,7 @@ pub enum CIRStmt {
 	// Non-throwing fn call. Non-terminator.
 	Call {
 		id: CIRCallId,
-		args: Vec<(LValue, SrcSpan)>,
+		args: Vec<(LValue, Type, BindingProps)>,
 		generic_args: Vec<Type>,
 		result: Option<LValue>,
 	},
@@ -164,7 +169,7 @@ pub enum CIRStmt {
 	// Throwing fn call. Terminator.
 	Invoke {
 		id: CIRCallId,
-		args: Vec<(LValue, SrcSpan)>,
+		args: Vec<(LValue, Type, BindingProps)>,
 		generic_args: Vec<Type>,
 		result: Option<LValue>,
 		next: BlockIndex,
@@ -205,7 +210,7 @@ pub struct CIRFunction {
 	pub blocks: Vec<CIRBlock>,
 	pub ret: (BindingProps, Type),
 	pub arg_count: usize,
-	pub type_params: CIRTypeParamList,
+	pub generics: CIRTypeParamList,
 	pub attributes: Vec<Attribute>,
 	pub is_extern: bool,
 	pub is_variadic: bool,
@@ -285,7 +290,7 @@ impl CIRFunction {
 			blocks: vec![],
 			ret: self.ret.clone(),
 			arg_count: self.arg_count,
-			type_params: self.type_params.clone(),
+			generics: self.generics.clone(),
 			attributes: self.attributes.clone(),
 			is_extern: true,
 			is_variadic: self.is_variadic,
@@ -300,7 +305,7 @@ impl CIRFunction {
 			Some(LValue { 
 				local: self.arg_count,
 				projection: vec![],
-				binding: self.ret.0, 
+				props: self.ret.0, 
 			})
 		}
 	}

@@ -4,7 +4,7 @@ use crate::{
 	ast::types::Type,
 	ast::{
 		controlflow::ControlFlow,
-		expression::{Atom, Expr, FnRef, NodeData, OnceAtom, Operator, XtorKind},
+		expression::{Atom, Expr, FnRef, NodeData, Operator, XtorKind},
 		pattern::Binding,
 		types::{Basic, TupleKind},
 		FnScope,
@@ -30,13 +30,6 @@ impl Expr {
 					// Special cases for type-asymmetric operators
 					Operator::MemberAccess => {
 						let lhs_ty = lhs.validate(scope)?;
-
-						if !lhs.is_lvalue() {
-							// If lhs is an rvalue, wrap it in an Atom::Once
-							// to prevent it being evaluated multiple times
-							lhs.wrap_in_once_atom();
-						}
-
 						Self::validate_member_access(&lhs_ty, lhs, rhs, scope, meta)
 					}
 
@@ -109,6 +102,10 @@ impl Expr {
 									| Operator::GreaterEq => Ok(Type::Basic(Basic::Bool)),
 
 									Operator::PostDec | Operator::PostInc => Ok(first_t),
+
+									Operator::Assign | _ if op.is_compound_assignment() => {
+										Ok(Type::void_type())
+									}
 
 									_ => Ok(second_t),
 								}
@@ -225,29 +222,11 @@ impl Expr {
 
 					Atom::Cast(_, cast_t) => target == cast_t,
 
-					Atom::Once(once) => {
-						if let OnceAtom::Uneval(expr) = &*once.read().unwrap() {
-							expr.coercable_to(from, target, scope)
-						} else {
-							false
-						}
-					}
-
 					_ => from == target,
 				},
 
 				_ => from == target,
 			},
-		}
-	}
-
-	fn is_lvalue(&self) -> bool {
-		match self {
-			Expr::Atom(atom, _) => matches!(atom, Atom::Identifier(_) | Atom::Once(_)),
-
-			Expr::Cons([_, _], op, _) => matches!(op, Operator::MemberAccess | Operator::Subscr),
-
-			Expr::Unary(_, op, _) => matches!(op, Operator::Deref),
 		}
 	}
 
@@ -682,14 +661,6 @@ impl Atom {
 					Ok(last_branch_type.unwrap()) // TODO: This'll panic with an empty match expression
 				}
 			},
-
-			Atom::Once(once) => {
-				if let OnceAtom::Uneval(expr) = &mut *once.write().unwrap() {
-					expr.validate(scope)
-				} else {
-					panic!() // i dunno
-				}
-			}
 		}
 	}
 }

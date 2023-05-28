@@ -129,7 +129,7 @@ pub enum ComuneErrCode {
 		members: Vec<Name>,
 	},
 	UnresolvedTrait(Identifier),
-
+	UninitReference,
 	LoopCtrlOutsideLoop(&'static str),
 	UnsafeOperation,
 	DSTWithoutIndirection,
@@ -270,6 +270,7 @@ impl Display for ComuneErrCode {
 			}
 
 			ComuneErrCode::UnresolvedTrait(tr) => write!(f, "failed to resolve trait `{tr}`"),
+			ComuneErrCode::UninitReference => write!(f, "a reference binding must be immediately initialized"),
 			ComuneErrCode::LoopCtrlOutsideLoop(name) => write!(f, "{name} outside of loop"),
 			ComuneErrCode::UnsafeOperation => write!(f, "unsafe operation outside `unsafe` block"),
 			ComuneErrCode::DSTWithoutIndirection => {

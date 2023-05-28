@@ -292,34 +292,6 @@ pub enum Expr {
 }
 
 impl Expr {
-	// Wrap an expression in an Atom::Once, allowing it to be cloned without being evaluated multiple times
-	pub fn wrap_in_once_atom(&mut self) {
-		if let Expr::Atom(Atom::Once(_), _) = self {
-			return;
-		}
-
-		let node_data = self.get_node_data().clone();
-
-		// Swap out self behind a &mut
-		unsafe {
-			let tmp = ptr::read(self);
-
-			// Technically unsafe if Box::new() panics here,
-			// but if you managed to exhaust all the memory
-			// in your system, you've got bigger problems.
-
-			let new = Expr::Atom(
-				Atom::Once(Arc::new(RwLock::new(OnceAtom::Uneval(tmp)))),
-				NodeData {
-					ty: node_data.ty,
-					tk: node_data.tk,
-				},
-			);
-
-			ptr::write(self, new);
-		}
-	}
-
 	pub fn wrap_in_cast(&mut self, to: Type) {
 		if let Expr::Atom(Atom::Cast(_, cast_ty), _) = self {
 			if to == *cast_ty {
@@ -350,6 +322,10 @@ impl Expr {
 			.ty
 			.as_ref()
 			.expect("attempting to unwrap an unvalidated Expr's type!")
+	}
+
+	pub fn get_span(&self) -> SrcSpan {
+		self.get_node_data().tk
 	}
 
 	pub fn get_node_data(&self) -> &NodeData {
@@ -420,8 +396,6 @@ pub enum Atom {
 
 	// Drop shim
 	Drop(Box<Expr>),
-
-	Once(Arc<RwLock<OnceAtom>>),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -441,12 +415,6 @@ pub enum FnRef {
 	None,
 	Direct(Arc<RwLock<FnPrototype>>),
 	Indirect(Box<Expr>),
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum OnceAtom {
-	Uneval(Expr),
-	Eval(usize), // cIR local index. i know this doesn't technically belong in the AST but cut me a break okay
 }
 
 impl PartialEq for Atom {
@@ -496,9 +464,6 @@ impl PartialEq for Atom {
 					resolved: r_res,
 				},
 			) => l_name == r_name && l_args == r_args && l_type_args == r_type_args && l_res == r_res,
-			
-			
-			(Self::Once(l0), Self::Once(r0)) => *l0.read().unwrap() == *r0.read().unwrap(),
 			
 			// you don't want to know how much this shit's bitten me in the ass.
 			_ => {
