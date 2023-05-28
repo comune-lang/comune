@@ -184,10 +184,6 @@ impl CIRModuleBuilder {
 
 		let _ = self.generate_expr(fn_block, BindingProps::default());
 
-		if proto.path.path.last().unwrap().as_str() == "drop" {
-			println!("Drop function!");
-		}
-
 		let func = self.current_fn.borrow_mut().as_mut().unwrap();
 
 		// Find block preds & succs
