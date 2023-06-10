@@ -686,7 +686,7 @@ impl CIRModuleBuilder {
 						body: Expr::Atom(Atom::Block { items, result, .. }, _),
 						else_body,
 					} => {
-						let result_loc = if !expr_ty.is_void() {
+						let result_loc = if !expr_ty.is_void_or_never() {
 							Some(self.insert_temporary(
 								expr_ty.clone(),
 								RValue::Atom(expr_ty.clone(), None, Operand::Undef, span),

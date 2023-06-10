@@ -10,8 +10,6 @@ use std::{
 	sync::{Arc, RwLock, Weak},
 };
 
-use crate::parser::ComuneResult;
-
 use super::module::ItemRef;
 use super::types::{FnPrototype, GenericParam, Generics};
 use super::Attribute;
@@ -70,6 +68,8 @@ impl Eq for TraitRef {}
 impl Hash for TraitRef {
 	fn hash<H: Hasher>(&self, state: &mut H) {
 		ptr::hash(self.def.upgrade().unwrap().as_ref(), state);
+		
+		self.name.hash(state);
 
 		for arg in &self.args {
 			arg.hash(state);
@@ -92,6 +92,18 @@ lazy_static! {
 	static ref LANG_TRAITS: RwLock<HashMap<LangTrait, TraitRef>> = RwLock::new(HashMap::new());
 }
 
+pub struct ImplDatabase {
+	pub impls: Vec<(Type, Arc<RwLock<ImplBlockInterface>>)>,
+}
+
+impl ImplDatabase {
+	fn new() -> Self {
+		ImplDatabase { 
+			impls: vec![],
+		}
+	}
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct ImplSolver {
 	answer_cache: HashMap<Type, HashMap<TraitRef, TraitDeduction>>,
@@ -108,16 +120,6 @@ impl ImplSolver {
 			local_impls: vec![],
 			impls: vec![],
 		}
-	}
-
-	pub fn join_imported_solver(&mut self, imported: &ImplSolver) -> ComuneResult<()> {
-		//for (key, lang_trait) in &imported.lang_traits {
-		//	if !self.lang_traits.contains_key(key) {
-		//		self.lang_traits.insert(key.clone(), lang_trait.clone());
-		//	}
-		//}
-
-		Ok(())
 	}
 
 	pub fn finalize(&mut self) {

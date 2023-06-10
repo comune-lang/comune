@@ -560,6 +560,10 @@ impl Type {
 		self == &Type::Basic(Basic::Void)
 	}
 
+	pub fn is_void_or_never(&self) -> bool {
+		matches!(self, Type::Basic(Basic::Void) | Type::Never)
+	}
+
 	pub fn get_ir_typename(&self) -> String {
 		let Type::TypeRef { def, args } = self else { panic!() };
 

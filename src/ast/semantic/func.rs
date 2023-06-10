@@ -305,7 +305,7 @@ pub fn resolve_method_call(
 				},
 				lhs.get_node_data().tk,
 			))
-		} // TODO: Proper error handling
+		}
 
 		1 => candidates[0].clone(),
 

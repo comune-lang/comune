@@ -1,13 +1,13 @@
+using core::mem::{malloc, free, bit_cast, size_of};
+using std::vector::Vector;
+
+using module_test::fib;
+using ascii = u8;
+
 import module_test;
-import vector;
 //import cpp_test;
 
 module submodule_test;
-
-using module_test::fib;
-using vector::Vector;
-using ascii = u8;
-using core::mem::{malloc, free, bit_cast, size_of};
 
 @no_mangle
 int printf(ascii* fmt, ...);
@@ -105,14 +105,62 @@ i32& ref_return(i32 mut& in) {
 	in
 }
 
-void slice_test(i32[] &test) { }
+void slice_test(i32[]& test) { }
+
+
+struct DropTest {
+	int num;
+	int mut* allocation;
+
+	drop(mut& self) {
+		printf(c"DropTest no. %i dropped\n", self.num);
+		free(self.allocation as void mut*)
+	}
+}
+
+// Still need to finish implementing constructors lol
+DropTest create_drop_test(int num) {
+	printf(c"DropTest no. %i created\n", num);
+	new DropTest {
+		num: num,
+		allocation: malloc(4) as int mut*,
+	}
+}
+
+void drop_test() {
+	printf(c"\nEntering drop_test\n\n");
+	
+	DropTest a = create_drop_test(1);
+	DropTest b = create_drop_test(2);
+
+	{
+		printf(c"\nEntered subscope\n\n");
+		DropTest c = create_drop_test(3);
+		
+		int mut i = 0;
+		while true {
+			printf(c"\nEntered loop\n\n");
+			DropTest b = create_drop_test(4);
+
+			i += 1;
+
+			if i == 5 {
+				break
+			}
+		}
+
+	}
+	printf(c"\nLeft subscope\n\n");
+	printf(c"Leaving drop_test\n\n");
+}
 
 int main() {
+	drop_test();
+
 	submodule_test::bar();
 
 	Vector<float> mut a = vec<float>();
-	vector::vector_test(a);
-	a.len = 2;
+	//a.push(12.0f);
 
 	int i;
 
