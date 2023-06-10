@@ -64,7 +64,6 @@ namespace co {
 		}
 	}
 
-	
 	template<typename T> 
 	class DropGuard {
 		union { T data; };
@@ -73,8 +72,6 @@ namespace co {
 		DropGuard(const DropGuard& other) = delete;
 		DropGuard& operator=(const DropGuard& other) = delete;
 	public:
-		DropGuard(): live(false) {}
-
 		template<typename... Args>
 		DropGuard(Args... args) {
 			new(&data) T(args...);
@@ -82,14 +79,16 @@ namespace co {
 		}
 
 		DropGuard(DropGuard&& other) {
-			assert(other.live);
-			memcpy(&this->data, &other.data, sizeof(T));
-			other.live = false; this->live = true;
+			*this = std::move(other);
 		}
 
 		DropGuard& operator=(DropGuard&& other) {
 			assert(other.live);
-			memcpy(&this->data, &other.data, sizeof(T));
+			
+			if (this->live) 
+				data.drop();
+
+			this->data = std::move(other.data);
 			other.live = false; this->live = true;
 			return *this;
 		}
@@ -105,8 +104,9 @@ namespace co {
 		}
 
 		~DropGuard() {
-			if (live) 
+			if (this->live) 
 				data.drop();
 		}
 	};
+
 }
