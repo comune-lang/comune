@@ -5,13 +5,13 @@ use std::{
 	sync::{Arc, RwLock, Weak},
 };
 
-use crate::lexer::SrcSpan;
+use crate::{lexer::SrcSpan, parser::ComuneResult, errors::{ComuneError, ComuneErrCode}};
 
 use super::{
 	controlflow::ControlFlow,
 	module::{Identifier, Name},
 	statement::Stmt,
-	types::{Basic, FnPrototype, Type, TypeDef},
+	types::{Basic, FnPrototype, Type, TypeDef}, FnScope,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -315,6 +315,23 @@ impl Expr {
 
 			ptr::write(self, new);
 		}
+	}
+
+	pub fn try_wrap_in_cast(&mut self, to: Type) -> ComuneResult<()> {
+		if self.get_type() == &to {
+			return Ok(())
+		}
+
+		if !self.get_type().castable_to(&to) {
+			return Err(ComuneError::new(
+				ComuneErrCode::CastTypeMismatch { from: self.get_type().clone(), to },
+				self.get_span()
+			))
+		}
+
+		self.wrap_in_cast(to);
+
+		Ok(())
 	}
 
 	pub fn get_type(&self) -> &Type {

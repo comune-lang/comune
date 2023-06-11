@@ -87,7 +87,7 @@ pub enum ComuneErrCode {
 		expr: Type,
 		to: Type,
 	},
-	InvalidCast {
+	CastTypeMismatch {
 		from: Type,
 		to: Type,
 	},
@@ -201,7 +201,7 @@ impl Display for ComuneErrCode {
 				f,
 				"cannot assign value of type {expr} to variable of type {to}"
 			),
-			ComuneErrCode::InvalidCast { from, to } => {
+			ComuneErrCode::CastTypeMismatch { from, to } => {
 				write!(f, "cannot cast from {} to {}", from, to)
 			}
 			ComuneErrCode::InvalidCoercion { from, to } => {

@@ -99,7 +99,7 @@ impl Expr {
 									| Operator::Less
 									| Operator::Greater
 									| Operator::LessEq
-									| Operator::GreaterEq => Ok(Type::Basic(Basic::Bool)),
+									| Operator::GreaterEq => Ok(Type::bool_type()),
 
 									Operator::PostDec | Operator::PostInc => Ok(first_t),
 
@@ -188,17 +188,8 @@ impl Expr {
 					Atom::BoolLit(_) => target.is_boolean(),
 
 					Atom::CStringLit(_) => {
-						if let Type::Pointer {
-							pointee: other_p,
-							mutable: other_m,
-						} = &target
-						{
-							if !other_m
-								&& **other_p
-									== Type::Basic(Basic::Integral {
-										signed: false,
-										size_bytes: 1,
-									}) {
+						if let Type::Pointer { pointee: other_p, mutable: false } = &target {
+							if **other_p == Type::i8_type(false) {
 								return true;
 							}
 						}
@@ -335,7 +326,7 @@ impl Atom {
 					Ok(to.clone())
 				} else {
 					Err(ComuneError::new(
-						ComuneErrCode::InvalidCast {
+						ComuneErrCode::CastTypeMismatch {
 							from: expr_t,
 							to: to.clone(),
 						},
@@ -464,7 +455,7 @@ impl Atom {
 
 					// Placement-new does not return the constructed value,
 					// so we return void as the type here
-					Ok(Type::Basic(Basic::Void))
+					Ok(Type::void_type())
 				} else {
 					// Not a placement-new expr, just return the type
 					Ok(ty)
@@ -477,7 +468,7 @@ impl Atom {
 
 			Atom::Drop(dropped) => {
 				dropped.validate(scope)?;
-				Ok(Type::Basic(Basic::Void))
+				Ok(Type::void_type())
 			}
 
 			Atom::Block {
@@ -494,7 +485,7 @@ impl Atom {
 				if let Some(result) = result {
 					result.validate(&mut subscope)
 				} else {
-					Ok(Type::Basic(Basic::Void))
+					Ok(Type::void_type())
 				}
 			}
 
@@ -504,18 +495,10 @@ impl Atom {
 					body,
 					else_body,
 				} => {
-					let bool_ty = Type::Basic(Basic::Bool);
 					let mut subscope = FnScope::from_parent(scope, false, false);
 
-					let cond_ty = cond.validate(&mut subscope)?;
-
-					if cond_ty != bool_ty {
-						if cond_ty.castable_to(&bool_ty) {
-							cond.wrap_in_cast(bool_ty);
-						} else {
-							todo!()
-						}
-					}
+					cond.validate(&mut subscope)?;
+					cond.try_wrap_in_cast(Type::bool_type())?;
 
 					let body_ty = body.validate(&mut subscope)?;
 
@@ -528,23 +511,15 @@ impl Atom {
 							todo!()
 						}
 					} else {
-						Ok(body_ty)
+						Ok(Type::void_type())
 					}
 				}
 
 				ControlFlow::While { cond, body } => {
-					let bool_ty = Type::Basic(Basic::Bool);
 					let mut subscope = FnScope::from_parent(scope, true, false);
 
-					let cond_ty = cond.validate(&mut subscope)?;
-
-					if cond_ty != bool_ty {
-						if cond_ty.castable_to(&bool_ty) {
-							cond.wrap_in_cast(bool_ty);
-						} else {
-							todo!()
-						}
-					}
+					cond.validate(&mut subscope)?;
+					cond.try_wrap_in_cast(Type::bool_type())?;
 
 					body.validate(&mut subscope)
 				}
@@ -555,7 +530,6 @@ impl Atom {
 					iter,
 					body,
 				} => {
-					let bool_ty = Type::Basic(Basic::Bool);
 					let mut subscope = FnScope::from_parent(scope, true, false);
 
 					if let Some(init) = init {
@@ -563,15 +537,8 @@ impl Atom {
 					}
 
 					if let Some(cond) = cond {
-						let cond_ty = cond.validate(&mut subscope)?;
-
-						if cond_ty != bool_ty {
-							if cond_ty.castable_to(&bool_ty) {
-								cond.wrap_in_cast(bool_ty);
-							} else {
-								todo!()
-							}
-						}
+						cond.validate(&mut subscope)?;
+						cond.try_wrap_in_cast(Type::bool_type())?;
 					}
 
 					if let Some(iter) = iter {
@@ -599,13 +566,13 @@ impl Atom {
 								meta.tk,
 							))
 						}
-					} else if scope.fn_return_type.1 == Type::Basic(Basic::Void) {
+					} else if scope.fn_return_type.1 == Type::void_type() {
 						Ok(Type::Never)
 					} else {
 						Err(ComuneError::new(
 							ComuneErrCode::ReturnTypeMismatch {
 								expected: scope.fn_return_type.1.clone(),
-								got: Type::Basic(Basic::Void),
+								got: Type::void_type(),
 							},
 							meta.tk,
 						))
@@ -632,7 +599,7 @@ impl Atom {
 					branches,
 				} => {
 					if branches.is_empty() {
-						return Ok(Type::Basic(Basic::Void));
+						return Ok(Type::void_type());
 					}
 
 					let mut last_branch_type = None;

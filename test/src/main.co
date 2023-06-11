@@ -133,29 +133,34 @@ void drop_test() {
 	DropTest a = create_drop_test(1);
 	DropTest b = create_drop_test(2);
 
+	printf(c"\nEntering subscope\n\n");
 	{
-		printf(c"\nEntered subscope\n\n");
 		DropTest c = create_drop_test(3);
 		
 		int mut i = 0;
-		while true {
-			printf(c"\nEntered loop\n\n");
+		
+		printf(c"\nEntering loop\n\n");
+
+		while i < 5 {
 			DropTest b = create_drop_test(4);
 
-			i += 1;
-
-			if i == 5 {
+			if i == 4 {
+				// BUG: incorrectly clears drop obligations outside if block
 				break
 			}
+
+			i += 1;
 		}
+
+		printf(c"\nLeft loop\n\n");
 
 	}
 	printf(c"\nLeft subscope\n\n");
-	printf(c"Leaving drop_test\n\n");
 }
 
 int main() {
 	drop_test();
+	printf(c"Left drop_test\n\n");
 
 	submodule_test::bar();
 
