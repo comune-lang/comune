@@ -145,7 +145,7 @@ void drop_test() {
 			DropTest b = create_drop_test(4);
 
 			if i == 4 {
-				// BUG: incorrectly clears drop obligations outside if block
+				// ???????
 				break
 			}
 

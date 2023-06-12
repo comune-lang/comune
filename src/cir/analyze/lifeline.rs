@@ -8,7 +8,7 @@ use super::{
 use crate::{
 	ast::{
 		traits::{ImplSolver, LangTrait},
-		types::{Basic, BindingProps, Generics, TupleKind},
+		types::{BindingProps, Generics, TupleKind},
 	},
 	cir::{
 		BlockIndex, CIRBlock, CIRCallId, CIRFunction, CIRStmt, LValue, Operand, PlaceElem, RValue,
@@ -443,8 +443,8 @@ impl<'func> DropElaborator<'func> {
 					*flag
 				} else {
 					self.current_fn.variables.push((
-						Type::Basic(Basic::Bool),
-						BindingProps::default(),
+						Type::bool_type(),
+						BindingProps::mut_value(),
 						None,
 					));
 

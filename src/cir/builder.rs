@@ -387,6 +387,9 @@ impl CIRModuleBuilder {
 
 		for item in items {
 			if self.generate_stmt(item).is_none() {
+				// Be sure to pop the name stack when returning early,
+				// otherwise drops will get desynced from the actual scopes
+				self.name_map_stack.pop();
 				return (jump_idx, None);
 			}
 		}
@@ -394,6 +397,7 @@ impl CIRModuleBuilder {
 		// Check if the block has a result statement
 		if let Some(result) = result {
 			let Some(result_ir) = self.generate_expr(result, self.get_fn().ret.0) else {
+				self.name_map_stack.pop();
 				return (jump_idx, None);
 			};
 
@@ -418,7 +422,9 @@ impl CIRModuleBuilder {
 	}
 
 	fn generate_drop_and_assign(&mut self, location: LValue, expr: RValue) {
-		self.generate_drop_shim(location.clone());
+		if self.needs_drop(location.local) {
+			self.generate_drop_shim(location.clone());
+		}
 
 		self.write(CIRStmt::Assignment(location, expr));
 	}
@@ -873,6 +879,8 @@ impl CIRModuleBuilder {
 
 					ControlFlow::Break => {
 						let end_block = self.loop_stack.last().unwrap().1;
+						
+
 						self.write(CIRStmt::Jump(end_block));
 
 						None
@@ -890,7 +898,7 @@ impl CIRModuleBuilder {
 						branches,
 					} => {
 						let scrutinee_ir =
-							self.generate_expr(scrutinee, BindingProps::default())?;
+							self.generate_expr(scrutinee, BindingProps::value())?;
 						let scrutinee_ty = scrutinee.get_type();
 						let scrutinee_lval = self.insert_temporary(
 							scrutinee_ty.clone(),
