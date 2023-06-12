@@ -1,4 +1,4 @@
-use std::{borrow::BorrowMut, collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 
 use crate::{
 	ast::{
@@ -18,15 +18,23 @@ use super::{
 	RValue, VarIndex,
 };
 
+#[derive(Clone)]
+pub struct CIRBuilderScope {
+	start: BlockIndex,
+	end: Option<BlockIndex>,
+	label: Option<Name>,
+	name_map: Vec<(Name, VarIndex)>,
+	is_loop: bool,
+}
+
 pub struct CIRModuleBuilder {
 	pub module: CIRModule,
 
 	type_param_counter: usize, // Used to assign unique names to type parameters
 
 	current_fn: Option<CIRFunction>,
-	name_map_stack: Vec<Vec<(Name, VarIndex)>>,
 	current_block: BlockIndex,
-	loop_stack: Vec<(BlockIndex, BlockIndex)>, // start and end
+	scope_stack: Vec<CIRBuilderScope>,
 }
 
 impl CIRModuleBuilder {
@@ -41,9 +49,8 @@ impl CIRModuleBuilder {
 
 			current_fn: None,
 			type_param_counter: 0,
-			name_map_stack: vec![vec![]],
 			current_block: 0,
-			loop_stack: vec![],
+			scope_stack: vec![],
 		};
 
 		result.register_module(&ast.interface);
@@ -155,9 +162,8 @@ impl CIRModuleBuilder {
 
 		self.current_fn = Some(func);
 
-		self.name_map_stack.clear();
+		self.scope_stack.clear();
 		self.current_block = 0;
-		self.loop_stack.clear();
 
 		let mut params_map = vec![];
 
@@ -168,7 +174,13 @@ impl CIRModuleBuilder {
 			}
 		}
 
-		self.name_map_stack.push(params_map);
+		self.scope_stack.push(CIRBuilderScope { 
+			start: 0, 
+			end: None, 
+			label: None, 
+			name_map: params_map,
+			is_loop: false,
+		});
 
 		if !proto.ret.1.is_void() {
 			// If the return type isn't void, insert a
@@ -184,7 +196,7 @@ impl CIRModuleBuilder {
 
 		let _ = self.generate_expr(fn_block, BindingProps::default());
 
-		let func = self.current_fn.borrow_mut().as_mut().unwrap();
+		let func = self.get_fn_mut();
 
 		// Find block preds & succs
 
@@ -217,7 +229,8 @@ impl CIRModuleBuilder {
 			func.blocks[i].succs = succs;
 		}
 
-		self.current_fn.borrow_mut().as_mut().unwrap().is_extern = false;
+		func.is_extern = false;
+		
 		self.module
 			.functions
 			.insert(proto, self.current_fn.take().unwrap());
@@ -303,9 +316,10 @@ impl CIRModuleBuilder {
 					.variables
 					.push((ty.clone(), props, Some(name.clone())));
 
-				self.name_map_stack
+				self.scope_stack
 					.last_mut()
 					.unwrap()
+					.name_map
 					.push((name.clone(), idx));
 
 				let store_place = LValue {
@@ -355,7 +369,8 @@ impl CIRModuleBuilder {
 		self.get_fn_mut()
 			.variables
 			.push((ty.clone(), props, Some(name.clone())));
-		self.name_map_stack.last_mut().unwrap().push((name, idx));
+		
+		self.scope_stack.last_mut().unwrap().name_map.push((name, idx));
 
 		let lval = LValue {
 			local: self.get_fn().variables.len() - 1,
@@ -383,13 +398,19 @@ impl CIRModuleBuilder {
 			self.append_block()
 		};
 
-		self.name_map_stack.push(vec![]);
+		self.scope_stack.push(CIRBuilderScope { 
+			start: self.current_block, 
+			end: None,
+			label: None,
+			name_map: vec![],
+			is_loop: false
+		});
 
 		for item in items {
 			if self.generate_stmt(item).is_none() {
-				// Be sure to pop the name stack when returning early,
+				// Be sure to pop the scope stack when returning early,
 				// otherwise drops will get desynced from the actual scopes
-				self.name_map_stack.pop();
+				self.scope_stack.pop();
 				return (jump_idx, None);
 			}
 		}
@@ -397,7 +418,7 @@ impl CIRModuleBuilder {
 		// Check if the block has a result statement
 		if let Some(result) = result {
 			let Some(result_ir) = self.generate_expr(result, self.get_fn().ret.0) else {
-				self.name_map_stack.pop();
+				self.scope_stack.pop();
 				return (jump_idx, None);
 			};
 
@@ -430,7 +451,9 @@ impl CIRModuleBuilder {
 	}
 
 	fn generate_scope_end(&mut self) {
-		for (_, var) in self.name_map_stack.pop().unwrap().into_iter().rev() {
+		let scope = self.scope_stack.pop().unwrap();
+		
+		for (_, var) in scope.name_map.into_iter().rev() {
 			if self.needs_drop(var) {
 				self.generate_drop_shim(self.get_local_lvalue(var));
 			}
@@ -675,8 +698,8 @@ impl CIRModuleBuilder {
 							}
 						}
 
-						for scope in self.name_map_stack.clone().into_iter().rev() {
-							for (_, var) in scope.iter().rev() {
+						for scope in self.scope_stack.clone().into_iter().rev() {
+							for (_, var) in scope.name_map.iter().rev() {
 								if self.needs_drop(*var) {
 									self.generate_drop_shim(self.get_local_lvalue(*var));
 								}
@@ -805,10 +828,18 @@ impl CIRModuleBuilder {
 						self.current_block = start_block;
 						self.write(CIRStmt::Jump(cond_block));
 
-						self.loop_stack.push((start_block, next_block));
+						self.scope_stack.push(CIRBuilderScope {
+							start: start_block,
+							end: Some(next_block),
+							label: None,
+							name_map: vec![],
+							is_loop: true,
+						});
 
 						// Generate body
 						let (body_idx, result) = self.generate_block(items, result, false);
+
+						self.scope_stack.pop();
 
 						// Only write a terminator if the block returns
 						if result.is_some() {
@@ -877,20 +908,39 @@ impl CIRModuleBuilder {
 						Some(Self::get_void_rvalue())
 					}
 
-					ControlFlow::Break => {
-						let end_block = self.loop_stack.last().unwrap().1;
-						
+					ControlFlow::Break | ControlFlow::Continue => {
+						let is_break = matches!(&**ctrl, ControlFlow::Break);
 
-						self.write(CIRStmt::Jump(end_block));
+						// Iterate backwards through scope stack to find loop scope
+						for i in (0..self.scope_stack.len()).rev() {
+							
+							// Generate drop shims for variables inside loop
+							let scope_names = self.scope_stack[i].name_map.clone();
+							
+							for (_, var) in scope_names.into_iter().rev() {
+								if self.needs_drop(var) {
+									self.generate_drop_shim(self.get_local_lvalue(var));
+								}
+							}
 
-						None
-					}
+							if !self.scope_stack[i].is_loop {
+								continue
+							}
 
-					ControlFlow::Continue => {
-						let start_block = self.loop_stack.last().unwrap().0;
-						self.write(CIRStmt::Jump(start_block));
+							if is_break {								
+								let Some(end) = self.scope_stack[i].end else {
+									panic!();
+								};
 
-						None
+								self.write(CIRStmt::Jump(end));	
+							} else {
+								self.write(CIRStmt::Jump(self.scope_stack[i].start));
+							}
+
+							return None;
+						}
+
+						panic!();
 					}
 
 					ControlFlow::Match {
@@ -1558,8 +1608,8 @@ impl CIRModuleBuilder {
 	}
 
 	fn get_var_index(&self, name: &Name) -> Option<VarIndex> {
-		for stack_frame in self.name_map_stack.iter().rev() {
-			if let Some((_, idx)) = stack_frame.iter().rev().find(|(n, _)| n == name) {
+		for stack_frame in self.scope_stack.iter().rev() {
+			if let Some((_, idx)) = stack_frame.name_map.iter().rev().find(|(n, _)| n == name) {
 				return Some(*idx);
 			}
 		}
@@ -1578,9 +1628,10 @@ impl CIRModuleBuilder {
 		let idx = self.get_fn().variables.len();
 
 		if let Some(name) = &name {
-			self.name_map_stack
+			self.scope_stack
 				.last_mut()
 				.unwrap()
+				.name_map
 				.push((name.clone(), idx));
 		}
 
