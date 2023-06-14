@@ -127,6 +127,8 @@ DropTest create_drop_test(int num) {
 	}
 }
 
+void temp_drop_test(DropTest& test) {}
+
 void drop_test() {
 	printf(c"\nEntering drop_test\n\n");
 	
@@ -155,6 +157,8 @@ void drop_test() {
 
 	}
 	printf(c"\nLeft subscope\n\n");
+
+	temp_drop_test(create_drop_test(5));
 }
 
 int main() {
@@ -163,7 +167,7 @@ int main() {
 
 	submodule_test::bar();
 
-	Vector<float> mut a = vec<float>();
+	//Vector<float> mut a = vec<float>();
 	//a.push(12.0f);
 
 	int i;

@@ -147,11 +147,15 @@ impl LiveVarCheckState {
 		ty: &Type,
 		props: BindingProps,
 		solver: &ImplSolver,
-		generics: &Generics,
+		_generics: &Generics,
 	) {
-		let copy_trait = solver.get_lang_trait(LangTrait::Copy);
+		let _copy_trait = solver.get_lang_trait(LangTrait::Copy);
+		
+		let is_copy = matches!(ty,
+			Type::Basic(_) | Type::Pointer { .. } | Type::Slice(_)
+		);
 
-		if !props.is_ref && solver.is_trait_implemented(ty, &copy_trait, generics) {
+		if !props.is_ref && !is_copy {//solver.is_trait_implemented(ty, &copy_trait, generics) {
 			self.set_liveness(lval, LivenessState::Moved);
 		}
 	}
@@ -310,13 +314,16 @@ impl AnalysisResultHandler<DefInitFlow> for VarInitCheck {
 						match liveness {
 							Some(LivenessState::Live) => {}
 
-							_ => errors.push(ComuneError::new(
+							_ => {
+								println!("happened in {func}");
+								errors.push(ComuneError::new(
 								ComuneErrCode::InvalidUse {
 									variable: func.get_variable_name(lval.local),
 									state: liveness.unwrap_or(LivenessState::Uninit),
 								},
 								lval.props.span,
-							)),
+							))
+						},
 						}
 					}
 
@@ -438,7 +445,7 @@ impl<'func> DropElaborator<'func> {
 				self.build_destructor(lval, ty, next);
 			}
 
-			Some(LivenessState::MaybeUninit) => {
+			/* Some(LivenessState::MaybeUninit) => {
 				let flag = if let Some(flag) = self.drop_flags.get(&lval) {
 					*flag
 				} else {
@@ -485,7 +492,7 @@ impl<'func> DropElaborator<'func> {
 					.succs
 					.push(drop_idx);
 				self.current_block = self.current_fn.blocks.len() - 1;
-			}
+			}*/
 
 			_ => {}
 		}
