@@ -89,7 +89,7 @@ pub fn resolve_interface_types(interface: &ModuleInterface) -> ComuneResult<()> 
 
 	for (ty, im) in &interface.impl_solver.local_impls {
 		// Create type parameter list with empty Self param
-		let mut generics = vec![("Self".to_string(), vec![], None)];
+		let mut generics = vec![("Self".into(), vec![], None)];
 		generics.append(&mut im.read().unwrap().params.clone());
 
 		// Resolve the implementing type

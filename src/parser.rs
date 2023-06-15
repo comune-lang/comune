@@ -275,7 +275,7 @@ impl<'ctx> Parser {
 
 								let params = self.parse_parameter_list(Some(&self_ty), None)?;
 
-								let mut path = Identifier::from_parent(&scope, k.to_string());
+								let mut path = Identifier::from_parent(&scope, k.into());
 								path.qualifier.0 = Some(Box::new(self_ty.clone()));
 
 								let func = Arc::new(RwLock::new(FnPrototype {

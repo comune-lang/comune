@@ -188,7 +188,7 @@ impl CIRModuleBuilder {
 			let mut props = proto.ret.0;
 			props.is_mut = true;
 
-			self.insert_variable(Some("return".to_string()), props, proto.ret.1.clone());
+			self.insert_variable(Some("return".into()), props, proto.ret.1.clone());
 		}
 
 		// Generate function body
