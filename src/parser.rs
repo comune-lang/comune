@@ -1300,7 +1300,7 @@ impl<'ctx> Parser {
 							vec![]
 						};
 
-						if let Token::Other('{') = self.get_current()? {
+						if self.get_current()? == Token::Other('{') {
 							// Parse literal constructor
 
 							let mut inits = vec![];
@@ -1328,6 +1328,33 @@ impl<'ctx> Parser {
 								generic_args,
 								kind: XtorKind::Literal { fields: inits },
 								placement,
+							});
+
+						} else if self.get_current()? == Token::Operator("(") {
+							// Parse constructor call
+
+							let mut args = vec![];
+
+							if self.get_next()? != Token::Operator(")") {
+								loop {
+									args.push(self.parse_expression(scope)?);
+			
+									if self.get_current()? == Token::Other(',') {
+										self.get_next()?;
+									} else if self.get_current()? == Token::Operator(")") {
+										self.get_next()?;
+										break;
+									} else {
+										return self.err(ComuneErrCode::UnexpectedToken);
+									}
+								}
+							}
+
+							result = Some(Atom::Constructor { 
+								def,
+								generic_args, 
+								kind: XtorKind::Constructor { args, resolved: FnRef::None }, 
+								placement 
 							});
 						} else {
 							return self.err(ComuneErrCode::UnexpectedToken);
