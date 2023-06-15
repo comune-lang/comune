@@ -1685,7 +1685,7 @@ impl CIRModuleBuilder {
 		let props = BindingProps {
 			is_mut: true,
 			is_ref: false,
-			is_unsafe: false,
+			is_new: false,
 			span,
 		};
 

@@ -163,13 +163,22 @@ void drop_test() {
 	temp_drop_test(create_drop_test(5));
 }
 
+void new_ref_test(Vector<float> new& test) {
+	test = vec<float>();
+}
+
 int main() {
 	drop_test();
 	printf(c"Left drop_test\n\n");
 
 	submodule_test::bar();
 
-	Vector<float> mut a = vec<float>();
+	Vector<float> mut a;
+	
+	new_ref_test(a);
+
+	Vector<float> b = a;
+
 	//a.push(12.0f);
 
 	int i;

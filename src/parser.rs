@@ -841,21 +841,28 @@ impl<'ctx> Parser {
 
 		if !matches!(
 			self.get_current()?,
-			Token::Keyword("unsafe" | "mut") | Token::Operator("&")
+			Token::Keyword("new" | "mut") | Token::Operator("&")
 		) {
 			return Ok(None);
 		}
 
-		if self.get_current()? == Token::Keyword("unsafe") {
-			props.is_unsafe = true;
+		// a binding can be *either* `new` or `mut`.
+		// if it is `new`, it must also be `&`
+		if self.get_current()? == Token::Keyword("new") {
+			props.is_new = true;
+			props.is_ref = true;
+			
 			self.get_next()?;
+			self.consume(&Token::Operator("&"))?;
+			
+			return Ok(Some(props));
 		}
-
+		
 		if self.get_current()? == Token::Keyword("mut") {
 			props.is_mut = true;
 			self.get_next()?;
 		}
-
+		
 		if self.get_current()? == Token::Operator("&") {
 			props.is_ref = true;
 			self.get_next()?;

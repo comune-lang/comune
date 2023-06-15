@@ -158,6 +158,10 @@ impl LiveVarCheckState {
 		if !props.is_ref && !is_copy {//solver.is_trait_implemented(ty, &copy_trait, generics) {
 			self.set_liveness(lval, LivenessState::Moved);
 		}
+		
+		if props.is_ref && props.is_new {
+			self.set_liveness(lval, LivenessState::Live);
+		}
 	}
 }
 
@@ -222,14 +226,25 @@ impl AnalysisDomain for DefInitFlow {
 	fn initialize_start_block(&self, func: &CIRFunction, state: &mut Self::Domain) {
 		// There is *definitely* a way to do this with bit math but fuck if i know lol
 		for var in 0..func.arg_count {
-			state.liveness.insert(
-				LValue {
-					local: var,
-					projection: vec![],
-					props: func.variables[var].1,
-				},
-				LivenessState::Live,
-			);
+			if func.variables[var].1.is_new {
+				state.liveness.insert(
+					LValue {
+						local: var,
+						projection: vec![],
+						props: func.variables[var].1,
+					},
+					LivenessState::Uninit,
+				);
+			} else {
+				state.liveness.insert(
+					LValue {
+						local: var,
+						projection: vec![],
+						props: func.variables[var].1,
+					},
+					LivenessState::Live,
+				);
+			}
 		}
 	}
 }
@@ -291,17 +306,36 @@ impl AnalysisResultHandler<DefInitFlow> for VarInitCheck {
 
 				// Check for uses of uninit/moved lvalues
 				match stmt {
-					CIRStmt::Assignment(_, RValue::Atom(_, _, Operand::LValueUse(lval, _), _))
-					| CIRStmt::Switch(Operand::LValueUse(lval, _), ..)
+					CIRStmt::Assignment(_, RValue::Atom(_, _, Operand::LValueUse(lval, use_props), _))
+					| CIRStmt::Switch(Operand::LValueUse(lval, use_props), ..)
 					| CIRStmt::Assignment(
 						_,
-						RValue::Cons(_, [(_, Operand::LValueUse(lval, _)), _], ..),
+						RValue::Cons(_, [(_, Operand::LValueUse(lval, use_props)), _], ..),
 					)
 					| CIRStmt::Assignment(
 						_,
-						RValue::Cons(_, [_, (_, Operand::LValueUse(lval, _))], ..),
-					)
-					| CIRStmt::Invoke {
+						RValue::Cons(_, [_, (_, Operand::LValueUse(lval, use_props))], ..),
+					) => {
+						if !use_props.is_new {
+							let liveness = state.get_liveness(lval);
+							
+							match liveness {
+								Some(LivenessState::Live) => {}
+
+								_ => {
+									errors.push(ComuneError::new(
+										ComuneErrCode::InvalidUse {
+											variable: func.get_variable_name(lval.local),
+											state: liveness.unwrap_or(LivenessState::Uninit),
+										},
+										lval.props.span,
+									))
+								},
+							}
+						}
+					}
+
+					CIRStmt::Invoke {
 						id: CIRCallId::Indirect { local: lval, .. },
 						..
 					}
@@ -310,37 +344,64 @@ impl AnalysisResultHandler<DefInitFlow> for VarInitCheck {
 						..
 					} => {
 						let liveness = state.get_liveness(lval);
-
-						match liveness {
-							Some(LivenessState::Live) => {}
-
-							_ => {
-								println!("happened in {func}");
-								errors.push(ComuneError::new(
-								ComuneErrCode::InvalidUse {
-									variable: func.get_variable_name(lval.local),
-									state: liveness.unwrap_or(LivenessState::Uninit),
-								},
-								lval.props.span,
-							))
-						},
-						}
-					}
-
-					CIRStmt::Invoke { args, .. } | CIRStmt::Call { args, .. } => {
-						for (lval, ..) in args {
-							let liveness = state.get_liveness(lval);
-
+							
 							match liveness {
 								Some(LivenessState::Live) => {}
 
-								_ => errors.push(ComuneError::new(
-									ComuneErrCode::InvalidUse {
-										variable: func.get_variable_name(lval.local),
-										state: liveness.unwrap_or(LivenessState::Uninit),
-									},
-									lval.props.span,
-								)),
+								_ => {
+									errors.push(ComuneError::new(
+										ComuneErrCode::InvalidUse {
+											variable: func.get_variable_name(lval.local),
+											state: liveness.unwrap_or(LivenessState::Uninit),
+										},
+										lval.props.span,
+									))
+								},
+							}
+					}
+
+					CIRStmt::Invoke { args, .. } | CIRStmt::Call { args, .. } => {
+						for (lval, _, use_props) in args {
+							if !use_props.is_new {
+								let liveness = state.get_liveness(lval);
+
+								match liveness {
+									Some(LivenessState::Live) => {}
+
+									_ => errors.push(ComuneError::new(
+										ComuneErrCode::InvalidUse {
+											variable: func.get_variable_name(lval.local),
+											state: liveness.unwrap_or(LivenessState::Uninit),
+										},
+										lval.props.span,
+									)),
+								}
+							}
+						}
+					}
+
+					// Check for uninitialized `new&` bindings
+					CIRStmt::Return => {
+						for (i, (_, props, _)) in func.variables.iter().enumerate() {
+							if !props.is_new {
+								continue
+							}
+
+							let lval = LValue {
+								local: i,
+								projection: vec![],
+								props: *props
+							};
+
+							match state.get_liveness(&lval) {
+								Some(LivenessState::Live) => {}
+
+								_ => {
+									errors.push(ComuneError::new(
+										ComuneErrCode::UninitNewReference,
+										props.span
+									))
+								}
 							}
 						}
 					}
@@ -353,7 +414,7 @@ impl AnalysisResultHandler<DefInitFlow> for VarInitCheck {
 					let is_var_init =
 						!matches!(state.get_liveness(lval), None | Some(LivenessState::Uninit));
 
-					if is_var_init && !lval.props.is_mut {
+					if is_var_init && !lval.props.is_mut && !lval.props.is_new {
 						errors.push(ComuneError::new(
 							ComuneErrCode::ImmutVarMutation {
 								variable: func.get_variable_name(lval.local),

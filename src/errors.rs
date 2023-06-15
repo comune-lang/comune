@@ -130,6 +130,7 @@ pub enum ComuneErrCode {
 	},
 	UnresolvedTrait(Identifier),
 	UninitReference,
+	UninitNewReference,
 	LoopCtrlOutsideLoop(&'static str),
 	UnsafeOperation,
 	DSTWithoutIndirection,
@@ -273,6 +274,10 @@ impl Display for ComuneErrCode {
 			ComuneErrCode::UninitReference => {
 				write!(f, "a reference binding must be immediately initialized")
 			}
+			ComuneErrCode::UninitNewReference => {
+				write!(f, "a new& binding must be initialized in all control flow paths")
+			}
+
 			ComuneErrCode::LoopCtrlOutsideLoop(name) => write!(f, "{name} outside of loop"),
 			ComuneErrCode::UnsafeOperation => write!(f, "unsafe operation outside `unsafe` block"),
 			ComuneErrCode::DSTWithoutIndirection => {

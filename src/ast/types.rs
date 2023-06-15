@@ -75,7 +75,7 @@ pub struct TypeDef {
 pub struct BindingProps {
 	pub is_ref: bool,
 	pub is_mut: bool,
-	pub is_unsafe: bool,
+	pub is_new: bool,
 	pub span: SrcSpan,
 }
 
@@ -152,7 +152,7 @@ impl BindingProps {
 		BindingProps {
 			is_ref: false,
 			is_mut: false,
-			is_unsafe: false,
+			is_new: false,
 			span: SrcSpan::new(),
 		}
 	}
@@ -161,7 +161,7 @@ impl BindingProps {
 		BindingProps {
 			is_ref: true,
 			is_mut: false,
-			is_unsafe: false,
+			is_new: false,
 			span: SrcSpan::new(),
 		}
 	}
@@ -170,7 +170,7 @@ impl BindingProps {
 		BindingProps {
 			is_ref: false,
 			is_mut: true,
-			is_unsafe: false,
+			is_new: false,
 			span: SrcSpan::new(),
 		}
 	}
@@ -179,7 +179,7 @@ impl BindingProps {
 		BindingProps {
 			is_ref: true,
 			is_mut: true,
-			is_unsafe: false,
+			is_new: false,
 			span: SrcSpan::new(),
 		}
 	}
@@ -912,7 +912,7 @@ impl Display for Visibility {
 
 impl Display for BindingProps {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		if self.is_unsafe {
+		if self.is_new {
 			write!(f, " unsafe")?;
 		}
 		if self.is_mut {
@@ -957,7 +957,7 @@ impl std::fmt::Debug for Type {
 
 impl PartialEq for BindingProps {
 	fn eq(&self, other: &Self) -> bool {
-		(self.is_mut, self.is_ref, self.is_unsafe) == (other.is_mut, other.is_ref, other.is_unsafe)
+		(self.is_mut, self.is_ref, self.is_new) == (other.is_mut, other.is_ref, other.is_new)
 	}
 }
 
@@ -965,7 +965,7 @@ impl Hash for BindingProps {
 	fn hash<H: Hasher>(&self, state: &mut H) {
 		self.is_mut.hash(state);
 		self.is_ref.hash(state);
-		self.is_unsafe.hash(state);
+		self.is_new.hash(state);
 	}
 }
 

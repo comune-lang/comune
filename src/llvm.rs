@@ -209,7 +209,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 				.enumerate()
 			{
 				// If parameter is an unsafe binding, don't add noundef attribute
-				if !t.variables[idx].1.is_unsafe {
+				if !t.variables[idx].1.is_new {
 					fn_v.add_attribute(
 						AttributeLoc::Param(idx as u32),
 						self.get_attribute("noundef"),
