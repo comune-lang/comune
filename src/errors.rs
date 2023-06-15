@@ -131,6 +131,7 @@ pub enum ComuneErrCode {
 	UnresolvedTrait(Identifier),
 	UninitReference,
 	UninitNewReference,
+	LocalNewReference,
 	LoopCtrlOutsideLoop(&'static str),
 	UnsafeOperation,
 	DSTWithoutIndirection,
@@ -276,6 +277,9 @@ impl Display for ComuneErrCode {
 			}
 			ComuneErrCode::UninitNewReference => {
 				write!(f, "a new& binding must be initialized in all control flow paths")
+			}
+			ComuneErrCode::LocalNewReference => {
+				write!(f, "new& is only allowed in function parameters")
 			}
 
 			ComuneErrCode::LoopCtrlOutsideLoop(name) => write!(f, "{name} outside of loop"),

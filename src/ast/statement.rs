@@ -64,6 +64,11 @@ impl Stmt {
 						return Err(ComuneError::new(ComuneErrCode::UninitReference, *tk));
 					}
 
+					// new& is only allowed in function parameters
+					if binding_props.is_new {
+						return Err(ComuneError::new(ComuneErrCode::LocalNewReference, *tk));
+					}
+
 					scope.add_variable(binding_ty.clone(), binding_name, binding_props);
 					Ok(binding_ty)
 				}
