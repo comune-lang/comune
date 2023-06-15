@@ -197,7 +197,11 @@ impl Expr {
 						false
 					}
 
-					Atom::FnCall { resolved, .. } => {
+					// commented out because these feel redundant in the face of
+					// the wildcard case? i honestly forgot how this part of typeck works.
+					// anyway the FnCall stuff causes problems with generic types
+
+					/*Atom::FnCall { resolved, .. } => {
 						if let FnRef::Direct(resolved) = resolved {
 							resolved.read().unwrap().ret.1 == *target
 						} else if let FnRef::Indirect(expr) = resolved {
@@ -212,7 +216,7 @@ impl Expr {
 					}
 
 					Atom::Cast(_, cast_t) => target == cast_t,
-
+					*/
 					_ => from == target,
 				},
 

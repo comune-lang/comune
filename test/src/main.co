@@ -95,7 +95,7 @@ TestSumType sum_type_test(i32& value) {
 // In lieu of properly working static functions
 Vector<T> vec<type T>() {
 	new Vector<T> {
-		data: malloc(0) as T mut*,
+		data: bit_cast<u32, T mut*>(0),
 		capacity: 0,
 		len: 0,
 	}
@@ -127,7 +127,9 @@ DropTest create_drop_test(int num) {
 	}
 }
 
-void temp_drop_test(DropTest& test) {}
+void temp_drop_test(DropTest& test) {
+	printf(c"temp_drop_test(DropTest&) called\n");
+}
 
 void drop_test() {
 	printf(c"\nEntering drop_test\n\n");
@@ -167,7 +169,7 @@ int main() {
 
 	submodule_test::bar();
 
-	//Vector<float> mut a = vec<float>();
+	Vector<float> mut a = vec<float>();
 	//a.push(12.0f);
 
 	int i;
