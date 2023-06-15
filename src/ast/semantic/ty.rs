@@ -140,27 +140,29 @@ pub fn resolve_interface_types(interface: &ModuleInterface) -> ComuneResult<()> 
 
 		for (fn_name, fns) in &im.functions {
 			for func in fns {
+				// Add impl's generics to function prototype
+				{
+					let FnPrototype {
+						generics: fn_generics,
+						path,
+						..
+					} = &mut *func.write().unwrap();
+
+					path.qualifier = trait_qualif.clone();
+
+					for (i, param) in generics.iter().enumerate() {
+						fn_generics.insert(i, param.clone());
+					}
+				}
+				
+				resolve_function_prototype(&mut *func.write().unwrap(), interface)?;
+
 				let FnPrototype {
 					ret,
 					params,
-					generics: fn_generics,
-					path,
-					attributes: _,
-				} = &mut *func.write().unwrap();
+					..
+				} = &*func.read().unwrap();
 
-				path.qualifier = trait_qualif.clone();
-
-				for (i, param) in generics.iter().enumerate() {
-					fn_generics.insert(i, param.clone());
-				}
-
-				resolve_type(&mut ret.1, interface, &fn_generics)?;
-				check_dst_indirection(&ret.1, &BindingProps::default())?;
-
-				for (param, _, props) in &mut params.params {
-					resolve_type(param, interface, &fn_generics)?;
-					check_dst_indirection(&param, &props)?;
-				}
 
 				if let Some(tr) = &resolved_trait {
 					// Check if the function signature matches a declaration in the trait
@@ -345,7 +347,7 @@ pub fn resolve_type(
 
 pub fn resolve_type_def(
 	ty: &mut TypeDef,
-	namespace: &ModuleInterface,
+	interface: &ModuleInterface,
 	base_generics: &Generics,
 ) -> ComuneResult<()> {
 	let mut generics = base_generics.clone();
@@ -353,12 +355,20 @@ pub fn resolve_type_def(
 
 	for (_, types) in &mut ty.variants {
 		for ty in types {
-			resolve_type(ty, namespace, base_generics)?;
+			resolve_type(ty, interface, base_generics)?;
 		}
 	}
 
 	for (_, ty, _) in &mut ty.members {
-		resolve_type(ty, namespace, &generics)?;
+		resolve_type(ty, interface, &generics)?;
+	}
+
+	if let Some(drop) = &ty.drop {
+		resolve_function_prototype(&mut *drop.write().unwrap(), interface)?;
+	}
+
+	for init in &ty.init {
+		resolve_function_prototype(&mut *init.write().unwrap(), interface)?;
 	}
 
 	if let Some(layout) = get_attribute(&ty.attributes, "layout") {
@@ -397,6 +407,27 @@ pub fn resolve_type_def(
 		}
 	}
 
+	Ok(())
+}
+
+pub fn resolve_function_prototype(
+	func: &mut FnPrototype,
+	interface: &ModuleInterface
+) -> ComuneResult<()> {
+	let FnPrototype {
+		ret,
+		params,
+		generics,
+		..
+	} = func;
+
+	resolve_type(&mut ret.1, interface, generics)?;
+	check_dst_indirection(&ret.1, &BindingProps::default())?;
+
+	for (param, _, props) in &mut params.params {
+		resolve_type(param, interface, generics)?;
+		check_dst_indirection(param, props)?;
+	}
 	Ok(())
 }
 

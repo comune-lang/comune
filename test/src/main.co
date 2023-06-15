@@ -116,6 +116,15 @@ struct DropTest {
 		printf(c"DropTest no. %i dropped\n", self.num);
 		free(self.allocation as void mut*)
 	}
+
+	new(new& self, int num) {
+		printf(c"DropTest no. %i created!\n", num);
+
+		self = new DropTest {
+			num: num,
+			allocation: malloc(4) as int mut*,
+		}
+	}
 }
 
 // Still need to finish implementing constructors lol

@@ -267,7 +267,7 @@ impl<'ctx> Parser {
 								self.consume(&Token::Other(':'))?;
 							}
 
-							Token::Keyword(k @ ("init" | "drop")) => {
+							Token::Keyword(k @ ("new" | "drop")) => {
 								self.get_next()?;
 
 								let mut generics = def_write.params.clone();
@@ -296,7 +296,7 @@ impl<'ctx> Parser {
 									.push((func.clone(), ModuleASTElem::Unparsed(ast)));
 
 								match k {
-									"init" => {
+									"new" => {
 										def_write.init.push(func);
 									}
 
