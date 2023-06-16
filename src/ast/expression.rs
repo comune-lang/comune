@@ -11,7 +11,7 @@ use super::{
 	controlflow::ControlFlow,
 	module::{Identifier, Name},
 	statement::Stmt,
-	types::{Basic, FnPrototype, Type, TypeDef}, FnScope,
+	types::{Basic, FnPrototype, Type, TypeDef},
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -281,6 +281,12 @@ impl Display for Operator {
 pub struct NodeData {
 	pub ty: Option<Type>,
 	pub tk: SrcSpan,
+}
+
+impl NodeData {
+	pub fn new() -> Self {
+		NodeData { ty: None, tk: SrcSpan::new() }
+	}
 }
 
 // Expression node

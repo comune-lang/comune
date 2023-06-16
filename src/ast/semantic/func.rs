@@ -1,4 +1,4 @@
-use std::cmp::Ordering;
+use std::{cmp::Ordering, sync::{RwLock, Arc}};
 
 use crate::{
 	ast::{
@@ -10,7 +10,7 @@ use crate::{
 		FnScope,
 	},
 	errors::{ComuneErrCode, ComuneError},
-	parser::ComuneResult,
+	parser::ComuneResult, lexer::SrcSpan,
 };
 
 pub fn validate_function_body(
@@ -151,11 +151,11 @@ pub fn validate_fn_call(
 		}
 
 		loop {
-			if let Some((name, ModuleItemInterface::Functions(fns))) =
+			if let Some((_, ModuleItemInterface::Functions(fns))) =
 				scope.context.get_item(&name_unwrap)
 			{
 				for func in fns.iter() {
-					candidates.push((name.clone(), func));
+					candidates.push(func.clone());
 				}
 			}
 
@@ -181,52 +181,23 @@ pub fn validate_fn_call(
 
 	let mut candidates: Vec<_> = candidates
 		.into_iter()
-		.filter(|(_, func)| is_candidate_viable(args, type_args, &*func.read().unwrap()))
+		.filter(|func| is_candidate_viable(args, type_args, &*func.read().unwrap()))
 		.collect();
 
-	let (selected_name, selected_candidate) = match candidates.len() {
-		0 => {
-			return Err(ComuneError::new(
-				ComuneErrCode::NoCandidateFound {
-					args: args.iter().map(|arg| arg.get_type().clone()).collect(),
-					type_args: type_args.clone(),
-					name: name.clone(),
-				},
-				node_data.tk,
-			))
-		} // No viable candidate
-
-		1 => candidates[0].clone(),
-
-		// More than one viable candidate
-		_ => {
-			// Sort candidates by cost
-			candidates.sort_unstable_by(|(_, l), (_, r)| {
-				candidate_compare(args, &*l.read().unwrap(), &*r.read().unwrap(), scope)
-			});
-
-			match candidate_compare(
-				args,
-				&*candidates[0].1.read().unwrap(),
-				&*candidates[1].1.read().unwrap(),
-				scope,
-			) {
-				Ordering::Less => candidates[0].clone(),
-
-				Ordering::Equal => {
-					return Err(ComuneError::new(ComuneErrCode::AmbiguousCall, node_data.tk))
-				} // Ambiguous call
-
-				_ => unreachable!(), // Not possible, just sorted it
-			}
-		}
-	};
+	let selected_candidate = try_select_candidate(
+		name,
+		args,
+		type_args,
+		&mut candidates,
+		node_data.tk,
+		scope
+	)?;
 
 	let func = &*selected_candidate.read().unwrap();
 	validate_arg_list(args, &func.params.params, type_args, scope)?;
 
 	*resolved = FnRef::Direct(selected_candidate.clone());
-	*name = selected_name;
+	*name = func.path.clone();
 
 	Ok(func.ret.1.get_concrete_type(type_args))
 }
@@ -280,11 +251,7 @@ pub fn resolve_method_call(
 		if let Some(fns) = im.functions.get(name) {
 			if receiver.fits_generic(ty) {
 				for func in fns {
-					candidates.push((
-						ty.clone(),
-						Identifier::from_parent(&im.canonical_root, name.clone()),
-						func.clone(),
-					));
+					candidates.push(func.clone());
 				}
 			}
 		}
@@ -292,59 +259,78 @@ pub fn resolve_method_call(
 
 	let mut candidates: Vec<_> = candidates
 		.into_iter()
-		.filter(|(_, _, func)| is_candidate_viable(args, type_args, &*func.read().unwrap()))
+		.filter(|func| is_candidate_viable(args, type_args, &*func.read().unwrap()))
 		.collect();
 
-	let (_, selected_name, selected_candidate) = match candidates.len() {
-		0 => {
-			return Err(ComuneError::new(
-				ComuneErrCode::NoCandidateFound {
-					args: args.iter().map(|arg| arg.get_type().clone()).collect(),
-					type_args: type_args.clone(),
-					name: name.clone(),
-				},
-				lhs.get_node_data().tk,
-			))
-		}
-
-		1 => candidates[0].clone(),
-
-		// More than one viable candidate
-		_ => {
-			// Sort candidates by cost
-			candidates.sort_unstable_by(|(_, _, l), (_, _, r)| {
-				candidate_compare(args, &*l.read().unwrap(), &*r.read().unwrap(), scope)
-			});
-
-			// Compare the top two candidates
-			match candidate_compare(
-				args,
-				&*candidates[0].2.read().unwrap(),
-				&*candidates[1].2.read().unwrap(),
-				scope,
-			) {
-				Ordering::Less => candidates[0].clone(),
-
-				Ordering::Equal => {
-					return Err(ComuneError::new(
-						ComuneErrCode::AmbiguousCall,
-						lhs.get_node_data().tk,
-					))
-				} // Ambiguous call
-
-				_ => unreachable!(), // Not possible
-			}
-		}
-	};
+	let selected_candidate = try_select_candidate(
+		name,
+		args,
+		type_args,
+		&mut candidates,
+		lhs.get_node_data().tk,
+		scope
+	)?;
 
 	let func = &*selected_candidate.read().unwrap();
 
 	validate_arg_list(args, &func.params.params, type_args, scope)?;
 
 	*resolved = FnRef::Direct(selected_candidate.clone());
-	*name = selected_name;
+	*name = func.path.clone();
 
 	Ok(func.ret.1.get_concrete_type(&type_args))
+}
+
+pub fn try_select_candidate(
+	name: &Identifier,
+	args: &[Expr],
+	generic_args: &Vec<Type>,
+	candidates: &mut [Arc<RwLock<FnPrototype>>],
+	span: SrcSpan,
+	scope: &FnScope,
+
+) -> ComuneResult<Arc<RwLock<FnPrototype>>> {
+	match candidates.len() {
+		0 => {
+			Err(ComuneError::new(
+				ComuneErrCode::NoCandidateFound {
+					args: args.iter().map(|arg| arg.get_type().clone()).collect(),
+					type_args: generic_args.clone(),
+					name: name.clone(),
+				},
+				span,
+			))
+		}
+
+		1 => Ok(candidates[0].clone()),
+
+		// More than one viable candidate
+		_ => {
+			// Sort candidates by cost
+			candidates.sort_unstable_by(|l, r| {
+				candidate_compare(args, &*l.read().unwrap(), &*r.read().unwrap(), scope)
+			});
+
+			// Compare the top two candidates
+			match candidate_compare(
+				args,
+				&*candidates[0].read().unwrap(),
+				&*candidates[1].read().unwrap(),
+				scope,
+			) {
+				Ordering::Less => Ok(candidates[0].clone()),
+
+				Ordering::Equal => {
+					Err(ComuneError::new(
+						ComuneErrCode::AmbiguousCall,
+						span,
+					))
+				} // Ambiguous call
+
+				_ => unreachable!(), // Not possible
+			}
+		}
+	}
 }
 
 pub fn is_candidate_viable(args: &Vec<Expr>, type_args: &Vec<Type>, func: &FnPrototype) -> bool {

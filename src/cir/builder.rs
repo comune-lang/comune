@@ -635,19 +635,19 @@ impl CIRModuleBuilder {
 						args: generic_args.clone(),
 					};
 
-					let location = if let Some(placement) = placement {
-						self.generate_lvalue_expr(&placement)?
-					} else {
-						self.insert_temporary(
-							ty.clone(),
-							RValue::Atom(ty.clone(), None, Operand::Undef, SrcSpan::new()),
-							SrcSpan::new(),
-						)
-					};
-
 					match kind {
 						XtorKind::Literal { fields } => {
 							// Literal constructor, like `new Type { field: expr, }`
+
+							let location = if let Some(placement) = placement {
+								self.generate_lvalue_expr(&placement)?
+							} else {
+								self.insert_temporary(
+									ty.clone(),
+									RValue::Atom(ty.clone(), None, Operand::Undef, SrcSpan::new()),
+									SrcSpan::new(),
+								)
+							};
 
 							let mut indices = vec![];
 
@@ -688,7 +688,13 @@ impl CIRModuleBuilder {
 							}
 						}
 
-						_ => todo!(),
+						XtorKind::Constructor { args, resolved } => {
+							if placement.is_some() {
+								self.generate_fn_call(args, generic_args, resolved, span)
+							} else {
+								panic!("non-placement constructor call must be desugared!")
+							}
+						}
 					}
 				}
 
@@ -1224,7 +1230,7 @@ impl CIRModuleBuilder {
 
 						Operator::Assign => {
 							let lval_ir = self.generate_lvalue_expr(lhs)?;
-							let rval_ir = self.generate_expr(rhs, BindingProps::default())?;
+							let rval_ir = self.generate_expr(rhs, BindingProps::value())?;
 							let r_ty = rhs.get_type();
 
 							let r_tmp = self.get_as_operand(r_ty, rval_ir, rhs.get_span());
@@ -1273,7 +1279,7 @@ impl CIRModuleBuilder {
 
 	fn generate_fn_call(
 		&mut self,
-		args: &Vec<Expr>,
+		args: &[Expr],
 		generic_args: &Vec<Type>,
 		resolved: &FnRef,
 		span: SrcSpan,
@@ -1285,10 +1291,10 @@ impl CIRModuleBuilder {
 				let (ret_props, ret) = resolved.ret.clone();
 				let ret = ret.get_concrete_type(generic_args);
 				
-				let result = if ret.is_void() {
-					None
-				} else {
+				let result = if !ret.is_void_or_never() {
 					Some(self.insert_variable(None, ret_props, ret.clone()))
+				} else {
+					None
 				};
 
 				self.scope_stack.push(CIRBuilderScope { 
@@ -1298,7 +1304,7 @@ impl CIRModuleBuilder {
 					variables: vec![], 
 					is_loop: false 
 				});
-
+				
 				let cir_args: Vec<_> = args
 					.iter()
 					.enumerate()
@@ -1341,7 +1347,7 @@ impl CIRModuleBuilder {
 				let id = self.get_prototype(&*resolved);
 
 				self.write(CIRStmt::Call {
-					id: CIRCallId::Direct(id, SrcSpan::new()),
+					id: CIRCallId::Direct(id, span),
 					args: cir_args.clone(),
 					generic_args: generic_args.clone(),
 					result: result.clone(),

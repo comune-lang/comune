@@ -6,15 +6,15 @@ use crate::{
 		controlflow::ControlFlow,
 		expression::{Atom, Expr, FnRef, NodeData, Operator, XtorKind},
 		pattern::Binding,
-		types::{Basic, TupleKind},
-		FnScope,
+		types::{Basic, TupleKind, BindingProps},
+		FnScope, module::{Identifier, Name}, statement::Stmt,
 	},
 	constexpr::{ConstExpr, ConstValue},
 	errors::{ComuneErrCode, ComuneError},
-	parser::ComuneResult,
+	parser::ComuneResult, lexer::SrcSpan,
 };
 
-use super::func::{resolve_method_call, validate_fn_call};
+use super::func::{resolve_method_call, validate_fn_call, self};
 
 impl Expr {
 	pub fn create_cast(expr: Expr, to: Type, meta: NodeData) -> Expr {
@@ -390,68 +390,144 @@ impl Atom {
 
 			Atom::Constructor {
 				def: def_weak,
-				kind: XtorKind::Literal { fields },
+				kind,
 				generic_args,
 				placement,
 			} => {
 				let def = def_weak.upgrade().unwrap();
 				let def = def.read().unwrap();
 
-				for (name, expr) in fields.iter_mut() {
-					let member_ty = if let Some((_, ty)) = def.get_member(name, Some(generic_args))
-					{
-						ty
-					} else {
-						// Invalid member in strenum literal
-						todo!()
-					};
-
-					expr.get_node_data_mut().ty.replace(member_ty.clone());
-					let expr_ty = expr.validate(scope)?;
-
-					if !expr.coercable_to(&expr_ty, &member_ty, scope) {
-						return Err(ComuneError::new(
-							ComuneErrCode::AssignTypeMismatch {
-								expr: expr_ty,
-								to: member_ty,
-							},
-							expr.get_node_data().tk,
-						));
-					}
-				}
-				let mut missing_members = vec![];
-
-				for (member, ..) in &def.members {
-					if !fields.iter().any(|(m, _)| member == m) {
-						missing_members.push(member.clone());
-					}
-				}
-
 				let ty = Type::TypeRef {
 					def: def_weak.clone(),
 					args: generic_args.clone(),
 				};
 
-				if !missing_members.is_empty() {
-					return Err(ComuneError::new(
-						ComuneErrCode::MissingInitializers {
-							ty: ty.clone(),
-							members: missing_members,
-						},
-						meta.tk,
-					));
-				}
-
 				if let Some(placement) = placement {
 					// If this is a placement-new expression, check if the
 					// location exists and matches our type.
-					let place_ty = placement.validate(scope)?;
+					placement.validate(scope)?;
+				}
 
-					if !ty.is_subtype_of(&place_ty) {
+				match kind {
+					XtorKind::Literal { fields } => {
+						// Constructor literal
+
+						for (name, expr) in fields.iter_mut() {
+							let Some((_, member_ty)) = def.get_member(name, Some(generic_args)) else {
+								// Invalid member in strenum literal
+								todo!()
+							};
+
+							expr.get_node_data_mut().ty.replace(member_ty.clone());
+
+							let expr_ty = expr.validate(scope)?;
+
+							if !expr.coercable_to(&expr_ty, &member_ty, scope) {
+								return Err(ComuneError::new(
+									ComuneErrCode::AssignTypeMismatch {
+										expr: expr_ty,
+										to: member_ty,
+									},
+									expr.get_node_data().tk,
+								));
+							}
+						}
+
+						let mut missing_members = vec![];
+
+						for (member, ..) in &def.members {
+							if !fields.iter().any(|(m, _)| member == m) {
+								missing_members.push(member.clone());
+							}
+						}
+
+						if !missing_members.is_empty() {
+							return Err(ComuneError::new(
+								ComuneErrCode::MissingInitializers {
+									ty: ty.clone(),
+									members: missing_members,
+								},
+								meta.tk,
+							));
+						}
+					}
+
+					XtorKind::Constructor { args, resolved } => {
+						if placement.is_none() {
+							// Desugar `x = new T()` into `x = { T _tmp; new (_tmp) T(args); _tmp }`
+							
+							let tmp_id: Name = "_tmp".into();
+
+							let block = Atom::Block { 
+								items: vec![
+									// T tmp;
+									Stmt::Decl(vec![(ty.clone(), tmp_id.clone(), BindingProps::mut_value())], None, SrcSpan::new()),
+									// new (tmp) T(args);
+									Stmt::Expr(Expr::Atom(Atom::Constructor { 
+										def: def_weak.clone(), 
+										generic_args: std::mem::take(generic_args),
+										kind: std::mem::replace(kind, XtorKind::Literal { fields: vec![] }),
+										placement: Some(Box::new(
+											Expr::Atom(
+												Atom::Identifier(Identifier::from_name(tmp_id.clone(), false)), 
+												NodeData::new()
+											)
+										))
+									}, NodeData::new()))
+								], 
+								
+								result: Some(Box::new(
+									Expr::Atom(
+										Atom::Identifier(Identifier::from_name(tmp_id.clone(), false)), 
+										NodeData::new()
+									)
+								)),
+
+								is_unsafe: false
+							};
+
+							*self = block;
+							return self.validate(scope, meta);
+						}
+
+						// Constructor call
+
+						for arg in args.iter_mut() {
+							arg.validate(scope)?;
+						}
+
+						let Some(placement) = placement else {
+							panic!()
+						};
+						
+						args.insert(0, *placement.clone());
+
+						let mut candidates: Vec<_> = def
+								.init
+								.iter()
+								.filter(|init| func::is_candidate_viable(args, &generic_args, &*init.read().unwrap()))
+								.cloned()
+								.collect();
+
+						let func = func::try_select_candidate(
+							&def.name, 
+							args, 
+							generic_args, 
+							&mut candidates, 
+							meta.tk, 
+							scope
+						)?;
+
+						*resolved = FnRef::Direct(func);
+					} 
+				}
+
+				if let Some(placement) = placement {
+					if !ty.is_subtype_of(placement.get_type()) {
 						return Err(ComuneError::new(
 							ComuneErrCode::AssignTypeMismatch {
 								expr: ty,
-								to: place_ty,
+								to: placement.get_type().clone(),
 							},
 							meta.tk,
 						));
@@ -464,10 +540,6 @@ impl Atom {
 					// Not a placement-new expr, just return the type
 					Ok(ty)
 				}
-			}
-
-			Atom::Constructor { .. } => {
-				todo!()
 			}
 
 			Atom::Drop(dropped) => {

@@ -137,6 +137,8 @@ pub enum ComuneErrCode {
 	DSTWithoutIndirection,
 	TraitFunctionMismatch,
 	MissingTraitFuncImpl(String),
+	CtorSelfParam(Identifier),
+	DtorSelfParam(Identifier),
 
 	// Resolution errors
 	ModuleNotFound(OsString),
@@ -270,6 +272,9 @@ impl Display for ComuneErrCode {
 
 				Ok(())
 			}
+
+			ComuneErrCode::CtorSelfParam(id) => write!(f, "constructor of `{id}` must take a `new& self` parameter"),
+			ComuneErrCode::DtorSelfParam(id) => write!(f, "destructor of `{id}` must take a `mut& self` parameter"),
 
 			ComuneErrCode::UnresolvedTrait(tr) => write!(f, "failed to resolve trait `{tr}`"),
 			ComuneErrCode::UninitReference => {

@@ -49,7 +49,7 @@ pub fn resolve_interface_types(interface: &ModuleInterface) -> ComuneResult<()> 
 			}
 
 			ModuleItemInterface::Type(t) => {
-				resolve_type_def(&mut t.write().unwrap(), interface, &vec![])?
+				resolve_type_def(t.clone(), interface, &vec![])?
 			}
 
 			ModuleItemInterface::TypeAlias(ty) => {
@@ -346,11 +346,13 @@ pub fn resolve_type(
 }
 
 pub fn resolve_type_def(
-	ty: &mut TypeDef,
+	ty_lock: Arc<RwLock<TypeDef>>,
 	interface: &ModuleInterface,
 	base_generics: &Generics,
 ) -> ComuneResult<()> {
+	let mut ty = ty_lock.write().unwrap();
 	let mut generics = base_generics.clone();
+
 	generics.extend(ty.params.clone());
 
 	for (_, types) in &mut ty.variants {
@@ -363,12 +365,48 @@ pub fn resolve_type_def(
 		resolve_type(ty, interface, &generics)?;
 	}
 
+	// This part is ugly as hell. sorry
+	
 	if let Some(drop) = &ty.drop {
 		resolve_function_prototype(&mut *drop.write().unwrap(), interface)?;
+
+		// Check whether the first parameter exists and is `mut& self`
+		let drop = drop.read().unwrap();
+
+		let Some((Type::TypeRef { def, .. }, _, props)) = drop.params.params.get(0) else {
+			return Err(ComuneError::new(
+				ComuneErrCode::DtorSelfParam(ty.name.clone()),
+				SrcSpan::new(),
+			))
+		};
+		
+		if !Arc::ptr_eq(&ty_lock, &def.upgrade().unwrap()) || !props.is_mut || !props.is_ref {
+			return Err(ComuneError::new(
+				ComuneErrCode::DtorSelfParam(ty.name.clone()),
+				SrcSpan::new(),
+			))
+		}
 	}
 
 	for init in &ty.init {
 		resolve_function_prototype(&mut *init.write().unwrap(), interface)?;
+
+		// Check whether the first parameter exists and is `new& self`
+		let init = init.read().unwrap();
+
+		let Some((Type::TypeRef { def, .. }, _, props)) = init.params.params.get(0) else {
+			return Err(ComuneError::new(
+				ComuneErrCode::CtorSelfParam(ty.name.clone()),
+				SrcSpan::new(),
+			))
+		};
+		
+		if !Arc::ptr_eq(&ty_lock, &def.upgrade().unwrap()) || !props.is_new {
+			return Err(ComuneError::new(
+				ComuneErrCode::CtorSelfParam(ty.name.clone()),
+				SrcSpan::new(),
+			))
+		}
 	}
 
 	if let Some(layout) = get_attribute(&ty.attributes, "layout") {

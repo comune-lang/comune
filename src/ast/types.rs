@@ -183,6 +183,15 @@ impl BindingProps {
 			span: SrcSpan::new(),
 		}
 	}
+
+	pub fn new_reference() -> Self {
+		BindingProps { 
+			is_ref: true, 
+			is_mut: false, 
+			is_new: true, 
+			span: SrcSpan::new()
+		}
+	}
 }
 
 impl Basic {

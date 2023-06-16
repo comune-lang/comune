@@ -143,7 +143,12 @@ void temp_drop_test(DropTest& test) {
 void drop_test() {
 	printf(c"\nEntering drop_test\n\n");
 	
-	DropTest a = new DropTest(1);
+	DropTest a = {
+		DropTest tmp;
+		new (tmp) DropTest(1);
+		tmp
+	};
+	
 	DropTest b = create_drop_test(2);
 
 	printf(c"\nEntering subscope\n\n");
