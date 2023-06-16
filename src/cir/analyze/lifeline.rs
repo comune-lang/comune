@@ -158,6 +158,8 @@ impl LiveVarCheckState {
 			self.set_liveness(lval, LivenessState::Moved);
 		}
 
+		// if the lvalue is borrowed as a `new&`, 
+		// it'll be initialized after this use. 
 		if props.is_ref && props.is_new {
 			self.set_liveness(lval, LivenessState::Live);
 		}
@@ -378,10 +380,10 @@ impl AnalysisResultHandler<DefInitFlow> for VarInitCheck {
 						}
 					}
 
-					// Check for uninitialized `new&` bindings
+					// Check for uninitialized `new&` and `mut&` bindings
 					CIRStmt::Return => {
 						for (i, (_, props, _)) in func.variables.iter().enumerate() {
-							if !props.is_new {
+							if !props.is_ref {
 								continue;
 							}
 
@@ -395,7 +397,11 @@ impl AnalysisResultHandler<DefInitFlow> for VarInitCheck {
 								Some(LivenessState::Live) => {}
 
 								_ => errors.push(ComuneError::new(
-									ComuneErrCode::UninitNewReference,
+									if props.is_new {
+										ComuneErrCode::UninitNewReference
+									} else {
+										ComuneErrCode::UninitMutReference	
+									},
 									props.span,
 								)),
 							}

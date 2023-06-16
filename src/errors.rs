@@ -131,6 +131,7 @@ pub enum ComuneErrCode {
 	UnresolvedTrait(Identifier),
 	UninitReference,
 	UninitNewReference,
+	UninitMutReference,
 	LocalNewReference,
 	LoopCtrlOutsideLoop(&'static str),
 	UnsafeOperation,
@@ -287,7 +288,13 @@ impl Display for ComuneErrCode {
 			ComuneErrCode::UninitNewReference => {
 				write!(
 					f,
-					"a new& binding must be initialized in all control flow paths"
+					"new& binding must be initialized in all control flow paths"
+				)
+			}
+			ComuneErrCode::UninitMutReference => {
+				write!(
+					f,
+					"moved-from mut& binding must be re-initialized in all control flow paths"
 				)
 			}
 			ComuneErrCode::LocalNewReference => {

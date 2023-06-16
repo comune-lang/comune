@@ -92,15 +92,6 @@ TestSumType sum_type_test(i32& value) {
 	return value;
 }
 
-// In lieu of properly working static functions
-Vector<T> vec<type T>() {
-	new Vector<T> {
-		data: bit_cast<u32, T mut*>(0),
-		capacity: 0,
-		len: 0,
-	}
-}
-
 i32& ref_return(i32 mut& in) {
 	in
 }
@@ -164,7 +155,17 @@ void drop_test() {
 }
 
 void new_ref_test(Vector<float> new& test) {
-	test = vec<float>();
+	test = new Vector<float>();
+}
+
+void mut_move_test(Vector<float> mut& test) {
+	// move out of mut& - legal, but...
+	Vector<float> tmp = test;
+
+	// we have to make sure it's initialized
+	// by the end of the function. commenting 
+	// out this line would raise a compile error 
+	test = tmp;
 }
 
 int main() {

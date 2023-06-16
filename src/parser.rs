@@ -1341,13 +1341,14 @@ impl<'ctx> Parser {
 									if self.get_current()? == Token::Other(',') {
 										self.get_next()?;
 									} else if self.get_current()? == Token::Operator(")") {
-										self.get_next()?;
 										break;
 									} else {
 										return self.err(ComuneErrCode::UnexpectedToken);
 									}
 								}
 							}
+							
+							self.get_next()?;
 
 							result = Some(Atom::Constructor {
 								def,
