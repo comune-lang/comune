@@ -127,15 +127,6 @@ struct DropTest {
 	}
 }
 
-// Still need to finish implementing constructors lol
-DropTest create_drop_test(int num) {
-	printf(c"DropTest no. %i created\n", num);
-	new DropTest {
-		num: num,
-		allocation: malloc(4) as int mut*,
-	}
-}
-
 void temp_drop_test(DropTest& test) {
 	printf(c"temp_drop_test(DropTest&) called\n");
 }
@@ -143,24 +134,19 @@ void temp_drop_test(DropTest& test) {
 void drop_test() {
 	printf(c"\nEntering drop_test\n\n");
 	
-	DropTest a = {
-		DropTest tmp;
-		new (tmp) DropTest(1);
-		tmp
-	};
-	
-	DropTest b = create_drop_test(2);
+	DropTest a = new DropTest(1);
+	DropTest b = new DropTest(2);
 
 	printf(c"\nEntering subscope\n\n");
 	{
-		DropTest c = create_drop_test(3);
+		DropTest c = new DropTest(3);
 		
 		int mut i = 0;
 		
 		printf(c"\nEntering loop\n\n");
 
 		while i < 5 {
-			DropTest b = create_drop_test(4);
+			DropTest b = new DropTest(4);
 
 			if i == 4 {
 				break
@@ -174,7 +160,7 @@ void drop_test() {
 	}
 	printf(c"\nLeft subscope\n\n");
 
-	temp_drop_test(create_drop_test(5));
+	temp_drop_test(new DropTest(5));
 }
 
 void new_ref_test(Vector<float> new& test) {

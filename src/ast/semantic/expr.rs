@@ -520,7 +520,9 @@ impl Atom {
 							panic!()
 						};
 
-						args.insert(0, *placement.clone());
+						if resolved == &FnRef::None {
+							args.insert(0, *placement.clone());
+						}
 
 						let mut candidates: Vec<_> = def
 							.init
