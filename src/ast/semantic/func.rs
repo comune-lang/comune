@@ -1,4 +1,7 @@
-use std::{cmp::Ordering, sync::{RwLock, Arc}};
+use std::{
+	cmp::Ordering,
+	sync::{Arc, RwLock},
+};
 
 use crate::{
 	ast::{
@@ -10,7 +13,8 @@ use crate::{
 		FnScope,
 	},
 	errors::{ComuneErrCode, ComuneError},
-	parser::ComuneResult, lexer::SrcSpan,
+	lexer::SrcSpan,
+	parser::ComuneResult,
 };
 
 pub fn validate_function_body(
@@ -184,14 +188,8 @@ pub fn validate_fn_call(
 		.filter(|func| is_candidate_viable(args, type_args, &*func.read().unwrap()))
 		.collect();
 
-	let selected_candidate = try_select_candidate(
-		name,
-		args,
-		type_args,
-		&mut candidates,
-		node_data.tk,
-		scope
-	)?;
+	let selected_candidate =
+		try_select_candidate(name, args, type_args, &mut candidates, node_data.tk, scope)?;
 
 	let func = &*selected_candidate.read().unwrap();
 	validate_arg_list(args, &func.params.params, type_args, scope)?;
@@ -268,7 +266,7 @@ pub fn resolve_method_call(
 		type_args,
 		&mut candidates,
 		lhs.get_node_data().tk,
-		scope
+		scope,
 	)?;
 
 	let func = &*selected_candidate.read().unwrap();
@@ -288,19 +286,16 @@ pub fn try_select_candidate(
 	candidates: &mut [Arc<RwLock<FnPrototype>>],
 	span: SrcSpan,
 	scope: &FnScope,
-
 ) -> ComuneResult<Arc<RwLock<FnPrototype>>> {
 	match candidates.len() {
-		0 => {
-			Err(ComuneError::new(
-				ComuneErrCode::NoCandidateFound {
-					args: args.iter().map(|arg| arg.get_type().clone()).collect(),
-					type_args: generic_args.clone(),
-					name: name.clone(),
-				},
-				span,
-			))
-		}
+		0 => Err(ComuneError::new(
+			ComuneErrCode::NoCandidateFound {
+				args: args.iter().map(|arg| arg.get_type().clone()).collect(),
+				type_args: generic_args.clone(),
+				name: name.clone(),
+			},
+			span,
+		)),
 
 		1 => Ok(candidates[0].clone()),
 
@@ -320,12 +315,7 @@ pub fn try_select_candidate(
 			) {
 				Ordering::Less => Ok(candidates[0].clone()),
 
-				Ordering::Equal => {
-					Err(ComuneError::new(
-						ComuneErrCode::AmbiguousCall,
-						span,
-					))
-				} // Ambiguous call
+				Ordering::Equal => Err(ComuneError::new(ComuneErrCode::AmbiguousCall, span)), // Ambiguous call
 
 				_ => unreachable!(), // Not possible
 			}

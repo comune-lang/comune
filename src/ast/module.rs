@@ -95,7 +95,10 @@ impl ModuleInterface {
 		ModuleInterface {
 			path,
 			children: HashMap::new(),
-			import_names: HashSet::from([ModuleImportKind::Language("core".into()), ModuleImportKind::Language("std".into())]),
+			import_names: HashSet::from([
+				ModuleImportKind::Language("core".into()),
+				ModuleImportKind::Language("std".into()),
+			]),
 			imported: HashMap::new(),
 			impl_solver: ImplSolver::new(),
 			is_typed: false,

@@ -5,16 +5,19 @@ use crate::{
 	ast::{
 		controlflow::ControlFlow,
 		expression::{Atom, Expr, FnRef, NodeData, Operator, XtorKind},
+		module::{Identifier, Name},
 		pattern::Binding,
-		types::{Basic, TupleKind, BindingProps},
-		FnScope, module::{Identifier, Name}, statement::Stmt,
+		statement::Stmt,
+		types::{Basic, BindingProps, TupleKind},
+		FnScope,
 	},
 	constexpr::{ConstExpr, ConstValue},
 	errors::{ComuneErrCode, ComuneError},
-	parser::ComuneResult, lexer::SrcSpan,
+	lexer::SrcSpan,
+	parser::ComuneResult,
 };
 
-use super::func::{resolve_method_call, validate_fn_call, self};
+use super::func::{self, resolve_method_call, validate_fn_call};
 
 impl Expr {
 	pub fn create_cast(expr: Expr, to: Type, meta: NodeData) -> Expr {
@@ -188,7 +191,11 @@ impl Expr {
 					Atom::BoolLit(_) => target.is_boolean(),
 
 					Atom::CStringLit(_) => {
-						if let Type::Pointer { pointee: other_p, mutable: false } = &target {
+						if let Type::Pointer {
+							pointee: other_p,
+							mutable: false,
+						} = &target
+						{
 							if **other_p == Type::i8_type(false) {
 								return true;
 							}
@@ -455,35 +462,48 @@ impl Atom {
 					XtorKind::Constructor { args, resolved } => {
 						if placement.is_none() {
 							// Desugar `x = new T()` into `x = { T _tmp; new (_tmp) T(args); _tmp }`
-							
+
 							let tmp_id: Name = "_tmp".into();
 
-							let block = Atom::Block { 
+							let block = Atom::Block {
 								items: vec![
 									// T tmp;
-									Stmt::Decl(vec![(ty.clone(), tmp_id.clone(), BindingProps::mut_value())], None, SrcSpan::new()),
+									Stmt::Decl(
+										vec![(
+											ty.clone(),
+											tmp_id.clone(),
+											BindingProps::mut_value(),
+										)],
+										None,
+										SrcSpan::new(),
+									),
 									// new (tmp) T(args);
-									Stmt::Expr(Expr::Atom(Atom::Constructor { 
-										def: def_weak.clone(), 
-										generic_args: std::mem::take(generic_args),
-										kind: std::mem::replace(kind, XtorKind::Literal { fields: vec![] }),
-										placement: Some(Box::new(
-											Expr::Atom(
-												Atom::Identifier(Identifier::from_name(tmp_id.clone(), false)), 
-												NodeData::new()
-											)
-										))
-									}, NodeData::new()))
-								], 
-								
-								result: Some(Box::new(
-									Expr::Atom(
-										Atom::Identifier(Identifier::from_name(tmp_id.clone(), false)), 
-										NodeData::new()
-									)
-								)),
+									Stmt::Expr(Expr::Atom(
+										Atom::Constructor {
+											def: def_weak.clone(),
+											generic_args: std::mem::take(generic_args),
+											kind: std::mem::replace(
+												kind,
+												XtorKind::Literal { fields: vec![] },
+											),
+											placement: Some(Box::new(Expr::Atom(
+												Atom::Identifier(Identifier::from_name(
+													tmp_id.clone(),
+													false,
+												)),
+												NodeData::new(),
+											))),
+										},
+										NodeData::new(),
+									)),
+								],
 
-								is_unsafe: false
+								result: Some(Box::new(Expr::Atom(
+									Atom::Identifier(Identifier::from_name(tmp_id.clone(), false)),
+									NodeData::new(),
+								))),
+
+								is_unsafe: false,
 							};
 
 							*self = block;
@@ -499,27 +519,33 @@ impl Atom {
 						let Some(placement) = placement else {
 							panic!()
 						};
-						
+
 						args.insert(0, *placement.clone());
 
 						let mut candidates: Vec<_> = def
-								.init
-								.iter()
-								.filter(|init| func::is_candidate_viable(args, &generic_args, &*init.read().unwrap()))
-								.cloned()
-								.collect();
+							.init
+							.iter()
+							.filter(|init| {
+								func::is_candidate_viable(
+									args,
+									&generic_args,
+									&*init.read().unwrap(),
+								)
+							})
+							.cloned()
+							.collect();
 
 						let func = func::try_select_candidate(
-							&def.name, 
-							args, 
-							generic_args, 
-							&mut candidates, 
-							meta.tk, 
-							scope
+							&def.name,
+							args,
+							generic_args,
+							&mut candidates,
+							meta.tk,
+							scope,
 						)?;
 
 						*resolved = FnRef::Direct(func);
-					} 
+					}
 				}
 
 				if let Some(placement) = placement {

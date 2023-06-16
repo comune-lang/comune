@@ -68,7 +68,7 @@ impl Eq for TraitRef {}
 impl Hash for TraitRef {
 	fn hash<H: Hasher>(&self, state: &mut H) {
 		ptr::hash(self.def.upgrade().unwrap().as_ref(), state);
-		
+
 		self.name.hash(state);
 
 		for arg in &self.args {
@@ -98,9 +98,7 @@ pub struct ImplDatabase {
 
 impl ImplDatabase {
 	fn new() -> Self {
-		ImplDatabase { 
-			impls: vec![],
-		}
+		ImplDatabase { impls: vec![] }
 	}
 }
 

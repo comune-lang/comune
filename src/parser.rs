@@ -851,18 +851,18 @@ impl<'ctx> Parser {
 		if self.get_current()? == Token::Keyword("new") {
 			props.is_new = true;
 			props.is_ref = true;
-			
+
 			self.get_next()?;
 			self.consume(&Token::Operator("&"))?;
-			
+
 			return Ok(Some(props));
 		}
-		
+
 		if self.get_current()? == Token::Keyword("mut") {
 			props.is_mut = true;
 			self.get_next()?;
 		}
-		
+
 		if self.get_current()? == Token::Operator("&") {
 			props.is_ref = true;
 			self.get_next()?;
@@ -1329,7 +1329,6 @@ impl<'ctx> Parser {
 								kind: XtorKind::Literal { fields: inits },
 								placement,
 							});
-
 						} else if self.get_current()? == Token::Operator("(") {
 							// Parse constructor call
 
@@ -1338,7 +1337,7 @@ impl<'ctx> Parser {
 							if self.get_next()? != Token::Operator(")") {
 								loop {
 									args.push(self.parse_expression(scope)?);
-			
+
 									if self.get_current()? == Token::Other(',') {
 										self.get_next()?;
 									} else if self.get_current()? == Token::Operator(")") {
@@ -1350,11 +1349,14 @@ impl<'ctx> Parser {
 								}
 							}
 
-							result = Some(Atom::Constructor { 
+							result = Some(Atom::Constructor {
 								def,
-								generic_args, 
-								kind: XtorKind::Constructor { args, resolved: FnRef::None }, 
-								placement 
+								generic_args,
+								kind: XtorKind::Constructor {
+									args,
+									resolved: FnRef::None,
+								},
+								placement,
 							});
 						} else {
 							return self.err(ComuneErrCode::UnexpectedToken);

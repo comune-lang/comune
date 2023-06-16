@@ -174,10 +174,10 @@ impl CIRModuleBuilder {
 			}
 		}
 
-		self.scope_stack.push(CIRBuilderScope { 
-			start: 0, 
-			end: None, 
-			label: None, 
+		self.scope_stack.push(CIRBuilderScope {
+			start: 0,
+			end: None,
+			label: None,
 			variables: params_map,
 			is_loop: false,
 		});
@@ -230,7 +230,7 @@ impl CIRModuleBuilder {
 		}
 
 		func.is_extern = false;
-		
+
 		self.module
 			.functions
 			.insert(proto, self.current_fn.take().unwrap());
@@ -369,8 +369,12 @@ impl CIRModuleBuilder {
 		self.get_fn_mut()
 			.variables
 			.push((ty.clone(), props, Some(name.clone())));
-		
-		self.scope_stack.last_mut().unwrap().variables.push((Some(name), idx));
+
+		self.scope_stack
+			.last_mut()
+			.unwrap()
+			.variables
+			.push((Some(name), idx));
 
 		let lval = LValue {
 			local: self.get_fn().variables.len() - 1,
@@ -413,7 +417,7 @@ impl CIRModuleBuilder {
 			end: None,
 			label: None,
 			variables: vec![],
-			is_loop: false
+			is_loop: false,
 		});
 
 		for item in items {
@@ -431,10 +435,10 @@ impl CIRModuleBuilder {
 				self.scope_stack.pop();
 				return (jump_idx, None);
 			};
-			
+
 			if let Some(result_location) = result_location {
 				self.write(CIRStmt::Assignment(result_location.clone(), result_ir));
-				
+
 				self.generate_scope_end();
 
 				(
@@ -466,7 +470,7 @@ impl CIRModuleBuilder {
 
 	fn generate_scope_end(&mut self) {
 		let scope = self.scope_stack.pop().unwrap();
-		
+
 		for (_, var) in scope.variables.into_iter().rev() {
 			if self.needs_drop(var) {
 				self.generate_drop_shim(self.get_local_lvalue(var));
@@ -933,10 +937,9 @@ impl CIRModuleBuilder {
 
 						// Iterate backwards through scope stack to find loop scope
 						for i in (0..self.scope_stack.len()).rev() {
-							
 							// Generate drop shims for variables inside loop
 							let scope_names = self.scope_stack[i].variables.clone();
-							
+
 							for (_, var) in scope_names.into_iter().rev() {
 								if self.needs_drop(var) {
 									self.generate_drop_shim(self.get_local_lvalue(var));
@@ -944,15 +947,15 @@ impl CIRModuleBuilder {
 							}
 
 							if !self.scope_stack[i].is_loop {
-								continue
+								continue;
 							}
 
-							if is_break {								
+							if is_break {
 								let Some(end) = self.scope_stack[i].end else {
 									panic!();
 								};
 
-								self.write(CIRStmt::Jump(end));	
+								self.write(CIRStmt::Jump(end));
 							} else {
 								self.write(CIRStmt::Jump(self.scope_stack[i].start));
 							}
@@ -967,8 +970,7 @@ impl CIRModuleBuilder {
 						scrutinee,
 						branches,
 					} => {
-						let scrutinee_ir =
-							self.generate_expr(scrutinee, BindingProps::value())?;
+						let scrutinee_ir = self.generate_expr(scrutinee, BindingProps::value())?;
 						let scrutinee_ty = scrutinee.get_type();
 						let scrutinee_lval = self.insert_temporary(
 							scrutinee_ty.clone(),
@@ -1290,21 +1292,21 @@ impl CIRModuleBuilder {
 
 				let (ret_props, ret) = resolved.ret.clone();
 				let ret = ret.get_concrete_type(generic_args);
-				
+
 				let result = if !ret.is_void_or_never() {
 					Some(self.insert_variable(None, ret_props, ret.clone()))
 				} else {
 					None
 				};
 
-				self.scope_stack.push(CIRBuilderScope { 
-					start: self.current_block, 
-					end: None, 
-					label: None, 
-					variables: vec![], 
-					is_loop: false 
+				self.scope_stack.push(CIRBuilderScope {
+					start: self.current_block,
+					end: None,
+					label: None,
+					variables: vec![],
+					is_loop: false,
 				});
-				
+
 				let cir_args: Vec<_> = args
 					.iter()
 					.enumerate()
@@ -1319,8 +1321,7 @@ impl CIRModuleBuilder {
 
 						let cir_expr = self.generate_expr(arg, props)?;
 
-						if let RValue::Atom(ty, None, Operand::LValueUse(lval, _), _) = cir_expr
-						{
+						if let RValue::Atom(ty, None, Operand::LValueUse(lval, _), _) = cir_expr {
 							Some((lval, ty, props))
 						} else {
 							let temp = self.insert_temporary(
@@ -1329,11 +1330,7 @@ impl CIRModuleBuilder {
 								arg.get_span(),
 							);
 
-							Some((
-								temp,
-								arg.get_type().clone(),
-								props,
-							))
+							Some((temp, arg.get_type().clone(), props))
 						}
 					})
 					.collect();
@@ -1641,7 +1638,12 @@ impl CIRModuleBuilder {
 
 	fn get_var_index(&self, name: &Name) -> Option<VarIndex> {
 		for stack_frame in self.scope_stack.iter().rev() {
-			if let Some((_, idx)) = stack_frame.variables.iter().rev().find(|(n, _)| n.as_ref() == Some(name)) {
+			if let Some((_, idx)) = stack_frame
+				.variables
+				.iter()
+				.rev()
+				.find(|(n, _)| n.as_ref() == Some(name))
+			{
 				return Some(*idx);
 			}
 		}
@@ -1660,11 +1662,11 @@ impl CIRModuleBuilder {
 		let idx = self.get_fn().variables.len();
 
 		//if let Some(name) = &name {
-			self.scope_stack
-				.last_mut()
-				.unwrap()
-				.variables
-				.push((name.clone(), idx));
+		self.scope_stack
+			.last_mut()
+			.unwrap()
+			.variables
+			.push((name.clone(), idx));
 		//}
 
 		self.get_fn_mut().variables.push((ty, props, name));
@@ -1698,7 +1700,11 @@ impl CIRModuleBuilder {
 		let local = self.get_fn().variables.len();
 
 		self.get_fn_mut().variables.push((ty, props, None));
-		self.scope_stack.last_mut().unwrap().variables.push((None, local));
+		self.scope_stack
+			.last_mut()
+			.unwrap()
+			.variables
+			.push((None, local));
 
 		let lval = LValue {
 			local,

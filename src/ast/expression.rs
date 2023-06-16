@@ -5,7 +5,11 @@ use std::{
 	sync::{Arc, RwLock, Weak},
 };
 
-use crate::{lexer::SrcSpan, parser::ComuneResult, errors::{ComuneError, ComuneErrCode}};
+use crate::{
+	errors::{ComuneErrCode, ComuneError},
+	lexer::SrcSpan,
+	parser::ComuneResult,
+};
 
 use super::{
 	controlflow::ControlFlow,
@@ -285,7 +289,10 @@ pub struct NodeData {
 
 impl NodeData {
 	pub fn new() -> Self {
-		NodeData { ty: None, tk: SrcSpan::new() }
+		NodeData {
+			ty: None,
+			tk: SrcSpan::new(),
+		}
 	}
 }
 
@@ -325,14 +332,17 @@ impl Expr {
 
 	pub fn try_wrap_in_cast(&mut self, to: Type) -> ComuneResult<()> {
 		if self.get_type() == &to {
-			return Ok(())
+			return Ok(());
 		}
 
 		if !self.get_type().castable_to(&to) {
 			return Err(ComuneError::new(
-				ComuneErrCode::CastTypeMismatch { from: self.get_type().clone(), to },
-				self.get_span()
-			))
+				ComuneErrCode::CastTypeMismatch {
+					from: self.get_type().clone(),
+					to,
+				},
+				self.get_span(),
+			));
 		}
 
 		self.wrap_in_cast(to);

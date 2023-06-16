@@ -48,9 +48,7 @@ pub fn resolve_interface_types(interface: &ModuleInterface) -> ComuneResult<()> 
 				}
 			}
 
-			ModuleItemInterface::Type(t) => {
-				resolve_type_def(t.clone(), interface, &vec![])?
-			}
+			ModuleItemInterface::Type(t) => resolve_type_def(t.clone(), interface, &vec![])?,
 
 			ModuleItemInterface::TypeAlias(ty) => {
 				resolve_type(&mut *ty.write().unwrap(), interface, &vec![])?
@@ -154,15 +152,10 @@ pub fn resolve_interface_types(interface: &ModuleInterface) -> ComuneResult<()> 
 						fn_generics.insert(i, param.clone());
 					}
 				}
-				
+
 				resolve_function_prototype(&mut *func.write().unwrap(), interface)?;
 
-				let FnPrototype {
-					ret,
-					params,
-					..
-				} = &*func.read().unwrap();
-
+				let FnPrototype { ret, params, .. } = &*func.read().unwrap();
 
 				if let Some(tr) = &resolved_trait {
 					// Check if the function signature matches a declaration in the trait
@@ -366,7 +359,7 @@ pub fn resolve_type_def(
 	}
 
 	// This part is ugly as hell. sorry
-	
+
 	if let Some(drop) = &ty.drop {
 		resolve_function_prototype(&mut *drop.write().unwrap(), interface)?;
 
@@ -379,12 +372,12 @@ pub fn resolve_type_def(
 				SrcSpan::new(),
 			))
 		};
-		
+
 		if !Arc::ptr_eq(&ty_lock, &def.upgrade().unwrap()) || !props.is_mut || !props.is_ref {
 			return Err(ComuneError::new(
 				ComuneErrCode::DtorSelfParam(ty.name.clone()),
 				SrcSpan::new(),
-			))
+			));
 		}
 	}
 
@@ -400,12 +393,12 @@ pub fn resolve_type_def(
 				SrcSpan::new(),
 			))
 		};
-		
+
 		if !Arc::ptr_eq(&ty_lock, &def.upgrade().unwrap()) || !props.is_new {
 			return Err(ComuneError::new(
 				ComuneErrCode::CtorSelfParam(ty.name.clone()),
 				SrcSpan::new(),
-			))
+			));
 		}
 	}
 
@@ -450,7 +443,7 @@ pub fn resolve_type_def(
 
 pub fn resolve_function_prototype(
 	func: &mut FnPrototype,
-	interface: &ModuleInterface
+	interface: &ModuleInterface,
 ) -> ComuneResult<()> {
 	let FnPrototype {
 		ret,

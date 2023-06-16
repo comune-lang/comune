@@ -273,15 +273,22 @@ impl Display for ComuneErrCode {
 				Ok(())
 			}
 
-			ComuneErrCode::CtorSelfParam(id) => write!(f, "constructor of `{id}` must take a `new& self` parameter"),
-			ComuneErrCode::DtorSelfParam(id) => write!(f, "destructor of `{id}` must take a `mut& self` parameter"),
+			ComuneErrCode::CtorSelfParam(id) => {
+				write!(f, "constructor of `{id}` must take a `new& self` parameter")
+			}
+			ComuneErrCode::DtorSelfParam(id) => {
+				write!(f, "destructor of `{id}` must take a `mut& self` parameter")
+			}
 
 			ComuneErrCode::UnresolvedTrait(tr) => write!(f, "failed to resolve trait `{tr}`"),
 			ComuneErrCode::UninitReference => {
 				write!(f, "a reference binding must be immediately initialized")
 			}
 			ComuneErrCode::UninitNewReference => {
-				write!(f, "a new& binding must be initialized in all control flow paths")
+				write!(
+					f,
+					"a new& binding must be initialized in all control flow paths"
+				)
 			}
 			ComuneErrCode::LocalNewReference => {
 				write!(f, "new& is only allowed in function parameters")
