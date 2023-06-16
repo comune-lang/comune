@@ -264,6 +264,16 @@ impl Analysis for DefInitFlow {
 				state.eval_rvalue(rval, solver, &func.generics);
 				state.set_liveness(lval, LivenessState::Live);
 			}
+			
+			CIRStmt::RefInit(var, _) => {
+				let lval = LValue {
+					local: *var,
+					projection: vec![],
+					props: func.variables[*var].1
+				};
+
+				state.set_liveness(&lval, LivenessState::Live);
+			}
 
 			CIRStmt::Invoke { result, args, .. } | CIRStmt::Call { result, args, .. } => {
 				for (arg, ty, props) in args {
