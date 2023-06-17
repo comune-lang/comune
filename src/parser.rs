@@ -1309,13 +1309,33 @@ impl<'ctx> Parser {
 								self.get_next()?;
 
 								if let Token::Name(member_name) = self.get_current()? {
-									self.get_next()?;
 
-									self.consume(&Token::Other(':'))?;
+									match self.get_next()? {
 
-									let expr = self.parse_expression(scope)?;
+										// plain `member: expr` syntax										
+										Token::Other(':') => {
+											self.get_next()?;
+											
+											let expr = self.parse_expression(scope)?;
 
-									inits.push((member_name, expr));
+											inits.push((member_name, expr));
+										}
+
+										// shorthand when `expr` is equal to the member name
+										Token::Other(',') => {
+											let expr = Expr::Atom(
+												Atom::Identifier(
+													Identifier::from_name(member_name.clone(), false)
+												), 
+												NodeData::new()
+											);
+
+											inits.push((member_name, expr))
+										}
+
+										_ => return self.err(ComuneErrCode::UnexpectedToken)
+									}
+
 								} else if self.get_current()? != Token::Other('}') {
 									return self.err(ComuneErrCode::UnexpectedToken);
 								}
@@ -1347,7 +1367,7 @@ impl<'ctx> Parser {
 									}
 								}
 							}
-							
+
 							self.get_next()?;
 
 							result = Some(Atom::Constructor {

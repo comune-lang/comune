@@ -112,7 +112,7 @@ struct DropTest {
 		printf(c"DropTest no. %i created!\n", num);
 
 		self = new DropTest {
-			num: num,
+			num,
 			allocation: malloc(4) as int mut*,
 		}
 	}
