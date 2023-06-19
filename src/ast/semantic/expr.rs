@@ -412,7 +412,16 @@ impl Atom {
 				if let Some(placement) = placement {
 					// If this is a placement-new expression, check if the
 					// location exists and matches our type.
-					placement.validate(scope)?;
+					let placement_ty = placement.validate(scope)?;
+					
+					if placement_ty != ty {
+						return Err(
+							ComuneError::new(
+								ComuneErrCode::AssignTypeMismatch { expr: placement_ty, to: ty },
+								placement.get_span()
+							)
+						)
+					}
 				}
 
 				match kind {

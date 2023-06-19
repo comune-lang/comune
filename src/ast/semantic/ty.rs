@@ -48,7 +48,7 @@ pub fn resolve_interface_types(interface: &ModuleInterface) -> ComuneResult<()> 
 				}
 			}
 
-			ModuleItemInterface::Type(t) => resolve_type_def(t.clone(), interface, &vec![])?,
+			ModuleItemInterface::Type(t) => resolve_type_def(t.clone(), interface)?,
 
 			ModuleItemInterface::TypeAlias(ty) => {
 				resolve_type(&mut *ty.write().unwrap(), interface, &vec![])?
@@ -68,7 +68,7 @@ pub fn resolve_interface_types(interface: &ModuleInterface) -> ComuneResult<()> 
 							..
 						} = &mut *func.write().unwrap();
 
-						generics.insert(0, ("Self".into(), vec![], None));
+						generics.push(("Self".into(), vec![], None));
 
 						resolve_type(&mut ret.1, interface, generics)?;
 						check_dst_indirection(&ret.1, &BindingProps::default())?;
@@ -87,14 +87,14 @@ pub fn resolve_interface_types(interface: &ModuleInterface) -> ComuneResult<()> 
 
 	for (ty, im) in &interface.impl_solver.local_impls {
 		// Create type parameter list with empty Self param
-		let mut generics = vec![("Self".into(), vec![], None)];
-		generics.append(&mut im.read().unwrap().params.clone());
+		let mut generics = im.read().unwrap().params.clone();
+		generics.push(("Self".into(), vec![], None));
 
 		// Resolve the implementing type
 		resolve_type(&mut *ty.write().unwrap(), interface, &generics)?;
 
 		// Then use it to fill in the Self param's type
-		generics[0].2 = Some(ty.read().unwrap().clone());
+		generics.last_mut().unwrap().2 = Some(ty.read().unwrap().clone());
 
 		// Resolve item references in canonical root
 		let resolved_trait = if let Some(ItemRef::Unresolved {
@@ -340,17 +340,23 @@ pub fn resolve_type(
 
 pub fn resolve_type_def(
 	ty_lock: Arc<RwLock<TypeDef>>,
-	interface: &ModuleInterface,
-	base_generics: &Generics,
+	interface: &ModuleInterface
 ) -> ComuneResult<()> {
 	let mut ty = ty_lock.write().unwrap();
-	let mut generics = base_generics.clone();
 
-	generics.extend(ty.params.clone());
+	// Create type parameter list with empty Self param
+	let mut generics = ty.params.clone();
+	generics.push(("Self".into(), vec![], None));
+
+	// Fill in the Self param
+	generics.last_mut().unwrap().2 = Some(Type::TypeRef {
+		def: Arc::downgrade(&ty_lock),
+		args: (0..ty.params.len()).map(|i| Type::TypeParam(i+1)).collect(),
+	});
 
 	for (_, types) in &mut ty.variants {
 		for ty in types {
-			resolve_type(ty, interface, base_generics)?;
+			resolve_type(ty, interface, &generics)?;
 		}
 	}
 

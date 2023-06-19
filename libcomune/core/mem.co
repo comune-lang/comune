@@ -9,6 +9,9 @@ void mut* realloc(void mut* ptr, usize capacity);
 void free(void mut* ptr);
 
 @no_mangle
+void mut* memcpy(void mut* dest, void* src, usize count);
+
+@no_mangle
 int printf(u8* fmt, ...);
 
 @no_mangle
