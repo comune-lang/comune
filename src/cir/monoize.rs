@@ -132,6 +132,10 @@ impl MonomorphServer {
 	) -> CIRFunction {
 		let mut func = func.clone();
 
+		for (i, gen_arg) in param_map.iter().enumerate() {
+			func.generics[i].2 = Some(gen_arg.clone());
+		}
+
 		for (var, ..) in &mut func.variables {
 			self.monoize_type(types, var, param_map, fns_in, fns_out);
 		}
@@ -528,6 +532,20 @@ fn mangle_name(name: &Identifier, func: &CIRFunction) -> String {
 				result.push_str(&ty.mangle());
 			}
 		}
+	}
+
+	if !func.generics.is_empty() {
+		result.push('I');
+
+		for (.., ty) in &func.generics {
+			let Some(ty) = ty else {
+				panic!() // Can't have un-monomorphized generics at this point 
+			};
+
+			result.push_str(&ty.mangle());
+		}
+
+		result.push('E');
 	}
 
 	result
