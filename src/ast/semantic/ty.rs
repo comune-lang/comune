@@ -352,7 +352,7 @@ pub fn resolve_type_def(
 	generics.last_mut().unwrap().2 = Some(Type::TypeRef {
 		def: Arc::downgrade(&ty_lock),
 		args: (0..ty.params.len())
-			.map(|i| Type::TypeParam(i + 1))
+			.map(|i| Type::TypeParam(i))
 			.collect(),
 	});
 
