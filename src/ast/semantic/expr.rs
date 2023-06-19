@@ -49,7 +49,7 @@ impl Expr {
 								} else {
 									return Err(ComuneError::new(
 										ComuneErrCode::InvalidSubscriptRHS { t: second_t },
-										meta.tk,
+										meta.span,
 									));
 								}
 							}
@@ -58,7 +58,7 @@ impl Expr {
 						} else {
 							Err(ComuneError::new(
 								ComuneErrCode::InvalidSubscriptLHS { t: first_t },
-								meta.tk,
+								meta.span,
 							))
 						}
 					}
@@ -90,7 +90,7 @@ impl Expr {
 												second_t,
 												op.clone(),
 											),
-											meta.tk,
+											meta.span,
 										));
 									}
 								}
@@ -129,7 +129,7 @@ impl Expr {
 							if !scope.is_unsafe {
 								return Err(ComuneError::new(
 									ComuneErrCode::UnsafeOperation,
-									meta.tk,
+									meta.span,
 								));
 							}
 
@@ -138,7 +138,7 @@ impl Expr {
 
 						_ => Err(ComuneError::new(
 							ComuneErrCode::InvalidDeref(expr_ty),
-							meta.tk,
+							meta.span,
 						)),
 					},
 
@@ -240,7 +240,7 @@ impl Expr {
 		meta: &NodeData,
 	) -> ComuneResult<Type> {
 		let Type::TypeRef { def: lhs_def, args: lhs_args } = lhs_ty else {
-			return Err(ComuneError::new(ComuneErrCode::InvalidSubscriptLHS { t: lhs_ty.clone() }, meta.tk));
+			return Err(ComuneError::new(ComuneErrCode::InvalidSubscriptLHS { t: lhs_ty.clone() }, meta.span));
 		};
 		let lhs_def = lhs_def.upgrade().unwrap();
 		let lhs_def = lhs_def.read().unwrap();
@@ -258,7 +258,7 @@ impl Expr {
 							t: lhs_ty.clone(),
 							idx: id.name().to_string(),
 						},
-						rhs.get_node_data().tk,
+						rhs.get_node_data().span,
 					))
 				}
 			}
@@ -325,7 +325,7 @@ impl Atom {
 				} else {
 					Err(ComuneError::new(
 						ComuneErrCode::UndeclaredIdentifier(name.to_string()),
-						meta.tk,
+						meta.span,
 					))
 				}
 			}
@@ -341,7 +341,7 @@ impl Atom {
 							from: expr_t,
 							to: to.clone(),
 						},
-						expr.get_node_data().tk,
+						expr.get_node_data().span,
 					))
 				}
 			}
@@ -386,7 +386,7 @@ impl Atom {
 									expr: Type::Array(Box::new(last_ty.unwrap()), array_len),
 									to: ty.clone(),
 								},
-								meta.tk,
+								meta.span,
 							))
 						} else {
 							Ok(Type::Array(Box::new(last_ty.unwrap()), array_len))
@@ -413,7 +413,7 @@ impl Atom {
 					// If this is a placement-new expression, check if the
 					// location exists and matches our type.
 					let placement_ty = placement.validate(scope)?;
-					
+
 					if placement_ty != ty {
 						return Err(
 							ComuneError::new(
@@ -444,7 +444,7 @@ impl Atom {
 										expr: expr_ty,
 										to: member_ty,
 									},
-									expr.get_node_data().tk,
+									expr.get_node_data().span,
 								));
 							}
 						}
@@ -463,7 +463,7 @@ impl Atom {
 									ty: ty.clone(),
 									members: missing_members,
 								},
-								meta.tk,
+								meta.span,
 							));
 						}
 					}
@@ -551,7 +551,7 @@ impl Atom {
 							args,
 							generic_args,
 							&mut candidates,
-							meta.tk,
+							meta.span,
 							scope,
 						)?;
 
@@ -566,7 +566,7 @@ impl Atom {
 								expr: ty,
 								to: placement.get_type().clone(),
 							},
-							meta.tk,
+							meta.span,
 						));
 					}
 
@@ -676,7 +676,7 @@ impl Atom {
 									expected: scope.fn_return_type.1.clone(),
 									got: expr_ty,
 								},
-								meta.tk,
+								meta.span,
 							))
 						}
 					} else if scope.fn_return_type.1 == Type::void_type() {
@@ -687,7 +687,7 @@ impl Atom {
 								expected: scope.fn_return_type.1.clone(),
 								got: Type::void_type(),
 							},
-							meta.tk,
+							meta.span,
 						))
 					}
 				}
@@ -702,7 +702,7 @@ impl Atom {
 							} else {
 								"continue"
 							}),
-							meta.tk,
+							meta.span,
 						))
 					}
 				}

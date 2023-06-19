@@ -1460,7 +1460,7 @@ impl CIRModuleBuilder {
 				let local = self.get_var_index(id.expect_scopeless().unwrap()).unwrap();
 
 				let mut lval = self.get_local_lvalue(local);
-				lval.props.span = meta.tk;
+				lval.props.span = meta.span;
 
 				Some(self.get_local_lvalue(local))
 			}

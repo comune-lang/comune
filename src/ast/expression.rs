@@ -284,14 +284,14 @@ impl Display for Operator {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NodeData {
 	pub ty: Option<Type>,
-	pub tk: SrcSpan,
+	pub span: SrcSpan,
 }
 
 impl NodeData {
 	pub fn new() -> Self {
 		NodeData {
 			ty: None,
-			tk: SrcSpan::new(),
+			span: SrcSpan::new(),
 		}
 	}
 }
@@ -322,7 +322,7 @@ impl Expr {
 				Atom::Cast(Box::new(tmp), to.clone()),
 				NodeData {
 					ty: Some(to),
-					tk: node_data.tk,
+					span: node_data.span,
 				},
 			);
 
@@ -358,7 +358,7 @@ impl Expr {
 	}
 
 	pub fn get_span(&self) -> SrcSpan {
-		self.get_node_data().tk
+		self.get_node_data().span
 	}
 
 	pub fn get_node_data(&self) -> &NodeData {

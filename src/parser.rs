@@ -726,7 +726,7 @@ impl<'ctx> Parser {
 				is_unsafe,
 			},
 			NodeData {
-				tk: SrcSpan {
+				span: SrcSpan {
 					start: begin,
 					len: end - begin,
 				},
@@ -961,7 +961,7 @@ impl<'ctx> Parser {
 				self.parse_atom(scope)?,
 				NodeData {
 					ty: None,
-					tk: SrcSpan {
+					span: SrcSpan {
 						start: begin_lhs,
 						len: self.get_prev_end_index() - begin_lhs,
 					},
@@ -972,7 +972,7 @@ impl<'ctx> Parser {
 				self.parse_atom(scope)?,
 				NodeData {
 					ty: None,
-					tk: SrcSpan {
+					span: SrcSpan {
 						start: begin_lhs,
 						len: self.get_prev_end_index() - begin_lhs,
 					},
@@ -1011,7 +1011,7 @@ impl<'ctx> Parser {
 						start: begin_lhs,
 						len: end_index - begin_lhs,
 					};
-					Expr::Unary(Box::new(rhs), op, NodeData { ty: None, tk })
+					Expr::Unary(Box::new(rhs), op, NodeData { ty: None, span: tk })
 				}
 			}
 
@@ -1061,7 +1061,7 @@ impl<'ctx> Parser {
 						len: end_index - begin_lhs,
 					};
 
-					lhs = Expr::create_cast(lhs, goal_t, NodeData { ty: None, tk });
+					lhs = Expr::create_cast(lhs, goal_t, NodeData { ty: None, span: tk });
 				}
 
 				Operator::PostInc | Operator::PostDec => {
@@ -1078,7 +1078,7 @@ impl<'ctx> Parser {
 								Atom::IntegerLit(1, None),
 								NodeData {
 									ty: None,
-									tk: SrcSpan::new(),
+									span: SrcSpan::new(),
 								},
 							)),
 						],
@@ -1087,7 +1087,7 @@ impl<'ctx> Parser {
 							Operator::PostDec => Operator::AssSub,
 							_ => panic!(),
 						},
-						NodeData { ty: None, tk },
+						NodeData { ty: None, span: tk },
 					);
 				}
 
@@ -1100,7 +1100,7 @@ impl<'ctx> Parser {
 						op,
 						NodeData {
 							ty: None,
-							tk: SrcSpan {
+							span: SrcSpan {
 								start: begin_rhs,
 								len: end_rhs - begin_rhs,
 							},
@@ -1123,7 +1123,7 @@ impl<'ctx> Parser {
 						op,
 						NodeData {
 							ty: None,
-							tk: SrcSpan {
+							span: SrcSpan {
 								start: begin_rhs,
 								len: end_rhs - begin_rhs,
 							},

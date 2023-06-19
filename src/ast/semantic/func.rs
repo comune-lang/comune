@@ -49,7 +49,7 @@ pub fn validate_function_body(
 						expected: scope.fn_return_type.1,
 						got: expr_ty.clone(),
 					},
-					elem.get_node_data().tk,
+					elem.get_node_data().span,
 				));
 			}
 
@@ -85,7 +85,7 @@ pub fn validate_function_body(
 						expected: scope.fn_return_type.1.clone(),
 						got: Type::Basic(Basic::Void),
 					},
-					elem_node_data.tk,
+					elem_node_data.span,
 				));
 			}
 
@@ -93,7 +93,7 @@ pub fn validate_function_body(
 				Atom::CtrlFlow(Box::new(ControlFlow::Return { expr: None })),
 				NodeData {
 					ty: Some(Type::Basic(Basic::Void)),
-					tk: elem_node_data.tk,
+					span: elem_node_data.span,
 				},
 			)))
 		}
@@ -134,7 +134,7 @@ pub fn validate_fn_call(
 				Atom::Identifier(local_name),
 				NodeData {
 					ty: Some(Type::Function(ty_ret.clone(), ty_args)),
-					tk: node_data.tk,
+					span: node_data.span,
 				},
 			)));
 
@@ -179,7 +179,7 @@ pub fn validate_fn_call(
 	if candidates.is_empty() {
 		return Err(ComuneError::new(
 			ComuneErrCode::UndeclaredIdentifier(name.to_string()),
-			node_data.tk,
+			node_data.span,
 		));
 	}
 
@@ -189,7 +189,7 @@ pub fn validate_fn_call(
 		.collect();
 
 	let selected_candidate =
-		try_select_candidate(name, args, type_args, &mut candidates, node_data.tk, scope)?;
+		try_select_candidate(name, args, type_args, &mut candidates, node_data.span, scope)?;
 
 	let func = &*selected_candidate.read().unwrap();
 	validate_arg_list(args, &func.params.params, type_args, scope)?;
@@ -265,7 +265,7 @@ pub fn resolve_method_call(
 		args,
 		type_args,
 		&mut candidates,
-		lhs.get_node_data().tk,
+		lhs.get_node_data().span,
 		scope,
 	)?;
 
@@ -417,7 +417,7 @@ fn validate_arg_list(
 						from: arg_type,
 						to: param_concrete,
 					},
-					args[i].get_node_data().tk,
+					args[i].get_node_data().span,
 				));
 			}
 
