@@ -1,0 +1,98 @@
+using core::mem::{size_of, malloc, realloc, free, bit_cast, memcpy};
+
+struct Vector<type T> {
+	T mut* data;
+	usize len;
+	usize capacity;
+
+	// `new` and `drop` are special functions
+	// that handle construction and destruction.
+
+	new(new& self) {
+		self = new Vector<T> {
+			data: bit_cast<usize, T mut*>(0),
+			capacity: 0,
+			len: 0,
+		};
+	}
+
+	new(new& self, Vector<T>& copied) {
+		self = new Vector<T>();
+		
+		self.realloc(copied.capacity);
+		
+		if copied.len == 0 {
+			return
+		}
+		
+		memcpy(
+			self.data as void mut*, 
+			copied.data as void*,
+			copied.len
+		);
+
+		self.len = copied.len;
+	}
+	
+	drop(mut& self) {		
+		if self.capacity > 0 {
+			free(self.data as void mut*);
+		}
+	}
+}
+
+using Test = Vector<int>;
+
+void foo() {
+	usize size = size_of<Test>();
+	Test mut* mut b = malloc(size) as Test mut*;
+	
+	unsafe {
+		new (*b) Vector<int> {
+			data: malloc(0) as int mut*,
+			len: 0,
+			capacity: 0
+		}
+	};
+}
+
+impl<type T> Vector<T> {
+
+	void push(mut& self, T elem) {
+		if self.len >= self.capacity {
+			self.realloc(
+				if self.capacity == 0 { 
+					self.capacity + 1 
+				} else { 
+					self.capacity * 2
+				}
+			)
+		}
+		
+		unsafe {
+			*(self.data + self.len) = elem
+		}
+		
+		self.len += 1;
+	}
+
+	void realloc(mut& self, usize capacity) {		
+		void mut* tmp = realloc(
+			self.data as void mut*, 
+			capacity * size_of<T>()
+		);
+
+		if tmp {
+			self.data = tmp as T mut*;
+			self.capacity = capacity;
+		} else {
+			free(self.data as void mut*);
+			// TODO: panic here
+		}
+	}
+
+	T get(mut& self, usize i) {
+		unsafe { *(self.data + i) }
+	}
+
+}
