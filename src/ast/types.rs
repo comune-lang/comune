@@ -915,7 +915,7 @@ impl Display for Visibility {
 impl Display for BindingProps {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		if self.is_new {
-			write!(f, " unsafe")?;
+			write!(f, " new")?;
 		}
 		if self.is_mut {
 			write!(f, " mut")?;
