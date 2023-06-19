@@ -165,6 +165,10 @@ impl<'ctx> LLVMBackend<'ctx> {
 	}
 
 	fn register_fn(&mut self, name: &str, t: &CIRFunction) -> LLVMResult<FunctionValue> {
+		if self.module.get_function(name).is_some() {
+			panic!("function name collision in LLVM! `{name}`")
+		}
+		
 		let fn_t = self.generate_prototype(t)?;
 		let fn_v = self.module.add_function(name, fn_t, None);
 
