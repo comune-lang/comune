@@ -346,15 +346,17 @@ pub fn resolve_type_def(
 
 	// Create type parameter list with empty Self param
 	let mut generics = ty.params.clone();
-	generics.push(("Self".into(), vec![], None));
 
-	// Fill in the Self param
-	generics.last_mut().unwrap().2 = Some(Type::TypeRef {
-		def: Arc::downgrade(&ty_lock),
-		args: (0..ty.params.len())
-			.map(|i| Type::TypeParam(i))
-			.collect(),
-	});
+	generics.push((
+		"Self".into(), 
+		vec![], 
+		Some(Type::TypeRef {
+			def: Arc::downgrade(&ty_lock),
+			args: (0..ty.params.len())
+				.map(|i| Type::TypeParam(i))
+				.collect(),
+		})
+	));
 
 	for (_, types) in &mut ty.variants {
 		for ty in types {
