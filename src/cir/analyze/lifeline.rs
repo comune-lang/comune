@@ -158,8 +158,8 @@ impl LiveVarCheckState {
 			self.set_liveness(lval, LivenessState::Moved);
 		}
 
-		// if the lvalue is borrowed as a `new&`, 
-		// it'll be initialized after this use. 
+		// if the lvalue is borrowed as a `new&`,
+		// it'll be initialized after this use.
 		if props.is_ref && props.is_new {
 			self.set_liveness(lval, LivenessState::Live);
 		}
@@ -264,12 +264,12 @@ impl Analysis for DefInitFlow {
 				state.eval_rvalue(rval, solver, &func.generics);
 				state.set_liveness(lval, LivenessState::Live);
 			}
-			
+
 			CIRStmt::RefInit(var, _) => {
 				let lval = LValue {
 					local: *var,
 					projection: vec![],
-					props: func.variables[*var].1
+					props: func.variables[*var].1,
 				};
 
 				state.set_liveness(&lval, LivenessState::Live);
@@ -410,7 +410,7 @@ impl AnalysisResultHandler<DefInitFlow> for VarInitCheck {
 									if props.is_new {
 										ComuneErrCode::UninitNewReference
 									} else {
-										ComuneErrCode::UninitMutReference	
+										ComuneErrCode::UninitMutReference
 									},
 									props.span,
 								)),

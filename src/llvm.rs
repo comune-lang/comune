@@ -168,7 +168,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 		if self.module.get_function(name).is_some() {
 			panic!("function name collision in LLVM! `{name}`")
 		}
-		
+
 		let fn_t = self.generate_prototype(t)?;
 		let fn_v = self.module.add_function(name, fn_t, None);
 

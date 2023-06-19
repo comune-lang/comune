@@ -340,7 +340,7 @@ pub fn resolve_type(
 
 pub fn resolve_type_def(
 	ty_lock: Arc<RwLock<TypeDef>>,
-	interface: &ModuleInterface
+	interface: &ModuleInterface,
 ) -> ComuneResult<()> {
 	let mut ty = ty_lock.write().unwrap();
 
@@ -351,7 +351,9 @@ pub fn resolve_type_def(
 	// Fill in the Self param
 	generics.last_mut().unwrap().2 = Some(Type::TypeRef {
 		def: Arc::downgrade(&ty_lock),
-		args: (0..ty.params.len()).map(|i| Type::TypeParam(i+1)).collect(),
+		args: (0..ty.params.len())
+			.map(|i| Type::TypeParam(i + 1))
+			.collect(),
 	});
 
 	for (_, types) in &mut ty.variants {

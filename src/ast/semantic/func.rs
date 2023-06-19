@@ -188,8 +188,14 @@ pub fn validate_fn_call(
 		.filter(|func| is_candidate_viable(args, type_args, &*func.read().unwrap()))
 		.collect();
 
-	let selected_candidate =
-		try_select_candidate(name, args, type_args, &mut candidates, node_data.span, scope)?;
+	let selected_candidate = try_select_candidate(
+		name,
+		args,
+		type_args,
+		&mut candidates,
+		node_data.span,
+		scope,
+	)?;
 
 	let func = &*selected_candidate.read().unwrap();
 	validate_arg_list(args, &func.params.params, type_args, scope)?;

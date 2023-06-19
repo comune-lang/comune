@@ -415,12 +415,13 @@ impl Atom {
 					let placement_ty = placement.validate(scope)?;
 
 					if placement_ty != ty {
-						return Err(
-							ComuneError::new(
-								ComuneErrCode::AssignTypeMismatch { expr: placement_ty, to: ty },
-								placement.get_span()
-							)
-						)
+						return Err(ComuneError::new(
+							ComuneErrCode::AssignTypeMismatch {
+								expr: placement_ty,
+								to: ty,
+							},
+							placement.get_span(),
+						));
 					}
 				}
 
