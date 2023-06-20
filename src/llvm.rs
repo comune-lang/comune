@@ -22,7 +22,7 @@ use inkwell::{
 use crate::{
 	ast::{
 		expression::Operator,
-		types::{Basic, BindingProps, DataLayout, FnPrototype, TupleKind, Type},
+		types::{Basic, BindingProps, DataLayout, FnPrototype, TupleKind, Type, IntSize, FloatSize},
 	},
 	cir::{CIRCallId, CIRFunction, CIRModule, CIRStmt, LValue, Operand, PlaceElem, RValue},
 	constexpr::{ConstExpr, ConstValue},
@@ -961,26 +961,18 @@ impl<'ctx> LLVMBackend<'ctx> {
 	fn get_llvm_type(&self, ty: &Type) -> AnyTypeEnum<'ctx> {
 		match ty {
 			Type::Basic(basic) => match basic {
-				Basic::Integral { size_bytes, .. } => match size_bytes {
-					8 => self.context.i64_type(),
-					4 => self.context.i32_type(),
-					2 => self.context.i16_type(),
-					1 => self.context.i8_type(),
-					_ => panic!(),
+				Basic::Integral { size, .. } => match size {
+					IntSize::IAddr => self.context.ptr_sized_int_type(&get_target_machine().get_target_data(), None),
+
+					IntSize::I64 => self.context.i64_type(),
+					IntSize::I32 => self.context.i32_type(),
+					IntSize::I16 => self.context.i16_type(),
+					IntSize::I8 => self.context.i8_type(),
 				}
 				.as_any_type_enum(),
 
-				Basic::PtrSizeInt { .. } => self
-					.context
-					.ptr_sized_int_type(&get_target_machine().get_target_data(), None)
-					.as_any_type_enum(),
-
-				Basic::Float { size_bytes } => if *size_bytes == 8 {
-					self.context.f64_type()
-				} else {
-					self.context.f32_type()
-				}
-				.as_any_type_enum(),
+				Basic::Float { size: FloatSize::F64 } => self.context.f64_type().as_any_type_enum(),
+				Basic::Float { size: FloatSize::F32 } => self.context.f32_type().as_any_type_enum(),
 
 				Basic::Bool => self.context.bool_type().as_any_type_enum(),
 				Basic::Void => self.context.void_type().as_any_type_enum(),

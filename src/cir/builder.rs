@@ -7,7 +7,7 @@ use crate::{
 		module::{ModuleASTElem, ModuleImpl, ModuleInterface, ModuleItemInterface, Name},
 		pattern::{Binding, Pattern},
 		statement::Stmt,
-		types::{Basic, BindingProps, FnPrototype, TupleKind, Type},
+		types::{Basic, BindingProps, FnPrototype, TupleKind, Type, IntSize},
 	},
 	lexer::SrcSpan,
 	parser::Parser,
@@ -554,7 +554,7 @@ impl CIRModuleBuilder {
 
 						let mut tmp_idx = tmp.clone();
 						tmp_idx.projection.push(PlaceElem::Index(
-							Type::Basic(Basic::PtrSizeInt { signed: false }),
+							Type::isize_type(false),
 							Operand::IntegerLit(i as i128, SrcSpan::new()),
 							Operator::Add,
 						));
@@ -1590,7 +1590,7 @@ impl CIRModuleBuilder {
 					// TODO: Actually figure out proper discriminant type
 					let disc_type = Type::Basic(Basic::Integral {
 						signed: false,
-						size_bytes: 4,
+						size: IntSize::I32,
 					});
 
 					RValue::Cons(

@@ -8,7 +8,7 @@ use crate::{
 		module::{Identifier, Name},
 		pattern::Binding,
 		statement::Stmt,
-		types::{Basic, BindingProps, TupleKind},
+		types::{Basic, BindingProps, TupleKind, FloatSize, IntSize},
 		FnScope,
 	},
 	constexpr::{ConstExpr, ConstValue},
@@ -37,7 +37,7 @@ impl Expr {
 					}
 
 					Operator::Subscr => {
-						let idx_type = Type::Basic(Basic::PtrSizeInt { signed: false });
+						let idx_type = Type::isize_type(false);
 
 						let first_t = lhs.validate(scope)?;
 						let second_t = rhs.validate(scope)?;
@@ -72,7 +72,7 @@ impl Expr {
 							(
 								Type::Pointer { .. },
 								Operator::Add | Operator::Sub,
-								Type::Basic(Basic::Integral { .. } | Basic::PtrSizeInt { .. }),
+								Type::Basic(Basic::Integral { .. }),
 							) => Ok(first_t),
 
 							_ => {
@@ -303,7 +303,7 @@ impl Atom {
 					*t = Some(b);
 					Ok(meta.ty.as_ref().unwrap().clone())
 				} else {
-					*t = Some(Basic::Float { size_bytes: 4 });
+					*t = Some(Basic::Float { size: FloatSize::F32 });
 					Ok(Type::Basic(t.unwrap()))
 				}
 			}
@@ -351,7 +351,7 @@ impl Atom {
 			Atom::ArrayLit(elems) => {
 				let array_len = Arc::new(RwLock::new(ConstExpr::Result(ConstValue::Integral(
 					elems.len() as i128,
-					Some(Basic::PtrSizeInt { signed: false }),
+					Some(Basic::Integral { signed: false, size: IntSize::IAddr }),
 				))));
 
 				match &meta.ty {

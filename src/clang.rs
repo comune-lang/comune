@@ -11,7 +11,7 @@ use crate::{
 	ast::{
 		get_attribute,
 		module::{Identifier, ModuleImportKind, ModuleInterface, ModuleItemInterface},
-		types::{Basic, TupleKind, Type, TypeDef},
+		types::{Basic, TupleKind, Type, TypeDef, FloatSize, IntSize},
 	},
 	driver::{await_imports_ready, get_module_out_path, CompilerState, ModuleState},
 	errors::{CMNMessageLog, ComuneError},
@@ -278,22 +278,24 @@ impl Type {
 		match self {
 			Type::Basic(basic) => match basic {
 				Basic::Bool => write!(f, "bool"),
-				Basic::Float { size_bytes: 4 } => write!(f, "float"),
-				Basic::Float { size_bytes: 8 } => write!(f, "double"),
-				Basic::Float { size_bytes: _ } => panic!(),
+				Basic::Float { size: FloatSize::F32 } => write!(f, "float"),
+				Basic::Float { size: FloatSize::F64 } => write!(f, "double"),
 				Basic::Void => write!(f, "void"),
 
-				Basic::Integral { signed, size_bytes } => {
+				Basic::Integral { signed, size } => {
 					write!(
 						f,
 						"{}int{}_t",
 						if *signed { "" } else { "u" },
-						size_bytes * 8,
+						match size {
+							IntSize::IAddr => "ptr",
+							IntSize::I64 => "64",
+							IntSize::I32 => "32",
+							IntSize::I16 => "16",
+							IntSize::I8 => "8",
+						},
 					)
 				}
-
-				Basic::PtrSizeInt { signed: true } => write!(f, "intptr_t"),
-				Basic::PtrSizeInt { signed: false } => write!(f, "uintptr_t"),
 			},
 
 			Type::Unresolved {

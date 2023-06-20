@@ -438,8 +438,8 @@ fn validate_arg_list(
 			// also if it's a float we promote it to a double because presumably
 			// ken and dennis were high on crack for 30 years straight or something
 			// https://stackoverflow.com/questions/63144506/printf-doesnt-work-for-floats-in-llvm-ir
-			if arg_type == Type::Basic(Basic::Float { size_bytes: 4 }) {
-				arg.wrap_in_cast(Type::Basic(Basic::Float { size_bytes: 8 }));
+			if arg_type == Type::f32_type() {
+				arg.wrap_in_cast(Type::f64_type());
 			}
 		}
 	}

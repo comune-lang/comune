@@ -10,7 +10,7 @@ use crate::{
 	ast::{
 		get_attribute,
 		module::Identifier,
-		types::{Basic, FnPrototype, TypeDef},
+		types::{Basic, FnPrototype, TypeDef, IntSize, FloatSize},
 	},
 	lexer::Token,
 };
@@ -591,38 +591,33 @@ impl Basic {
 		match self {
 			Basic::Bool => "b",
 
-			Basic::Integral { signed, size_bytes } => {
+			Basic::Integral { signed, size } => {
 				if *signed {
-					match size_bytes {
-						8 => "x",
-						4 => "i",
-						2 => "s",
-						1 => "c",
-						_ => unimplemented!(),
+					match size {
+						// FIXME: figure this out properly
+						IntSize::IAddr => "x",
+
+						IntSize::I64 => "x",
+						IntSize::I32 => "i",
+						IntSize::I16 => "s",
+						IntSize::I8 => "c",
 					}
 				} else {
-					match size_bytes {
-						8 => "y",
-						4 => "j",
-						2 => "t",
-						1 => "h",
-						_ => unimplemented!(),
+					match size {
+						// FIXME: ditto
+						IntSize::IAddr => "y",
+
+						IntSize::I64 => "y",
+						IntSize::I32 => "j",
+						IntSize::I16 => "t",
+						IntSize::I8  => "h",
 					}
 				}
 			}
 
-			Basic::PtrSizeInt { signed } => {
-				if *signed {
-					"x"
-				} else {
-					"y"
-				}
-			}
-
-			Basic::Float { size_bytes } => match size_bytes {
-				8 => "d",
-				4 => "f",
-				_ => unimplemented!(),
+			Basic::Float { size } => match size {
+				FloatSize::F64 => "d",
+				FloatSize::F32 => "f",
 			},
 
 			Basic::Void => "v",

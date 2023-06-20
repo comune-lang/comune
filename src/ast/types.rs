@@ -50,11 +50,25 @@ pub enum Type {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Basic {
-	Integral { signed: bool, size_bytes: u32 },
-	PtrSizeInt { signed: bool },
-	Float { size_bytes: u32 },
+	Integral { signed: bool, size: IntSize },
+	Float { size: FloatSize },
 	Bool,
 	Void,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum IntSize {
+	I8,
+	I16,
+	I32,
+	I64,
+	IAddr,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum FloatSize {
+	F32,
+	F64,
 }
 
 #[derive(Debug, Clone)]
@@ -190,42 +204,42 @@ impl Basic {
 		match name {
 			"i64" => Some(Basic::Integral {
 				signed: true,
-				size_bytes: 8,
+				size: IntSize::I64,
 			}),
 			"i32" | "int" => Some(Basic::Integral {
 				signed: true,
-				size_bytes: 4,
+				size: IntSize::I32,
 			}),
 			"i16" => Some(Basic::Integral {
 				signed: true,
-				size_bytes: 2,
+				size: IntSize::I16,
 			}),
 			"i8" => Some(Basic::Integral {
 				signed: true,
-				size_bytes: 1,
+				size: IntSize::I8,
 			}),
 			"u64" => Some(Basic::Integral {
 				signed: false,
-				size_bytes: 8,
+				size: IntSize::I64,
 			}),
 			"u32" | "uint" => Some(Basic::Integral {
 				signed: false,
-				size_bytes: 4,
+				size: IntSize::I32,
 			}),
 			"u16" => Some(Basic::Integral {
 				signed: false,
-				size_bytes: 2,
+				size: IntSize::I16,
 			}),
 			"u8" => Some(Basic::Integral {
 				signed: false,
-				size_bytes: 1,
+				size: IntSize::I8,
 			}),
 
-			"isize" => Some(Basic::PtrSizeInt { signed: false }),
-			"usize" => Some(Basic::PtrSizeInt { signed: false }),
+			"isize" => Some(Basic::Integral { signed: true, size: IntSize::IAddr  }),
+			"usize" => Some(Basic::Integral { signed: false, size: IntSize::IAddr }),
 
-			"f64" | "double" => Some(Basic::Float { size_bytes: 8 }),
-			"f32" | "float" => Some(Basic::Float { size_bytes: 4 }),
+			"f64" | "double" => Some(Basic::Float { size: FloatSize::F64 }),
+			"f32" | "float" => Some(Basic::Float { size: FloatSize::F32 }),
 
 			"bool" => Some(Basic::Bool),
 			"void" => Some(Basic::Void),
@@ -236,52 +250,28 @@ impl Basic {
 
 	pub fn as_str(&self) -> &'static str {
 		match self {
-			Basic::Integral { signed, size_bytes } => match size_bytes {
-				8 => {
-					if *signed {
-						"i64"
-					} else {
-						"u64"
-					}
-				}
-				4 => {
-					if *signed {
-						"i32"
-					} else {
-						"u32"
-					}
-				}
-				2 => {
-					if *signed {
-						"i16"
-					} else {
-						"u16"
-					}
-				}
-				1 => {
-					if *signed {
-						"i8"
-					} else {
-						"u8"
-					}
-				}
+			Basic::Integral { signed: true, size } => match size {
+				IntSize::IAddr => "isize",
+				IntSize::I64 => "i64",
+				IntSize::I32 => "i32",
+				IntSize::I16 => "i16",
+				IntSize::I8 => "i8",
+
 				_ => panic!(),
 			},
 
-			Basic::Float { size_bytes } => {
-				if *size_bytes == 8 {
-					"f64"
-				} else {
-					"f32"
-				}
-			}
-			Basic::PtrSizeInt { signed } => {
-				if *signed {
-					"isize"
-				} else {
-					"usize"
-				}
-			}
+			Basic::Integral { signed: false, size } => match size {
+				IntSize::IAddr => "usize",
+				IntSize::I64 => "u64",
+				IntSize::I32 => "u32",
+				IntSize::I16 => "u16",
+				IntSize::I8 => "u8",
+
+				_ => panic!(),
+			},
+
+			Basic::Float { size: FloatSize::F64 } => "f64",
+			Basic::Float { size: FloatSize::F32 } => "f32",
 
 			Basic::Bool => "bool",
 			Basic::Void => "void",
@@ -293,15 +283,11 @@ impl Basic {
 	}
 
 	pub fn is_integral(&self) -> bool {
-		matches!(self, Basic::Integral { .. } | Basic::PtrSizeInt { .. })
+		matches!(self, Basic::Integral { .. })
 	}
 
 	pub fn is_signed(&self) -> bool {
-		if let Basic::Integral { signed, .. } | Basic::PtrSizeInt { signed } = self {
-			*signed
-		} else {
-			false
-		}
+		matches!(self, Basic::Integral { signed: true, .. })
 	}
 
 	pub fn is_boolean(&self) -> bool {
@@ -549,7 +535,7 @@ impl Type {
 		match self {
 			Type::Tuple(TupleKind::Sum, _) => Some(Basic::Integral {
 				signed: false,
-				size_bytes: 4,
+				size: IntSize::I32,
 			}),
 
 			_ => None,
@@ -590,7 +576,7 @@ impl Type {
 	pub fn i8_type(signed: bool) -> Self {
 		Type::Basic(Basic::Integral {
 			signed,
-			size_bytes: 1,
+			size: IntSize::I8,
 		})
 	}
 
@@ -598,7 +584,7 @@ impl Type {
 	pub fn i16_type(signed: bool) -> Self {
 		Type::Basic(Basic::Integral {
 			signed,
-			size_bytes: 2,
+			size: IntSize::I16,
 		})
 	}
 
@@ -606,7 +592,7 @@ impl Type {
 	pub fn i32_type(signed: bool) -> Self {
 		Type::Basic(Basic::Integral {
 			signed,
-			size_bytes: 4,
+			size: IntSize::I32,
 		})
 	}
 
@@ -614,13 +600,21 @@ impl Type {
 	pub fn i64_type(signed: bool) -> Self {
 		Type::Basic(Basic::Integral {
 			signed,
-			size_bytes: 8,
+			size: IntSize::I64,
 		})
 	}
 
 	#[allow(dead_code)]
 	pub fn isize_type(signed: bool) -> Self {
-		Type::Basic(Basic::PtrSizeInt { signed })
+		Type::Basic(Basic::Integral { signed, size: IntSize::IAddr })
+	}
+
+	pub fn f32_type() -> Self {
+		Type::Basic(Basic::Float { size: FloatSize::F32 })
+	}
+
+	pub fn f64_type() -> Self {
+		Type::Basic(Basic::Float { size: FloatSize::F64 })
 	}
 
 	pub fn bool_type() -> Self {

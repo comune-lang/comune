@@ -16,7 +16,7 @@ use crate::ast::module::{
 use crate::ast::statement::Stmt;
 use crate::ast::traits::{ImplBlockInterface, TraitInterface, TraitRef};
 use crate::ast::types::{
-	Basic, BindingProps, FnParamList, FnPrototype, Generics, TupleKind, Type, TypeDef, Visibility,
+	Basic, BindingProps, FnParamList, FnPrototype, Generics, TupleKind, Type, TypeDef, Visibility, FloatSize,
 };
 use crate::ast::{Attribute, FnScope};
 
@@ -1218,7 +1218,7 @@ impl<'ctx> Parser {
 					if suffix_b.is_none() && !suffix.is_empty() {
 						suffix_b = match suffix.as_str() {
 							// Add special numeric suffixes here
-							"f" => Some(Basic::Float { size_bytes: 4 }),
+							"f" => Some(Basic::Float { size: FloatSize::F32 }),
 
 							_ => return self.err(ComuneErrCode::InvalidSuffix),
 						};
