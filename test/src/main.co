@@ -170,7 +170,7 @@ int main() {
 
 	submodule_test::bar();
 
-	Vector<float> mut a;
+	Vector<float> mut a = new Vector<float>();
 	
 	new_ref_test(a);
 

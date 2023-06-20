@@ -154,6 +154,10 @@ pub enum ComuneErrCode {
 		state: LivenessState,
 	},
 
+	InvalidNewReference {
+		variable: Identifier,
+	},
+
 	ImmutVarMutation {
 		variable: Identifier,
 	},
@@ -330,6 +334,10 @@ impl Display for ComuneErrCode {
 						LivenessState::MaybeUninit => "potentially uninitialized",
 					}
 				)
+			}
+
+			ComuneErrCode::InvalidNewReference { variable } => {
+				write!(f, "variable {variable} must be uninitialized to pass as new&")
 			}
 
 			ComuneErrCode::ImmutVarMutation { variable } => {

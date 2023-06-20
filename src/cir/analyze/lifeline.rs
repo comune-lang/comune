@@ -372,9 +372,20 @@ impl AnalysisResultHandler<DefInitFlow> for VarInitCheck {
 
 					CIRStmt::Invoke { args, .. } | CIRStmt::Call { args, .. } => {
 						for (lval, _, use_props) in args {
-							if !use_props.is_new {
-								let liveness = state.get_liveness(lval);
+							let liveness = state.get_liveness(lval);
+							
+							if use_props.is_new {
+								match liveness {
+									None | Some(LivenessState::Uninit | LivenessState::Dropped | LivenessState::Moved) => {}
 
+									_ => errors.push(ComuneError::new(
+										ComuneErrCode::InvalidNewReference {
+											variable: func.get_variable_name(lval.local),
+										},
+										lval.props.span,
+									))
+								}
+							} else {
 								match liveness {
 									Some(LivenessState::Live) => {}
 
@@ -387,6 +398,7 @@ impl AnalysisResultHandler<DefInitFlow> for VarInitCheck {
 									)),
 								}
 							}
+							
 						}
 					}
 
