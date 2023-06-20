@@ -22,7 +22,9 @@ use inkwell::{
 use crate::{
 	ast::{
 		expression::Operator,
-		types::{Basic, BindingProps, DataLayout, FnPrototype, TupleKind, Type, IntSize, FloatSize},
+		types::{
+			Basic, BindingProps, DataLayout, FloatSize, FnPrototype, IntSize, TupleKind, Type,
+		},
 	},
 	cir::{CIRCallId, CIRFunction, CIRModule, CIRStmt, LValue, Operand, PlaceElem, RValue},
 	constexpr::{ConstExpr, ConstValue},
@@ -962,7 +964,9 @@ impl<'ctx> LLVMBackend<'ctx> {
 		match ty {
 			Type::Basic(basic) => match basic {
 				Basic::Integral { size, .. } => match size {
-					IntSize::IAddr => self.context.ptr_sized_int_type(&get_target_machine().get_target_data(), None),
+					IntSize::IAddr => self
+						.context
+						.ptr_sized_int_type(&get_target_machine().get_target_data(), None),
 
 					IntSize::I64 => self.context.i64_type(),
 					IntSize::I32 => self.context.i32_type(),
@@ -971,8 +975,12 @@ impl<'ctx> LLVMBackend<'ctx> {
 				}
 				.as_any_type_enum(),
 
-				Basic::Float { size: FloatSize::F64 } => self.context.f64_type().as_any_type_enum(),
-				Basic::Float { size: FloatSize::F32 } => self.context.f32_type().as_any_type_enum(),
+				Basic::Float {
+					size: FloatSize::F64,
+				} => self.context.f64_type().as_any_type_enum(),
+				Basic::Float {
+					size: FloatSize::F32,
+				} => self.context.f32_type().as_any_type_enum(),
 
 				Basic::Bool => self.context.bool_type().as_any_type_enum(),
 				Basic::Void => self.context.void_type().as_any_type_enum(),

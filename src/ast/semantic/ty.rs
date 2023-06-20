@@ -348,14 +348,12 @@ pub fn resolve_type_def(
 	let mut generics = ty.params.clone();
 
 	generics.push((
-		"Self".into(), 
-		vec![], 
+		"Self".into(),
+		vec![],
 		Some(Type::TypeRef {
 			def: Arc::downgrade(&ty_lock),
-			args: (0..ty.params.len())
-				.map(|i| Type::TypeParam(i))
-				.collect(),
-		})
+			args: (0..ty.params.len()).map(|i| Type::TypeParam(i)).collect(),
+		}),
 	));
 
 	for (_, types) in &mut ty.variants {

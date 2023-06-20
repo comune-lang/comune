@@ -7,7 +7,7 @@ use crate::{
 		module::{ModuleASTElem, ModuleImpl, ModuleInterface, ModuleItemInterface, Name},
 		pattern::{Binding, Pattern},
 		statement::Stmt,
-		types::{Basic, BindingProps, FnPrototype, TupleKind, Type, IntSize},
+		types::{Basic, BindingProps, FnPrototype, IntSize, TupleKind, Type},
 	},
 	lexer::SrcSpan,
 	parser::Parser,

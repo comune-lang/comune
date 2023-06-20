@@ -8,7 +8,7 @@ use crate::{
 		module::{Identifier, Name},
 		pattern::Binding,
 		statement::Stmt,
-		types::{Basic, BindingProps, TupleKind, FloatSize, IntSize},
+		types::{Basic, BindingProps, FloatSize, IntSize, TupleKind},
 		FnScope,
 	},
 	constexpr::{ConstExpr, ConstValue},
@@ -303,7 +303,9 @@ impl Atom {
 					*t = Some(b);
 					Ok(meta.ty.as_ref().unwrap().clone())
 				} else {
-					*t = Some(Basic::Float { size: FloatSize::F32 });
+					*t = Some(Basic::Float {
+						size: FloatSize::F32,
+					});
 					Ok(Type::Basic(t.unwrap()))
 				}
 			}
@@ -351,7 +353,10 @@ impl Atom {
 			Atom::ArrayLit(elems) => {
 				let array_len = Arc::new(RwLock::new(ConstExpr::Result(ConstValue::Integral(
 					elems.len() as i128,
-					Some(Basic::Integral { signed: false, size: IntSize::IAddr }),
+					Some(Basic::Integral {
+						signed: false,
+						size: IntSize::IAddr,
+					}),
 				))));
 
 				match &meta.ty {

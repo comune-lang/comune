@@ -10,7 +10,7 @@ use crate::{
 	ast::{
 		get_attribute,
 		module::Identifier,
-		types::{Basic, FnPrototype, TypeDef, IntSize, FloatSize},
+		types::{Basic, FloatSize, FnPrototype, IntSize, TypeDef},
 	},
 	lexer::Token,
 };
@@ -610,7 +610,7 @@ impl Basic {
 						IntSize::I64 => "y",
 						IntSize::I32 => "j",
 						IntSize::I16 => "t",
-						IntSize::I8  => "h",
+						IntSize::I8 => "h",
 					}
 				}
 			}

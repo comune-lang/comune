@@ -11,7 +11,7 @@ use crate::{
 	ast::{
 		get_attribute,
 		module::{Identifier, ModuleImportKind, ModuleInterface, ModuleItemInterface},
-		types::{Basic, TupleKind, Type, TypeDef, FloatSize, IntSize},
+		types::{Basic, FloatSize, IntSize, TupleKind, Type, TypeDef},
 	},
 	driver::{await_imports_ready, get_module_out_path, CompilerState, ModuleState},
 	errors::{CMNMessageLog, ComuneError},
@@ -278,8 +278,12 @@ impl Type {
 		match self {
 			Type::Basic(basic) => match basic {
 				Basic::Bool => write!(f, "bool"),
-				Basic::Float { size: FloatSize::F32 } => write!(f, "float"),
-				Basic::Float { size: FloatSize::F64 } => write!(f, "double"),
+				Basic::Float {
+					size: FloatSize::F32,
+				} => write!(f, "float"),
+				Basic::Float {
+					size: FloatSize::F64,
+				} => write!(f, "double"),
 				Basic::Void => write!(f, "void"),
 
 				Basic::Integral { signed, size } => {

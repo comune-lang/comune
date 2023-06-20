@@ -235,11 +235,21 @@ impl Basic {
 				size: IntSize::I8,
 			}),
 
-			"isize" => Some(Basic::Integral { signed: true, size: IntSize::IAddr  }),
-			"usize" => Some(Basic::Integral { signed: false, size: IntSize::IAddr }),
+			"isize" => Some(Basic::Integral {
+				signed: true,
+				size: IntSize::IAddr,
+			}),
+			"usize" => Some(Basic::Integral {
+				signed: false,
+				size: IntSize::IAddr,
+			}),
 
-			"f64" | "double" => Some(Basic::Float { size: FloatSize::F64 }),
-			"f32" | "float" => Some(Basic::Float { size: FloatSize::F32 }),
+			"f64" | "double" => Some(Basic::Float {
+				size: FloatSize::F64,
+			}),
+			"f32" | "float" => Some(Basic::Float {
+				size: FloatSize::F32,
+			}),
 
 			"bool" => Some(Basic::Bool),
 			"void" => Some(Basic::Void),
@@ -260,7 +270,10 @@ impl Basic {
 				_ => panic!(),
 			},
 
-			Basic::Integral { signed: false, size } => match size {
+			Basic::Integral {
+				signed: false,
+				size,
+			} => match size {
 				IntSize::IAddr => "usize",
 				IntSize::I64 => "u64",
 				IntSize::I32 => "u32",
@@ -270,8 +283,12 @@ impl Basic {
 				_ => panic!(),
 			},
 
-			Basic::Float { size: FloatSize::F64 } => "f64",
-			Basic::Float { size: FloatSize::F32 } => "f32",
+			Basic::Float {
+				size: FloatSize::F64,
+			} => "f64",
+			Basic::Float {
+				size: FloatSize::F32,
+			} => "f32",
 
 			Basic::Bool => "bool",
 			Basic::Void => "void",
@@ -606,15 +623,22 @@ impl Type {
 
 	#[allow(dead_code)]
 	pub fn isize_type(signed: bool) -> Self {
-		Type::Basic(Basic::Integral { signed, size: IntSize::IAddr })
+		Type::Basic(Basic::Integral {
+			signed,
+			size: IntSize::IAddr,
+		})
 	}
 
 	pub fn f32_type() -> Self {
-		Type::Basic(Basic::Float { size: FloatSize::F32 })
+		Type::Basic(Basic::Float {
+			size: FloatSize::F32,
+		})
 	}
 
 	pub fn f64_type() -> Self {
-		Type::Basic(Basic::Float { size: FloatSize::F64 })
+		Type::Basic(Basic::Float {
+			size: FloatSize::F64,
+		})
 	}
 
 	pub fn bool_type() -> Self {
