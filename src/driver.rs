@@ -684,14 +684,16 @@ pub fn generate_llvm_ir<'ctx>(
 			"an internal compiler error occurred:".red().bold(),
 			lexer::get_escaped(e.to_str().unwrap())
 		);
+		
+		let boguspath = out_path.with_extension("llbogus");
 
 		// Output bogus LLVM here, for debugging purposes
-		backend.module.print_to_file("bogus.ll").unwrap();
+		backend.module.print_to_file(boguspath.as_os_str()).unwrap();
 
 		println!(
 			"{} ill-formed LLVM IR printed to {}",
 			"note:".bold(),
-			"bogus.ll".bold()
+			boguspath.to_string_lossy().bold()
 		);
 
 		return Err(ComuneError::new(ComuneErrCode::LLVMError, SrcSpan::new()));

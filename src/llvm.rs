@@ -214,13 +214,16 @@ impl<'ctx> LLVMBackend<'ctx> {
 				.get_param_iter()
 				.enumerate()
 			{
-				// If parameter is an unsafe binding, don't add noundef attribute
-				if !t.variables[idx].1.is_new {
+				let param_props = t.variables[idx].1;
+
+				// If parameter is a `new&` binding, don't add noundef attribute
+				if !param_props.is_new {
 					fn_v.add_attribute(
 						AttributeLoc::Param(idx as u32),
 						self.get_attribute("noundef"),
 					);
 				}
+
 				self.builder.build_store(self.variables[idx].0, param);
 			}
 		}

@@ -5,12 +5,12 @@ u64 fib(u64 n) {
 	u64 mut b = 1;
 	u64 mut c = 0;
 
-	//for (u64 mut i = 1; i < n; i++) {
-	//	c = a + b;
-	//	a = b;
-	//	b = c;
-	//	main::printf(c"Loop!\n");
-	//};
+	for (u64 mut i = 1; i < n; i++) {
+		c = a + b;
+		a = b;
+		b = c;
+		main::printf(c"Loop!\n");
+	};
 
 	return b;
 }

@@ -169,6 +169,7 @@ int main() {
 	printf(c"Left drop_test\n\n");
 
 	submodule_test::bar();
+	printf(c"fib(10) = %i\n", module_test::fib(10));
 
 	Vector<float> mut a;
 	
