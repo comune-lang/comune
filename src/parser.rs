@@ -108,7 +108,7 @@ impl<'ctx> Parser {
 	}
 
 	pub fn generate_ast(&mut self) -> ComuneResult<()> {
-		let mut fn_impls = vec![];
+		let mut fn_impls = HashMap::new();
 
 		for (proto, ast) in &self.module_impl.fn_impls {
 			// Parse function block
@@ -121,10 +121,10 @@ impl<'ctx> Parser {
 					proto.ret.clone(),
 				).with_params(proto.generics.clone());
 
-				fn_impls.push((
+				fn_impls.insert(
 					proto.clone(),
 					ModuleASTElem::Parsed(self.parse_block(&scope)?),
-				));
+				);
 			}
 		}
 
@@ -296,7 +296,7 @@ impl<'ctx> Parser {
 								// Add fn to module impl
 								self.module_impl
 									.fn_impls
-									.push((func.clone(), ModuleASTElem::Unparsed(ast)));
+									.insert(func.clone(), ModuleASTElem::Unparsed(ast));
 
 								match k {
 									"new" => {
@@ -336,7 +336,7 @@ impl<'ctx> Parser {
 						return self.err(ComuneErrCode::UnexpectedToken);
 					};
 
-					let this_trait = TraitInterface {
+					let mut this_trait = TraitInterface {
 						items: HashMap::new(),
 						types: HashMap::new(),
 						supers: vec![],
@@ -357,23 +357,12 @@ impl<'ctx> Parser {
 						match self.parse_namespace_declaration(func_attributes, Some(&Type::TypeParam(0)))? {
 
 							(DeclParseResult::Function(name, proto), ast) => {
+								self.module_impl.fn_impls.insert(proto.clone(), ast);
 	
-								let id = Identifier::from_parent(scope, name);
-								let module_interface = &mut self.interface;
-								
-								self.module_impl.fn_impls.push((proto.clone(), ast));
-	
-								if let Some(ModuleItemInterface::Functions(existing)) =
-									module_interface.children.get(&id)
-								{
-									existing.write().unwrap().push(proto);
+								if let Some(existing) = this_trait.items.get_mut(&name) {
+									existing.push(proto);
 								} else {
-									module_interface.children.insert(
-										id, 
-										ModuleItemInterface::Functions(
-											Arc::new(RwLock::new(vec![proto]))
-										)
-									);
+									this_trait.items.insert(name, vec![proto]);
 								}
 							}
 	
@@ -419,11 +408,11 @@ impl<'ctx> Parser {
 						impl_ty = self.parse_type(None)?;
 					}
 
-					// Consume barce
+					// Consume brace
 					self.consume(&Token::Other('{'))?;
 
 					// Parse functions
-					let mut functions = HashMap::new();
+					let mut functions: HashMap<_, Vec<Arc<FnPrototype>>> = HashMap::new();
 
 					let canonical_root = Identifier {
 						qualifier: (
@@ -446,7 +435,7 @@ impl<'ctx> Parser {
 
 						self.get_next()?;
 
-						let type_params = self.parse_generic_param_list(None)?;
+						let generics = self.parse_generic_param_list(None)?;
 						let params = self.parse_parameter_list(Some(&impl_ty), None)?;
 						let ast = ModuleASTElem::Unparsed(self.get_current_token_index());
 
@@ -456,14 +445,17 @@ impl<'ctx> Parser {
 							path: Identifier::from_parent(&canonical_root, fn_name.clone()),
 							ret: (props, ret),
 							params,
-							generics: type_params,
+							generics,
 							attributes: func_attributes,
 						});
 
-						// TODO: Proper overload handling here
-						functions.insert(fn_name.clone(), vec![proto.clone()]);
+						if let Some(existing) = functions.get_mut(&fn_name) {
+							existing.push(proto.clone());		
+						} else {
+							functions.insert(fn_name.clone(), vec![proto.clone()]);
+						}
 
-						self.module_impl.fn_impls.push((proto, ast));
+						self.module_impl.fn_impls.insert(proto, ast);
 					}
 
 					// Register impl to solver
@@ -591,7 +583,7 @@ impl<'ctx> Parser {
 							let id = Identifier::from_parent(scope, name);
 							let module_interface = &mut self.interface;
 							
-							self.module_impl.fn_impls.push((proto.clone(), ast));
+							self.module_impl.fn_impls.insert(proto.clone(), ast);
 
 							if let Some(ModuleItemInterface::Functions(existing)) =
 								module_interface.children.get(&id)

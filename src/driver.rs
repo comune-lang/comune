@@ -12,7 +12,7 @@ use inkwell::{context::Context, passes::PassManager, targets::FileType};
 use crate::{
 	ast::{
 		self,
-		module::{Identifier, ModuleImport, ModuleImportKind, ModuleInterface, Name},
+		module::{Identifier, ModuleImport, ModuleImportKind, ModuleInterface, Name}, semantic::validate_module_impl,
 	},
 	cir::{
 		analyze::{
@@ -529,51 +529,36 @@ pub fn generate_code<'ctx>(
 	src_path: &Path,
 	input_module: &Identifier,
 ) -> Result<LLVMBackend<'ctx>, ComuneError> {
+
 	// Generate AST
-	match parser.generate_ast() {
-		Ok(()) => {
-			if state.verbose_output {
-				println!("\nvalidating...");
-			}
-		}
-		Err(e) => {
-			parser
-				.lexer
-				.borrow()
-				.log_msg(ComuneMessage::Error(e.clone()));
-			return Err(e);
-		}
-	};
+	if let Err(e) = parser.generate_ast() {
+		parser
+			.lexer
+			.borrow()
+			.log_msg(ComuneMessage::Error(e.clone()));
+
+		return Err(e)
+	}
 
 	// Finalize impl solver, so we can query it
 	parser.interface.impl_solver.finalize();
 
 	// Validate code
+	if let Err(e) = validate_module_impl(&parser.interface, &mut parser.module_impl) {
+		parser
+			.lexer
+			.borrow()
+			.log_msg(ComuneMessage::Error(e.clone()));
 
-	match ast::semantic::validate_module_impl(&parser.interface, &mut parser.module_impl) {
-		Ok(()) => {
-			if state.verbose_output {
-				println!("generating code...");
-			}
-		}
-
-		Err(e) => {
-			parser
-				.lexer
-				.borrow()
-				.log_msg(ComuneMessage::Error(e.clone()));
-			return Err(e);
-		}
+		return Err(e)
 	}
-
+	
 	// Generate cIR
-
 	let module_name = input_module.to_string();
 	let mut cir_module = CIRModuleBuilder::from_ast(parser).module;
 
 	if state.emit_types.contains(&EmitType::ComuneIr) {
 		// Write cIR to file
-
 		fs::write(
 			get_module_out_path(state, input_module).with_extension("cir"),
 			cir_module.to_string(),
@@ -582,7 +567,6 @@ pub fn generate_code<'ctx>(
 	}
 
 	// Analyze & optimize cIR
-
 	let mut cir_man = CIRPassManager::new();
 
 	cir_man.add_pass(verify::Verify);
@@ -592,7 +576,6 @@ pub fn generate_code<'ctx>(
 	let cir_errors = cir_man.run_on_module(&mut cir_module);
 
 	// Handle any errors from cIR passes
-
 	if !cir_errors.is_empty() {
 		let mut return_errors = vec![];
 

@@ -34,7 +34,7 @@ pub fn validate_module_impl(
 
 pub fn validate_interface(_state: &Arc<CompilerState>, parser: &mut Parser) -> ComuneResult<()> {
 	// At this point, all imports have been resolved, so validate namespace-level types
-	ty::resolve_interface_types(&mut parser.interface)?;
+	ty::resolve_interface_types(parser)?;
 
 	// Check for cyclical dependencies without indirection
 	// TODO: Nice error reporting for this
@@ -63,8 +63,6 @@ fn validate_attributes(interface: &mut ModuleInterface) -> ComuneResult<()> {
 					let lang_trait = match &**name {
 						"Sized" => LangTrait::Sized,
 						"Copy" => LangTrait::Copy,
-						"Clone" => LangTrait::Clone,
-						"Drop" => LangTrait::Drop,
 						"Send" => LangTrait::Send,
 						"Sync" => LangTrait::Sync,
 						_ => panic!(),

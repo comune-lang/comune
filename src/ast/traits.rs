@@ -24,8 +24,6 @@ use lazy_static::lazy_static;
 pub enum LangTrait {
 	Sized,
 	Copy,
-	Clone,
-	Drop,
 	Send,
 	Sync,
 }

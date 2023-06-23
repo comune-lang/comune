@@ -14,11 +14,13 @@ use crate::{
 	constexpr::{ConstEval, ConstExpr},
 	errors::{ComuneErrCode, ComuneError},
 	lexer::{SrcSpan, Token},
-	parser::ComuneResult,
+	parser::{ComuneResult, Parser},
 };
 
-pub fn resolve_interface_types(interface: &ModuleInterface) -> ComuneResult<()> {
+pub fn resolve_interface_types(parser: &mut Parser) -> ComuneResult<()> {
 	// Resolve types
+	let interface = &parser.interface;
+	let module_impl = &mut parser.module_impl;
 
 	for child in interface.children.values() {
 		if let ModuleItemInterface::TypeAlias(alias) = child {
@@ -60,13 +62,16 @@ pub fn resolve_interface_types(interface: &ModuleInterface) -> ComuneResult<()> 
 				let TraitInterface { items, .. } = &mut *tr.write().unwrap();
 
 				for fns in items.values_mut() {
-					for func in fns {
+					for func_og in fns {
+						let mut func_arc = Arc::new(func_og.as_ref().clone());
+						let func = Arc::get_mut(&mut func_arc).unwrap();
+		
 						let FnPrototype {
 							ret,
 							params,
 							generics,
 							..
-						} = Arc::make_mut(func);
+						} = func;
 
 						generics.push(("Self".into(), vec![], None));
 
@@ -77,6 +82,11 @@ pub fn resolve_interface_types(interface: &ModuleInterface) -> ComuneResult<()> 
 							resolve_type(&mut param.0, interface, generics)?;
 							check_dst_indirection(&param.0, &BindingProps::default())?;
 						}
+						
+						// Update the module impl's version of the prototype
+						// because everything is terrible and i hate my past self
+						let fn_body = module_impl.fn_impls.remove(func_og).unwrap();
+						module_impl.fn_impls.insert(func_arc, fn_body);
 					}
 				}
 			}
@@ -137,14 +147,17 @@ pub fn resolve_interface_types(interface: &ModuleInterface) -> ComuneResult<()> 
 		let im = &mut *im.write().unwrap();
 
 		for (fn_name, fns) in &mut im.functions {
-			for func in fns {
+			for func_og in fns {
+				let mut func_arc = Arc::new(func_og.as_ref().clone());
+				let func = Arc::get_mut(&mut func_arc).unwrap();
+
 				// Add impl's generics to function prototype
 				{
 					let FnPrototype {
 						generics: fn_generics,
 						path,
 						..
-					} = Arc::make_mut(func);
+					} = func;
 
 					path.qualifier = trait_qualif.clone();
 
@@ -152,9 +165,7 @@ pub fn resolve_interface_types(interface: &ModuleInterface) -> ComuneResult<()> 
 						fn_generics.insert(i, param.clone());
 					}
 				}
-
-				let func = Arc::make_mut(func);
-
+				
 				resolve_function_prototype(func, interface)?;
 
 				let FnPrototype { ret, params, .. } = &*func;
@@ -223,6 +234,11 @@ pub fn resolve_interface_types(interface: &ModuleInterface) -> ComuneResult<()> 
 						));
 					}
 				}
+
+				// Update the module impl's version of the prototype
+				// because everything is terrible and i hate my past self
+				let fn_body = module_impl.fn_impls.remove(func_og).unwrap();
+				module_impl.fn_impls.insert(func_arc, fn_body);
 			}
 		}
 
