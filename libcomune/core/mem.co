@@ -38,3 +38,11 @@ U bit_cast<type T, type U>(T t) {
 
 	unsafe { *(&t as U*) }
 }
+
+T* null<type T>() {
+	bit_cast<usize, T*>(0)
+}
+
+T mut* null_mut<type T>() {
+	bit_cast<usize, T mut*>(0)
+}

@@ -1,4 +1,12 @@
-using core::mem::{size_of, malloc, realloc, free, bit_cast, memcpy};
+using core::mem::{
+	size_of, 
+	malloc, 
+	realloc, 
+	free, 
+	bit_cast, 
+	memcpy, 
+	null_mut
+};
 
 struct Vector<type T> {
 	T mut* data;
@@ -10,7 +18,7 @@ struct Vector<type T> {
 
 	new(new& self) {
 		self = new Vector<T> {
-			data: bit_cast<usize, T mut*>(0),
+			data: null_mut<T>(),
 			capacity: 0,
 			len: 0,
 		};
