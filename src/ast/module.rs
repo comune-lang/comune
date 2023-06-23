@@ -64,7 +64,7 @@ pub struct ModuleInterface {
 // i do not want to start doing newtype bullshit right now
 #[derive(Default, Debug)]
 pub struct ModuleImpl {
-	pub fn_impls: Vec<(Arc<RwLock<FnPrototype>>, ModuleASTElem)>,
+	pub fn_impls: Vec<(Arc<FnPrototype>, ModuleASTElem)>,
 }
 
 // I HATE RWLOCKS I HATE RWLOCKS I HATE RWLOCKS I HATE RWLOCKS I

@@ -337,7 +337,10 @@ impl Display for ComuneErrCode {
 			}
 
 			ComuneErrCode::InvalidNewReference { variable } => {
-				write!(f, "variable {variable} must be uninitialized to pass as new&")
+				write!(
+					f,
+					"variable {variable} must be uninitialized to pass as new&"
+				)
 			}
 
 			ComuneErrCode::ImmutVarMutation { variable } => {

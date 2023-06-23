@@ -81,8 +81,8 @@ pub struct TypeDef {
 	pub params: Generics,
 	pub attributes: Vec<Attribute>,
 
-	pub init: Vec<Arc<RwLock<FnPrototype>>>, // Zero or more constructors
-	pub drop: Option<Arc<RwLock<FnPrototype>>>, // Zero or one destructor
+	pub init: Vec<Arc<FnPrototype>>, // Zero or more constructors
+	pub drop: Option<Arc<FnPrototype>>, // Zero or one destructor
 }
 
 #[derive(Default, Debug, Clone, Copy)]

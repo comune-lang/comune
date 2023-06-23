@@ -279,13 +279,13 @@ impl<'ctx> Parser {
 								let mut path = Identifier::from_parent(&scope, k.into());
 								path.qualifier.0 = Some(Box::new(self_ty.clone()));
 
-								let func = Arc::new(RwLock::new(FnPrototype {
+								let func = Arc::new(FnPrototype {
 									path,
 									params,
 									generics,
 									ret: (BindingProps::default(), Type::Basic(Basic::Void)),
 									attributes: vec![],
-								}));
+								});
 
 								// Skip c'tor/d'tor body
 								let ast = self.get_current_token_index();

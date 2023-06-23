@@ -16,18 +16,19 @@ use crate::{
 };
 
 use super::{
-	CIRCallId, CIRFnMap, CIRFunction, CIRModule, CIRStmt, CIRTyMap, FuncID, RValue, Type, TypeName,
+	builder::CIRModuleBuilder, CIRCallId, CIRFnMap, CIRFunction, CIRModule, CIRStmt, CIRTyMap,
+	FuncID, RValue, Type, TypeName,
 };
 
 // A set of requested Generic monomorphizations, with a Vec of type arguments
 // TODO: Extend system to support constants as arguments
 type MonoizationList = HashSet<(Identifier, Vec<Type>)>;
 
-type TypeSubstitutions = Vec<Type>;
+type GenericArgs = Vec<Type>;
 
 // Map from index + parameters to indices of existing instances
-type TypeInstanceMap = HashMap<TypeName, HashMap<TypeSubstitutions, TypeName>>;
-type FuncInstanceMap = HashMap<FuncID, HashMap<TypeSubstitutions, FuncID>>;
+type TypeInstanceMap = HashMap<TypeName, HashMap<GenericArgs, TypeName>>;
+type FuncInstanceMap = HashMap<FuncID, HashMap<GenericArgs, FuncID>>;
 type TypeMap = HashMap<TypeName, Arc<RwLock<TypeDef>>>;
 
 // The monomorphization server (MonomorphServer) stores the bodies of generic
@@ -37,6 +38,7 @@ pub struct MonomorphServer {
 	fn_templates: RwLock<CIRFnMap>,
 	fn_instances: RwLock<CIRFnMap>,
 	ty_instances: RwLock<CIRTyMap>,
+	fn_jobs: RwLock<HashSet<Arc<FnPrototype>>>,
 }
 
 impl MonomorphServer {
@@ -45,6 +47,7 @@ impl MonomorphServer {
 			fn_templates: RwLock::default(),
 			fn_instances: RwLock::default(),
 			ty_instances: RwLock::default(),
+			fn_jobs: RwLock::default(),
 		}
 	}
 
@@ -126,7 +129,7 @@ impl MonomorphServer {
 		&self,
 		func: &CIRFunction,
 		types: &mut HashMap<TypeName, Arc<RwLock<TypeDef>>>,
-		param_map: &TypeSubstitutions,
+		param_map: &GenericArgs,
 		fns_in: &CIRFnMap,
 		fns_out: &mut CIRFnMap,
 	) -> CIRFunction {
@@ -249,7 +252,7 @@ impl MonomorphServer {
 		&self,
 		types: &mut TypeMap,
 		rval: &mut RValue,
-		param_map: &TypeSubstitutions,
+		param_map: &GenericArgs,
 		fns_in: &CIRFnMap,
 		fns_out: &mut CIRFnMap,
 	) {
@@ -276,7 +279,7 @@ impl MonomorphServer {
 		&self,
 		types: &mut TypeMap,
 		ty: &mut Type,
-		param_map: &TypeSubstitutions,
+		param_map: &GenericArgs,
 		fns_in: &CIRFnMap,
 		fns_out: &mut CIRFnMap,
 	) {
@@ -346,19 +349,19 @@ impl MonomorphServer {
 		types: &mut TypeMap,
 		def: Arc<RwLock<TypeDef>>,
 		name: TypeName,
-		param_map: &TypeSubstitutions,
+		generic_args: &GenericArgs,
 		fns_in: &CIRFnMap,
 		fns_out: &mut CIRFnMap,
 	) -> Weak<RwLock<TypeDef>> {
 		let mut instance = def.read().unwrap().clone();
 
 		for (_, member, _) in &mut instance.members {
-			self.monoize_type(types, member, param_map, fns_in, fns_out);
+			self.monoize_type(types, member, generic_args, fns_in, fns_out);
 		}
 
 		instance.params.clear();
 
-		let mut iter = param_map.iter();
+		let mut iter = generic_args.iter();
 		let mut insert_idx = name + "<" + &iter.next().unwrap().to_string();
 
 		for param in iter {
@@ -382,79 +385,70 @@ impl MonomorphServer {
 
 			types.insert(insert_idx.clone(), instance_arc.clone());
 
-			if instance_arc.read().unwrap().drop.is_some() {
-				// We have to do this for stupid bullshit reasons
-				// that are stupid and also bullshit.
-
-				loop {
-					let instance_lock = instance_arc.read().unwrap();
-					let drop_fn = instance_lock.drop.as_ref().unwrap();
-					let drop_fn = &*drop_fn.read().unwrap();
-
-					if self.fn_instances.read().unwrap().contains_key(drop_fn) {
-						break;
-					} else {
-						std::thread::sleep(Duration::from_millis(1));
-					}
-				}
-
-				let instance_lock = instance_arc.read().unwrap();
-				let drop_fn = instance_lock.drop.as_ref().unwrap();
-				let drop_fn = drop_fn.read().unwrap().clone();
-
-				let drop_body = self.fn_instances.read().unwrap()[&drop_fn].clone();
-
-				fns_out.insert(Arc::new(drop_fn), drop_body);
-			}
-
 			Arc::downgrade(&instance_arc)
 		} else {
-			// Couldn't find this instance in the global map either, so store it
+			// Couldn't find this instance in the global map either, so register it
 			let instance_arc = Arc::new(RwLock::new(instance));
+			let mut instance_lock = instance_arc.write().unwrap();
+
+			// Monoize dtor
+			if let Some(drop_fn) = &instance_lock.drop {
+				if let Some(drop_body) = fns_in.get(drop_fn) {
+					self.register_fn_template(&drop_fn, drop_body);
+				}
+
+				let (drop_fn, drop_body) = self.register_fn_job(drop_fn.as_ref().clone(), &generic_args);
+				
+				fns_out.insert(drop_fn.clone(), drop_body);
+				
+				// this is really ugly. we have to go back and forth between
+				// Arc<T> and Arc<RwLock<T>> a lot because of annoying reasons
+				//
+				// TODO: evaluate whether RwLock is still necessary here at all
+				instance_lock.drop = Some(drop_fn);
+			}
 
 			self.ty_instances
 				.write()
 				.unwrap()
 				.insert(insert_idx.clone(), instance_arc.clone());
 
-			types.insert(insert_idx.clone(), instance_arc.clone());
-
-			// Monoize dtor
-			if instance_arc.read().unwrap().drop.is_some() {
-				let instance_lock = instance_arc.read().unwrap();
-				let drop_fn = instance_lock.drop.as_ref().unwrap();
-
-				if !self
-					.fn_templates
-					.read()
-					.unwrap()
-					.contains_key(&*drop_fn.read().unwrap())
-				{
-					// Add dtor to fn_templates
-					let drop = drop_fn.read().unwrap().clone();
-
-					if let Some(drop_body) = fns_in.get(&drop) {
-						self.fn_templates
-							.write()
-							.unwrap()
-							.insert(Arc::new(drop), drop_body.clone());
-					} else {
-						while !self.fn_templates.read().unwrap().contains_key(&drop) {
-							std::thread::sleep(Duration::from_millis(1));
-						}
-					}
-				}
-
-				let mut drop_clone = drop_fn.read().unwrap().clone();
-
-				self.monoize_call(&mut drop_clone, param_map, fns_in, fns_out, types);
-
-				drop(instance_lock);
-
-				instance_arc.write().unwrap().drop = Some(Arc::new(RwLock::new(drop_clone)));
-			}
+			types.insert(insert_idx, instance_arc.clone());
 
 			Arc::downgrade(&instance_arc)
+		}
+	}
+	
+	// Register a function template if it hasn't been registered already
+	// which it.. technically never should? hm. i dunno let's just be safe
+	fn register_fn_template(&self, func: &FnPrototype, body: &CIRFunction) {
+		if self.fn_templates.read().unwrap().contains_key(func) {
+			return
+		}
+
+		self.fn_templates.write().unwrap().insert(Arc::new(func.clone()), body.clone());
+	}
+
+	// Request a function instance, returning an `extern` fn
+	// and adding it to the MonomorphServer's job list
+	fn register_fn_job(&self, mut func: FnPrototype, args: &GenericArgs) -> (Arc<FnPrototype>, CIRFunction) {		
+		for (i, arg) in args.iter().enumerate() {
+			func.generics[i].2 = Some(arg.clone())
+		}
+
+		let func = Arc::new(func);
+
+		let extern_fn = CIRModuleBuilder::generate_prototype(&func);
+
+		if self.fn_instances.read().unwrap().contains_key(&func)
+			|| self.fn_jobs.read().unwrap().contains(&func)
+		{
+			// instance already exists, or job already registered?
+			// then just return the extern fn
+			(func, extern_fn)
+		} else {
+			self.fn_jobs.write().unwrap().insert(func.clone());
+			(func, extern_fn)
 		}
 	}
 

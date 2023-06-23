@@ -546,7 +546,7 @@ impl Atom {
 								func::is_candidate_viable(
 									args,
 									&generic_args,
-									&*init.read().unwrap(),
+									init,
 								)
 							})
 							.cloned()

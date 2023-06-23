@@ -368,11 +368,12 @@ pub fn resolve_type_def(
 
 	// This part is ugly as hell. sorry
 
-	if let Some(drop) = &ty.drop {
-		resolve_function_prototype(&mut *drop.write().unwrap(), interface)?;
+	if let Some(mut drop) = &mut ty.drop {
+		let drop_ref = Arc::make_mut(&mut drop);
+
+		resolve_function_prototype(drop_ref, interface)?;
 
 		// Check whether the first parameter exists and is `mut& self`
-		let drop = drop.read().unwrap();
 
 		let Some((Type::TypeRef { def, .. }, _, props)) = drop.params.params.get(0) else {
 			return Err(ComuneError::new(

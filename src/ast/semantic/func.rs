@@ -289,7 +289,7 @@ pub fn try_select_candidate(
 	name: &Identifier,
 	args: &[Expr],
 	generic_args: &Vec<Type>,
-	candidates: &mut [Arc<RwLock<FnPrototype>>],
+	candidates: &mut [Arc<FnPrototype>],
 	span: SrcSpan,
 	scope: &FnScope,
 ) -> ComuneResult<Arc<RwLock<FnPrototype>>> {

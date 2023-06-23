@@ -23,10 +23,10 @@ pub fn validate_module_impl(
 	module_impl: &mut ModuleImpl,
 ) -> ComuneResult<()> {
 	for (proto, ast) in &mut module_impl.fn_impls {
-		let mut scope = proto.read().unwrap().path.clone();
+		let mut scope = proto.path.clone();
 		scope.path.pop();
 
-		validate_function_body(scope.clone(), &*proto.read().unwrap(), ast, interface)?
+		validate_function_body(scope.clone(), &*proto, ast, interface)?
 	}
 
 	Ok(())
