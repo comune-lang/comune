@@ -6,7 +6,7 @@ use std::{
 use crate::{
 	ast::{
 		get_attribute,
-		module::{ItemRef, ModuleInterface, ModuleItemInterface},
+		module::{ItemRef, ModuleImpl, ModuleInterface, ModuleItemInterface},
 		traits::{TraitInterface, TraitRef},
 		types::{self, BindingProps, FnPrototype, Generics, Type, TypeDef},
 		FnScope,
@@ -33,24 +33,11 @@ pub fn resolve_interface_types(parser: &mut Parser) -> ComuneResult<()> {
 		match child {
 			ModuleItemInterface::Functions(fns) => {
 				for func in fns.write().unwrap().iter_mut() {
-					let FnPrototype {
-						ret,
-						params,
-						generics,
-						..
-					} = Arc::make_mut(func);
-
-					resolve_type(&mut ret.1, interface, generics)?;
-					check_dst_indirection(&ret.1, &BindingProps::default())?;
-
-					for (param, _, props) in &mut params.params {
-						resolve_type(param, interface, generics)?;
-						check_dst_indirection(param, props)?;
-					}
+					resolve_function_prototype(func, interface, module_impl)?;
 				}
 			}
 
-			ModuleItemInterface::Type(t) => resolve_type_def(t.clone(), interface)?,
+			ModuleItemInterface::Type(t) => resolve_type_def(t.clone(), interface, module_impl)?,
 
 			ModuleItemInterface::TypeAlias(ty) => {
 				resolve_type(&mut *ty.write().unwrap(), interface, &vec![])?
@@ -65,7 +52,7 @@ pub fn resolve_interface_types(parser: &mut Parser) -> ComuneResult<()> {
 					for func_og in fns {
 						let mut func_arc = Arc::new(func_og.as_ref().clone());
 						let func = Arc::get_mut(&mut func_arc).unwrap();
-		
+
 						let FnPrototype {
 							ret,
 							params,
@@ -82,7 +69,7 @@ pub fn resolve_interface_types(parser: &mut Parser) -> ComuneResult<()> {
 							resolve_type(&mut param.0, interface, generics)?;
 							check_dst_indirection(&param.0, &BindingProps::default())?;
 						}
-						
+
 						// Update the module impl's version of the prototype
 						// because everything is terrible and i hate my past self
 						let fn_body = module_impl.fn_impls.remove(func_og).unwrap();
@@ -156,6 +143,8 @@ pub fn resolve_interface_types(parser: &mut Parser) -> ComuneResult<()> {
 					let FnPrototype {
 						generics: fn_generics,
 						path,
+						ret,
+						params,
 						..
 					} = func;
 
@@ -164,9 +153,15 @@ pub fn resolve_interface_types(parser: &mut Parser) -> ComuneResult<()> {
 					for (i, param) in generics.iter().enumerate() {
 						fn_generics.insert(i, param.clone());
 					}
+
+					resolve_type(&mut ret.1, interface, &fn_generics)?;
+					check_dst_indirection(&ret.1, &BindingProps::default())?;
+
+					for (param, _, props) in &mut params.params {
+						resolve_type(param, interface, &fn_generics)?;
+						check_dst_indirection(param, props)?;
+					}
 				}
-				
-				resolve_function_prototype(func, interface)?;
 
 				let FnPrototype { ret, params, .. } = &*func;
 
@@ -236,7 +231,6 @@ pub fn resolve_interface_types(parser: &mut Parser) -> ComuneResult<()> {
 				}
 
 				// Update the module impl's version of the prototype
-				// because everything is terrible and i hate my past self
 				let fn_body = module_impl.fn_impls.remove(func_og).unwrap();
 				module_impl.fn_impls.insert(func_arc, fn_body);
 			}
@@ -357,6 +351,7 @@ pub fn resolve_type(
 pub fn resolve_type_def(
 	ty_lock: Arc<RwLock<TypeDef>>,
 	interface: &ModuleInterface,
+	module_impl: &mut ModuleImpl,
 ) -> ComuneResult<()> {
 	let mut ty = ty_lock.write().unwrap();
 
@@ -385,10 +380,9 @@ pub fn resolve_type_def(
 	// This part is ugly as hell. sorry
 
 	if let Some(drop) = &mut ty.drop {
-		resolve_function_prototype(Arc::make_mut(drop), interface)?;
+		resolve_function_prototype(drop, interface, module_impl)?;
 
 		// Check whether the first parameter exists and is `mut& self`
-
 		let Some((Type::TypeRef { def, .. }, _, props)) = drop.params.params.get(0) else {
 			return Err(ComuneError::new(
 				ComuneErrCode::DtorSelfParam(ty.name.clone()),
@@ -405,7 +399,7 @@ pub fn resolve_type_def(
 	}
 
 	for init in &mut ty.init {
-		resolve_function_prototype(Arc::make_mut(init), interface)?;
+		resolve_function_prototype(init, interface, module_impl)?;
 
 		// Check whether the first parameter exists and is `new& self`
 		let Some((Type::TypeRef { def, .. }, _, props)) = init.params.params.get(0) else {
@@ -463,9 +457,13 @@ pub fn resolve_type_def(
 }
 
 pub fn resolve_function_prototype(
-	func: &mut FnPrototype,
+	func_og: &mut Arc<FnPrototype>,
 	interface: &ModuleInterface,
+	module_impl: &mut ModuleImpl,
 ) -> ComuneResult<()> {
+	let mut func_arc = Arc::new(func_og.as_ref().clone());
+	let func = Arc::get_mut(&mut func_arc).unwrap();
+
 	let FnPrototype {
 		ret,
 		params,
@@ -480,6 +478,11 @@ pub fn resolve_function_prototype(
 		resolve_type(param, interface, generics)?;
 		check_dst_indirection(param, props)?;
 	}
+
+	// Update the module impl's version of the prototype
+	let fn_body = module_impl.fn_impls.remove(func_og).unwrap();
+	module_impl.fn_impls.insert(func_arc, fn_body);
+
 	Ok(())
 }
 

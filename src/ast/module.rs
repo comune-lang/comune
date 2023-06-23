@@ -80,7 +80,9 @@ pub enum ModuleItemInterface {
 
 impl ModuleImpl {
 	pub fn new() -> Self {
-		ModuleImpl { fn_impls: HashMap::new() }
+		ModuleImpl {
+			fn_impls: HashMap::new(),
+		}
 	}
 }
 

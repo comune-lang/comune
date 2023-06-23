@@ -115,11 +115,8 @@ impl<'ctx> Parser {
 			if let ModuleASTElem::Unparsed(idx) = ast {
 				self.lexer.borrow_mut().seek_token_idx(*idx);
 
-				let scope = FnScope::new(
-					&self.interface,
-					proto.path.clone(),
-					proto.ret.clone(),
-				).with_params(proto.generics.clone());
+				let scope = FnScope::new(&self.interface, proto.path.clone(), proto.ret.clone())
+					.with_params(proto.generics.clone());
 
 				fn_impls.insert(
 					proto.clone(),
@@ -354,19 +351,21 @@ impl<'ctx> Parser {
 					while !token_compare(&next, "}") {
 						let func_attributes = self.parse_attributes()?;
 
-						match self.parse_namespace_declaration(func_attributes, Some(&Type::TypeParam(0)))? {
-
+						match self.parse_namespace_declaration(
+							func_attributes,
+							Some(&Type::TypeParam(0)),
+						)? {
 							(DeclParseResult::Function(name, proto), ast) => {
 								self.module_impl.fn_impls.insert(proto.clone(), ast);
-	
+
 								if let Some(existing) = this_trait.items.get_mut(&name) {
 									existing.push(proto);
 								} else {
 									this_trait.items.insert(name, vec![proto]);
 								}
 							}
-	
-							(DeclParseResult::Variable(..), _) => todo!()
+
+							(DeclParseResult::Variable(..), _) => todo!(),
 						}
 
 						next = self.get_current()?;
@@ -450,7 +449,7 @@ impl<'ctx> Parser {
 						});
 
 						if let Some(existing) = functions.get_mut(&fn_name) {
-							existing.push(proto.clone());		
+							existing.push(proto.clone());
 						} else {
 							functions.insert(fn_name.clone(), vec![proto.clone()]);
 						}
@@ -577,12 +576,10 @@ impl<'ctx> Parser {
 					// Parse declaration/definition
 
 					match self.parse_namespace_declaration(current_attributes, None)? {
-
 						(DeclParseResult::Function(name, proto), ast) => {
-
 							let id = Identifier::from_parent(scope, name);
 							let module_interface = &mut self.interface;
-							
+
 							self.module_impl.fn_impls.insert(proto.clone(), ast);
 
 							if let Some(ModuleItemInterface::Functions(existing)) =
@@ -591,15 +588,15 @@ impl<'ctx> Parser {
 								existing.write().unwrap().push(proto);
 							} else {
 								module_interface.children.insert(
-									id, 
-									ModuleItemInterface::Functions(
-										Arc::new(RwLock::new(vec![proto]))
-									)
+									id,
+									ModuleItemInterface::Functions(Arc::new(RwLock::new(vec![
+										proto,
+									]))),
 								);
 							}
 						}
 
-						(DeclParseResult::Variable(..), _) => todo!()
+						(DeclParseResult::Variable(..), _) => todo!(),
 					}
 				}
 			}

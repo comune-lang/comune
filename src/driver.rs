@@ -12,7 +12,8 @@ use inkwell::{context::Context, passes::PassManager, targets::FileType};
 use crate::{
 	ast::{
 		self,
-		module::{Identifier, ModuleImport, ModuleImportKind, ModuleInterface, Name}, semantic::validate_module_impl,
+		module::{Identifier, ModuleImport, ModuleImportKind, ModuleInterface, Name},
+		semantic::validate_module_impl,
 	},
 	cir::{
 		analyze::{
@@ -529,7 +530,6 @@ pub fn generate_code<'ctx>(
 	src_path: &Path,
 	input_module: &Identifier,
 ) -> Result<LLVMBackend<'ctx>, ComuneError> {
-
 	// Generate AST
 	if let Err(e) = parser.generate_ast() {
 		parser
@@ -537,7 +537,7 @@ pub fn generate_code<'ctx>(
 			.borrow()
 			.log_msg(ComuneMessage::Error(e.clone()));
 
-		return Err(e)
+		return Err(e);
 	}
 
 	// Finalize impl solver, so we can query it
@@ -550,9 +550,9 @@ pub fn generate_code<'ctx>(
 			.borrow()
 			.log_msg(ComuneMessage::Error(e.clone()));
 
-		return Err(e)
+		return Err(e);
 	}
-	
+
 	// Generate cIR
 	let module_name = input_module.to_string();
 	let mut cir_module = CIRModuleBuilder::from_ast(parser).module;

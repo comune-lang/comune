@@ -397,10 +397,11 @@ impl MonomorphServer {
 					self.register_fn_template(&drop_fn, drop_body);
 				}
 
-				let (drop_fn, drop_body) = self.register_fn_job(drop_fn.as_ref().clone(), &generic_args);
-				
+				let (drop_fn, drop_body) =
+					self.register_fn_job(drop_fn.as_ref().clone(), &generic_args);
+
 				fns_out.insert(drop_fn.clone(), drop_body);
-				
+
 				// this is really ugly. we have to go back and forth between
 				// Arc<T> and Arc<RwLock<T>> a lot because of annoying reasons
 				//
@@ -418,20 +419,27 @@ impl MonomorphServer {
 			Arc::downgrade(&instance_arc)
 		}
 	}
-	
+
 	// Register a function template if it hasn't been registered already
 	// which it.. technically never should? hm. i dunno let's just be safe
 	fn register_fn_template(&self, func: &FnPrototype, body: &CIRFunction) {
 		if self.fn_templates.read().unwrap().contains_key(func) {
-			return
+			return;
 		}
 
-		self.fn_templates.write().unwrap().insert(Arc::new(func.clone()), body.clone());
+		self.fn_templates
+			.write()
+			.unwrap()
+			.insert(Arc::new(func.clone()), body.clone());
 	}
 
 	// Request a function instance, returning an `extern` fn
 	// and adding it to the MonomorphServer's job list
-	fn register_fn_job(&self, mut func: FnPrototype, args: &GenericArgs) -> (Arc<FnPrototype>, CIRFunction) {		
+	fn register_fn_job(
+		&self,
+		mut func: FnPrototype,
+		args: &GenericArgs,
+	) -> (Arc<FnPrototype>, CIRFunction) {
 		for (i, arg) in args.iter().enumerate() {
 			func.generics[i].2 = Some(arg.clone())
 		}

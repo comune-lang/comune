@@ -542,13 +542,7 @@ impl Atom {
 						let mut candidates: Vec<_> = def
 							.init
 							.iter()
-							.filter(|init| {
-								func::is_candidate_viable(
-									args,
-									&generic_args,
-									init,
-								)
-							})
+							.filter(|init| func::is_candidate_viable(args, &generic_args, init))
 							.cloned()
 							.collect();
 

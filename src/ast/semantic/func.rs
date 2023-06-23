@@ -1,7 +1,4 @@
-use std::{
-	cmp::Ordering,
-	sync::Arc,
-};
+use std::{cmp::Ordering, sync::Arc};
 
 use crate::{
 	ast::{
@@ -305,17 +302,10 @@ pub fn try_select_candidate(
 		// More than one viable candidate
 		_ => {
 			// Sort candidates by cost
-			candidates.sort_unstable_by(|l, r| {
-				candidate_compare(args, l, r, scope)
-			});
+			candidates.sort_unstable_by(|l, r| candidate_compare(args, l, r, scope));
 
 			// Compare the top two candidates
-			match candidate_compare(
-				args,
-				&candidates[0],
-				&candidates[1],
-				scope,
-			) {
+			match candidate_compare(args, &candidates[0], &candidates[1], scope) {
 				Ordering::Less => Ok(candidates[0].clone()),
 
 				Ordering::Equal => Err(ComuneError::new(ComuneErrCode::AmbiguousCall, span)), // Ambiguous call
