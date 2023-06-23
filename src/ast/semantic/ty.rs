@@ -30,13 +30,13 @@ pub fn resolve_interface_types(interface: &ModuleInterface) -> ComuneResult<()> 
 	for child in interface.children.values() {
 		match child {
 			ModuleItemInterface::Functions(fns) => {
-				for func in fns.iter() {
+				for func in fns.write().unwrap().iter_mut() {
 					let FnPrototype {
 						ret,
 						params,
 						generics,
 						..
-					} = &mut *func.write().unwrap();
+					} = Arc::make_mut(func);
 
 					resolve_type(&mut ret.1, interface, generics)?;
 					check_dst_indirection(&ret.1, &BindingProps::default())?;
@@ -66,7 +66,7 @@ pub fn resolve_interface_types(interface: &ModuleInterface) -> ComuneResult<()> 
 							params,
 							generics,
 							..
-						} = &mut *func.write().unwrap();
+						} = Arc::make_mut(func);
 
 						generics.push(("Self".into(), vec![], None));
 
@@ -134,9 +134,9 @@ pub fn resolve_interface_types(interface: &ModuleInterface) -> ComuneResult<()> 
 
 		let mut trait_functions_found = HashSet::new();
 
-		let im = im.read().unwrap();
+		let im = &mut *im.write().unwrap();
 
-		for (fn_name, fns) in &im.functions {
+		for (fn_name, fns) in &mut im.functions {
 			for func in fns {
 				// Add impl's generics to function prototype
 				{
@@ -144,7 +144,7 @@ pub fn resolve_interface_types(interface: &ModuleInterface) -> ComuneResult<()> 
 						generics: fn_generics,
 						path,
 						..
-					} = &mut *func.write().unwrap();
+					} = Arc::make_mut(func);
 
 					path.qualifier = trait_qualif.clone();
 
@@ -153,9 +153,11 @@ pub fn resolve_interface_types(interface: &ModuleInterface) -> ComuneResult<()> 
 					}
 				}
 
-				resolve_function_prototype(&mut *func.write().unwrap(), interface)?;
+				let func = Arc::make_mut(func);
 
-				let FnPrototype { ret, params, .. } = &*func.read().unwrap();
+				resolve_function_prototype(func, interface)?;
+
+				let FnPrototype { ret, params, .. } = &*func;
 
 				if let Some(tr) = &resolved_trait {
 					// Check if the function signature matches a declaration in the trait
@@ -177,8 +179,6 @@ pub fn resolve_interface_types(interface: &ModuleInterface) -> ComuneResult<()> 
 						// and look for one that matches this impl function
 
 						'overloads: for func in funcs {
-							let func = func.read().unwrap();
-
 							if func.params.params.len() != params.params.len() {
 								continue 'overloads;
 							}
@@ -230,9 +230,9 @@ pub fn resolve_interface_types(interface: &ModuleInterface) -> ComuneResult<()> 
 			// Now go through all the trait's functions and check for missing impls
 			for (_, funcs) in &tr.def.upgrade().unwrap().read().unwrap().items {
 				for func in funcs {
-					if !trait_functions_found.contains(&*func.read().unwrap()) {
+					if !trait_functions_found.contains(func) {
 						return Err(ComuneError::new(
-							ComuneErrCode::MissingTraitFuncImpl(func.read().unwrap().to_string()),
+							ComuneErrCode::MissingTraitFuncImpl(func.to_string()),
 							SrcSpan::new(),
 						));
 					}
@@ -368,10 +368,8 @@ pub fn resolve_type_def(
 
 	// This part is ugly as hell. sorry
 
-	if let Some(mut drop) = &mut ty.drop {
-		let drop_ref = Arc::make_mut(&mut drop);
-
-		resolve_function_prototype(drop_ref, interface)?;
+	if let Some(drop) = &mut ty.drop {
+		resolve_function_prototype(Arc::make_mut(drop), interface)?;
 
 		// Check whether the first parameter exists and is `mut& self`
 
@@ -390,12 +388,10 @@ pub fn resolve_type_def(
 		}
 	}
 
-	for init in &ty.init {
-		resolve_function_prototype(&mut *init.write().unwrap(), interface)?;
+	for init in &mut ty.init {
+		resolve_function_prototype(Arc::make_mut(init), interface)?;
 
 		// Check whether the first parameter exists and is `new& self`
-		let init = init.read().unwrap();
-
 		let Some((Type::TypeRef { def, .. }, _, props)) = init.params.params.get(0) else {
 			return Err(ComuneError::new(
 				ComuneErrCode::CtorSelfParam(ty.name.clone()),

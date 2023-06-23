@@ -72,7 +72,7 @@ pub struct ModuleImpl {
 pub enum ModuleItemInterface {
 	Type(Arc<RwLock<TypeDef>>),
 	Trait(Arc<RwLock<TraitInterface>>),
-	Functions(Vec<Arc<RwLock<FnPrototype>>>),
+	Functions(Arc<RwLock<Vec<Arc<FnPrototype>>>>),
 	Variable(Type),
 	Alias(Identifier),
 	TypeAlias(Arc<RwLock<Type>>),
@@ -80,7 +80,7 @@ pub enum ModuleItemInterface {
 
 #[derive(Clone, Debug)]
 pub enum ModuleItemImpl {
-	Function(Arc<RwLock<FnPrototype>>, ModuleASTElem),
+	Function(Arc<FnPrototype>, ModuleASTElem),
 	Variable(ModuleASTElem),
 }
 

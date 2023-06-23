@@ -67,10 +67,9 @@ impl CIRModuleBuilder {
 
 			for (_, fns) in &im.functions {
 				for func in fns {
-					let proto = Arc::new(func.read().unwrap().clone());
-					let cir_fn = Self::generate_prototype(&proto);
+					let cir_fn = Self::generate_prototype(&func);
 
-					self.module.functions.insert(proto, cir_fn);
+					self.module.functions.insert(func.clone(), cir_fn);
 				}
 			}
 		}
@@ -84,11 +83,10 @@ impl CIRModuleBuilder {
 		for (name, item) in &module.children {
 			match item {
 				ModuleItemInterface::Functions(fns) => {
-					for func in fns {
-						let proto = Arc::new(func.read().unwrap().clone());
-						let cir_fn = Self::generate_prototype(&proto);
+					for func in &*fns.read().unwrap() {
+						let cir_fn = Self::generate_prototype(func);
 
-						self.module.functions.insert(proto, cir_fn);
+						self.module.functions.insert(func.clone(), cir_fn);
 					}
 				}
 
@@ -102,7 +100,7 @@ impl CIRModuleBuilder {
 					}
 
 					for init in &ty.read().unwrap().init {
-						let proto = Arc::new(init.read().unwrap().clone());
+						let proto = init.clone();
 						let cir_fn = Self::generate_prototype(&proto);
 
 						self.module.functions.insert(proto, cir_fn);
@@ -1285,8 +1283,6 @@ impl CIRModuleBuilder {
 	) -> Option<RValue> {
 		match resolved {
 			FnRef::Direct(resolved) => {
-				let resolved = resolved.read().unwrap();
-
 				let (ret_props, ret) = resolved.ret.clone();
 				let ret = ret.get_concrete_type(generic_args);
 

@@ -437,10 +437,10 @@ pub enum XtorKind {
 	Constructor { args: Vec<Expr>, resolved: FnRef },
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum FnRef {
 	None,
-	Direct(Arc<RwLock<FnPrototype>>),
+	Direct(Arc<FnPrototype>),
 	Indirect(Box<Expr>),
 }
 
@@ -513,17 +513,6 @@ impl PartialEq for Atom {
 					false
 				}
 			}
-		}
-	}
-}
-
-impl PartialEq for FnRef {
-	fn eq(&self, other: &Self) -> bool {
-		match (self, other) {
-			(FnRef::Direct(l), FnRef::Direct(r)) => &*l.read().unwrap() == &*r.read().unwrap(),
-			(FnRef::Indirect(l0), FnRef::Indirect(r0)) => l0 == r0,
-			(FnRef::None, FnRef::None) => true,
-			_ => false,
 		}
 	}
 }

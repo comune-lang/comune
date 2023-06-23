@@ -40,6 +40,11 @@ pub struct Parser {
 	current_scope: Arc<Identifier>,
 }
 
+enum DeclParseResult {
+	Function(Name, Arc<FnPrototype>),
+	Variable(Name, Type),
+}
+
 impl<'ctx> Parser {
 	pub fn new(lexer: Lexer) -> Parser {
 		Parser {
@@ -110,14 +115,11 @@ impl<'ctx> Parser {
 			if let ModuleASTElem::Unparsed(idx) = ast {
 				self.lexer.borrow_mut().seek_token_idx(*idx);
 
-				let proto_inner = proto.read().unwrap();
-
 				let scope = FnScope::new(
 					&self.interface,
-					proto_inner.path.clone(),
-					proto_inner.ret.clone(),
-				)
-				.with_params(proto_inner.generics.clone());
+					proto.path.clone(),
+					proto.ret.clone(),
+				).with_params(proto.generics.clone());
 
 				fn_impls.push((
 					proto.clone(),
@@ -240,9 +242,9 @@ impl<'ctx> Parser {
 									self.parse_namespace_declaration(current_attributes, None)?;
 								current_attributes = vec![];
 
-								match result.1 {
-									ModuleItemInterface::Variable(t) => def_write.members.push((
-										result.0,
+								match result.0 {
+									DeclParseResult::Variable(name, t) => def_write.members.push((
+										name,
 										t,
 										current_visibility.clone(),
 									)),
@@ -351,30 +353,31 @@ impl<'ctx> Parser {
 
 					while !token_compare(&next, "}") {
 						let func_attributes = self.parse_attributes()?;
-						let (name, interface, im) = self.parse_namespace_declaration(
-							func_attributes,
-							Some(&Type::TypeParam(0)),
-						)?;
 
-						match (interface, im) {
-							(
-								ModuleItemInterface::Functions(mut funcs),
-								ModuleItemImpl::Function(_, ast),
-							) => {
-								if let Some(fns) = this_trait.items.get_mut(&name) {
-									fns.append(&mut funcs);
+						match self.parse_namespace_declaration(func_attributes, Some(&Type::TypeParam(0)))? {
+
+							(DeclParseResult::Function(name, proto), ast) => {
+	
+								let id = Identifier::from_parent(scope, name);
+								let module_interface = &mut self.interface;
+								
+								self.module_impl.fn_impls.push((proto.clone(), ast));
+	
+								if let Some(ModuleItemInterface::Functions(existing)) =
+									module_interface.children.get(&id)
+								{
+									existing.write().unwrap().push(proto);
 								} else {
-									this_trait.items.insert(name.clone(), funcs);
-								}
-
-								if ast != ModuleASTElem::NoElem {
-									panic!(
-										"default impls in trait definitions are not yet supported"
+									module_interface.children.insert(
+										id, 
+										ModuleItemInterface::Functions(
+											Arc::new(RwLock::new(vec![proto]))
+										)
 									);
 								}
 							}
-
-							_ => todo!(),
+	
+							(DeclParseResult::Variable(name, ty), ast) => todo!()
 						}
 
 						next = self.get_current()?;
@@ -449,13 +452,13 @@ impl<'ctx> Parser {
 
 						self.skip_block()?;
 
-						let proto = Arc::new(RwLock::new(FnPrototype {
+						let proto = Arc::new(FnPrototype {
 							path: Identifier::from_parent(&canonical_root, fn_name.clone()),
 							ret: (props, ret),
 							params,
 							generics: type_params,
 							attributes: func_attributes,
-						}));
+						});
 
 						// TODO: Proper overload handling here
 						functions.insert(fn_name.clone(), vec![proto.clone()]);
@@ -580,30 +583,31 @@ impl<'ctx> Parser {
 
 				_ => {
 					// Parse declaration/definition
-					let (name, mut protos, defs) =
-						self.parse_namespace_declaration(current_attributes, None)?;
 
-					let id = Identifier::from_parent(scope, name);
+					match self.parse_namespace_declaration(current_attributes, None)? {
 
-					match (&mut protos, defs) {
-						(
-							ModuleItemInterface::Functions(fns),
-							ModuleItemImpl::Function(proto, ast),
-						) => {
+						(DeclParseResult::Function(name, proto), ast) => {
+
+							let id = Identifier::from_parent(scope, name);
 							let module_interface = &mut self.interface;
+							
+							self.module_impl.fn_impls.push((proto.clone(), ast));
 
 							if let Some(ModuleItemInterface::Functions(existing)) =
-								module_interface.children.get_mut(&id)
+								module_interface.children.get(&id)
 							{
-								existing.append(fns);
+								existing.write().unwrap().push(proto);
 							} else {
-								module_interface.children.insert(id.clone(), protos);
+								module_interface.children.insert(
+									id, 
+									ModuleItemInterface::Functions(
+										Arc::new(RwLock::new(vec![proto]))
+									)
+								);
 							}
-
-							self.module_impl.fn_impls.push((proto, ast))
 						}
 
-						_ => todo!(),
+						(DeclParseResult::Variable(name, ty), ast) => todo!()
 					}
 				}
 			}
@@ -758,7 +762,7 @@ impl<'ctx> Parser {
 		&self,
 		attributes: Vec<Attribute>,
 		self_ty: Option<&Type>,
-	) -> ComuneResult<(Name, ModuleItemInterface, ModuleItemImpl)> {
+	) -> ComuneResult<(DeclParseResult, ModuleASTElem)> {
 		let t = self.parse_type(None)?;
 		let props = self.parse_binding_props()?.unwrap_or_default();
 		let interface;
@@ -800,25 +804,13 @@ impl<'ctx> Parser {
 						_ => return self.err(ComuneErrCode::UnexpectedToken),
 					}
 
-					let proto = Arc::new(RwLock::new(t));
-
-					interface = ModuleItemInterface::Functions(vec![proto.clone()]);
-					item = ModuleItemImpl::Function(proto, ast);
+					interface = DeclParseResult::Function(name, Arc::new(t));
+					item = ast;
 				}
 
 				"=" => {
 					self.get_next()?;
 					// TODO: Skip expression
-
-					//ast_elem = match self.parse_expression()?.node {
-					//	ASTNode::Expression(expr) => Some(
-					//		ASTElem {
-					//			node: ASTNode::Expression(RefCell::new(expr.into_inner())),
-					//			type_info: RefCell::new(None),
-					//			token_data: (0, 0) // TODO: Add
-					//		}),
-					//	_ => panic!(), // TODO: Error handling
-					//};
 
 					self.check_semicolon()?;
 					todo!();
@@ -829,12 +821,12 @@ impl<'ctx> Parser {
 				}
 			}
 		} else {
-			interface = ModuleItemInterface::Variable(t);
-			item = ModuleItemImpl::Variable(ModuleASTElem::NoElem);
+			interface = DeclParseResult::Variable(name, t);
+			item = ModuleASTElem::NoElem;
 			self.check_semicolon()?;
 		}
 
-		Ok((name, interface, item))
+		Ok((interface, item))
 	}
 
 	fn parse_binding_props(&self) -> ComuneResult<Option<BindingProps>> {
