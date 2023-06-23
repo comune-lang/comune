@@ -266,8 +266,6 @@ impl Basic {
 				IntSize::I32 => "i32",
 				IntSize::I16 => "i16",
 				IntSize::I8 => "i8",
-
-				_ => panic!(),
 			},
 
 			Basic::Integral {
@@ -279,8 +277,6 @@ impl Basic {
 				IntSize::I32 => "u32",
 				IntSize::I16 => "u16",
 				IntSize::I8 => "u8",
-
-				_ => panic!(),
 			},
 
 			Basic::Float {

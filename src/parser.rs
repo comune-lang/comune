@@ -11,7 +11,7 @@ use crate::ast::controlflow::ControlFlow;
 use crate::ast::expression::{Atom, Expr, FnRef, NodeData, Operator, XtorKind};
 use crate::ast::module::{
 	Identifier, ItemRef, ModuleASTElem, ModuleImpl, ModuleImportKind, ModuleInterface,
-	ModuleItemImpl, ModuleItemInterface, Name,
+	ModuleItemInterface, Name,
 };
 use crate::ast::statement::Stmt;
 use crate::ast::traits::{ImplBlockInterface, TraitInterface, TraitRef};
@@ -336,7 +336,7 @@ impl<'ctx> Parser {
 						return self.err(ComuneErrCode::UnexpectedToken);
 					};
 
-					let mut this_trait = TraitInterface {
+					let this_trait = TraitInterface {
 						items: HashMap::new(),
 						types: HashMap::new(),
 						supers: vec![],
@@ -377,7 +377,7 @@ impl<'ctx> Parser {
 								}
 							}
 	
-							(DeclParseResult::Variable(name, ty), ast) => todo!()
+							(DeclParseResult::Variable(..), _) => todo!()
 						}
 
 						next = self.get_current()?;
@@ -607,7 +607,7 @@ impl<'ctx> Parser {
 							}
 						}
 
-						(DeclParseResult::Variable(name, ty), ast) => todo!()
+						(DeclParseResult::Variable(..), _) => todo!()
 					}
 				}
 			}

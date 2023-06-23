@@ -1,6 +1,6 @@
 use std::{
 	cmp::Ordering,
-	sync::{Arc, RwLock},
+	sync::Arc,
 };
 
 use crate::{

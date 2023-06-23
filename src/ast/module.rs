@@ -78,12 +78,6 @@ pub enum ModuleItemInterface {
 	TypeAlias(Arc<RwLock<Type>>),
 }
 
-#[derive(Clone, Debug)]
-pub enum ModuleItemImpl {
-	Function(Arc<FnPrototype>, ModuleASTElem),
-	Variable(ModuleASTElem),
-}
-
 impl ModuleImpl {
 	pub fn new() -> Self {
 		ModuleImpl { fn_impls: vec![] }
