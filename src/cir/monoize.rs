@@ -3,7 +3,6 @@
 use std::{
 	collections::{HashMap, HashSet},
 	sync::{Arc, RwLock, Weak},
-	time::Duration,
 };
 
 use crate::{
@@ -39,6 +38,12 @@ pub struct MonomorphServer {
 	fn_instances: RwLock<CIRFnMap>,
 	ty_instances: RwLock<CIRTyMap>,
 	fn_jobs: RwLock<HashSet<Arc<FnPrototype>>>,
+}
+
+pub struct ModuleAccess<'acc> {
+	types: &'acc mut TypeMap,
+	fns_in: &'acc CIRFnMap,
+	fns_out: &'acc mut CIRFnMap,
 }
 
 impl MonomorphServer {
@@ -94,10 +99,12 @@ impl MonomorphServer {
 
 			let function_monoized = self.monoize_function(
 				&module.functions[&proto],
-				&mut module.types,
 				&vec![],
-				&module.functions,
-				&mut functions_mono,
+				&mut ModuleAccess { 
+					types: &mut module.types, 
+					fns_in: &module.functions, 
+					fns_out: &mut functions_mono
+				}
 			);
 
 			functions_mono.insert(proto, function_monoized);
@@ -128,10 +135,8 @@ impl MonomorphServer {
 	fn monoize_function(
 		&self,
 		func: &CIRFunction,
-		types: &mut HashMap<TypeName, Arc<RwLock<TypeDef>>>,
 		param_map: &GenericArgs,
-		fns_in: &CIRFnMap,
-		fns_out: &mut CIRFnMap,
+		access: &mut ModuleAccess,
 	) -> CIRFunction {
 		let mut func = func.clone();
 
@@ -140,10 +145,10 @@ impl MonomorphServer {
 		}
 
 		for (var, ..) in &mut func.variables {
-			self.monoize_type(types, var, param_map, fns_in, fns_out);
+			self.monoize_type(var, param_map, access);
 		}
 
-		self.monoize_type(types, &mut func.ret.1, param_map, fns_in, fns_out);
+		self.monoize_type(&mut func.ret.1, param_map, access);
 
 		for block in &mut func.blocks {
 			for stmt in block.items.iter_mut() {
@@ -153,28 +158,24 @@ impl MonomorphServer {
 
 				match stmt {
 					CIRStmt::Expression(expr) | CIRStmt::Assignment(_, expr) => {
-						self.monoize_rvalue_types(types, expr, param_map, fns_in, fns_out);
+						self.monoize_rvalue_types(expr, param_map, access);
 					}
 
 					CIRStmt::Invoke {
-						id: CIRCallId::Direct(fn_id, _),
+						id: CIRCallId::Direct(func, _),
 						generic_args,
 						..
 					}
 					| CIRStmt::Call {
-						id: CIRCallId::Direct(fn_id, _),
+						id: CIRCallId::Direct(func, _),
 						generic_args,
 						..
 					} => {
 						for arg in generic_args.iter_mut() {
-							self.monoize_type(types, arg, param_map, fns_in, fns_out);
+							self.monoize_type(arg, param_map, access);
 						}
 
-						let mut id = fn_id.as_ref().clone();
-
-						self.monoize_call(&mut id, generic_args, fns_in, fns_out, types);
-
-						*fn_id = Arc::new(id);
+						self.monoize_call(func, generic_args, access);
 
 						generic_args.clear();
 					}
@@ -189,110 +190,61 @@ impl MonomorphServer {
 
 	fn monoize_call(
 		&self,
-		id: &mut FnPrototype,
+		id: &mut Arc<FnPrototype>,
 		generic_args: &Vec<Type>,
-		fns_in: &CIRFnMap,
-		fns_out: &mut CIRFnMap,
-		types: &mut HashMap<TypeName, Arc<RwLock<TypeDef>>>,
+		access: &mut ModuleAccess,
 	) {
 		if generic_args.is_empty() {
 			return;
 		}
+		
+		let (func, body) = self.register_fn_job(id.as_ref().clone(), generic_args, access);
 
-		let mut insert_id = id.clone();
-
-		for (i, type_arg) in generic_args.iter().enumerate() {
-			insert_id.generics[i].2 = Some(type_arg.clone())
-		}
-
-		for (param, ..) in &mut insert_id.params.params {
-			self.monoize_type(types, param, generic_args, fns_in, fns_out);
-		}
-
-		self.monoize_type(types, &mut insert_id.ret.1, generic_args, fns_in, fns_out);
-
-		if let (Some(qualifier), _) = &mut insert_id.path.qualifier {
-			self.monoize_type(types, qualifier, generic_args, fns_in, fns_out);
-		}
-
-		let insert_id = Arc::new(insert_id);
-
-		// If the function template isn't available yet, wait for it
-		while !self.fn_templates.read().unwrap().contains_key(id) {
-			std::thread::sleep(Duration::from_millis(1));
-		}
-
-		let fn_instances = self.fn_instances.read().unwrap();
-		let fn_templates = self.fn_templates.read().unwrap();
-
-		if !fn_instances.contains_key(&insert_id) {
-			let Some(fn_in) = fn_templates.get(id) else {
-				unreachable!()
-			};
-
-			drop(fn_instances);
-
-			let monoized = self.monoize_function(fn_in, types, generic_args, fns_in, fns_out);
-
-			drop(fn_templates);
-
-			let fn_instances = &mut *self.fn_instances.write().unwrap();
-
-			fn_instances.insert(insert_id.clone(), monoized);
-		}
-
-		*id = insert_id.as_ref().clone();
-
-		let extern_fn = self.fn_instances.read().unwrap()[id].clone();
-
-		fns_out.insert(insert_id.clone(), extern_fn);
+		*id = func.clone();
+		access.fns_out.insert(func.clone(), body);
 	}
 
 	fn monoize_rvalue_types(
 		&self,
-		types: &mut TypeMap,
 		rval: &mut RValue,
 		param_map: &GenericArgs,
-		fns_in: &CIRFnMap,
-		fns_out: &mut CIRFnMap,
+		access: &mut ModuleAccess,
 	) {
 		match rval {
 			RValue::Atom(ty, ..) => {
-				self.monoize_type(types, ty, param_map, fns_in, fns_out);
+				self.monoize_type(ty, param_map, access);
 			}
 
 			RValue::Cons(ty, [(lty, _), (rty, _)], ..) => {
-				self.monoize_type(types, lty, param_map, fns_in, fns_out);
-				self.monoize_type(types, rty, param_map, fns_in, fns_out);
+				self.monoize_type(lty, param_map, access);
+				self.monoize_type(rty, param_map, access);
 
-				self.monoize_type(types, ty, param_map, fns_in, fns_out);
+				self.monoize_type(ty, param_map, access);
 			}
 
 			RValue::Cast { from, to, .. } => {
-				self.monoize_type(types, from, param_map, fns_in, fns_out);
-				self.monoize_type(types, to, param_map, fns_in, fns_out);
+				self.monoize_type(from, param_map, access);
+				self.monoize_type(to, param_map, access);
 			}
 		}
 	}
 
 	fn monoize_type(
 		&self,
-		types: &mut TypeMap,
 		ty: &mut Type,
 		param_map: &GenericArgs,
-		fns_in: &CIRFnMap,
-		fns_out: &mut CIRFnMap,
+		access: &mut ModuleAccess,
 	) {
 		match ty {
 			Type::Basic(_) => {}
 
 			Type::Pointer { pointee, .. } => {
-				self.monoize_type(types, pointee, param_map, fns_in, fns_out)
+				self.monoize_type(pointee, param_map, access)
 			}
 
-			Type::Array(arr_ty, _) => self.monoize_type(types, arr_ty, param_map, fns_in, fns_out),
+			Type::Array(arr_ty, _) => self.monoize_type(arr_ty, param_map, access),
 
-			Type::Slice(slicee) => self.monoize_type(types, slicee, param_map, fns_in, fns_out),
+			Type::Slice(slicee) => self.monoize_type(slicee, param_map, access),
 
 			Type::TypeRef { def, args } => {
 				// If we're referring to a type with generics, check if the
@@ -302,18 +254,16 @@ impl MonomorphServer {
 
 				if !args.is_empty() {
 					for arg in args.iter_mut() {
-						self.monoize_type(types, arg, param_map, fns_in, fns_out);
+						self.monoize_type(arg, param_map, access);
 					}
 
 					let typename = name.to_string();
 
 					*def = self.instantiate_type_def(
-						types,
 						def.upgrade().unwrap(),
 						typename,
 						args,
-						fns_in,
-						fns_out,
+						access,
 					);
 					args.clear();
 				}
@@ -325,15 +275,15 @@ impl MonomorphServer {
 
 			Type::Tuple(_, tuple_types) => {
 				for ty in tuple_types {
-					self.monoize_type(types, ty, param_map, fns_in, fns_out);
+					self.monoize_type(ty, param_map, access);
 				}
 			}
 
 			Type::Function(ret, args) => {
-				self.monoize_type(types, ret, param_map, fns_in, fns_out);
+				self.monoize_type(ret, param_map, access);
 
 				for (_, arg) in args {
-					self.monoize_type(types, arg, param_map, fns_in, fns_out);
+					self.monoize_type(arg, param_map, access);
 				}
 			}
 
@@ -346,17 +296,15 @@ impl MonomorphServer {
 	// Takes a Generic TypeDef with parameters and instantiates it.
 	fn instantiate_type_def(
 		&self,
-		types: &mut TypeMap,
 		def: Arc<RwLock<TypeDef>>,
 		name: TypeName,
 		generic_args: &GenericArgs,
-		fns_in: &CIRFnMap,
-		fns_out: &mut CIRFnMap,
+		access: &mut ModuleAccess,
 	) -> Weak<RwLock<TypeDef>> {
 		let mut instance = def.read().unwrap().clone();
 
 		for (_, member, _) in &mut instance.members {
-			self.monoize_type(types, member, generic_args, fns_in, fns_out);
+			self.monoize_type(member, generic_args, access);
 		}
 
 		instance.params.clear();
@@ -372,7 +320,7 @@ impl MonomorphServer {
 
 		// Check if the current module has this instance already
 
-		if let Some(instance) = types.get(&insert_idx) {
+		if let Some(instance) = access.types.get(&insert_idx) {
 			return Arc::downgrade(instance);
 		}
 
@@ -383,7 +331,7 @@ impl MonomorphServer {
 		if self.ty_instances.read().unwrap().contains_key(&insert_idx) {
 			let instance_arc = self.ty_instances.read().unwrap()[&insert_idx].clone();
 
-			types.insert(insert_idx.clone(), instance_arc.clone());
+			access.types.insert(insert_idx.clone(), instance_arc.clone());
 
 			Arc::downgrade(&instance_arc)
 		} else {
@@ -391,31 +339,31 @@ impl MonomorphServer {
 			let instance_arc = Arc::new(RwLock::new(instance));
 			let mut instance_lock = instance_arc.write().unwrap();
 
-			// Monoize dtor
-			if let Some(drop_fn) = &instance_lock.drop {
-				if let Some(drop_body) = fns_in.get(drop_fn) {
-					self.register_fn_template(&drop_fn, drop_body);
-				}
-
-				let (drop_fn, drop_body) =
-					self.register_fn_job(drop_fn.as_ref().clone(), &generic_args);
-
-				fns_out.insert(drop_fn.clone(), drop_body);
-
-				// this is really ugly. we have to go back and forth between
-				// Arc<T> and Arc<RwLock<T>> a lot because of annoying reasons
-				//
-				// TODO: evaluate whether RwLock is still necessary here at all
-				instance_lock.drop = Some(drop_fn);
-			}
-
 			self.ty_instances
 				.write()
 				.unwrap()
 				.insert(insert_idx.clone(), instance_arc.clone());
 
-			types.insert(insert_idx, instance_arc.clone());
+			access.types.insert(insert_idx, instance_arc.clone());
 
+			// Monoize dtor
+			if let Some(drop_fn) = &instance_lock.drop {
+				if let Some(drop_body) = access.fns_in.get(drop_fn) {
+					self.register_fn_template(&drop_fn, drop_body);
+				}
+
+				let (drop_fn, drop_body) = 
+					self.register_fn_job(
+						drop_fn.as_ref().clone(), 
+						&generic_args, 
+						access,
+					);
+
+				access.fns_out.insert(drop_fn.clone(), drop_body);
+				instance_lock.drop = Some(drop_fn);
+			}
+
+		
 			Arc::downgrade(&instance_arc)
 		}
 	}
@@ -439,9 +387,20 @@ impl MonomorphServer {
 		&self,
 		mut func: FnPrototype,
 		args: &GenericArgs,
+		access: &mut ModuleAccess,
 	) -> (Arc<FnPrototype>, CIRFunction) {
 		for (i, arg) in args.iter().enumerate() {
 			func.generics[i].2 = Some(arg.clone())
+		}
+
+		for (param, ..) in &mut func.params.params {
+			self.monoize_type(param, args, access);
+		}
+
+		self.monoize_type(&mut func.ret.1, args, access);
+
+		if let (Some(qualifier), _) = &mut func.path.qualifier {
+			self.monoize_type(qualifier, args, access);
 		}
 
 		let func = Arc::new(func);

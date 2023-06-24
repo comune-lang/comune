@@ -1,5 +1,5 @@
 use std::{
-	collections::HashMap,
+	collections::{HashMap, HashSet},
 	ffi::OsString,
 	fs,
 	path::{Path, PathBuf},
@@ -362,14 +362,13 @@ pub fn get_module_out_path(state: &CompilerState, module: &Identifier) -> PathBu
 }
 
 pub fn parse_interface(
-	state: &Arc<CompilerState>,
+	_state: &Arc<CompilerState>,
 	path: &Path,
 	error_sender: Sender<CMNMessageLog>,
 ) -> Result<Parser, ComuneError> {
 	// First phase of module compilation: create Lexer and Parser, and parse the module at the namespace level
 
 	let mut mod_state = Parser::new(match Lexer::new(path, error_sender) {
-		// TODO: Take module name instead of filename
 		Ok(f) => f,
 		Err(e) => {
 			println!(
@@ -385,9 +384,11 @@ pub fn parse_interface(
 		}
 	});
 
-	if state.verbose_output {
-		println!("\ncollecting symbols...");
-	}
+	// TODO: HEY ASH TOMORROW MORNING MAKE IT SO CORE DOESN'T IMPORT STD
+	mod_state.interface.import_names = HashSet::from([
+		ModuleImportKind::Language("core".into()),
+		ModuleImportKind::Language("std".into()),
+	]);
 
 	// Parse namespace level
 
