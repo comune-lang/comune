@@ -670,8 +670,8 @@ impl PartialEq for Type {
 				Arc::ptr_eq(&l0.upgrade().unwrap(), &r0.upgrade().unwrap()) && l1 == r1
 			}
 
-			(Self::Unresolved { .. }, _) | (_, Self::Unresolved { .. }) => {
-				panic!("cannot compare unresolved types!")
+			(Self::Unresolved { name: l0, scope: l1, type_args: l2, .. }, Self::Unresolved { name: r0, scope: r1, type_args: r2, .. }) => {
+				l0 == r0 && l1 == r1 && l2 == r2
 			}
 
 			(Self::Slice(l0), Self::Slice(r0)) => l0 == r0,

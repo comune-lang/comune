@@ -304,61 +304,8 @@ pub fn compile_comune_module(
 	Ok(())
 }
 
-// TODO: Add proper module searching support, based on a list of module search dirs, as well as support for .co, .h, .hpp etc
-pub fn get_module_source_path(
-	state: &CompilerState,
-	mut current_path: PathBuf,
-	module: &Identifier,
-) -> Option<PathBuf> {
-	// Resolve built-in library paths. This is currently hard-coded, but
-	// there's probably a more elegant solution to be written down the line
-	if module.absolute && matches!(module.path[0].to_string().as_str(), "core" | "std") {
-		current_path = PathBuf::from(state.libcomune_dir.clone());
-	} else {
-		current_path.pop();
-	}
-
-	current_path.set_extension("");
-
-	for i in 0..module.path.len() {
-		current_path.push(&*module.path[i]);
-	}
-
-	let extensions = ["co", "cpp", "c"];
-
-	for extension in extensions {
-		current_path.set_extension(extension);
-
-		if current_path.exists() {
-			return Some(current_path);
-		}
-	}
-
-	for dir in &state.import_paths {
-		let mut current_path = PathBuf::from(dir);
-		current_path.push(&**module.name());
-
-		for extension in extensions {
-			current_path.set_extension(extension);
-			if current_path.exists() {
-				return Some(current_path);
-			}
-		}
-	}
-
-	None
-}
-
-pub fn get_module_out_path(state: &CompilerState, module: &Identifier) -> PathBuf {
-	let mut result = PathBuf::from(&state.output_dir);
-
-	for scope in &module.path {
-		result.push(&**scope);
-	}
-
-	fs::create_dir_all(result.parent().unwrap()).unwrap();
-	result.set_extension("o");
-	result
+pub fn generate_monomorph_module(state: Arc<CompilerState>) {
+	let module = state.monomorph_server.generate_fn_instances();
 }
 
 pub fn parse_interface(
@@ -704,4 +651,60 @@ pub fn generate_llvm_ir<'ctx>(
 
 	mpm.run_on(&backend.module);
 	Ok(backend)
+}
+
+pub fn get_module_source_path(
+	state: &CompilerState,
+	mut current_path: PathBuf,
+	module: &Identifier,
+) -> Option<PathBuf> {
+	// Resolve built-in library paths. This is currently hard-coded, but
+	// there's probably a more elegant solution to be written down the line
+	if module.absolute && matches!(module.path[0].to_string().as_str(), "core" | "std") {
+		current_path = PathBuf::from(state.libcomune_dir.clone());
+	} else {
+		current_path.pop();
+	}
+
+	current_path.set_extension("");
+
+	for i in 0..module.path.len() {
+		current_path.push(&*module.path[i]);
+	}
+
+	let extensions = ["co", "cpp", "c"];
+
+	for extension in extensions {
+		current_path.set_extension(extension);
+
+		if current_path.exists() {
+			return Some(current_path);
+		}
+	}
+
+	for dir in &state.import_paths {
+		let mut current_path = PathBuf::from(dir);
+		current_path.push(&**module.name());
+
+		for extension in extensions {
+			current_path.set_extension(extension);
+			if current_path.exists() {
+				return Some(current_path);
+			}
+		}
+	}
+
+	None
+}
+
+pub fn get_module_out_path(state: &CompilerState, module: &Identifier) -> PathBuf {
+	let mut result = PathBuf::from(&state.output_dir);
+
+	for scope in &module.path {
+		result.push(&**scope);
+	}
+
+	fs::create_dir_all(result.parent().unwrap()).unwrap();
+	result.set_extension("o");
+	result
 }

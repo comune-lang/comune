@@ -119,6 +119,12 @@ fn main() -> color_eyre::eyre::Result<()> {
 		}
 	});
 
+	rayon::in_place_scope(|s| {
+		driver::generate_monomorph_module(
+			compiler_state.clone()
+		);
+	});
+
 	if errors::ERROR_COUNT.load(Ordering::Acquire) > 0 {
 		error_sender
 			.send(errors::CMNMessageLog::Raw(format!(

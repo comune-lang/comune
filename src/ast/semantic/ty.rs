@@ -484,7 +484,7 @@ pub fn resolve_function_prototype(
 	// Update the module impl's version of the prototype
 	let fn_body = module_impl.fn_impls.remove(func_og).unwrap();
 	module_impl.fn_impls.insert(func_arc.clone(), fn_body);
-	
+
 	*func_og = func_arc;
 
 	Ok(())
