@@ -82,14 +82,39 @@ impl MonomorphServer {
 		};
 
 		let fn_jobs: HashSet<_> = self.fn_jobs.write().unwrap().drain().collect();
+		
+
+		println!("fn_templates:");
+
+		for (proto, template) in &*self.fn_templates.read().unwrap() {
+			println!("{proto}\n\n{template}\n\n");
+		}
+
+		println!("fn_jobs:");
+		
+		for (proto, types) in &fn_jobs {
+			print!("{proto} with ");
+		
+			for ty in types {
+				print!("{ty}, ");
+			}
+			print!("\n");
+		}
 
 		for (func, generic_args) in &fn_jobs {
 			let template = &self.fn_templates.read().unwrap()[func];
+			let func_monoized = self.monoize_function(template, generic_args, &mut access);
+			
+			let mut proto = func.as_ref().clone();
+			self.monoize_prototype(&mut proto, generic_args, &mut access);
 
-			self.monoize_function(template, generic_args, &mut access);
+			access.fns_out.insert(Arc::new(proto), func_monoized);
 		}
 
 		module.functions = fns_out;
+
+		self.mangle(&mut module);
+
 		module
 	}
 
@@ -414,6 +439,27 @@ impl MonomorphServer {
 			.unwrap()
 			.insert(Arc::new(func.clone()), body.clone());
 	}
+	
+	fn monoize_prototype(
+		&self,
+		func: &mut FnPrototype,
+		args: &GenericArgs,
+		access: &mut ModuleAccess,
+	) {
+		for (i, arg) in args.iter().enumerate() {
+			func.generics[i].2 = Some(arg.clone())
+		}
+
+		for (param, ..) in &mut func.params.params {
+			self.monoize_type(param, args, access);
+		}
+		
+		self.monoize_type(&mut func.ret.1, args, access);
+
+		if let (Some(qualifier), _) = &mut func.path.qualifier {
+			self.monoize_type(qualifier, args, access);
+		}
+	}
 
 	// Request a function instance, returning an `extern` fn
 	// and adding it to the MonomorphServer's job list
@@ -429,19 +475,7 @@ impl MonomorphServer {
 
 		let mut func_new = func.as_ref().clone();
 
-		for (i, arg) in args.iter().enumerate() {
-			func_new.generics[i].2 = Some(arg.clone())
-		}
-
-		for (param, ..) in &mut func_new.params.params {
-			self.monoize_type(param, args, access);
-		}
-
-		self.monoize_type(&mut func_new.ret.1, args, access);
-
-		if let (Some(qualifier), _) = &mut func_new.path.qualifier {
-			self.monoize_type(qualifier, args, access);
-		}
+		self.monoize_prototype(&mut func_new, args, access);
 
 		let func_new = Arc::new(func_new);
 		let extern_fn = CIRModuleBuilder::generate_prototype(&func_new);

@@ -119,10 +119,11 @@ fn main() -> color_eyre::eyre::Result<()> {
 		}
 	});
 
-	rayon::in_place_scope(|s| {
-		driver::generate_monomorph_module(
-			compiler_state.clone()
-		);
+	rayon::in_place_scope(|_| {
+		match driver::generate_monomorph_module(compiler_state.clone()) {
+			Ok(()) => {},
+			Err(_) => { errors::ERROR_COUNT.fetch_add(1, Ordering::Relaxed); },
+		};
 	});
 
 	if errors::ERROR_COUNT.load(Ordering::Acquire) > 0 {

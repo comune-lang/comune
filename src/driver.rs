@@ -304,10 +304,6 @@ pub fn compile_comune_module(
 	Ok(())
 }
 
-pub fn generate_monomorph_module(state: Arc<CompilerState>) {
-	let module = state.monomorph_server.generate_fn_instances();
-}
-
 pub fn parse_interface(
 	_state: &Arc<CompilerState>,
 	path: &Path,
@@ -332,6 +328,7 @@ pub fn parse_interface(
 	});
 
 	// TODO: HEY ASH TOMORROW MORNING MAKE IT SO CORE DOESN'T IMPORT STD
+	// TODO: FUCK YOU I'M TIRED AND I HAVE TOO MUCH TO DO. IT WORKS FOR NOW
 	mod_state.interface.import_names = HashSet::from([
 		ModuleImportKind::Language("core".into()),
 		ModuleImportKind::Language("std".into()),
@@ -587,6 +584,56 @@ pub fn generate_code<'ctx>(
 		&get_module_out_path(state, input_module),
 		context,
 	)
+}
+
+pub fn generate_monomorph_module(state: Arc<CompilerState>) -> ComuneResult<()> {
+	let module = state.monomorph_server.generate_fn_instances();
+	
+	let mut out_path = PathBuf::from(&state.output_dir);
+	out_path.push("monomorph-module");
+
+	if state.emit_types.contains(&EmitType::ComuneIrMono) {
+		// Write cIR to file
+		fs::write(
+			out_path.with_extension("cir_mono"),
+			module.to_string(),
+		)
+		.unwrap();
+	}
+
+	let context = Context::create();
+
+	let result = generate_llvm_ir(
+		&state, 
+		"monomorph-module".into(), 
+		module, 
+		&PathBuf::from("monomorph-module"), 
+		&out_path, 
+		&context
+	)?;
+
+	let target_machine = llvm::get_target_machine();
+
+	if state.emit_types.contains(&EmitType::LLVMIr) {
+		let mut llvm_out_path = out_path.clone();
+		llvm_out_path.set_extension("ll");
+		result.module.print_to_file(llvm_out_path).unwrap();
+	}
+
+	if state.emit_types.iter().any(|ty| {
+		matches!(
+			ty,
+			EmitType::Binary | EmitType::StaticLib | EmitType::DynamicLib
+		)
+	}) {
+		target_machine
+			.write_to_file(&result.module, FileType::Object, &out_path)
+			.unwrap();
+	}
+	
+	state.output_modules.lock().unwrap().push(out_path);
+	
+	Ok(())
 }
 
 pub fn generate_llvm_ir<'ctx>(
