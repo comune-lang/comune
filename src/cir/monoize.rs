@@ -74,44 +74,37 @@ impl MonomorphServer {
 		};
 		
 		let mut fns_out = HashMap::new();
-		
-		let mut access = ModuleAccess { 
-			types: &mut module.types,
-			fns_in: &module.functions,
-			fns_out: &mut fns_out,
-		};
 
-		let fn_jobs: HashSet<_> = self.fn_jobs.write().unwrap().drain().collect();
-		
+		loop {
+			let mut access = ModuleAccess { 
+				types: &mut module.types,
+				fns_in: &module.functions,
+				fns_out: &mut fns_out,
+			};
 
-		println!("fn_templates:");
+			let fn_jobs = self.fn_jobs.write().unwrap().clone();
 
-		for (proto, template) in &*self.fn_templates.read().unwrap() {
-			println!("{proto}\n\n{template}\n\n");
-		}
+			for (func, generic_args) in &fn_jobs {				
+				let template = &self.fn_templates.read().unwrap()[func];
+				let func_monoized = self.monoize_function(template, generic_args, &mut access);
+				let mut proto = func.as_ref().clone();
 
-		println!("fn_jobs:");
-		
-		for (proto, types) in &fn_jobs {
-			print!("{proto} with ");
-		
-			for ty in types {
-				print!("{ty}, ");
+				self.monoize_prototype(&mut proto, generic_args, &mut access);
+
+				access.fns_out.insert(Arc::new(proto), func_monoized);
 			}
-			print!("\n");
-		}
-
-		for (func, generic_args) in &fn_jobs {
-			let template = &self.fn_templates.read().unwrap()[func];
-			let func_monoized = self.monoize_function(template, generic_args, &mut access);
 			
-			let mut proto = func.as_ref().clone();
-			self.monoize_prototype(&mut proto, generic_args, &mut access);
+			module.functions.extend(fns_out.drain());
 
-			access.fns_out.insert(Arc::new(proto), func_monoized);
+			self.fn_jobs.write().unwrap().retain(
+				|job| !fn_jobs.contains(job)
+			);
+
+			// if fn_jobs is empty, we're done monomorphizing
+			if self.fn_jobs.read().unwrap().is_empty() {
+				break
+			}
 		}
-
-		module.functions = fns_out;
 
 		self.mangle(&mut module);
 
@@ -240,7 +233,10 @@ impl MonomorphServer {
 		let (func, body) = self.register_fn_job(id, generic_args, access);
 
 		*id = func.clone();
-		access.fns_out.insert(func.clone(), body);
+		
+		if !access.fns_out.contains_key(&func) {
+			access.fns_out.insert(func.clone(), body);
+		}
 	}
 
 	fn monoize_rvalue_types(
@@ -472,8 +468,10 @@ impl MonomorphServer {
 		if args.is_empty() {
 			panic!("can't register a monoize job for a non-generic function!");
 		}
-
+		
 		let mut func_new = func.as_ref().clone();
+		
+		println!("registering job {func_new} with {args:?}");
 
 		self.monoize_prototype(&mut func_new, args, access);
 

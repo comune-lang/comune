@@ -80,6 +80,14 @@ impl EmitType {
 	}
 }
 
+impl CompilerState {
+	pub fn requires_linking(&self) -> bool {
+		self.emit_types.iter().any(
+			|emit| matches!(emit, EmitType::Binary | EmitType::DynamicLib | EmitType::StaticLib)
+		)
+	}
+}
+
 pub fn launch_module_compilation(
 	state: Arc<CompilerState>,
 	src_path: PathBuf,
@@ -289,12 +297,7 @@ pub fn compile_comune_module(
 			result.module.print_to_file(llvm_out_path).unwrap();
 		}
 
-		if state.emit_types.iter().any(|ty| {
-			matches!(
-				ty,
-				EmitType::Binary | EmitType::StaticLib | EmitType::DynamicLib
-			)
-		}) {
+		if state.requires_linking() {
 			target_machine
 				.write_to_file(&result.module, FileType::Object, &out_path)
 				.unwrap();
@@ -500,7 +503,7 @@ pub fn generate_code<'ctx>(
 
 	// Generate cIR
 	let module_name = input_module.to_string();
-	let mut cir_module = CIRModuleBuilder::from_ast(parser).module;
+	let cir_module = CIRModuleBuilder::from_ast(parser).module;
 
 	if state.emit_types.contains(&EmitType::ComuneIr) {
 		// Write cIR to file
@@ -510,42 +513,14 @@ pub fn generate_code<'ctx>(
 		)
 		.unwrap();
 	}
-
-	// Analyze & optimize cIR
-	let mut cir_man = CIRPassManager::new();
-
-	cir_man.add_pass(verify::Verify);
-	cir_man.add_mut_pass(DataFlowPass::new(DefInitFlow, VarInitCheck));
-	cir_man.add_pass(verify::Verify);
-
-	let cir_errors = cir_man.run_on_module(&mut cir_module);
-
-	// Handle any errors from cIR passes
-	if !cir_errors.is_empty() {
-		let mut return_errors = vec![];
-
-		for error in cir_errors {
-			return_errors.push(error.clone());
-			parser.lexer.borrow().log_msg(ComuneMessage::Error(error));
-		}
-
-		return Err(ComuneError::new(
-			ComuneErrCode::Pack(return_errors),
-			SrcSpan::new(),
-		));
-	}
-
+	
 	// Monomorphize the module
-
 	let mut module_mono = state.monomorph_server.monoize_module(cir_module);
 
-	// Now perform post-monomorphization passes, including drop elaboration
-
+	// Perform post-monomorphization passes, including drop elaboration
 	let mut cir_man = CIRPassManager::new();
 
 	cir_man.add_mut_pass(DataFlowPass::new(DefInitFlow, ElaborateDrops));
-
-	// Sanity checks for ElaborateDrops
 	cir_man.add_mut_pass(DataFlowPass::new(DefInitFlow, VarInitCheck));
 	cir_man.add_pass(verify::Verify);
 
@@ -568,7 +543,7 @@ pub fn generate_code<'ctx>(
 	}
 
 	if state.emit_types.contains(&EmitType::ComuneIrMono) {
-		// Write monomorphized cIR to file
+		// Write optimized cIR to file
 		fs::write(
 			get_module_out_path(state, input_module).with_extension("cir_mono"),
 			module_mono.to_string(),
@@ -587,13 +562,38 @@ pub fn generate_code<'ctx>(
 }
 
 pub fn generate_monomorph_module(state: Arc<CompilerState>) -> ComuneResult<()> {
-	let module = state.monomorph_server.generate_fn_instances();
-	
 	let mut out_path = PathBuf::from(&state.output_dir);
 	out_path.push("monomorph-module");
 
-	if state.emit_types.contains(&EmitType::ComuneIrMono) {
+	// Monomorphize all the requested function instances into a dedicated module
+	//
+	// This is pretty low-hanging fruit for optimization,
+	// considering it's entirely single-threaded right now
+	let mut module = state.monomorph_server.generate_fn_instances();
+
+	if state.emit_types.contains(&EmitType::ComuneIr) {
 		// Write cIR to file
+		fs::write(
+			out_path.with_extension("cir"),
+			module.to_string(),
+		)
+		.unwrap();
+	}
+
+	let mut cir_man = CIRPassManager::new();
+
+	cir_man.add_mut_pass(DataFlowPass::new(DefInitFlow, ElaborateDrops));
+	cir_man.add_mut_pass(DataFlowPass::new(DefInitFlow, VarInitCheck));
+
+	let errors = cir_man.run_on_module(&mut module);
+
+	if !errors.is_empty() {
+		// TODO: log errors
+		return Err(ComuneError::new(ComuneErrCode::Pack(errors), SrcSpan::new()))
+	}
+
+	if state.emit_types.contains(&EmitType::ComuneIrMono) {
+		// Write optimized cIR to file
 		fs::write(
 			out_path.with_extension("cir_mono"),
 			module.to_string(),
@@ -620,12 +620,7 @@ pub fn generate_monomorph_module(state: Arc<CompilerState>) -> ComuneResult<()> 
 		result.module.print_to_file(llvm_out_path).unwrap();
 	}
 
-	if state.emit_types.iter().any(|ty| {
-		matches!(
-			ty,
-			EmitType::Binary | EmitType::StaticLib | EmitType::DynamicLib
-		)
-	}) {
+	if state.requires_linking() {
 		target_machine
 			.write_to_file(&result.module, FileType::Object, &out_path)
 			.unwrap();
