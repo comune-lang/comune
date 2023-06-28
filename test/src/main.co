@@ -53,8 +53,8 @@ impl Hello for Test {
 
 void impl_test() {
 	Test test = new Test { a: 413, b: 612, };
-	//test.hello();
-	//printf(c"The sum of a and b is %i!\n", test.sum());
+	test.hello();
+	printf(c"The sum of a and b is %i!\n", test.sum());
 }
 
 void ref_test(i32 mut& test) {
@@ -244,7 +244,7 @@ int main() {
 	ref_test(int_ref_test);
 	printf(c"int_ref_test: %i\n", int_ref_test);
 
-	//printf(c"Temporary->lvalue promotion: %i\n", new Test { a: 23, b: 35 }.sum());
+	printf(c"Temporary->lvalue promotion: %i\n", new Test { a: 23, b: 35 }.sum());
 
 	printf(c"bit_cast<f32, u32>: %i\n", bit_cast<f32, u32>(10.0f32));
 	return 0;

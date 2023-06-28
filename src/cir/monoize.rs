@@ -280,20 +280,26 @@ impl MonomorphServer {
 			Type::Slice(slicee) => self.monoize_type(slicee, param_map, access),
 
 			Type::TypeRef { def, args } => {
-				// If we're referring to a type with generics, check if the
-				// instantation we want exists already. If not, create it.
 				let def_up = def.upgrade().unwrap();
-				let name = &def_up.read().unwrap().name;
 
 				if !args.is_empty() {
+					// If we're referring to a type with generics, check if the
+					// instantation we want exists already. If not, create it.
+
 					for arg in args.iter_mut() {
 						self.monoize_type(arg, param_map, access);
 					}
 
-					let typename = name.to_string();
-
-					*def = self.instantiate_type_def(def_up.clone(), typename, args, access);
+					*def = self.instantiate_type_def(def_up.clone(), args, access);
 					args.clear();
+				} else {
+					// Check if the type exists in the current module
+					// (may not be true in the monomorphization module)
+					let typename = def_up.read().unwrap().name.to_string();
+
+					if !access.types.contains_key(&typename) {
+						access.types.insert(typename, def_up);
+					}
 				}
 			}
 
@@ -325,7 +331,6 @@ impl MonomorphServer {
 	fn instantiate_type_def(
 		&self,
 		def: Arc<RwLock<TypeDef>>,
-		name: TypeName,
 		generic_args: &GenericArgs,
 		access: &mut ModuleAccess,
 	) -> Weak<RwLock<TypeDef>> {
@@ -338,7 +343,7 @@ impl MonomorphServer {
 		instance.params.clear();
 
 		let mut iter = generic_args.iter();
-		let mut instance_name = name + "<" + &iter.next().unwrap().to_string();
+		let mut instance_name = instance.name.to_string() + "<" + &iter.next().unwrap().to_string();
 
 		for param in iter {
 			instance_name.push_str(&param.to_string())
