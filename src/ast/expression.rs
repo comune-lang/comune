@@ -312,6 +312,28 @@ impl Expr {
 			}
 		}
 
+		// Special cases for literal coercion
+		
+		// if this is an integer literal with no type hint,
+		// and the cast-to type is an integer type, just
+		// set the type hint to prevent an unnecessary cast
+		if let Expr::Atom(Atom::IntegerLit(_, hint @ None), _) = self {
+			if let Type::Basic(basic @ Basic::Integral { .. }) = &to {
+				*hint = Some(*basic);
+				self.get_node_data_mut().ty = Some(Type::Basic(*basic));
+				return;
+			}
+		}
+		
+		// ditto for floats
+		if let Expr::Atom(Atom::FloatLit(_, hint @ None), _) = self {
+			if let Type::Basic(basic @ Basic::Float { .. }) = &to {
+				*hint = Some(*basic);
+				self.get_node_data_mut().ty = Some(Type::Basic(*basic));
+				return;
+			}
+		}
+
 		let node_data = self.get_node_data().clone();
 
 		// Swap out self behind a &mut
