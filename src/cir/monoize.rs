@@ -298,6 +298,21 @@ impl MonomorphServer {
 					let typename = def_up.read().unwrap().name.to_string();
 
 					if !access.types.contains_key(&typename) {
+						let def_lock = def_up.read().unwrap();
+
+						// Register type and its xtors
+						if let Some(drop) = &def_lock.drop {
+							let extern_fn = CIRModuleBuilder::generate_prototype(drop);
+							access.fns_out.insert(drop.clone(), extern_fn);
+						}
+
+						for init in &def_lock.init {
+							let extern_fn = CIRModuleBuilder::generate_prototype(init);
+							access.fns_out.insert(init.clone(), extern_fn);
+						}
+						
+						drop(def_lock);
+
 						access.types.insert(typename, def_up);
 					}
 				}
