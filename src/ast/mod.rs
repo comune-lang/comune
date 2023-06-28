@@ -121,9 +121,7 @@ impl<'ctx> FnScope<'ctx> {
 			// Look for it in the namespace tree
 			self.context.with_item(id, &self.scope, |item, id| {
 				if let ModuleItemInterface::Functions(fns) = item {
-					if fns.len() == 1 {
-						let func = &*fns[0].read().unwrap();
-
+					if let [func] = fns.read().unwrap().as_slice() {
 						result = Some((
 							id.clone(),
 							Type::Function(

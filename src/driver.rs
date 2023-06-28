@@ -1,5 +1,5 @@
 use std::{
-	collections::HashMap,
+	collections::{HashMap, HashSet},
 	ffi::OsString,
 	fs,
 	path::{Path, PathBuf},
@@ -13,6 +13,7 @@ use crate::{
 	ast::{
 		self,
 		module::{Identifier, ModuleImport, ModuleImportKind, ModuleInterface, Name},
+		semantic::validate_module_impl,
 	},
 	cir::{
 		analyze::{
@@ -76,6 +77,14 @@ impl EmitType {
 			"ll" => Some(EmitType::LLVMIr),
 			_ => None,
 		}
+	}
+}
+
+impl CompilerState {
+	pub fn requires_linking(&self) -> bool {
+		self.emit_types.iter().any(
+			|emit| matches!(emit, EmitType::Binary | EmitType::DynamicLib | EmitType::StaticLib)
+		)
 	}
 }
 
@@ -288,12 +297,7 @@ pub fn compile_comune_module(
 			result.module.print_to_file(llvm_out_path).unwrap();
 		}
 
-		if state.emit_types.iter().any(|ty| {
-			matches!(
-				ty,
-				EmitType::Binary | EmitType::StaticLib | EmitType::DynamicLib
-			)
-		}) {
+		if state.requires_linking() {
 			target_machine
 				.write_to_file(&result.module, FileType::Object, &out_path)
 				.unwrap();
@@ -303,72 +307,14 @@ pub fn compile_comune_module(
 	Ok(())
 }
 
-// TODO: Add proper module searching support, based on a list of module search dirs, as well as support for .co, .h, .hpp etc
-pub fn get_module_source_path(
-	state: &CompilerState,
-	mut current_path: PathBuf,
-	module: &Identifier,
-) -> Option<PathBuf> {
-	// Resolve built-in library paths. This is currently hard-coded, but
-	// there's probably a more elegant solution to be written down the line
-	if module.absolute && matches!(module.path[0].to_string().as_str(), "core" | "std") {
-		current_path = PathBuf::from(state.libcomune_dir.clone());
-	} else {
-		current_path.pop();
-	}
-
-	current_path.set_extension("");
-
-	for i in 0..module.path.len() {
-		current_path.push(&*module.path[i]);
-	}
-
-	let extensions = ["co", "cpp", "c"];
-
-	for extension in extensions {
-		current_path.set_extension(extension);
-
-		if current_path.exists() {
-			return Some(current_path);
-		}
-	}
-
-	for dir in &state.import_paths {
-		let mut current_path = PathBuf::from(dir);
-		current_path.push(&**module.name());
-
-		for extension in extensions {
-			current_path.set_extension(extension);
-			if current_path.exists() {
-				return Some(current_path);
-			}
-		}
-	}
-
-	None
-}
-
-pub fn get_module_out_path(state: &CompilerState, module: &Identifier) -> PathBuf {
-	let mut result = PathBuf::from(&state.output_dir);
-
-	for scope in &module.path {
-		result.push(&**scope);
-	}
-
-	fs::create_dir_all(result.parent().unwrap()).unwrap();
-	result.set_extension("o");
-	result
-}
-
 pub fn parse_interface(
-	state: &Arc<CompilerState>,
+	_state: &Arc<CompilerState>,
 	path: &Path,
 	error_sender: Sender<CMNMessageLog>,
 ) -> Result<Parser, ComuneError> {
 	// First phase of module compilation: create Lexer and Parser, and parse the module at the namespace level
 
 	let mut mod_state = Parser::new(match Lexer::new(path, error_sender) {
-		// TODO: Take module name instead of filename
 		Ok(f) => f,
 		Err(e) => {
 			println!(
@@ -384,9 +330,12 @@ pub fn parse_interface(
 		}
 	});
 
-	if state.verbose_output {
-		println!("\ncollecting symbols...");
-	}
+	// TODO: HEY ASH TOMORROW MORNING MAKE IT SO CORE DOESN'T IMPORT STD
+	// TODO: FUCK YOU I'M TIRED AND I HAVE TOO MUCH TO DO. IT WORKS FOR NOW
+	mod_state.interface.import_names = HashSet::from([
+		ModuleImportKind::Language("core".into()),
+		ModuleImportKind::Language("std".into()),
+	]);
 
 	// Parse namespace level
 
@@ -530,94 +479,48 @@ pub fn generate_code<'ctx>(
 	input_module: &Identifier,
 ) -> Result<LLVMBackend<'ctx>, ComuneError> {
 	// Generate AST
-	match parser.generate_ast() {
-		Ok(()) => {
-			if state.verbose_output {
-				println!("\nvalidating...");
-			}
-		}
-		Err(e) => {
-			parser
-				.lexer
-				.borrow()
-				.log_msg(ComuneMessage::Error(e.clone()));
-			return Err(e);
-		}
-	};
+	if let Err(e) = parser.generate_ast() {
+		parser
+			.lexer
+			.borrow()
+			.log_msg(ComuneMessage::Error(e.clone()));
+
+		return Err(e);
+	}
 
 	// Finalize impl solver, so we can query it
 	parser.interface.impl_solver.finalize();
 
 	// Validate code
+	if let Err(e) = validate_module_impl(&parser.interface, &mut parser.module_impl) {
+		parser
+			.lexer
+			.borrow()
+			.log_msg(ComuneMessage::Error(e.clone()));
 
-	match ast::semantic::validate_module_impl(&parser.interface, &mut parser.module_impl) {
-		Ok(()) => {
-			if state.verbose_output {
-				println!("generating code...");
-			}
-		}
-
-		Err(e) => {
-			parser
-				.lexer
-				.borrow()
-				.log_msg(ComuneMessage::Error(e.clone()));
-			return Err(e);
-		}
+		return Err(e);
 	}
 
 	// Generate cIR
-
 	let module_name = input_module.to_string();
-	let mut cir_module = CIRModuleBuilder::from_ast(parser).module;
+	let cir_module = CIRModuleBuilder::from_ast(parser).module;
 
 	if state.emit_types.contains(&EmitType::ComuneIr) {
 		// Write cIR to file
-
 		fs::write(
 			get_module_out_path(state, input_module).with_extension("cir"),
 			cir_module.to_string(),
 		)
 		.unwrap();
 	}
-
-	// Analyze & optimize cIR
-
-	let mut cir_man = CIRPassManager::new();
-
-	cir_man.add_pass(verify::Verify);
-	cir_man.add_mut_pass(DataFlowPass::new(DefInitFlow, VarInitCheck));
-	cir_man.add_pass(verify::Verify);
-
-	let cir_errors = cir_man.run_on_module(&mut cir_module);
-
-	// Handle any errors from cIR passes
-
-	if !cir_errors.is_empty() {
-		let mut return_errors = vec![];
-
-		for error in cir_errors {
-			return_errors.push(error.clone());
-			parser.lexer.borrow().log_msg(ComuneMessage::Error(error));
-		}
-
-		return Err(ComuneError::new(
-			ComuneErrCode::Pack(return_errors),
-			SrcSpan::new(),
-		));
-	}
-
+	
 	// Monomorphize the module
-
 	let mut module_mono = state.monomorph_server.monoize_module(cir_module);
 
-	// Now perform post-monomorphization passes, including drop elaboration
-
+	// Perform post-monomorphization passes, including drop elaboration
 	let mut cir_man = CIRPassManager::new();
 
 	cir_man.add_mut_pass(DataFlowPass::new(DefInitFlow, ElaborateDrops));
-
-	// Sanity checks for ElaborateDrops
 	cir_man.add_mut_pass(DataFlowPass::new(DefInitFlow, VarInitCheck));
 	cir_man.add_pass(verify::Verify);
 
@@ -640,7 +543,7 @@ pub fn generate_code<'ctx>(
 	}
 
 	if state.emit_types.contains(&EmitType::ComuneIrMono) {
-		// Write monomorphized cIR to file
+		// Write optimized cIR to file
 		fs::write(
 			get_module_out_path(state, input_module).with_extension("cir_mono"),
 			module_mono.to_string(),
@@ -656,6 +559,76 @@ pub fn generate_code<'ctx>(
 		&get_module_out_path(state, input_module),
 		context,
 	)
+}
+
+pub fn generate_monomorph_module(state: Arc<CompilerState>) -> ComuneResult<()> {
+	let mut out_path = PathBuf::from(&state.output_dir);
+	out_path.push("monomorph-module");
+
+	// Monomorphize all the requested function instances into a dedicated module
+	//
+	// This is pretty low-hanging fruit for optimization,
+	// considering it's entirely single-threaded right now
+	let mut module = state.monomorph_server.generate_fn_instances();
+
+	if state.emit_types.contains(&EmitType::ComuneIr) {
+		// Write cIR to file
+		fs::write(
+			out_path.with_extension("cir"),
+			module.to_string(),
+		)
+		.unwrap();
+	}
+
+	let mut cir_man = CIRPassManager::new();
+
+	cir_man.add_mut_pass(DataFlowPass::new(DefInitFlow, ElaborateDrops));
+	cir_man.add_mut_pass(DataFlowPass::new(DefInitFlow, VarInitCheck));
+
+	let errors = cir_man.run_on_module(&mut module);
+
+	if !errors.is_empty() {
+		// TODO: log errors
+		return Err(ComuneError::new(ComuneErrCode::Pack(errors), SrcSpan::new()))
+	}
+
+	if state.emit_types.contains(&EmitType::ComuneIrMono) {
+		// Write optimized cIR to file
+		fs::write(
+			out_path.with_extension("cir_mono"),
+			module.to_string(),
+		)
+		.unwrap();
+	}
+
+	let context = Context::create();
+
+	let result = generate_llvm_ir(
+		&state, 
+		"monomorph-module".into(), 
+		module, 
+		&PathBuf::from("monomorph-module"), 
+		&out_path, 
+		&context
+	)?;
+
+	let target_machine = llvm::get_target_machine();
+
+	if state.emit_types.contains(&EmitType::LLVMIr) {
+		let mut llvm_out_path = out_path.clone();
+		llvm_out_path.set_extension("ll");
+		result.module.print_to_file(llvm_out_path).unwrap();
+	}
+
+	if state.requires_linking() {
+		target_machine
+			.write_to_file(&result.module, FileType::Object, &out_path)
+			.unwrap();
+	}
+	
+	state.output_modules.lock().unwrap().push(out_path);
+	
+	Ok(())
 }
 
 pub fn generate_llvm_ir<'ctx>(
@@ -684,7 +657,7 @@ pub fn generate_llvm_ir<'ctx>(
 			"an internal compiler error occurred:".red().bold(),
 			lexer::get_escaped(e.to_str().unwrap())
 		);
-		
+
 		let boguspath = out_path.with_extension("llbogus");
 
 		// Output bogus LLVM here, for debugging purposes
@@ -720,4 +693,60 @@ pub fn generate_llvm_ir<'ctx>(
 
 	mpm.run_on(&backend.module);
 	Ok(backend)
+}
+
+pub fn get_module_source_path(
+	state: &CompilerState,
+	mut current_path: PathBuf,
+	module: &Identifier,
+) -> Option<PathBuf> {
+	// Resolve built-in library paths. This is currently hard-coded, but
+	// there's probably a more elegant solution to be written down the line
+	if module.absolute && matches!(module.path[0].to_string().as_str(), "core" | "std") {
+		current_path = PathBuf::from(state.libcomune_dir.clone());
+	} else {
+		current_path.pop();
+	}
+
+	current_path.set_extension("");
+
+	for i in 0..module.path.len() {
+		current_path.push(&*module.path[i]);
+	}
+
+	let extensions = ["co", "cpp", "c"];
+
+	for extension in extensions {
+		current_path.set_extension(extension);
+
+		if current_path.exists() {
+			return Some(current_path);
+		}
+	}
+
+	for dir in &state.import_paths {
+		let mut current_path = PathBuf::from(dir);
+		current_path.push(&**module.name());
+
+		for extension in extensions {
+			current_path.set_extension(extension);
+			if current_path.exists() {
+				return Some(current_path);
+			}
+		}
+	}
+
+	None
+}
+
+pub fn get_module_out_path(state: &CompilerState, module: &Identifier) -> PathBuf {
+	let mut result = PathBuf::from(&state.output_dir);
+
+	for scope in &module.path {
+		result.push(&**scope);
+	}
+
+	fs::create_dir_all(result.parent().unwrap()).unwrap();
+	result.set_extension("o");
+	result
 }

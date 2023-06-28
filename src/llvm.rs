@@ -1023,7 +1023,10 @@ impl<'ctx> LLVMBackend<'ctx> {
 				}
 			}
 
-			Type::TypeRef { .. } => self.type_map[&ty.get_ir_typename()],
+			Type::TypeRef { .. } => {
+				let ir_typename = ty.get_ir_typename();
+				self.type_map[&ir_typename]
+			}
 
 			Type::Tuple(kind, types) => {
 				let types_mapped: Vec<_> = types

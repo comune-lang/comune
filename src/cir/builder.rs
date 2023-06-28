@@ -67,10 +67,9 @@ impl CIRModuleBuilder {
 
 			for (_, fns) in &im.functions {
 				for func in fns {
-					let proto = Arc::new(func.read().unwrap().clone());
-					let cir_fn = self.generate_prototype(&proto);
+					let cir_fn = Self::generate_prototype(&func);
 
-					self.module.functions.insert(proto, cir_fn);
+					self.module.functions.insert(func.clone(), cir_fn);
 				}
 			}
 		}
@@ -84,11 +83,10 @@ impl CIRModuleBuilder {
 		for (name, item) in &module.children {
 			match item {
 				ModuleItemInterface::Functions(fns) => {
-					for func in fns {
-						let proto = Arc::new(func.read().unwrap().clone());
-						let cir_fn = self.generate_prototype(&proto);
+					for func in &*fns.read().unwrap() {
+						let cir_fn = Self::generate_prototype(func);
 
-						self.module.functions.insert(proto, cir_fn);
+						self.module.functions.insert(func.clone(), cir_fn);
 					}
 				}
 
@@ -96,15 +94,14 @@ impl CIRModuleBuilder {
 					self.module.types.insert(name.to_string(), ty.clone());
 
 					if let Some(drop) = &ty.read().unwrap().drop {
-						let proto = Arc::new(drop.read().unwrap().clone());
-						let cir_fn = self.generate_prototype(&proto);
+						let cir_fn = Self::generate_prototype(&drop);
 
-						self.module.functions.insert(proto, cir_fn);
+						self.module.functions.insert(drop.clone(), cir_fn);
 					}
 
 					for init in &ty.read().unwrap().init {
-						let proto = Arc::new(init.read().unwrap().clone());
-						let cir_fn = self.generate_prototype(&proto);
+						let proto = init.clone();
+						let cir_fn = Self::generate_prototype(&proto);
 
 						self.module.functions.insert(proto, cir_fn);
 					}
@@ -119,7 +116,7 @@ impl CIRModuleBuilder {
 		for (func, ast) in &module_impl.fn_impls {
 			let ModuleASTElem::Parsed(ast) = ast else { panic!() };
 
-			self.generate_function(&*func.read().unwrap(), ast);
+			self.generate_function(&func, ast);
 		}
 	}
 
@@ -131,8 +128,8 @@ impl CIRModuleBuilder {
 		proto.clone()
 	}
 
-	pub fn generate_prototype(&mut self, func: &FnPrototype) -> CIRFunction {
-		self.current_fn = Some(CIRFunction {
+	pub fn generate_prototype(func: &FnPrototype) -> CIRFunction {
+		CIRFunction {
 			variables: func
 				.params
 				.params
@@ -147,9 +144,7 @@ impl CIRModuleBuilder {
 			is_extern: true,
 			is_variadic: func.params.variadic,
 			mangled_name: None,
-		});
-
-		self.current_fn.take().unwrap()
+		}
 	}
 
 	pub fn generate_function(&mut self, proto: &FnPrototype, fn_block: &Expr) {
@@ -1288,8 +1283,6 @@ impl CIRModuleBuilder {
 	) -> Option<RValue> {
 		match resolved {
 			FnRef::Direct(resolved) => {
-				let resolved = resolved.read().unwrap();
-
 				let (ret_props, ret) = resolved.ret.clone();
 				let ret = ret.get_concrete_type(generic_args);
 

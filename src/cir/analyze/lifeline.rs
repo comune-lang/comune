@@ -1,6 +1,6 @@
 // lifeline - the comune liveness & borrow checker
 
-use std::{collections::HashMap, fmt::Display, sync::Arc};
+use std::{collections::HashMap, fmt::Display};
 
 use super::{
 	Analysis, AnalysisDomain, AnalysisResultHandler, Forward, JoinSemiLattice, ResultVisitor,
@@ -373,17 +373,22 @@ impl AnalysisResultHandler<DefInitFlow> for VarInitCheck {
 					CIRStmt::Invoke { args, .. } | CIRStmt::Call { args, .. } => {
 						for (lval, _, use_props) in args {
 							let liveness = state.get_liveness(lval);
-							
+
 							if use_props.is_new {
 								match liveness {
-									None | Some(LivenessState::Uninit | LivenessState::Dropped | LivenessState::Moved) => {}
+									None
+									| Some(
+										LivenessState::Uninit
+										| LivenessState::Dropped
+										| LivenessState::Moved,
+									) => {}
 
 									_ => errors.push(ComuneError::new(
 										ComuneErrCode::InvalidNewReference {
 											variable: func.get_variable_name(lval.local),
 										},
 										lval.props.span,
-									))
+									)),
 								}
 							} else {
 								match liveness {
@@ -398,7 +403,6 @@ impl AnalysisResultHandler<DefInitFlow> for VarInitCheck {
 									)),
 								}
 							}
-							
 						}
 					}
 
@@ -590,7 +594,7 @@ impl<'func> DropElaborator<'func> {
 
 				if let Some(drop) = &def.drop {
 					if self.state.get_liveness(lval) == Some(LivenessState::Live) {
-						let drop = Arc::new(drop.read().unwrap().clone());
+						let drop = drop.clone();
 
 						self.write(CIRStmt::Call {
 							id: CIRCallId::Direct(drop, SrcSpan::new()),

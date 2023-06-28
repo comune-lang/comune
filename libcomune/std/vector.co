@@ -49,21 +49,6 @@ struct Vector<type T> {
 	}
 }
 
-using Test = Vector<int>;
-
-void foo() {
-	usize size = size_of<Test>();
-	Test mut* mut b = malloc(size) as Test mut*;
-	
-	unsafe {
-		new (*b) Vector<int> {
-			data: malloc(0) as int mut*,
-			len: 0,
-			capacity: 0
-		}
-	};
-}
-
 impl<type T> Vector<T> {
 
 	void push(mut& self, T elem) {

@@ -64,7 +64,7 @@ pub struct ModuleInterface {
 // i do not want to start doing newtype bullshit right now
 #[derive(Default, Debug)]
 pub struct ModuleImpl {
-	pub fn_impls: Vec<(Arc<RwLock<FnPrototype>>, ModuleASTElem)>,
+	pub fn_impls: HashMap<Arc<FnPrototype>, ModuleASTElem>,
 }
 
 // I HATE RWLOCKS I HATE RWLOCKS I HATE RWLOCKS I HATE RWLOCKS I
@@ -72,21 +72,17 @@ pub struct ModuleImpl {
 pub enum ModuleItemInterface {
 	Type(Arc<RwLock<TypeDef>>),
 	Trait(Arc<RwLock<TraitInterface>>),
-	Functions(Vec<Arc<RwLock<FnPrototype>>>),
+	Functions(Arc<RwLock<Vec<Arc<FnPrototype>>>>),
 	Variable(Type),
 	Alias(Identifier),
 	TypeAlias(Arc<RwLock<Type>>),
 }
 
-#[derive(Clone, Debug)]
-pub enum ModuleItemImpl {
-	Function(Arc<RwLock<FnPrototype>>, ModuleASTElem),
-	Variable(ModuleASTElem),
-}
-
 impl ModuleImpl {
 	pub fn new() -> Self {
-		ModuleImpl { fn_impls: vec![] }
+		ModuleImpl {
+			fn_impls: HashMap::new(),
+		}
 	}
 }
 
@@ -95,10 +91,7 @@ impl ModuleInterface {
 		ModuleInterface {
 			path,
 			children: HashMap::new(),
-			import_names: HashSet::from([
-				ModuleImportKind::Language("core".into()),
-				ModuleImportKind::Language("std".into()),
-			]),
+			import_names: HashSet::new(),
 			imported: HashMap::new(),
 			impl_solver: ImplSolver::new(),
 			is_typed: false,

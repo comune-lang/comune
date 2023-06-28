@@ -24,8 +24,6 @@ use lazy_static::lazy_static;
 pub enum LangTrait {
 	Sized,
 	Copy,
-	Clone,
-	Drop,
 	Send,
 	Sync,
 }
@@ -39,7 +37,7 @@ pub struct TraitRef {
 
 #[derive(Debug)]
 pub struct TraitInterface {
-	pub items: HashMap<Name, Vec<Arc<RwLock<FnPrototype>>>>,
+	pub items: HashMap<Name, Vec<Arc<FnPrototype>>>,
 	pub types: HashMap<Name, GenericParam>, // Associated types
 	pub supers: Vec<Identifier>,
 	pub attributes: Vec<Attribute>,
@@ -48,7 +46,7 @@ pub struct TraitInterface {
 #[derive(Debug, Clone)]
 pub struct ImplBlockInterface {
 	pub implements: Option<ItemRef<TraitRef>>,
-	pub functions: HashMap<Name, Vec<Arc<RwLock<FnPrototype>>>>,
+	pub functions: HashMap<Name, Vec<Arc<FnPrototype>>>,
 	pub types: HashMap<Name, Type>,
 	pub scope: Arc<Identifier>, // The scope used for name resolution within the impl
 	pub canonical_root: Identifier, // The root of the canonical names used by items in this impl

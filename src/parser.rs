@@ -11,7 +11,7 @@ use crate::ast::controlflow::ControlFlow;
 use crate::ast::expression::{Atom, Expr, FnRef, NodeData, Operator, XtorKind};
 use crate::ast::module::{
 	Identifier, ItemRef, ModuleASTElem, ModuleImpl, ModuleImportKind, ModuleInterface,
-	ModuleItemImpl, ModuleItemInterface, Name,
+	ModuleItemInterface, Name,
 };
 use crate::ast::statement::Stmt;
 use crate::ast::traits::{ImplBlockInterface, TraitInterface, TraitRef};
@@ -38,6 +38,11 @@ pub struct Parser {
 	pub module_impl: ModuleImpl,
 	pub lexer: RefCell<Lexer>,
 	current_scope: Arc<Identifier>,
+}
+
+enum DeclParseResult {
+	Function(Name, Arc<FnPrototype>),
+	Variable(Name, Type),
 }
 
 impl<'ctx> Parser {
@@ -103,26 +108,20 @@ impl<'ctx> Parser {
 	}
 
 	pub fn generate_ast(&mut self) -> ComuneResult<()> {
-		let mut fn_impls = vec![];
+		let mut fn_impls = HashMap::new();
 
 		for (proto, ast) in &self.module_impl.fn_impls {
 			// Parse function block
 			if let ModuleASTElem::Unparsed(idx) = ast {
 				self.lexer.borrow_mut().seek_token_idx(*idx);
 
-				let proto_inner = proto.read().unwrap();
+				let scope = FnScope::new(&self.interface, proto.path.clone(), proto.ret.clone())
+					.with_params(proto.generics.clone());
 
-				let scope = FnScope::new(
-					&self.interface,
-					proto_inner.path.clone(),
-					proto_inner.ret.clone(),
-				)
-				.with_params(proto_inner.generics.clone());
-
-				fn_impls.push((
+				fn_impls.insert(
 					proto.clone(),
 					ModuleASTElem::Parsed(self.parse_block(&scope)?),
-				));
+				);
 			}
 		}
 
@@ -240,9 +239,9 @@ impl<'ctx> Parser {
 									self.parse_namespace_declaration(current_attributes, None)?;
 								current_attributes = vec![];
 
-								match result.1 {
-									ModuleItemInterface::Variable(t) => def_write.members.push((
-										result.0,
+								match result.0 {
+									DeclParseResult::Variable(name, t) => def_write.members.push((
+										name,
 										t,
 										current_visibility.clone(),
 									)),
@@ -279,13 +278,13 @@ impl<'ctx> Parser {
 								let mut path = Identifier::from_parent(&scope, k.into());
 								path.qualifier.0 = Some(Box::new(self_ty.clone()));
 
-								let func = Arc::new(RwLock::new(FnPrototype {
+								let func = Arc::new(FnPrototype {
 									path,
 									params,
 									generics,
 									ret: (BindingProps::default(), Type::Basic(Basic::Void)),
 									attributes: vec![],
-								}));
+								});
 
 								// Skip c'tor/d'tor body
 								let ast = self.get_current_token_index();
@@ -294,7 +293,7 @@ impl<'ctx> Parser {
 								// Add fn to module impl
 								self.module_impl
 									.fn_impls
-									.push((func.clone(), ModuleASTElem::Unparsed(ast)));
+									.insert(func.clone(), ModuleASTElem::Unparsed(ast));
 
 								match k {
 									"new" => {
@@ -351,30 +350,22 @@ impl<'ctx> Parser {
 
 					while !token_compare(&next, "}") {
 						let func_attributes = self.parse_attributes()?;
-						let (name, interface, im) = self.parse_namespace_declaration(
+
+						match self.parse_namespace_declaration(
 							func_attributes,
 							Some(&Type::TypeParam(0)),
-						)?;
+						)? {
+							(DeclParseResult::Function(name, proto), ast) => {
+								self.module_impl.fn_impls.insert(proto.clone(), ast);
 
-						match (interface, im) {
-							(
-								ModuleItemInterface::Functions(mut funcs),
-								ModuleItemImpl::Function(_, ast),
-							) => {
-								if let Some(fns) = this_trait.items.get_mut(&name) {
-									fns.append(&mut funcs);
+								if let Some(existing) = this_trait.items.get_mut(&name) {
+									existing.push(proto);
 								} else {
-									this_trait.items.insert(name.clone(), funcs);
-								}
-
-								if ast != ModuleASTElem::NoElem {
-									panic!(
-										"default impls in trait definitions are not yet supported"
-									);
+									this_trait.items.insert(name, vec![proto]);
 								}
 							}
 
-							_ => todo!(),
+							(DeclParseResult::Variable(..), _) => todo!(),
 						}
 
 						next = self.get_current()?;
@@ -416,11 +407,11 @@ impl<'ctx> Parser {
 						impl_ty = self.parse_type(None)?;
 					}
 
-					// Consume barce
+					// Consume brace
 					self.consume(&Token::Other('{'))?;
 
 					// Parse functions
-					let mut functions = HashMap::new();
+					let mut functions: HashMap<_, Vec<Arc<FnPrototype>>> = HashMap::new();
 
 					let canonical_root = Identifier {
 						qualifier: (
@@ -443,24 +434,27 @@ impl<'ctx> Parser {
 
 						self.get_next()?;
 
-						let type_params = self.parse_generic_param_list(None)?;
+						let generics = self.parse_generic_param_list(None)?;
 						let params = self.parse_parameter_list(Some(&impl_ty), None)?;
 						let ast = ModuleASTElem::Unparsed(self.get_current_token_index());
 
 						self.skip_block()?;
 
-						let proto = Arc::new(RwLock::new(FnPrototype {
+						let proto = Arc::new(FnPrototype {
 							path: Identifier::from_parent(&canonical_root, fn_name.clone()),
 							ret: (props, ret),
 							params,
-							generics: type_params,
+							generics,
 							attributes: func_attributes,
-						}));
+						});
 
-						// TODO: Proper overload handling here
-						functions.insert(fn_name.clone(), vec![proto.clone()]);
+						if let Some(existing) = functions.get_mut(&fn_name) {
+							existing.push(proto.clone());
+						} else {
+							functions.insert(fn_name.clone(), vec![proto.clone()]);
+						}
 
-						self.module_impl.fn_impls.push((proto, ast));
+						self.module_impl.fn_impls.insert(proto, ast);
 					}
 
 					// Register impl to solver
@@ -580,30 +574,29 @@ impl<'ctx> Parser {
 
 				_ => {
 					// Parse declaration/definition
-					let (name, mut protos, defs) =
-						self.parse_namespace_declaration(current_attributes, None)?;
 
-					let id = Identifier::from_parent(scope, name);
-
-					match (&mut protos, defs) {
-						(
-							ModuleItemInterface::Functions(fns),
-							ModuleItemImpl::Function(proto, ast),
-						) => {
+					match self.parse_namespace_declaration(current_attributes, None)? {
+						(DeclParseResult::Function(name, proto), ast) => {
+							let id = Identifier::from_parent(scope, name);
 							let module_interface = &mut self.interface;
 
-							if let Some(ModuleItemInterface::Functions(existing)) =
-								module_interface.children.get_mut(&id)
-							{
-								existing.append(fns);
-							} else {
-								module_interface.children.insert(id.clone(), protos);
-							}
+							self.module_impl.fn_impls.insert(proto.clone(), ast);
 
-							self.module_impl.fn_impls.push((proto, ast))
+							if let Some(ModuleItemInterface::Functions(existing)) =
+								module_interface.children.get(&id)
+							{
+								existing.write().unwrap().push(proto);
+							} else {
+								module_interface.children.insert(
+									id,
+									ModuleItemInterface::Functions(Arc::new(RwLock::new(vec![
+										proto,
+									]))),
+								);
+							}
 						}
 
-						_ => todo!(),
+						(DeclParseResult::Variable(..), _) => todo!(),
 					}
 				}
 			}
@@ -758,7 +751,7 @@ impl<'ctx> Parser {
 		&self,
 		attributes: Vec<Attribute>,
 		self_ty: Option<&Type>,
-	) -> ComuneResult<(Name, ModuleItemInterface, ModuleItemImpl)> {
+	) -> ComuneResult<(DeclParseResult, ModuleASTElem)> {
 		let t = self.parse_type(None)?;
 		let props = self.parse_binding_props()?.unwrap_or_default();
 		let interface;
@@ -800,25 +793,13 @@ impl<'ctx> Parser {
 						_ => return self.err(ComuneErrCode::UnexpectedToken),
 					}
 
-					let proto = Arc::new(RwLock::new(t));
-
-					interface = ModuleItemInterface::Functions(vec![proto.clone()]);
-					item = ModuleItemImpl::Function(proto, ast);
+					interface = DeclParseResult::Function(name, Arc::new(t));
+					item = ast;
 				}
 
 				"=" => {
 					self.get_next()?;
 					// TODO: Skip expression
-
-					//ast_elem = match self.parse_expression()?.node {
-					//	ASTNode::Expression(expr) => Some(
-					//		ASTElem {
-					//			node: ASTNode::Expression(RefCell::new(expr.into_inner())),
-					//			type_info: RefCell::new(None),
-					//			token_data: (0, 0) // TODO: Add
-					//		}),
-					//	_ => panic!(), // TODO: Error handling
-					//};
 
 					self.check_semicolon()?;
 					todo!();
@@ -829,12 +810,12 @@ impl<'ctx> Parser {
 				}
 			}
 		} else {
-			interface = ModuleItemInterface::Variable(t);
-			item = ModuleItemImpl::Variable(ModuleASTElem::NoElem);
+			interface = DeclParseResult::Variable(name, t);
+			item = ModuleASTElem::NoElem;
 			self.check_semicolon()?;
 		}
 
-		Ok((name, interface, item))
+		Ok((interface, item))
 	}
 
 	fn parse_binding_props(&self) -> ComuneResult<Option<BindingProps>> {

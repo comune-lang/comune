@@ -1,7 +1,4 @@
-use std::{
-	cmp::Ordering,
-	sync::{Arc, RwLock},
-};
+use std::{cmp::Ordering, sync::Arc};
 
 use crate::{
 	ast::{
@@ -111,7 +108,7 @@ pub fn validate_fn_call(
 	let Atom::FnCall { name, args, generic_args: type_args, resolved } = call else { panic!() };
 
 	if let FnRef::Direct(resolved) = resolved {
-		return Ok(resolved.read().unwrap().ret.1.clone());
+		return Ok(resolved.ret.1.clone());
 	}
 
 	if let FnRef::Indirect(expr) = resolved {
@@ -158,7 +155,7 @@ pub fn validate_fn_call(
 			if let Some((_, ModuleItemInterface::Functions(fns))) =
 				scope.context.get_item(&name_unwrap)
 			{
-				for func in fns.iter() {
+				for func in fns.read().unwrap().iter() {
 					candidates.push(func.clone());
 				}
 			}
@@ -185,10 +182,10 @@ pub fn validate_fn_call(
 
 	let mut candidates: Vec<_> = candidates
 		.into_iter()
-		.filter(|func| is_candidate_viable(args, type_args, &*func.read().unwrap()))
+		.filter(|func| is_candidate_viable(args, type_args, func))
 		.collect();
 
-	let selected_candidate = try_select_candidate(
+	let func = try_select_candidate(
 		name,
 		args,
 		type_args,
@@ -197,10 +194,9 @@ pub fn validate_fn_call(
 		scope,
 	)?;
 
-	let func = &*selected_candidate.read().unwrap();
 	validate_arg_list(args, &func.params.params, type_args, scope)?;
 
-	*resolved = FnRef::Direct(selected_candidate.clone());
+	*resolved = FnRef::Direct(func.clone());
 	*name = func.path.clone();
 
 	Ok(func.ret.1.get_concrete_type(type_args))
@@ -216,7 +212,7 @@ pub fn resolve_method_call(
 
 	// Already validated
 	if let FnRef::Direct(resolved) = resolved {
-		return Ok(resolved.read().unwrap().ret.1.clone());
+		return Ok(resolved.ret.1.clone());
 	}
 
 	if let FnRef::Indirect(expr) = resolved {
@@ -229,15 +225,11 @@ pub fn resolve_method_call(
 
 	args.insert(0, lhs.clone());
 
-	type_args.insert(0, receiver.clone());
-
 	if let Type::TypeRef { args, .. } = receiver {
-		type_args.reserve(args.len());
-
-		for (i, arg) in args.iter().enumerate() {
-			type_args.insert(i + 1, arg.clone());
-		}
+		type_args.append(&mut args.clone());
 	};
+
+	type_args.push(receiver.clone());
 
 	for arg in args.iter_mut() {
 		arg.validate(scope)?;
@@ -263,10 +255,10 @@ pub fn resolve_method_call(
 
 	let mut candidates: Vec<_> = candidates
 		.into_iter()
-		.filter(|func| is_candidate_viable(args, type_args, &*func.read().unwrap()))
+		.filter(|func| is_candidate_viable(args, type_args, func))
 		.collect();
 
-	let selected_candidate = try_select_candidate(
+	let func = try_select_candidate(
 		name,
 		args,
 		type_args,
@@ -275,11 +267,9 @@ pub fn resolve_method_call(
 		scope,
 	)?;
 
-	let func = &*selected_candidate.read().unwrap();
-
 	validate_arg_list(args, &func.params.params, type_args, scope)?;
 
-	*resolved = FnRef::Direct(selected_candidate.clone());
+	*resolved = FnRef::Direct(func.clone());
 	*name = func.path.clone();
 
 	Ok(func.ret.1.get_concrete_type(&type_args))
@@ -289,10 +279,10 @@ pub fn try_select_candidate(
 	name: &Identifier,
 	args: &[Expr],
 	generic_args: &Vec<Type>,
-	candidates: &mut [Arc<RwLock<FnPrototype>>],
+	candidates: &mut [Arc<FnPrototype>],
 	span: SrcSpan,
 	scope: &FnScope,
-) -> ComuneResult<Arc<RwLock<FnPrototype>>> {
+) -> ComuneResult<Arc<FnPrototype>> {
 	match candidates.len() {
 		0 => Err(ComuneError::new(
 			ComuneErrCode::NoCandidateFound {
@@ -308,17 +298,10 @@ pub fn try_select_candidate(
 		// More than one viable candidate
 		_ => {
 			// Sort candidates by cost
-			candidates.sort_unstable_by(|l, r| {
-				candidate_compare(args, &*l.read().unwrap(), &*r.read().unwrap(), scope)
-			});
+			candidates.sort_unstable_by(|l, r| candidate_compare(args, l, r, scope));
 
 			// Compare the top two candidates
-			match candidate_compare(
-				args,
-				&*candidates[0].read().unwrap(),
-				&*candidates[1].read().unwrap(),
-				scope,
-			) {
+			match candidate_compare(args, &candidates[0], &candidates[1], scope) {
 				Ordering::Less => Ok(candidates[0].clone()),
 
 				Ordering::Equal => Err(ComuneError::new(ComuneErrCode::AmbiguousCall, span)), // Ambiguous call

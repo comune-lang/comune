@@ -175,9 +175,7 @@ pub fn generate_cpp_header(
 	for (name, item) in &input.children {
 		match item {
 			ModuleItemInterface::Functions(fns) => {
-				for func in fns {
-					let func = &*func.read().unwrap();
-
+				for func in &*fns.read().unwrap() {
 					if get_attribute(&func.attributes, "no_mangle").is_some() {
 						write!(result, "extern \"C\" ")?;
 					}
