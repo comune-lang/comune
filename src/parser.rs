@@ -1753,18 +1753,15 @@ impl<'ctx> Parser {
 
 		// Special case for self parameter
 		if let Some(self_ty) = self_ty {
-			if let Some(binding_props) = self.parse_binding_props()? {
-				let Token::Name(name) = self.get_current()? else {
-					return self.err(ComuneErrCode::UnexpectedToken)
-				};
+			let binding_props = self.parse_binding_props()?;
+			let self_name = "self".to_string();
 
-				if &*name != "self" {
-					return self.err(ComuneErrCode::UnexpectedToken);
-				};
-
+			if binding_props.is_some() || matches!(self.get_current()?, Token::Name(name) if name == self_name) {
+				let binding_props = binding_props.unwrap_or_default();
+				
 				result
 					.params
-					.push((self_ty.clone(), Some(name), binding_props));
+					.push((self_ty.clone(), Some(self_name), binding_props));
 
 				if self.get_next()? == Token::Other(',') {
 					self.get_next()?;

@@ -114,6 +114,12 @@ struct DropTest {
 	}
 }
 
+impl DropTest {
+	void consume(self) {
+		printf(c"Consuming DropTest %i\n", self.num);
+	}
+}
+
 void temp_drop_test(DropTest& test) {
 	printf(c"temp_drop_test(DropTest&) called\n");
 }
@@ -148,6 +154,7 @@ void drop_test() {
 	printf(c"\nLeft subscope\n\n");
 
 	temp_drop_test(new DropTest(5));
+	new DropTest(6).consume();
 }
 
 void new_ref_test(Vector<float> new& test) {
