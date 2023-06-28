@@ -227,7 +227,12 @@ impl MonomorphServer {
 		access: &mut ModuleAccess,
 	) {
 		if generic_args.is_empty() {
-			return;
+			if !access.fns_in.contains_key(id) {
+				let extern_fn = CIRModuleBuilder::generate_prototype(id);
+				access.fns_out.insert(id.clone(), extern_fn);
+			}
+
+			return
 		}
 
 		let (func, body) = self.register_fn_job(id, generic_args, access);
@@ -471,8 +476,6 @@ impl MonomorphServer {
 		
 		let mut func_new = func.as_ref().clone();
 		
-		println!("registering job {func_new} with {args:?}");
-
 		self.monoize_prototype(&mut func_new, args, access);
 
 		let func_new = Arc::new(func_new);
