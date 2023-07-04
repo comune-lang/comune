@@ -6,7 +6,7 @@ use crate::{
 		expression::{Atom, Expr, FnRef, NodeData},
 		module::{Identifier, ModuleASTElem, ModuleInterface, ModuleItemInterface, Name},
 		statement::Stmt,
-		types::{Basic, BindingProps, FnPrototype, Type},
+		types::{Basic, BindingProps, FnPrototype, Type, GenericArgs, GenericArg},
 		FnScope,
 	},
 	errors::{ComuneErrCode, ComuneError},
@@ -208,7 +208,7 @@ pub fn resolve_method_call(
 	fn_call: &mut Atom,
 	scope: &mut FnScope,
 ) -> ComuneResult<Type> {
-	let Atom::FnCall { name, args, generic_args: type_args, resolved } = fn_call else { panic!() };
+	let Atom::FnCall { name, args, generic_args, resolved } = fn_call else { panic!() };
 
 	// Already validated
 	if let FnRef::Direct(resolved) = resolved {
@@ -226,10 +226,10 @@ pub fn resolve_method_call(
 	args.insert(0, lhs.clone());
 
 	if let Type::TypeRef { args, .. } = receiver {
-		type_args.append(&mut args.clone());
+		generic_args.append(&mut args.clone());
 	};
 
-	type_args.push(receiver.clone());
+	generic_args.push(GenericArg::Type(receiver.clone()));
 
 	for arg in args.iter_mut() {
 		arg.validate(scope)?;
@@ -255,30 +255,30 @@ pub fn resolve_method_call(
 
 	let mut candidates: Vec<_> = candidates
 		.into_iter()
-		.filter(|func| is_candidate_viable(args, type_args, func))
+		.filter(|func| is_candidate_viable(args, generic_args, func))
 		.collect();
 
 	let func = try_select_candidate(
 		name,
 		args,
-		type_args,
+		generic_args,
 		&mut candidates,
 		lhs.get_node_data().span,
 		scope,
 	)?;
 
-	validate_arg_list(args, &func.params.params, type_args, scope)?;
+	validate_arg_list(args, &func.params.params, generic_args, scope)?;
 
 	*resolved = FnRef::Direct(func.clone());
 	*name = func.path.clone();
 
-	Ok(func.ret.1.get_concrete_type(&type_args))
+	Ok(func.ret.1.get_concrete_type(&generic_args))
 }
 
 pub fn try_select_candidate(
 	name: &Identifier,
 	args: &[Expr],
-	generic_args: &Vec<Type>,
+	generic_args: &GenericArgs,
 	candidates: &mut [Arc<FnPrototype>],
 	span: SrcSpan,
 	scope: &FnScope,
@@ -286,8 +286,8 @@ pub fn try_select_candidate(
 	match candidates.len() {
 		0 => Err(ComuneError::new(
 			ComuneErrCode::NoCandidateFound {
-				args: args.iter().map(|arg| arg.get_type().clone()).collect(),
-				type_args: generic_args.clone(),
+				args: args.iter().map(|arg| GenericArg::Type(arg.get_type().clone())).collect(),
+				generic_args: generic_args.clone(),
 				name: name.clone(),
 			},
 			span,
@@ -312,7 +312,7 @@ pub fn try_select_candidate(
 	}
 }
 
-pub fn is_candidate_viable(args: &Vec<Expr>, type_args: &Vec<Type>, func: &FnPrototype) -> bool {
+pub fn is_candidate_viable(args: &Vec<Expr>, generic_args: &GenericArgs, func: &FnPrototype) -> bool {
 	let params = &func.params.params;
 
 	if args.len() < params.len() || (args.len() > params.len() && !func.params.variadic) {
@@ -320,7 +320,7 @@ pub fn is_candidate_viable(args: &Vec<Expr>, type_args: &Vec<Type>, func: &FnPro
 	}
 
 	// TODO: Type arg deduction
-	if type_args.len() != func.generics.len() {
+	if generic_args.len() != func.generics.len() {
 		return false;
 	}
 
@@ -328,8 +328,8 @@ pub fn is_candidate_viable(args: &Vec<Expr>, type_args: &Vec<Type>, func: &FnPro
 		if let Some(arg) = args.get(i) {
 			if !arg
 				.get_type()
-				.get_concrete_type(type_args)
-				.castable_to(&param.get_concrete_type(type_args))
+				.get_concrete_type(generic_args)
+				.castable_to(&param.get_concrete_type(generic_args))
 			{
 				return false;
 			}
@@ -388,17 +388,17 @@ fn candidate_compare(args: &[Expr], l: &FnPrototype, r: &FnPrototype, scope: &Fn
 fn validate_arg_list(
 	args: &mut [Expr],
 	params: &[(Type, Option<Name>, BindingProps)],
-	type_args: &Vec<Type>,
+	generic_args: &GenericArgs,
 	scope: &mut FnScope,
 ) -> ComuneResult<()> {
 	for (i, arg) in args.iter_mut().enumerate() {
 		// add parameter's type info to argument
 		if let Some((param_ty, ..)) = params.get(i) {
-			let param_concrete = param_ty.get_concrete_type(type_args);
+			let param_concrete = param_ty.get_concrete_type(generic_args);
 
 			arg.get_node_data_mut().ty.replace(param_concrete.clone());
 
-			let arg_type = arg.validate(scope)?.get_concrete_type(type_args);
+			let arg_type = arg.validate(scope)?.get_concrete_type(generic_args);
 
 			if !arg.coercable_to(&arg_type, &param_concrete, scope) {
 				return Err(ComuneError::new(

@@ -15,7 +15,7 @@ use super::{
 	controlflow::ControlFlow,
 	module::{Identifier, Name},
 	statement::Stmt,
-	types::{Basic, FnPrototype, Type, TypeDef},
+	types::{Basic, FnPrototype, Type, TypeDef, GenericArgs},
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -436,14 +436,14 @@ pub enum Atom {
 	FnCall {
 		name: Identifier,
 		args: Vec<Expr>,
-		generic_args: Vec<Type>,
+		generic_args: GenericArgs,
 		resolved: FnRef,
 	},
 
 	// Constructor call
 	Constructor {
 		def: Weak<RwLock<TypeDef>>,
-		generic_args: Vec<Type>,
+		generic_args: GenericArgs,
 		kind: XtorKind,
 		placement: Option<Box<Expr>>,
 	},

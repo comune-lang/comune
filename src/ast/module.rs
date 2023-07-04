@@ -15,7 +15,7 @@ use crate::{
 use super::{
 	expression::Expr,
 	traits::{ImplSolver, TraitInterface, TraitRef},
-	types::{Basic, FnPrototype, Type, TypeDef},
+	types::{Basic, FnPrototype, Type, TypeDef, GenericArgs},
 };
 
 // String plays nicer with debuggers
@@ -378,7 +378,7 @@ pub enum ItemRef<T: Clone> {
 	Unresolved {
 		name: Identifier,
 		scope: Arc<Identifier>,
-		generic_args: Vec<Type>,
+		generic_args: GenericArgs,
 	},
 	Resolved(T),
 }

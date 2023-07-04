@@ -11,7 +11,7 @@ use std::{
 };
 
 use super::module::ItemRef;
-use super::types::{FnPrototype, GenericParam, Generics};
+use super::types::{FnPrototype, Generics, GenericParam, GenericArgs};
 use super::Attribute;
 use super::{
 	module::{Identifier, Name},
@@ -32,7 +32,7 @@ pub enum LangTrait {
 pub struct TraitRef {
 	pub def: Weak<RwLock<TraitInterface>>,
 	pub name: Identifier,
-	pub args: Vec<Type>,
+	pub args: GenericArgs,
 }
 
 #[derive(Debug)]
@@ -159,15 +159,15 @@ impl ImplSolver {
 		if let Type::TypeParam(idx) = ty {
 			// Type parameter, check if it has the trait bound
 
-			let Some((_, param, concrete)) = generics.get(*idx) else { panic!() };
+			let Some((_, GenericParam::Type { arg, bounds })) = generics.get(*idx) else { panic!() };
 
-			if let Some(concrete) = concrete {
+			if let Some(concrete) = arg {
 				if self.is_trait_implemented(concrete, tr, generics) {
 					return true;
 				}
 			}
 
-			if param.iter().any(|param_trait| {
+			if bounds.iter().any(|param_trait| {
 				if let ItemRef::Resolved(param_trait) = param_trait {
 					if param_trait == tr {
 						return true;

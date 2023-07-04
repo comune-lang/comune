@@ -12,7 +12,7 @@ use crate::{
 		expression::Operator,
 		module::{Identifier, Name},
 		traits::ImplSolver,
-		types::{Basic, BindingProps, FnPrototype, GenericParam, Type, TypeDef},
+		types::{Basic, BindingProps, FnPrototype, Type, TypeDef, Generics, GenericArgs},
 		Attribute,
 	},
 	lexer::SrcSpan,
@@ -33,8 +33,6 @@ type FieldIndex = usize;
 type TypeName = String;
 type TypeParamIndex = usize;
 type FuncID = Arc<FnPrototype>;
-
-pub type CIRTypeParamList = Vec<(Name, GenericParam, Option<Type>)>;
 
 // An LValue is an expression that results in a memory location.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -162,7 +160,7 @@ pub enum CIRStmt {
 	Call {
 		id: CIRCallId,
 		args: Vec<(LValue, Type, BindingProps)>,
-		generic_args: Vec<Type>,
+		generic_args: GenericArgs,
 		result: Option<LValue>,
 	},
 
@@ -170,7 +168,7 @@ pub enum CIRStmt {
 	Invoke {
 		id: CIRCallId,
 		args: Vec<(LValue, Type, BindingProps)>,
-		generic_args: Vec<Type>,
+		generic_args: GenericArgs,
 		result: Option<LValue>,
 		next: BlockIndex,
 		except: BlockIndex,
@@ -210,7 +208,7 @@ pub struct CIRFunction {
 	pub blocks: Vec<CIRBlock>,
 	pub ret: (BindingProps, Type),
 	pub arg_count: usize,
-	pub generics: CIRTypeParamList,
+	pub generics: Generics,
 	pub attributes: Vec<Attribute>,
 	pub is_extern: bool,
 	pub is_variadic: bool,

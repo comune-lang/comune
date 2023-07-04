@@ -301,7 +301,7 @@ impl Type {
 			},
 
 			Type::Unresolved {
-				name, type_args, ..
+				name, generic_args: type_args, ..
 			} => {
 				write!(f, "{name}")?;
 
@@ -309,11 +309,11 @@ impl Type {
 					let mut iter = type_args.iter();
 
 					write!(f, "<")?;
-					iter.next().unwrap().cpp_format(f)?;
+					iter.next().unwrap().get_type_arg().cpp_format(f)?;
 
 					for arg in iter {
 						write!(f, ", ")?;
-						arg.cpp_format(f)?;
+						arg.get_type_arg().cpp_format(f)?;
 					}
 
 					write!(f, ">")?;

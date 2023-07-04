@@ -9,8 +9,68 @@ use super::Attribute;
 use crate::constexpr::ConstExpr;
 use crate::lexer::SrcSpan;
 
-pub type GenericParam = Vec<ItemRef<TraitRef>>; // Type parameter, with trait bounds
-pub type Generics = Vec<(Name, GenericParam, Option<Type>)>;
+pub type Generics = Vec<(Name, GenericParam)>;
+pub type GenericArgs = Vec<GenericArg>;
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum GenericParam {
+	Type {
+		bounds: Vec<ItemRef<TraitRef>>,
+		arg: Option<Type>,
+	},
+	// TODO: const generics
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum GenericArg {
+	Type(Type),
+}
+
+impl GenericParam {
+	pub fn fill_with(&mut self, gen_arg: &GenericArg) {
+		match (self, gen_arg) {
+			(GenericParam::Type { arg, .. }, GenericArg::Type(ty)) => {
+				*arg = Some(ty.clone());
+			}
+		}
+	}
+
+	pub fn blank_type() -> Self {
+		GenericParam::Type { bounds: vec![], arg: None }
+	}
+
+	pub fn get_type_arg(&self) -> &Option<Type> {
+		let GenericParam::Type { arg, .. } = self;
+		arg
+	}
+
+	pub fn get_type_arg_mut(&mut self) -> &mut Option<Type> {
+		let GenericParam::Type { arg, .. } = self;
+		arg
+	}
+}
+
+impl GenericArg {
+	pub fn get_concrete_arg(&self, args: &GenericArgs) -> GenericArg {
+		match self {
+			GenericArg::Type(ty) => GenericArg::Type(ty.get_concrete_type(args)),
+		}
+	}
+
+	pub fn fits_generic(&self, arg: &GenericArg) -> bool {
+		match (self, arg) {
+			(GenericArg::Type(self_ty), GenericArg::Type(arg_ty)) => {
+				self_ty.fits_generic(arg_ty)
+			}
+		}
+	}
+
+	pub fn get_type_arg(&self) -> &Type {
+		match self {
+			GenericArg::Type(ty) => ty,
+		}
+	}
+}
 
 #[derive(Clone)]
 pub enum Type {
@@ -31,14 +91,14 @@ pub enum Type {
 	TypeRef {
 		// Reference to user-defined type
 		def: Weak<RwLock<TypeDef>>,
-		args: Vec<Type>,
+		args: GenericArgs,
 	},
 
 	Unresolved {
 		// Unresolved typename
 		name: Identifier,
 		scope: Arc<Identifier>,
-		type_args: Vec<Type>,
+		generic_args: GenericArgs,
 		span: SrcSpan,
 	},
 
@@ -144,7 +204,7 @@ impl TypeDef {
 		}
 	}
 
-	pub fn get_member(&self, name: &Name, type_args: Option<&Vec<Type>>) -> Option<(usize, Type)> {
+	pub fn get_member(&self, name: &Name, type_args: Option<&GenericArgs>) -> Option<(usize, Type)> {
 		let mut index = 0;
 
 		for (member_name, ty, _) in &self.members {
@@ -313,32 +373,32 @@ impl Basic {
 }
 
 impl Type {
-	pub fn get_concrete_type(&self, type_args: &Vec<Type>) -> Type {
+	pub fn get_concrete_type(&self, generic_args: &GenericArgs) -> Type {
 		match self {
 			Type::Basic(b) => Type::Basic(*b),
 
 			Type::Pointer { pointee, mutable } => Type::Pointer {
-				pointee: Box::new(pointee.get_concrete_type(type_args)),
+				pointee: Box::new(pointee.get_concrete_type(generic_args)),
 				mutable: *mutable,
 			},
 
 			Type::Array(arr_ty, size) => {
-				Type::Array(Box::new(arr_ty.get_concrete_type(type_args)), size.clone())
+				Type::Array(Box::new(arr_ty.get_concrete_type(generic_args)), size.clone())
 			}
 
-			Type::Slice(slicee) => Type::Slice(Box::new(slicee.get_concrete_type(type_args))),
+			Type::Slice(slicee) => Type::Slice(Box::new(slicee.get_concrete_type(generic_args))),
 
 			Type::TypeRef { def, args } => Type::TypeRef {
 				def: def.clone(),
 				args: args
 					.iter()
-					.map(|ty| ty.get_concrete_type(type_args))
+					.map(|ty| ty.get_concrete_arg(generic_args))
 					.collect(),
 			},
 
 			Type::TypeParam(param) => {
-				if let Some(concrete) = type_args.get(*param) {
-					concrete.clone()
+				if let Some(concrete) = generic_args.get(*param) {
+					concrete.get_type_arg().clone()
 				} else {
 					Type::TypeParam(*param)
 				}
@@ -350,14 +410,14 @@ impl Type {
 				*kind,
 				types
 					.iter()
-					.map(|ty| ty.get_concrete_type(type_args))
+					.map(|ty| ty.get_concrete_type(generic_args))
 					.collect(),
 			),
 
 			Type::Function(ret, args) => Type::Function(
-				Box::new(ret.get_concrete_type(type_args)),
+				Box::new(ret.get_concrete_type(generic_args)),
 				args.iter()
-					.map(|(props, arg)| (*props, arg.get_concrete_type(type_args)))
+					.map(|(props, arg)| (*props, arg.get_concrete_type(generic_args)))
 					.collect(),
 			),
 
@@ -670,7 +730,7 @@ impl PartialEq for Type {
 				Arc::ptr_eq(&l0.upgrade().unwrap(), &r0.upgrade().unwrap()) && l1 == r1
 			}
 
-			(Self::Unresolved { name: l0, scope: l1, type_args: l2, .. }, Self::Unresolved { name: r0, scope: r1, type_args: r2, .. }) => {
+			(Self::Unresolved { name: l0, scope: l1, generic_args: l2, .. }, Self::Unresolved { name: r0, scope: r1, generic_args: r2, .. }) => {
 				l0 == r0 && l1 == r1 && l2 == r2
 			}
 
@@ -711,7 +771,7 @@ impl Hash for Type {
 			Type::Unresolved {
 				name,
 				scope,
-				type_args,
+				generic_args: type_args,
 				span: _,
 			} => {
 				name.hash(state);
@@ -741,6 +801,14 @@ impl Hash for Type {
 	}
 }
 
+impl Display for GenericArg {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		match self {
+			GenericArg::Type(ty) => write!(f, "{ty}"),
+		}
+	}
+}
+
 impl Display for Basic {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		write!(f, "{}", self.as_str())
@@ -765,7 +833,7 @@ impl Display for Type {
 			Type::Slice(slicee) => write!(f, "{slicee}[dyn]"),
 
 			Type::Unresolved {
-				name, type_args, ..
+				name, generic_args: type_args, ..
 			} => {
 				write!(f, "\"{name}\"")?;
 
@@ -853,18 +921,10 @@ impl Display for FnPrototype {
 			let mut iter = self.generics.iter();
 			let first = iter.next().unwrap();
 
-			write!(f, "<{}", first.0).unwrap();
+			write!(f, "<{}{}", first.0, first.1).unwrap();
 
-			if let Some(t) = &first.2 {
-				write!(f, " = {t}").unwrap();
-			}
-
-			for (arg, _, t) in iter {
-				write!(f, ", {arg}").unwrap();
-
-				if let Some(t) = t {
-					write!(f, " = {t}").unwrap();
-				}
+			for (name, param) in iter {
+				write!(f, ", {name}{param}").unwrap();
 			}
 
 			write!(f, ">").unwrap();
@@ -912,6 +972,39 @@ impl Display for TypeDef {
 	}
 }
 
+impl Display for GenericParam {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		match self {
+			GenericParam::Type { bounds, arg } => {
+				if !bounds.is_empty() {
+					let mut iter = bounds.iter();
+
+					write!(f, ": {}", iter.next().unwrap())?;
+
+					for bound in iter {
+						write!(f, " + {bound}")?;
+					}
+				}
+				
+				if let Some(arg) = arg {
+					write!(f, " = {arg}")?;
+				}
+
+				Ok(())
+			}
+		}
+	}
+}
+
+impl Display for ItemRef<TraitRef> {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		match self {
+			ItemRef::Resolved(tr) => write!(f, "{}", tr.name),
+			ItemRef::Unresolved { name, .. } => write!(f, "`{name}`")
+		}
+	}
+}
+
 impl Display for Visibility {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		write!(
@@ -951,7 +1044,7 @@ impl std::fmt::Debug for Type {
 			Type::Unresolved {
 				name: arg0,
 				scope: arg1,
-				type_args: arg2,
+				generic_args: arg2,
 				span: _,
 			} => f
 				.debug_tuple("Unresolved")

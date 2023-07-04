@@ -147,20 +147,20 @@ impl LiveVarCheckState {
 		ty: &Type,
 		props: BindingProps,
 		solver: &ImplSolver,
-		_generics: &Generics,
+		_generics: &Generics, // will be used to query whether a type implements Copy
 	) {
 		let _copy_trait = solver.get_lang_trait(LangTrait::Copy);
-
+		
+		// temp hack
 		let is_copy = matches!(ty, Type::Basic(_) | Type::Pointer { .. } | Type::Slice(_));
 
 		if !props.is_ref && !is_copy {
-			//solver.is_trait_implemented(ty, &copy_trait, generics) {
 			self.set_liveness(lval, LivenessState::Moved);
 		}
 
 		// if the lvalue is borrowed as a `new&`,
 		// it'll be initialized after this use.
-		if props.is_ref && props.is_new {
+		if props.is_new {
 			self.set_liveness(lval, LivenessState::Live);
 		}
 	}

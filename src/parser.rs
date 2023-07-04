@@ -17,7 +17,7 @@ use crate::ast::statement::Stmt;
 use crate::ast::traits::{ImplBlockInterface, TraitInterface, TraitRef};
 use crate::ast::types::{
 	Basic, BindingProps, FloatSize, FnParamList, FnPrototype, Generics, TupleKind, Type, TypeDef,
-	Visibility,
+	Visibility, GenericParam, GenericArgs, GenericArg,
 };
 use crate::ast::{Attribute, FnScope};
 
@@ -227,7 +227,7 @@ impl<'ctx> Parser {
 							unreachable!()
 						};
 
-						args.push(Type::TypeParam(i));
+						args.push(GenericArg::Type(Type::TypeParam(i)));
 					}
 
 					self.consume(&Token::Other('{'))?; // Consume brace
@@ -393,14 +393,14 @@ impl<'ctx> Parser {
 						self.get_next()?;
 
 						// We parsed the trait as a type, so extract it
-						let Type::Unresolved { name, scope, type_args, .. } = impl_ty else {
+						let Type::Unresolved { name, scope, generic_args, .. } = impl_ty else {
 							return self.err(ComuneErrCode::ExpectedIdentifier); // TODO: Proper error
 						};
 
 						trait_name = Some(ItemRef::<TraitRef>::Unresolved {
 							name,
 							scope,
-							generic_args: type_args,
+							generic_args,
 						});
 
 						// Then parse the implementing type, for real this time
@@ -1135,7 +1135,7 @@ impl<'ctx> Parser {
 					// Here lies the Turbofish, vanquished after a battle
 					// lasting months on end, at the cost of tuple syntax.
 
-					type_args = match self.parse_type_argument_list(Some(scope)) {
+					type_args = match self.parse_generic_arg_list(Some(scope)) {
 						Ok(args) => args,
 
 						Err(ComuneError {
@@ -1279,7 +1279,7 @@ impl<'ctx> Parser {
 						};
 
 						let generic_args = if let Token::Operator("<") = self.get_current()? {
-							self.parse_type_argument_list(Some(scope))?
+							self.parse_generic_arg_list(Some(scope))?
 						} else {
 							vec![]
 						};
@@ -1858,7 +1858,7 @@ impl<'ctx> Parser {
 				result = Type::Unresolved {
 					name: typename,
 					scope: self.current_scope.clone(),
-					type_args: vec![],
+					generic_args: vec![],
 					span: SrcSpan {
 						start: start_idx,
 						len: self.get_prev_end_index() - start_idx,
@@ -1952,10 +1952,10 @@ impl<'ctx> Parser {
 
 					if let Type::TypeRef { args, .. }
 					| Type::Unresolved {
-						type_args: args, ..
+						generic_args: args, ..
 					} = &mut result
 					{
-						*args = self.parse_type_argument_list(scope)?;
+						*args = self.parse_generic_arg_list(scope)?;
 					} else {
 						panic!("can't apply type parameters to this type of Type!") // TODO: Real error handling
 					}
@@ -2049,7 +2049,7 @@ impl<'ctx> Parser {
 						return self.err(ComuneErrCode::UnexpectedToken)
 					};
 
-					let mut traits = vec![];
+					let mut bounds = vec![];
 
 					current = self.get_next()?;
 
@@ -2060,7 +2060,7 @@ impl<'ctx> Parser {
 						while self.is_at_identifier_token()? {
 							let tr = self.parse_identifier(scope)?;
 
-							traits.push(ItemRef::Unresolved {
+							bounds.push(ItemRef::Unresolved {
 								name: tr,
 								scope: self.current_scope.clone(),
 								generic_args: vec![],
@@ -2078,7 +2078,7 @@ impl<'ctx> Parser {
 						}
 					}
 
-					result.push((name, traits, None));
+					result.push((name, GenericParam::Type { bounds, arg: None }));
 
 					match &current {
 						Token::Operator(">") => continue,
@@ -2108,14 +2108,14 @@ impl<'ctx> Parser {
 		Ok(result)
 	}
 
-	fn parse_type_argument_list(&self, scope: Option<&FnScope<'ctx>>) -> ComuneResult<Vec<Type>> {
+	fn parse_generic_arg_list(&self, scope: Option<&FnScope<'ctx>>) -> ComuneResult<GenericArgs> {
 		self.get_next()?;
 
 		let mut result = vec![];
 
 		loop {
 			let generic = self.parse_type(scope)?;
-			result.push(generic);
+			result.push(GenericArg::Type(generic));
 
 			if self.get_current()? == Token::Other(',') {
 				self.get_next()?;

@@ -8,7 +8,7 @@ use crate::{
 		get_attribute,
 		module::{ItemRef, ModuleImpl, ModuleInterface, ModuleItemInterface},
 		traits::{TraitInterface, TraitRef},
-		types::{self, BindingProps, FnPrototype, Generics, Type, TypeDef},
+		types::{self, BindingProps, FnPrototype, Generics, Type, TypeDef, GenericParam, GenericArg},
 		FnScope,
 	},
 	constexpr::{ConstEval, ConstExpr},
@@ -60,7 +60,7 @@ pub fn resolve_interface_types(parser: &mut Parser) -> ComuneResult<()> {
 							..
 						} = func;
 
-						generics.push(("Self".into(), vec![], None));
+						generics.push(("Self".into(), GenericParam::blank_type()));
 
 						resolve_type(&mut ret.1, interface, generics)?;
 						check_dst_indirection(&ret.1, &BindingProps::default())?;
@@ -86,13 +86,13 @@ pub fn resolve_interface_types(parser: &mut Parser) -> ComuneResult<()> {
 	for (ty, im) in &interface.impl_solver.local_impls {
 		// Create type parameter list with empty Self param
 		let mut generics = im.read().unwrap().params.clone();
-		generics.push(("Self".into(), vec![], None));
+		generics.push(("Self".into(), GenericParam::blank_type()));
 
 		// Resolve the implementing type
 		resolve_type(&mut *ty.write().unwrap(), interface, &generics)?;
 
 		// Then use it to fill in the Self param's type
-		generics.last_mut().unwrap().2 = Some(ty.read().unwrap().clone());
+		*generics.last_mut().unwrap().1.get_type_arg_mut() = Some(ty.read().unwrap().clone());
 
 		// Resolve item references in canonical root
 		let resolved_trait = if let Some(ItemRef::Unresolved {
@@ -174,7 +174,7 @@ pub fn resolve_interface_types(parser: &mut Parser) -> ComuneResult<()> {
 					};
 
 					let mut args = args.clone();
-					args.insert(0, ty.read().unwrap().clone());
+					args.insert(0, GenericArg::Type(ty.read().unwrap().clone()));
 
 					let def = def.upgrade().unwrap();
 					let def = def.read().unwrap();
@@ -281,6 +281,16 @@ pub fn check_dst_indirection(ty: &Type, props: &BindingProps) -> ComuneResult<()
 	}
 }
 
+pub fn resolve_generic_arg(
+	arg: &mut GenericArg,
+	namespace: &ModuleInterface,
+	generics: &Generics,
+) -> ComuneResult<()> {
+	match arg {
+		GenericArg::Type(ty) => resolve_type(ty, namespace, generics),
+	}
+}
+
 pub fn resolve_type(
 	ty: &mut Type,
 	namespace: &ModuleInterface,
@@ -296,7 +306,7 @@ pub fn resolve_type(
 		Type::Unresolved {
 			name: id,
 			scope,
-			type_args,
+			generic_args,
 			span,
 		} => {
 			let result;
@@ -309,12 +319,12 @@ pub fn resolve_type(
 				result = namespace.resolve_type(id, scope);
 			}
 
-			for arg in type_args.iter_mut() {
-				resolve_type(arg, namespace, generics)?;
+			for arg in generic_args.iter_mut() {
+				resolve_generic_arg(arg, namespace, generics)?;
 			}
 
 			if let Some(Type::TypeRef { def, mut args }) = result {
-				args.append(type_args);
+				args.append(generic_args);
 				*ty = Type::TypeRef { def, args };
 				Ok(())
 			} else if let Some(resolved) = result {
@@ -362,11 +372,13 @@ pub fn resolve_type_def(
 
 	generics.push((
 		"Self".into(),
-		vec![],
-		Some(Type::TypeRef {
-			def: Arc::downgrade(&ty_lock),
-			args: (0..ty.params.len()).map(|i| Type::TypeParam(i)).collect(),
-		}),
+		GenericParam::Type { 
+			bounds: vec![], 
+			arg: Some(Type::TypeRef {
+				def: Arc::downgrade(&ty_lock),
+				args: vec![],
+			}) 
+		}
 	));
 
 	for (_, types) in &mut ty.variants {

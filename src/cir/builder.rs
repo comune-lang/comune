@@ -7,7 +7,7 @@ use crate::{
 		module::{ModuleASTElem, ModuleImpl, ModuleInterface, ModuleItemInterface, Name},
 		pattern::{Binding, Pattern},
 		statement::Stmt,
-		types::{Basic, BindingProps, FnPrototype, IntSize, TupleKind, Type},
+		types::{Basic, BindingProps, FnPrototype, IntSize, TupleKind, Type, GenericArgs},
 	},
 	lexer::SrcSpan,
 	parser::Parser,
@@ -1277,7 +1277,7 @@ impl CIRModuleBuilder {
 	fn generate_fn_call(
 		&mut self,
 		args: &[Expr],
-		generic_args: &Vec<Type>,
+		generic_args: &GenericArgs,
 		resolved: &FnRef,
 		span: SrcSpan,
 	) -> Option<RValue> {

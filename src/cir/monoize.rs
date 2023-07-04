@@ -9,26 +9,15 @@ use crate::{
 	ast::{
 		get_attribute,
 		module::Identifier,
-		types::{Basic, FloatSize, FnPrototype, IntSize, TypeDef}, traits::ImplSolver,
+		types::{Basic, FloatSize, FnPrototype, IntSize, TypeDef, GenericParam, GenericArgs, GenericArg}, traits::ImplSolver,
 	},
 	lexer::Token,
 };
 
 use super::{
 	builder::CIRModuleBuilder, CIRCallId, CIRFnMap, CIRFunction, CIRModule, CIRStmt, CIRTyMap,
-	FuncID, RValue, Type, TypeName,
+	RValue, Type,
 };
-
-// A set of requested Generic monomorphizations, with a Vec of type arguments
-// TODO: Extend system to support constants as arguments
-type MonoizationList = HashSet<(Identifier, Vec<Type>)>;
-
-type GenericArgs = Vec<Type>;
-
-// Map from index + parameters to indices of existing instances
-type TypeInstanceMap = HashMap<TypeName, HashMap<GenericArgs, TypeName>>;
-type FuncInstanceMap = HashMap<FuncID, HashMap<GenericArgs, FuncID>>;
-type TypeMap = HashMap<TypeName, Arc<RwLock<TypeDef>>>;
 
 // The monomorphization server (MonomorphServer) stores the bodies of generic
 // functions, so that they can be instantiated even after their modules of origin
@@ -41,7 +30,7 @@ pub struct MonomorphServer {
 }
 
 pub struct ModuleAccess<'acc> {
-	types: &'acc mut TypeMap,
+	types: &'acc mut CIRTyMap,
 	fns_in: &'acc CIRFnMap,
 	fns_out: &'acc mut CIRFnMap,
 }
@@ -173,7 +162,7 @@ impl MonomorphServer {
 		let mut func = func.clone();
 
 		for (i, gen_arg) in param_map.iter().enumerate() {
-			func.generics[i].2 = Some(gen_arg.clone());
+			func.generics[i].1.fill_with(gen_arg);
 		}
 
 		for (var, ..) in &mut func.variables {
@@ -204,7 +193,7 @@ impl MonomorphServer {
 						..
 					} => {
 						for arg in generic_args.iter_mut() {
-							self.monoize_type(arg, param_map, access);
+							self.monoiez_generic_arg(arg, param_map, access);
 						}
 
 						self.monoize_call(func, generic_args, access);
@@ -223,7 +212,7 @@ impl MonomorphServer {
 	fn monoize_call(
 		&self,
 		id: &mut Arc<FnPrototype>,
-		generic_args: &Vec<Type>,
+		generic_args: &GenericArgs,
 		access: &mut ModuleAccess,
 	) {
 		if generic_args.is_empty() {
@@ -269,15 +258,15 @@ impl MonomorphServer {
 		}
 	}
 
-	fn monoize_type(&self, ty: &mut Type, param_map: &GenericArgs, access: &mut ModuleAccess) {
+	fn monoize_type(&self, ty: &mut Type, generic_args: &GenericArgs, access: &mut ModuleAccess) {
 		match ty {
 			Type::Basic(_) => {}
 
-			Type::Pointer { pointee, .. } => self.monoize_type(pointee, param_map, access),
+			Type::Pointer { pointee, .. } => self.monoize_type(pointee, generic_args, access),
 
-			Type::Array(arr_ty, _) => self.monoize_type(arr_ty, param_map, access),
+			Type::Array(arr_ty, _) => self.monoize_type(arr_ty, generic_args, access),
 
-			Type::Slice(slicee) => self.monoize_type(slicee, param_map, access),
+			Type::Slice(slicee) => self.monoize_type(slicee, generic_args, access),
 
 			Type::TypeRef { def, args } => {
 				let def_up = def.upgrade().unwrap();
@@ -287,7 +276,7 @@ impl MonomorphServer {
 					// instantation we want exists already. If not, create it.
 
 					for arg in args.iter_mut() {
-						self.monoize_type(arg, param_map, access);
+						self.monoiez_generic_arg(arg, generic_args, access);
 					}
 
 					*def = self.instantiate_type_def(def_up.clone(), args, access);
@@ -319,26 +308,32 @@ impl MonomorphServer {
 			}
 
 			Type::TypeParam(idx) => {
-				*ty = param_map[*idx].clone();
+				*ty = generic_args[*idx].get_type_arg().clone();
 			}
 
 			Type::Tuple(_, tuple_types) => {
 				for ty in tuple_types {
-					self.monoize_type(ty, param_map, access);
+					self.monoize_type(ty, generic_args, access);
 				}
 			}
 
 			Type::Function(ret, args) => {
-				self.monoize_type(ret, param_map, access);
+				self.monoize_type(ret, generic_args, access);
 
 				for (_, arg) in args {
-					self.monoize_type(arg, param_map, access);
+					self.monoize_type(arg, generic_args, access);
 				}
 			}
 
 			Type::Never => {}
 
 			Type::Unresolved { .. } => panic!(),
+		}
+	}
+
+	fn monoiez_generic_arg(&self, arg: &mut GenericArg, generic_args: &GenericArgs, access: &mut ModuleAccess) {
+		match arg {
+			GenericArg::Type(ty) => self.monoize_type(ty, generic_args, access),
 		}
 	}
 
@@ -468,7 +463,7 @@ impl MonomorphServer {
 		access: &mut ModuleAccess,
 	) {
 		for (i, arg) in args.iter().enumerate() {
-			func.generics[i].2 = Some(arg.clone())
+			func.generics[i].1.fill_with(arg);
 		}
 
 		for (param, ..) in &mut func.params.params {
@@ -591,8 +586,8 @@ fn mangle_name(name: &Identifier, func: &CIRFunction) -> String {
 	if !func.generics.is_empty() {
 		result.push('I');
 
-		for (.., ty) in &func.generics {
-			let Some(ty) = ty else {
+		for (.., param) in &func.generics {
+			let GenericParam::Type { arg: Some(ty), .. } = param else {
 				panic!() // Can't have un-monomorphized generics at this point 
 			};
 

@@ -18,6 +18,7 @@ use lazy_static::lazy_static;
 
 use super::types::Type;
 use crate::ast::module::Name;
+use crate::ast::types::GenericArgs;
 use crate::lexer::SrcSpan;
 use crate::{
 	ast::{expression::Operator, module::Identifier},
@@ -121,8 +122,8 @@ pub enum ComuneErrCode {
 	UnstableFeature(&'static str),
 	NoCandidateFound {
 		name: Identifier,
-		args: Vec<Type>,
-		type_args: Vec<Type>,
+		args: GenericArgs,
+		generic_args: GenericArgs,
 	},
 	MissingInitializers {
 		ty: Type,
@@ -238,16 +239,19 @@ impl Display for ComuneErrCode {
 			ComuneErrCode::NoCandidateFound {
 				name,
 				args,
-				type_args,
+				generic_args: type_args,
 			} => {
 				write!(f, "no viable overload found for `{name}`")?;
 
 				if !type_args.is_empty() {
 					let mut iter = type_args.iter();
-					write!(f, "<{}", iter.next().unwrap())?;
+					
+					write!(f, "<{:?}", iter.next().unwrap())?;
+
 					for arg in iter {
-						write!(f, ", {arg}")?;
+						write!(f, ", {arg:?}")?;
 					}
+
 					write!(f, ">")?;
 				}
 
@@ -255,9 +259,9 @@ impl Display for ComuneErrCode {
 
 				if !args.is_empty() {
 					let mut iter = args.iter();
-					write!(f, "{}", iter.next().unwrap())?;
+					write!(f, "{:?}", iter.next().unwrap())?;
 					for arg in iter {
-						write!(f, ", {arg}")?;
+						write!(f, ", {arg:?}")?;
 					}
 				}
 				write!(f, ")")
