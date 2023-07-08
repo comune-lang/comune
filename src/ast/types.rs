@@ -5,7 +5,7 @@ use std::sync::{Arc, RwLock, Weak};
 
 use super::module::{Identifier, ItemRef, Name};
 use super::traits::TraitRef;
-use super::Attribute;
+use super::{Attribute, write_arg_list};
 use crate::constexpr::ConstExpr;
 use crate::lexer::SrcSpan;
 
@@ -891,21 +891,14 @@ impl Display for Type {
 			Type::Slice(slicee) => write!(f, "{slicee}[dyn]"),
 
 			Type::Unresolved {
-				name, generic_args: type_args, ..
+				name, generic_args, ..
 			} => {
 				write!(f, "\"{name}\"")?;
 
-				if !type_args.is_empty() {
-					let mut iter = type_args.iter();
-
-					write!(f, "<{}", iter.next().unwrap())?;
-
-					for arg in iter {
-						write!(f, ", {arg}")?;
-					}
-
-					write!(f, ">")?;
+				if !generic_args.is_empty() {
+					write_arg_list!(f, generic_args, "<", ">");
 				}
+				
 				Ok(())
 			}
 
@@ -913,15 +906,7 @@ impl Display for Type {
 				write!(f, "{}", def.upgrade().unwrap().read().unwrap().name)?;
 
 				if !args.is_empty() {
-					let mut iter = args.iter();
-
-					write!(f, "<{}", iter.next().unwrap())?;
-
-					for arg in iter {
-						write!(f, ", {arg}")?;
-					}
-
-					write!(f, ">")?;
+					write_arg_list!(f, args, "<", ">");
 				}
 
 				Ok(())
@@ -950,16 +935,18 @@ impl Display for Type {
 					write!(f, ")")
 				}
 			}
+
 			Type::Function(ret, args) => {
 				write!(f, "{ret}")?;
 
 				if !args.is_empty() {
 					let mut iter = args.iter();
+					let first = iter.next().unwrap();
+					
+					write!(f, "({}{}", first.1, first.0)?;
 
-					write!(f, "({}", iter.next().unwrap().1)?;
-
-					for (_, arg) in iter {
-						write!(f, ", {arg}")?;
+					for (props, arg) in iter {
+						write!(f, ", {arg}{props}")?;
 					}
 
 					write!(f, ")")

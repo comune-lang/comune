@@ -147,3 +147,23 @@ impl<'ctx> FnScope<'ctx> {
 		self.variables.push((n, t, p));
 	}
 }
+
+macro_rules! write_arg_list {
+	($buffer:ident, $args:ident, $open:literal, $close:literal) => {
+		if $args.is_empty() {
+			write!($buffer, "{}{}", $open, $close).unwrap();
+		} else {
+			let mut iter = $args.iter();
+			
+			write!($buffer, "{}{}", $open, iter.next().unwrap()).unwrap();
+			
+			for arg in iter {
+				write!($buffer, ", {arg}").unwrap();
+			}
+
+			write!($buffer, "{}", $close).unwrap();
+		}
+	};
+}
+
+pub(crate) use write_arg_list;

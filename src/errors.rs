@@ -19,6 +19,7 @@ use lazy_static::lazy_static;
 use super::types::Type;
 use crate::ast::module::Name;
 use crate::ast::types::GenericArgs;
+use crate::ast::write_arg_list;
 use crate::lexer::SrcSpan;
 use crate::{
 	ast::{expression::Operator, module::Identifier},
@@ -64,7 +65,7 @@ impl ComuneError {
 #[derive(Debug, Clone)]
 pub enum ComuneMessage {
 	Error(ComuneError),
-	Warning(CMNWarning),
+	Warning(ComuneWarning),
 }
 
 #[allow(dead_code)]
@@ -174,7 +175,7 @@ pub enum ComuneErrCode {
 
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
-pub enum CMNWarning {
+pub enum ComuneWarning {
 	OK,
 
 	CharPtrNoNull,
@@ -239,35 +240,16 @@ impl Display for ComuneErrCode {
 			ComuneErrCode::NoCandidateFound {
 				name,
 				args,
-				generic_args: type_args,
+				generic_args,
 			} => {
 				write!(f, "no viable overload found for `{name}`")?;
 
-				if !type_args.is_empty() {
-					let mut iter = type_args.iter();
-					
-					write!(f, "<{}", iter.next().unwrap())?;
-
-					for arg in iter {
-						write!(f, ", {arg}")?;
-					}
-
-					write!(f, ">")?;
+				if !generic_args.is_empty() {
+					write_arg_list!(f, generic_args, "<", ">");
 				}
 
-				write!(f, "(")?;
-
-				if !args.is_empty() {
-					let mut iter = args.iter();
-
-					write!(f, "{}", iter.next().unwrap())?;
-
-					for arg in iter {
-						write!(f, ", {arg}")?;
-					}
-				}
-				
-				write!(f, ")")
+				write_arg_list!(f, args, "(", ")");
+				Ok(())
 			}
 
 			ComuneErrCode::MissingInitializers { ty, members } => {
@@ -370,11 +352,11 @@ impl Display for ComuneErrCode {
 	}
 }
 
-impl Display for CMNWarning {
+impl Display for ComuneWarning {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match self {
-			CMNWarning::OK => write!(f, "nothing wrong here!"),
-			CMNWarning::CharPtrNoNull => write!(
+			ComuneWarning::OK => write!(f, "nothing wrong here!"),
+			ComuneWarning::CharPtrNoNull => write!(
 				f,
 				"string literal being coerced into a `char*` has no terminating null character"
 			),
@@ -386,7 +368,7 @@ impl ComuneMessage {
 	pub fn get_notes(&self) -> &Vec<(Option<SrcSpan>, String)> {
 		match self {
 			ComuneMessage::Error(e) => &e.notes,
-			ComuneMessage::Warning(_) => todo!(), // CMNError and CMNWarning are probably gonna get merged into one enum
+			ComuneMessage::Warning(_) => todo!(),
 		}
 	}
 }

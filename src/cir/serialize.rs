@@ -1,6 +1,6 @@
 use std::fmt::{Display, Write};
 
-use crate::{ast::types::DataLayout, lexer};
+use crate::{ast::{types::DataLayout, write_arg_list}, lexer};
 
 use super::{CIRCallId, CIRFunction, CIRModule, CIRStmt, LValue, Operand, PlaceElem, RValue};
 
@@ -85,15 +85,7 @@ impl Display for CIRStmt {
 				write!(f, "call {id} with")?;
 
 				if !generic_args.is_empty() {
-					let mut args_iter = generic_args.iter();
-
-					write!(f, "<{}", args_iter.next().unwrap())?;
-
-					for arg in args_iter {
-						write!(f, ", {arg}")?;
-					}
-
-					write!(f, ">")?;
+					write_arg_list!(f, generic_args, "<", ">");
 				}
 
 				if !args.is_empty() {
@@ -127,15 +119,7 @@ impl Display for CIRStmt {
 				write!(f, "invoke {id} with")?;
 
 				if !generic_args.is_empty() {
-					let mut args_iter = generic_args.iter();
-
-					write!(f, "<{}", args_iter.next().unwrap())?;
-
-					for arg in args_iter {
-						write!(f, ", {arg}")?;
-					}
-
-					write!(f, ">")?;
+					write_arg_list!(f, generic_args, "<", ">");
 				}
 
 				if !args.is_empty() {
