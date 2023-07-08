@@ -60,8 +60,6 @@ pub struct ModuleInterface {
 }
 
 // Struct representing a module's implementation.
-// Using Vec because Arc<RwLock<T>> is not Hash for T: Hash, and
-// i do not want to start doing newtype bullshit right now
 #[derive(Default, Debug)]
 pub struct ModuleImpl {
 	pub fn_impls: HashMap<Arc<FnPrototype>, ModuleASTElem>,

@@ -159,7 +159,7 @@ impl ImplSolver {
 		if let Type::TypeParam(idx) = ty {
 			// Type parameter, check if it has the trait bound
 
-			let Some((_, GenericParam::Type { arg, bounds })) = generics.get(*idx) else { panic!() };
+			let Some((_, GenericParam::Type { arg, bounds })) = generics.params.get(*idx) else { panic!() };
 
 			if let Some(concrete) = arg {
 				if self.is_trait_implemented(concrete, tr, generics) {

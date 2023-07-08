@@ -122,7 +122,7 @@ pub enum ComuneErrCode {
 	UnstableFeature(&'static str),
 	NoCandidateFound {
 		name: Identifier,
-		args: GenericArgs,
+		args: Vec<Type>,
 		generic_args: GenericArgs,
 	},
 	MissingInitializers {
@@ -246,10 +246,10 @@ impl Display for ComuneErrCode {
 				if !type_args.is_empty() {
 					let mut iter = type_args.iter();
 					
-					write!(f, "<{:?}", iter.next().unwrap())?;
+					write!(f, "<{}", iter.next().unwrap())?;
 
 					for arg in iter {
-						write!(f, ", {arg:?}")?;
+						write!(f, ", {arg}")?;
 					}
 
 					write!(f, ">")?;
@@ -259,11 +259,14 @@ impl Display for ComuneErrCode {
 
 				if !args.is_empty() {
 					let mut iter = args.iter();
-					write!(f, "{:?}", iter.next().unwrap())?;
+
+					write!(f, "{}", iter.next().unwrap())?;
+
 					for arg in iter {
-						write!(f, ", {arg:?}")?;
+						write!(f, ", {arg}")?;
 					}
 				}
+				
 				write!(f, ")")
 			}
 

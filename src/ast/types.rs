@@ -1,6 +1,6 @@
 use std::fmt::Display;
 use std::hash::{Hash, Hasher};
-use std::ptr;
+use std::{ptr, mem};
 use std::sync::{Arc, RwLock, Weak};
 
 use super::module::{Identifier, ItemRef, Name};
@@ -9,8 +9,12 @@ use super::Attribute;
 use crate::constexpr::ConstExpr;
 use crate::lexer::SrcSpan;
 
-pub type Generics = Vec<(Name, GenericParam)>;
 pub type GenericArgs = Vec<GenericArg>;
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Generics {
+	pub params: Vec<(Name, GenericParam)>,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum GenericParam {
@@ -26,6 +30,58 @@ pub enum GenericArg {
 	Type(Type),
 }
 
+impl Generics {
+	pub fn new() -> Self {
+		Generics { params: vec![] }
+	}
+
+	pub fn from_params(params: Vec<(Name, GenericParam)>) -> Self {
+		Generics { params }
+	}
+
+	pub fn fill_with(&mut self, args: &[GenericArg]) {
+		for ((_, param), arg) in self.params.iter_mut().zip(args) {
+			param.fill_with(arg);
+		}
+	}
+
+	// Take base_generics's parameters and add them to the start of self's
+	// Used for i.e. combining the generics from a method and its surrounding `impl` block
+	pub fn add_base_generics(&mut self, mut base_generics: Generics) {
+		mem::swap(&mut base_generics.params, &mut self.params);
+		self.params.append(&mut base_generics.params);
+	}
+
+	pub fn insert_self_type(&mut self) {
+		self.params.push(("Self".into(), GenericParam::blank_type()))
+	}
+
+	#[allow(dead_code)]
+	pub fn get(&self, name: &str) -> Option<&GenericParam> {
+		self.params
+			.iter()
+			.rev()
+			.find(|(n, _)| n == name)
+			.map(|(_, u)| u)
+	}
+
+	pub fn get_mut(&mut self, name: &str) -> Option<&mut GenericParam> {
+		self.params
+			.iter_mut()
+			.rev()
+			.find(|(n, _)| n == name)
+			.map(|(_, u)| u)
+	}
+	
+	pub fn is_empty(&self) -> bool {
+		self.params.is_empty()
+	}
+
+	pub fn non_defaulted_count(&self) -> usize {
+		self.params.iter().filter(|(_, param)| !param.is_filled()).count()
+	}
+}
+
 impl GenericParam {
 	pub fn fill_with(&mut self, gen_arg: &GenericArg) {
 		match (self, gen_arg) {
@@ -35,10 +91,15 @@ impl GenericParam {
 		}
 	}
 
+	pub fn is_filled(&self) -> bool {
+		matches!(self, GenericParam::Type { arg: Some(_), .. })
+	}
+
 	pub fn blank_type() -> Self {
 		GenericParam::Type { bounds: vec![], arg: None }
 	}
 
+	#[allow(dead_code)]
 	pub fn get_type_arg(&self) -> &Option<Type> {
 		let GenericParam::Type { arg, .. } = self;
 		arg
@@ -51,9 +112,9 @@ impl GenericParam {
 }
 
 impl GenericArg {
-	pub fn get_concrete_arg(&self, args: &GenericArgs) -> GenericArg {
+	pub fn get_concrete_arg(&self, generics: &Generics, args: &[GenericArg]) -> GenericArg {
 		match self {
-			GenericArg::Type(ty) => GenericArg::Type(ty.get_concrete_type(args)),
+			GenericArg::Type(ty) => GenericArg::Type(ty.get_concrete_type(generics, args)),
 		}
 	}
 
@@ -138,7 +199,7 @@ pub struct TypeDef {
 	pub members: Vec<(Name, Type, Visibility)>,
 	pub variants: Vec<(Name, Vec<Type>)>,
 	pub layout: DataLayout,
-	pub params: Generics,
+	pub generics: Generics,
 	pub attributes: Vec<Attribute>,
 
 	pub init: Vec<Arc<FnPrototype>>,    // Zero or more constructors
@@ -197,22 +258,19 @@ impl TypeDef {
 			layout: DataLayout::Declared,
 			members: vec![],
 			variants: vec![],
-			params: vec![],
+			generics: Generics::new(),
 			attributes: vec![],
 			init: vec![],
 			drop: None,
 		}
 	}
 
-	pub fn get_member(&self, name: &Name, type_args: Option<&GenericArgs>) -> Option<(usize, Type)> {
+	pub fn get_member(&self, name: &Name, generic_args: &[GenericArg]) -> Option<(usize, Type)> {
 		let mut index = 0;
 
 		for (member_name, ty, _) in &self.members {
 			if member_name == name {
-				if let Some(type_args) = type_args {
-					return Some((index, ty.get_concrete_type(type_args)));
-				}
-				return Some((index, ty.clone()));
+				return Some((index, ty.get_concrete_type(&self.generics, generic_args)))
 			} else {
 				index += 1;
 			}
@@ -373,32 +431,32 @@ impl Basic {
 }
 
 impl Type {
-	pub fn get_concrete_type(&self, generic_args: &GenericArgs) -> Type {
+	pub fn get_concrete_type(&self, generics: &Generics, args: &[GenericArg]) -> Type {
 		match self {
 			Type::Basic(b) => Type::Basic(*b),
 
 			Type::Pointer { pointee, mutable } => Type::Pointer {
-				pointee: Box::new(pointee.get_concrete_type(generic_args)),
+				pointee: Box::new(pointee.get_concrete_type(generics, args)),
 				mutable: *mutable,
 			},
 
 			Type::Array(arr_ty, size) => {
-				Type::Array(Box::new(arr_ty.get_concrete_type(generic_args)), size.clone())
+				Type::Array(Box::new(arr_ty.get_concrete_type(generics, args)), size.clone())
 			}
 
-			Type::Slice(slicee) => Type::Slice(Box::new(slicee.get_concrete_type(generic_args))),
+			Type::Slice(slicee) => Type::Slice(Box::new(slicee.get_concrete_type(generics, args))),
 
 			Type::TypeRef { def, args } => Type::TypeRef {
 				def: def.clone(),
 				args: args
 					.iter()
-					.map(|ty| ty.get_concrete_arg(generic_args))
+					.map(|ty| ty.get_concrete_arg(&def.upgrade().unwrap().read().unwrap().generics, args))
 					.collect(),
 			},
 
 			Type::TypeParam(param) => {
-				if let Some(concrete) = generic_args.get(*param) {
-					concrete.get_type_arg().clone()
+				if let Some((_, GenericParam::Type { arg: Some(concrete), .. })) = generics.params.get(*param) {
+					concrete.clone()
 				} else {
 					Type::TypeParam(*param)
 				}
@@ -410,14 +468,14 @@ impl Type {
 				*kind,
 				types
 					.iter()
-					.map(|ty| ty.get_concrete_type(generic_args))
+					.map(|ty| ty.get_concrete_type(generics, args))
 					.collect(),
 			),
 
-			Type::Function(ret, args) => Type::Function(
-				Box::new(ret.get_concrete_type(generic_args)),
-				args.iter()
-					.map(|(props, arg)| (*props, arg.get_concrete_type(generic_args)))
+			Type::Function(ret, fn_args) => Type::Function(
+				Box::new(ret.get_concrete_type(generics, args)),
+				fn_args.iter()
+					.map(|(props, arg)| (*props, arg.get_concrete_type(generics, args)))
 					.collect(),
 			),
 
@@ -511,7 +569,7 @@ impl Type {
 		let def = def.upgrade().unwrap();
 		let def = def.read().unwrap();
 
-		def.members[field].1.get_concrete_type(args)
+		def.members[field].1.get_concrete_type(&def.generics, args)
 	}
 
 	pub fn ptr_type(&self, mutable: bool) -> Self {
@@ -918,7 +976,7 @@ impl Display for FnPrototype {
 		write!(f, "{}{} {}", self.ret.1, self.ret.0, self.path).unwrap();
 
 		if !self.generics.is_empty() {
-			let mut iter = self.generics.iter();
+			let mut iter = self.generics.params.iter();
 			let first = iter.next().unwrap();
 
 			write!(f, "<{}{}", first.0, first.1).unwrap();

@@ -147,7 +147,7 @@ impl MonomorphServer {
 
 		// Remove all generic types from module
 		module.types.retain(|_, ty| {
-			ty.read().unwrap().params.is_empty()
+			ty.read().unwrap().generics.params.is_empty()
 		});
 
 		module.functions = functions_mono;
@@ -162,7 +162,7 @@ impl MonomorphServer {
 		let mut func = func.clone();
 
 		for (i, gen_arg) in param_map.iter().enumerate() {
-			func.generics[i].1.fill_with(gen_arg);
+			func.generics.params[i].1.fill_with(gen_arg);
 		}
 
 		for (var, ..) in &mut func.variables {
@@ -350,7 +350,7 @@ impl MonomorphServer {
 			self.monoize_type(member, generic_args, access);
 		}
 
-		instance.params.clear();
+		instance.generics.params.clear();
 
 		let mut iter = generic_args.iter();
 		let mut instance_name = instance.name.to_string() + "<" + &iter.next().unwrap().to_string();
@@ -462,9 +462,7 @@ impl MonomorphServer {
 		args: &GenericArgs,
 		access: &mut ModuleAccess,
 	) {
-		for (i, arg) in args.iter().enumerate() {
-			func.generics[i].1.fill_with(arg);
-		}
+		func.generics.fill_with(args);
 
 		for (param, ..) in &mut func.params.params {
 			self.monoize_type(param, args, access);
@@ -586,7 +584,7 @@ fn mangle_name(name: &Identifier, func: &CIRFunction) -> String {
 	if !func.generics.is_empty() {
 		result.push('I');
 
-		for (.., param) in &func.generics {
+		for (.., param) in &func.generics.params {
 			let GenericParam::Type { arg: Some(ty), .. } = param else {
 				panic!() // Can't have un-monomorphized generics at this point 
 			};

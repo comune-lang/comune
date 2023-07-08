@@ -6,7 +6,7 @@ use crate::{
 		expression::{Atom, Expr, FnRef, NodeData},
 		module::{Identifier, ModuleASTElem, ModuleInterface, ModuleItemInterface, Name},
 		statement::Stmt,
-		types::{Basic, BindingProps, FnPrototype, Type, GenericArgs, GenericArg},
+		types::{Basic, BindingProps, FnPrototype, Type, GenericArgs, GenericArg, Generics},
 		FnScope,
 	},
 	errors::{ComuneErrCode, ComuneError},
@@ -105,7 +105,7 @@ pub fn validate_fn_call(
 	node_data: &NodeData,
 ) -> ComuneResult<Type> {
 	let mut candidates = vec![];
-	let Atom::FnCall { name, args, generic_args: type_args, resolved } = call else { panic!() };
+	let Atom::FnCall { name, args, generic_args, resolved } = call else { panic!() };
 
 	if let FnRef::Direct(resolved) = resolved {
 		return Ok(resolved.ret.1.clone());
@@ -180,26 +180,27 @@ pub fn validate_fn_call(
 		));
 	}
 
-	let mut candidates: Vec<_> = candidates
+	let mut candidates_filtered: Vec<_> = candidates
+		.clone()
 		.into_iter()
-		.filter(|func| is_candidate_viable(args, type_args, func))
+		.filter(|func| is_candidate_viable(args, generic_args, func))
 		.collect();
 
 	let func = try_select_candidate(
 		name,
 		args,
-		type_args,
-		&mut candidates,
+		generic_args,
+		&mut candidates_filtered,
 		node_data.span,
 		scope,
 	)?;
 
-	validate_arg_list(args, &func.params.params, type_args, scope)?;
+	validate_arg_list(args, &func.params.params, &func.generics, generic_args, scope)?;
 
 	*resolved = FnRef::Direct(func.clone());
 	*name = func.path.clone();
 
-	Ok(func.ret.1.get_concrete_type(type_args))
+	Ok(func.ret.1.get_concrete_type(&func.generics, generic_args))
 }
 
 pub fn resolve_method_call(
@@ -267,12 +268,12 @@ pub fn resolve_method_call(
 		scope,
 	)?;
 
-	validate_arg_list(args, &func.params.params, generic_args, scope)?;
+	validate_arg_list(args, &func.params.params, &func.generics, generic_args, scope)?;
 
 	*resolved = FnRef::Direct(func.clone());
 	*name = func.path.clone();
 
-	Ok(func.ret.1.get_concrete_type(&generic_args))
+	Ok(func.ret.1.get_concrete_type(&func.generics, &generic_args))
 }
 
 pub fn try_select_candidate(
@@ -286,7 +287,7 @@ pub fn try_select_candidate(
 	match candidates.len() {
 		0 => Err(ComuneError::new(
 			ComuneErrCode::NoCandidateFound {
-				args: args.iter().map(|arg| GenericArg::Type(arg.get_type().clone())).collect(),
+				args: args.iter().map(|arg| arg.get_type().clone()).collect(),
 				generic_args: generic_args.clone(),
 				name: name.clone(),
 			},
@@ -320,17 +321,17 @@ pub fn is_candidate_viable(args: &Vec<Expr>, generic_args: &GenericArgs, func: &
 	}
 
 	// TODO: Type arg deduction
-	if generic_args.len() != func.generics.len() {
+	if generic_args.len() != func.generics.non_defaulted_count() {
 		return false;
 	}
 
 	for (i, (param, ..)) in params.iter().enumerate() {
 		if let Some(arg) = args.get(i) {
-			if !arg
-				.get_type()
-				.get_concrete_type(generic_args)
-				.castable_to(&param.get_concrete_type(generic_args))
-			{
+			let arg_concrete = arg.get_type().get_concrete_type(&func.generics, generic_args);
+			let param_concrete = param.get_concrete_type(&func.generics, generic_args);
+
+			if !arg_concrete.castable_to(&param_concrete) {
+				println!("could not cast {arg_concrete} to {param_concrete} with {generic_args:?}");
 				return false;
 			}
 		}
@@ -388,17 +389,18 @@ fn candidate_compare(args: &[Expr], l: &FnPrototype, r: &FnPrototype, scope: &Fn
 fn validate_arg_list(
 	args: &mut [Expr],
 	params: &[(Type, Option<Name>, BindingProps)],
+	generics: &Generics,
 	generic_args: &GenericArgs,
 	scope: &mut FnScope,
 ) -> ComuneResult<()> {
 	for (i, arg) in args.iter_mut().enumerate() {
 		// add parameter's type info to argument
 		if let Some((param_ty, ..)) = params.get(i) {
-			let param_concrete = param_ty.get_concrete_type(generic_args);
+			let param_concrete = param_ty.get_concrete_type(generics, generic_args);
 
 			arg.get_node_data_mut().ty.replace(param_concrete.clone());
 
-			let arg_type = arg.validate(scope)?.get_concrete_type(generic_args);
+			let arg_type = arg.validate(scope)?.get_concrete_type(generics, generic_args);
 
 			if !arg.coercable_to(&arg_type, &param_concrete, scope) {
 				return Err(ComuneError::new(

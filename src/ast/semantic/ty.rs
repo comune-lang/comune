@@ -24,7 +24,7 @@ pub fn resolve_interface_types(parser: &mut Parser) -> ComuneResult<()> {
 
 	for child in interface.children.values() {
 		if let ModuleItemInterface::TypeAlias(alias) = child {
-			resolve_type(&mut *alias.write().unwrap(), interface, &vec![])?;
+			resolve_type(&mut *alias.write().unwrap(), interface, &Generics::new())?;
 			check_dst_indirection(&alias.read().unwrap(), &BindingProps::default())?;
 		}
 	}
@@ -40,7 +40,7 @@ pub fn resolve_interface_types(parser: &mut Parser) -> ComuneResult<()> {
 			ModuleItemInterface::Type(t) => resolve_type_def(t.clone(), interface, module_impl)?,
 
 			ModuleItemInterface::TypeAlias(ty) => {
-				resolve_type(&mut *ty.write().unwrap(), interface, &vec![])?
+				resolve_type(&mut *ty.write().unwrap(), interface, &Generics::new())?
 			}
 
 			ModuleItemInterface::Alias(_) => {}
@@ -60,7 +60,7 @@ pub fn resolve_interface_types(parser: &mut Parser) -> ComuneResult<()> {
 							..
 						} = func;
 
-						generics.push(("Self".into(), GenericParam::blank_type()));
+						generics.params.push(("Self".into(), GenericParam::blank_type()));
 
 						resolve_type(&mut ret.1, interface, generics)?;
 						check_dst_indirection(&ret.1, &BindingProps::default())?;
@@ -86,13 +86,13 @@ pub fn resolve_interface_types(parser: &mut Parser) -> ComuneResult<()> {
 	for (ty, im) in &interface.impl_solver.local_impls {
 		// Create type parameter list with empty Self param
 		let mut generics = im.read().unwrap().params.clone();
-		generics.push(("Self".into(), GenericParam::blank_type()));
+		generics.insert_self_type();
 
 		// Resolve the implementing type
 		resolve_type(&mut *ty.write().unwrap(), interface, &generics)?;
 
 		// Then use it to fill in the Self param's type
-		*generics.last_mut().unwrap().1.get_type_arg_mut() = Some(ty.read().unwrap().clone());
+		*generics.get_mut("Self").unwrap().get_type_arg_mut() = Some(ty.read().unwrap().clone());
 
 		// Resolve item references in canonical root
 		let resolved_trait = if let Some(ItemRef::Unresolved {
@@ -140,31 +140,27 @@ pub fn resolve_interface_types(parser: &mut Parser) -> ComuneResult<()> {
 				let func = Arc::get_mut(&mut func_arc).unwrap();
 
 				// Add impl's generics to function prototype
-				{
-					let FnPrototype {
-						generics: fn_generics,
-						path,
-						ret,
-						params,
-						..
-					} = func;
+			
+				let FnPrototype {
+					generics: fn_generics,
+					path,
+					ret,
+					params,
+					..
+				} = func;
 
-					path.qualifier = trait_qualif.clone();
+				path.qualifier = trait_qualif.clone();
 
-					for (i, param) in generics.iter().enumerate() {
-						fn_generics.insert(i, param.clone());
-					}
+				fn_generics.add_base_generics(generics.clone());
 
-					resolve_type(&mut ret.1, interface, &fn_generics)?;
-					check_dst_indirection(&ret.1, &BindingProps::default())?;
+				resolve_type(&mut ret.1, interface, &fn_generics)?;
+				check_dst_indirection(&ret.1, &BindingProps::default())?;
 
-					for (param, _, props) in &mut params.params {
-						resolve_type(param, interface, &fn_generics)?;
-						check_dst_indirection(param, props)?;
-					}
+				for (param, _, props) in &mut params.params {
+					resolve_type(param, interface, &fn_generics)?;
+					check_dst_indirection(param, props)?;
 				}
-
-				let FnPrototype { ret, params, .. } = &*func;
+			
 
 				if let Some(tr) = &resolved_trait {
 					// Check if the function signature matches a declaration in the trait
@@ -194,7 +190,7 @@ pub fn resolve_interface_types(parser: &mut Parser) -> ComuneResult<()> {
 								continue 'overloads;
 							}
 
-							if ret.1 != func.ret.1.get_concrete_type(&args) {
+							if ret.1 != func.ret.1.get_concrete_type(fn_generics, &args) {
 								continue 'overloads;
 							}
 
@@ -203,8 +199,8 @@ pub fn resolve_interface_types(parser: &mut Parser) -> ComuneResult<()> {
 									continue 'overloads;
 								}
 
-								let concrete_self = params.params[i].0.get_concrete_type(&args);
-								let concrete_other = ty.get_concrete_type(&args);
+								let concrete_self = params.params[i].0.get_concrete_type(fn_generics, &args);
+								let concrete_other = ty.get_concrete_type(fn_generics, &args);
 
 								if concrete_self != concrete_other {
 									println!(
@@ -309,19 +305,18 @@ pub fn resolve_type(
 			generic_args,
 			span,
 		} => {
-			let result;
-			let generic_pos = generics.iter().position(|(name, ..)| name == id.name());
-
-			if let Some(generic_pos) = generic_pos {
-				// Generic type parameter
-				result = Some(Type::TypeParam(generic_pos));
-			} else {
-				result = namespace.resolve_type(id, scope);
-			}
-
 			for arg in generic_args.iter_mut() {
 				resolve_generic_arg(arg, namespace, generics)?;
 			}
+
+			let generic_pos = generics.params.iter().position(|(name, ..)| name == id.name());
+
+			let result = if let Some(generic_pos) = generic_pos {
+				// Generic type parameter
+				Some(Type::TypeParam(generic_pos))
+			} else {
+				namespace.resolve_type(id, scope)
+			};
 
 			if let Some(Type::TypeRef { def, mut args }) = result {
 				args.append(generic_args);
@@ -368,9 +363,9 @@ pub fn resolve_type_def(
 	let mut ty = ty_lock.write().unwrap();
 
 	// Create type parameter list with empty Self param
-	let mut generics = ty.params.clone();
+	let mut generics = ty.generics.clone();
 
-	generics.push((
+	generics.params.push((
 		"Self".into(),
 		GenericParam::Type { 
 			bounds: vec![], 

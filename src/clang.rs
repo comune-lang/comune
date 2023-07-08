@@ -185,7 +185,7 @@ pub fn generate_cpp_header(
 					write!(result, " {name}")?;
 
 					if !func.generics.is_empty() {
-						let mut iter = func.generics.iter();
+						let mut iter = func.generics.params.iter();
 
 						write!(result, "<{}", iter.next().unwrap().0)?;
 
@@ -240,8 +240,8 @@ fn generate_cpp_type(
 ) -> std::fmt::Result {
 	// check if the typedef has type parameters
 
-	if !def.params.is_empty() {
-		let mut iter = def.params.iter();
+	if !def.generics.is_empty() {
+		let mut iter = def.generics.params.iter();
 
 		write!(result, "template<typename {}", iter.next().unwrap().0)?;
 

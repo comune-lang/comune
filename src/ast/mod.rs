@@ -37,7 +37,7 @@ pub struct FnScope<'ctx> {
 	variables: Vec<(Name, Type, BindingProps)>,
 	is_inside_loop: bool,
 	is_unsafe: bool,
-	generic_params: Generics,
+	generics: Generics,
 }
 
 impl<'ctx> FnScope<'ctx> {
@@ -50,7 +50,7 @@ impl<'ctx> FnScope<'ctx> {
 			variables: vec![],
 			is_inside_loop: is_loop_block | parent.is_inside_loop,
 			is_unsafe: is_unsafe | parent.is_unsafe,
-			generic_params: vec![],
+			generics: Generics::new(),
 		}
 	}
 
@@ -67,18 +67,18 @@ impl<'ctx> FnScope<'ctx> {
 			variables: vec![],
 			is_inside_loop: false,
 			is_unsafe: false,
-			generic_params: vec![],
+			generics: Generics::new(),
 		}
 	}
 
 	pub fn with_params(mut self, mut params: Generics) -> Self {
-		self.generic_params.append(&mut params);
+		self.generics.params.append(&mut params.params);
 		self
 	}
 
 	pub fn find_type(&self, id: &Identifier) -> Option<Type> {
 		if !id.is_scoped() {
-			for (i, (name, ..)) in self.generic_params.iter().enumerate().rev() {
+			for (i, (name, ..)) in self.generics.params.iter().enumerate().rev() {
 				if name == id.name() {
 					return Some(Type::TypeParam(i));
 				}

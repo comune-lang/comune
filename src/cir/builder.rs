@@ -1284,7 +1284,7 @@ impl CIRModuleBuilder {
 		match resolved {
 			FnRef::Direct(resolved) => {
 				let (ret_props, ret) = resolved.ret.clone();
-				let ret = ret.get_concrete_type(generic_args);
+				let ret = ret.get_concrete_type(&resolved.generics, generic_args);
 
 				let result = if !ret.is_void_or_never() {
 					Some(self.insert_variable(None, ret_props, ret.clone()))

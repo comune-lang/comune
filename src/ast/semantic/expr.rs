@@ -239,16 +239,16 @@ impl Expr {
 		scope: &mut FnScope,
 		meta: &NodeData,
 	) -> ComuneResult<Type> {
-		let Type::TypeRef { def: lhs_def, args: lhs_args } = lhs_ty else {
+		let Type::TypeRef { def, args } = lhs_ty else {
 			return Err(ComuneError::new(ComuneErrCode::InvalidSubscriptLHS { t: lhs_ty.clone() }, meta.span));
 		};
-		let lhs_def = lhs_def.upgrade().unwrap();
-		let lhs_def = lhs_def.read().unwrap();
+		let def = def.upgrade().unwrap();
+		let def = def.read().unwrap();
 
 		match rhs {
 			// Member access
 			Expr::Atom(Atom::Identifier(id), _) => {
-				if let Some((_, m)) = lhs_def.get_member(id.name(), Some(lhs_args)) {
+				if let Some((_, m)) = def.get_member(id.name(), args) {
 					rhs.get_node_data_mut().ty = Some(m.clone());
 
 					Ok(m)
@@ -435,7 +435,7 @@ impl Atom {
 						// Constructor literal
 
 						for (name, expr) in fields.iter_mut() {
-							let Some((_, member_ty)) = def.get_member(name, Some(generic_args)) else {
+							let Some((_, member_ty)) = def.get_member(name, generic_args) else {
 								// Invalid member in strenum literal
 								todo!()
 							};

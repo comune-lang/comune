@@ -145,7 +145,7 @@ impl<'ctx> Parser {
 
 					self.get_next()?;
 
-					def.params = self.parse_generic_param_list(None)?;
+					def.generics = self.parse_generic_param_list(None)?;
 
 					let mut next = self.get_current()?;
 
@@ -218,11 +218,11 @@ impl<'ctx> Parser {
 					self.get_next()?;
 
 					// Get the generic params
-					def_write.params = self.parse_generic_param_list(None)?;
+					def_write.generics = self.parse_generic_param_list(None)?;
 
 					// Add every param as an arg to self_ty
 					// This is analogous to doing `impl<type T, type U> MyType<T, U>`
-					for i in 0..def_write.params.len() {
+					for i in 0..def_write.generics.params.len() {
 						let Type::TypeRef { args, .. } = &mut self_ty else {
 							unreachable!()
 						};
@@ -270,8 +270,8 @@ impl<'ctx> Parser {
 							Token::Keyword(k @ ("new" | "drop")) => {
 								self.get_next()?;
 
-								let mut generics = def_write.params.clone();
-								generics.append(&mut self.parse_generic_param_list(None)?);
+								let mut generics = self.parse_generic_param_list(None)?;
+								generics.add_base_generics(def_write.generics.clone());
 
 								let params = self.parse_parameter_list(Some(&self_ty), None)?;
 
@@ -2036,7 +2036,7 @@ impl<'ctx> Parser {
 
 	fn parse_generic_param_list(&self, scope: Option<&FnScope<'ctx>>) -> ComuneResult<Generics> {
 		if self.get_current()? != Token::Operator("<") {
-			return Ok(vec![]);
+			return Ok(Generics::new());
 		}
 
 		let mut result = vec![];
@@ -2105,7 +2105,7 @@ impl<'ctx> Parser {
 
 		self.get_next()?;
 
-		Ok(result)
+		Ok(Generics::from_params(result))
 	}
 
 	fn parse_generic_arg_list(&self, scope: Option<&FnScope<'ctx>>) -> ComuneResult<GenericArgs> {
