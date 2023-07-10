@@ -184,7 +184,7 @@ int main() {
 
 	Vector<float> b = a;
 
-	//a.push(12.0f);
+	a.push(12.0f);
 
 	int i;
 

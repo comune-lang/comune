@@ -16,8 +16,8 @@ use crate::ast::module::{
 use crate::ast::statement::Stmt;
 use crate::ast::traits::{ImplBlockInterface, TraitInterface, TraitRef};
 use crate::ast::types::{
-	Basic, BindingProps, FloatSize, FnParamList, FnPrototype, Generics, TupleKind, Type, TypeDef,
-	Visibility, GenericParam, GenericArgs, GenericArg,
+	Basic, BindingProps, FloatSize, FnParamList, FnPrototype, GenericArg, GenericArgs,
+	GenericParam, Generics, TupleKind, Type, TypeDef, Visibility,
 };
 use crate::ast::{Attribute, FnScope};
 
@@ -1756,9 +1756,11 @@ impl<'ctx> Parser {
 			let binding_props = self.parse_binding_props()?;
 			let self_name = "self".into();
 
-			if binding_props.is_some() || matches!(self.get_current()?, Token::Name(name) if name == self_name) {
+			if binding_props.is_some()
+				|| matches!(self.get_current()?, Token::Name(name) if name == self_name)
+			{
 				let binding_props = binding_props.unwrap_or_default();
-				
+
 				result
 					.params
 					.push((self_ty.clone(), Some(self_name), binding_props));

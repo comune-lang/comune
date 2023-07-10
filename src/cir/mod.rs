@@ -12,7 +12,7 @@ use crate::{
 		expression::Operator,
 		module::{Identifier, Name},
 		traits::ImplSolver,
-		types::{Basic, BindingProps, FnPrototype, Type, TypeDef, Generics, GenericArgs},
+		types::{Basic, BindingProps, FnPrototype, GenericArgs, Generics, Type, TypeDef},
 		Attribute,
 	},
 	lexer::SrcSpan,

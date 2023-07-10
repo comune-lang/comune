@@ -15,7 +15,7 @@ use super::{
 	controlflow::ControlFlow,
 	module::{Identifier, Name},
 	statement::Stmt,
-	types::{Basic, FnPrototype, Type, TypeDef, GenericArgs},
+	types::{Basic, FnPrototype, GenericArgs, Type, TypeDef},
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -313,7 +313,7 @@ impl Expr {
 		}
 
 		// Special cases for literal coercion
-		
+
 		// if this is an integer literal with no type hint,
 		// and the cast-to type is an integer type, just
 		// set the type hint to prevent an unnecessary cast
@@ -324,7 +324,7 @@ impl Expr {
 				return;
 			}
 		}
-		
+
 		// ditto for floats
 		if let Expr::Atom(Atom::FloatLit(_, hint @ None), _) = self {
 			if let Type::Basic(basic @ Basic::Float { .. }) = &to {

@@ -15,7 +15,7 @@ use crate::{
 use super::{
 	expression::Expr,
 	traits::{ImplSolver, TraitInterface, TraitRef},
-	types::{Basic, FnPrototype, Type, TypeDef, GenericArgs},
+	types::{Basic, FnPrototype, GenericArgs, Type, TypeDef},
 };
 
 // String plays nicer with debuggers

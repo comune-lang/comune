@@ -6,7 +6,7 @@ use crate::{
 		expression::{Atom, Expr, FnRef, NodeData},
 		module::{Identifier, ModuleASTElem, ModuleInterface, ModuleItemInterface, Name},
 		statement::Stmt,
-		types::{Basic, BindingProps, FnPrototype, Type, GenericArgs, GenericArg},
+		types::{Basic, BindingProps, FnPrototype, GenericArg, GenericArgs, Type},
 		FnScope,
 	},
 	errors::{ComuneErrCode, ComuneError},
@@ -313,7 +313,11 @@ pub fn try_select_candidate(
 	}
 }
 
-pub fn is_candidate_viable(args: &Vec<Expr>, generic_args: &GenericArgs, func: &FnPrototype) -> bool {
+pub fn is_candidate_viable(
+	args: &Vec<Expr>,
+	generic_args: &GenericArgs,
+	func: &FnPrototype,
+) -> bool {
 	let params = &func.params.params;
 
 	if args.len() < params.len() || (args.len() > params.len() && !func.params.variadic) {

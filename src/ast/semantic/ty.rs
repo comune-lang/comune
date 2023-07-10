@@ -8,7 +8,9 @@ use crate::{
 		get_attribute,
 		module::{ItemRef, ModuleImpl, ModuleInterface, ModuleItemInterface},
 		traits::{TraitInterface, TraitRef},
-		types::{self, BindingProps, FnPrototype, Generics, Type, TypeDef, GenericParam, GenericArg},
+		types::{
+			self, BindingProps, FnPrototype, GenericArg, GenericParam, Generics, Type, TypeDef,
+		},
 		FnScope,
 	},
 	constexpr::{ConstEval, ConstExpr},
@@ -139,7 +141,7 @@ pub fn resolve_interface_types(parser: &mut Parser) -> ComuneResult<()> {
 				let func = Arc::get_mut(&mut func_arc).unwrap();
 
 				// Add impl's generics to function prototype
-			
+
 				let FnPrototype {
 					generics: fn_generics,
 					path,
@@ -302,7 +304,10 @@ pub fn resolve_type(
 				resolve_generic_arg(arg, namespace, generics)?;
 			}
 
-			let generic_pos = generics.params.iter().position(|(name, ..)| name == id.name());
+			let generic_pos = generics
+				.params
+				.iter()
+				.position(|(name, ..)| name == id.name());
 
 			let result = if let Some(generic_pos) = generic_pos {
 				// Generic type parameter
@@ -314,9 +319,9 @@ pub fn resolve_type(
 			if let Some(Type::TypeRef { def, mut args }) = result {
 				generic_args.append(&mut args);
 
-				*ty = Type::TypeRef { 
-					def, 
-					args: generic_args.drain(..).collect()
+				*ty = Type::TypeRef {
+					def,
+					args: generic_args.drain(..).collect(),
 				};
 
 				Ok(())
@@ -366,13 +371,13 @@ pub fn resolve_type_def(
 
 	generics.params.push((
 		"Self".into(),
-		GenericParam::Type { 
-			bounds: vec![], 
+		GenericParam::Type {
+			bounds: vec![],
 			arg: Some(Type::TypeRef {
 				def: Arc::downgrade(&ty_lock),
 				args: vec![],
-			}) 
-		}
+			}),
+		},
 	));
 
 	for (_, types) in &mut ty.variants {

@@ -121,8 +121,10 @@ fn main() -> color_eyre::eyre::Result<()> {
 
 	rayon::in_place_scope(|_| {
 		match driver::generate_monomorph_module(compiler_state.clone()) {
-			Ok(()) => {},
-			Err(_) => { errors::ERROR_COUNT.fetch_add(1, Ordering::Relaxed); },
+			Ok(()) => {}
+			Err(_) => {
+				errors::ERROR_COUNT.fetch_add(1, Ordering::Relaxed);
+			}
 		};
 	});
 

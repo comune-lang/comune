@@ -1,6 +1,9 @@
 use std::fmt::{Display, Write};
 
-use crate::{ast::{types::DataLayout, write_arg_list}, lexer};
+use crate::{
+	ast::{types::DataLayout, write_arg_list},
+	lexer,
+};
 
 use super::{CIRCallId, CIRFunction, CIRModule, CIRStmt, LValue, Operand, PlaceElem, RValue};
 

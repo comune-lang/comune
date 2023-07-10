@@ -82,9 +82,12 @@ impl EmitType {
 
 impl CompilerState {
 	pub fn requires_linking(&self) -> bool {
-		self.emit_types.iter().any(
-			|emit| matches!(emit, EmitType::Binary | EmitType::DynamicLib | EmitType::StaticLib)
-		)
+		self.emit_types.iter().any(|emit| {
+			matches!(
+				emit,
+				EmitType::Binary | EmitType::DynamicLib | EmitType::StaticLib
+			)
+		})
 	}
 }
 
@@ -513,7 +516,7 @@ pub fn generate_code<'ctx>(
 		)
 		.unwrap();
 	}
-	
+
 	// Monomorphize the module
 	let mut module_mono = state.monomorph_server.monoize_module(cir_module);
 
@@ -573,11 +576,7 @@ pub fn generate_monomorph_module(state: Arc<CompilerState>) -> ComuneResult<()> 
 
 	if state.emit_types.contains(&EmitType::ComuneIr) {
 		// Write cIR to file
-		fs::write(
-			out_path.with_extension("cir"),
-			module.to_string(),
-		)
-		.unwrap();
+		fs::write(out_path.with_extension("cir"), module.to_string()).unwrap();
 	}
 
 	let mut cir_man = CIRPassManager::new();
@@ -589,27 +588,26 @@ pub fn generate_monomorph_module(state: Arc<CompilerState>) -> ComuneResult<()> 
 
 	if !errors.is_empty() {
 		// TODO: log errors
-		return Err(ComuneError::new(ComuneErrCode::Pack(errors), SrcSpan::new()))
+		return Err(ComuneError::new(
+			ComuneErrCode::Pack(errors),
+			SrcSpan::new(),
+		));
 	}
 
 	if state.emit_types.contains(&EmitType::ComuneIrMono) {
 		// Write optimized cIR to file
-		fs::write(
-			out_path.with_extension("cir_mono"),
-			module.to_string(),
-		)
-		.unwrap();
+		fs::write(out_path.with_extension("cir_mono"), module.to_string()).unwrap();
 	}
 
 	let context = Context::create();
 
 	let result = generate_llvm_ir(
-		&state, 
-		"monomorph-module".into(), 
-		module, 
-		&PathBuf::from("monomorph-module"), 
-		&out_path, 
-		&context
+		&state,
+		"monomorph-module".into(),
+		module,
+		&PathBuf::from("monomorph-module"),
+		&out_path,
+		&context,
 	)?;
 
 	let target_machine = llvm::get_target_machine();
@@ -625,9 +623,9 @@ pub fn generate_monomorph_module(state: Arc<CompilerState>) -> ComuneResult<()> 
 			.write_to_file(&result.module, FileType::Object, &out_path)
 			.unwrap();
 	}
-	
+
 	state.output_modules.lock().unwrap().push(out_path);
-	
+
 	Ok(())
 }
 

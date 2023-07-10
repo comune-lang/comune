@@ -11,7 +11,7 @@ use std::{
 };
 
 use super::module::ItemRef;
-use super::types::{FnPrototype, Generics, GenericParam, GenericArgs};
+use super::types::{FnPrototype, GenericArgs, GenericParam, Generics};
 use super::Attribute;
 use super::{
 	module::{Identifier, Name},

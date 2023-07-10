@@ -301,7 +301,9 @@ impl Type {
 			},
 
 			Type::Unresolved {
-				name, generic_args: type_args, ..
+				name,
+				generic_args: type_args,
+				..
 			} => {
 				write!(f, "{name}")?;
 

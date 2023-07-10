@@ -150,7 +150,7 @@ impl LiveVarCheckState {
 		_generics: &Generics, // will be used to query whether a type implements Copy
 	) {
 		let _copy_trait = solver.get_lang_trait(LangTrait::Copy);
-		
+
 		// temp hack
 		let is_copy = matches!(ty, Type::Basic(_) | Type::Pointer { .. } | Type::Slice(_));
 

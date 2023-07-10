@@ -154,9 +154,9 @@ macro_rules! write_arg_list {
 			write!($buffer, "{}{}", $open, $close).unwrap();
 		} else {
 			let mut iter = $args.iter();
-			
+
 			write!($buffer, "{}{}", $open, iter.next().unwrap()).unwrap();
-			
+
 			for arg in iter {
 				write!($buffer, ", {arg}").unwrap();
 			}

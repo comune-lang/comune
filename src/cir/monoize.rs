@@ -9,7 +9,10 @@ use crate::{
 	ast::{
 		get_attribute,
 		module::Identifier,
-		types::{Basic, FloatSize, FnPrototype, IntSize, TypeDef, GenericParam, GenericArgs, GenericArg}, traits::ImplSolver,
+		traits::ImplSolver,
+		types::{
+			Basic, FloatSize, FnPrototype, GenericArg, GenericArgs, GenericParam, IntSize, TypeDef,
+		},
 	},
 	lexer::Token,
 };
@@ -61,11 +64,11 @@ impl MonomorphServer {
 			functions: HashMap::new(),
 			impl_solver: ImplSolver::new(),
 		};
-		
+
 		let mut fns_out = HashMap::new();
 
 		loop {
-			let mut access = ModuleAccess { 
+			let mut access = ModuleAccess {
 				types: &mut module.types,
 				fns_in: &module.functions,
 				fns_out: &mut fns_out,
@@ -73,7 +76,7 @@ impl MonomorphServer {
 
 			let fn_jobs = self.fn_jobs.write().unwrap().clone();
 
-			for (func, generic_args) in &fn_jobs {				
+			for (func, generic_args) in &fn_jobs {
 				let template = &self.fn_templates.read().unwrap()[func];
 				let func_monoized = self.monoize_function(template, generic_args, &mut access);
 				let mut proto = func.as_ref().clone();
@@ -82,16 +85,17 @@ impl MonomorphServer {
 
 				access.fns_out.insert(Arc::new(proto), func_monoized);
 			}
-			
+
 			module.functions.extend(fns_out.drain());
 
-			self.fn_jobs.write().unwrap().retain(
-				|job| !fn_jobs.contains(job)
-			);
+			self.fn_jobs
+				.write()
+				.unwrap()
+				.retain(|job| !fn_jobs.contains(job));
 
 			// if fn_jobs is empty, we're done monomorphizing
 			if self.fn_jobs.read().unwrap().is_empty() {
-				break
+				break;
 			}
 		}
 
@@ -146,9 +150,9 @@ impl MonomorphServer {
 		}
 
 		// Remove all generic types from module
-		module.types.retain(|_, ty| {
-			ty.read().unwrap().generics.params.is_empty()
-		});
+		module
+			.types
+			.retain(|_, ty| ty.read().unwrap().generics.params.is_empty());
 
 		module.functions = functions_mono;
 	}
@@ -221,13 +225,13 @@ impl MonomorphServer {
 				access.fns_out.insert(id.clone(), extern_fn);
 			}
 
-			return
+			return;
 		}
 
 		let (func, body) = self.register_fn_job(id, generic_args, access);
 
 		*id = func.clone();
-		
+
 		if !access.fns_out.contains_key(&func) {
 			access.fns_out.insert(func.clone(), body);
 		}
@@ -299,7 +303,7 @@ impl MonomorphServer {
 							let extern_fn = CIRModuleBuilder::generate_prototype(init);
 							access.fns_out.insert(init.clone(), extern_fn);
 						}
-						
+
 						drop(def_lock);
 
 						access.types.insert(typename, def_up);
@@ -331,7 +335,12 @@ impl MonomorphServer {
 		}
 	}
 
-	fn monoiez_generic_arg(&self, arg: &mut GenericArg, generic_args: &GenericArgs, access: &mut ModuleAccess) {
+	fn monoiez_generic_arg(
+		&self,
+		arg: &mut GenericArg,
+		generic_args: &GenericArgs,
+		access: &mut ModuleAccess,
+	) {
 		match arg {
 			GenericArg::Type(ty) => self.monoize_type(ty, generic_args, access),
 		}
@@ -371,17 +380,24 @@ impl MonomorphServer {
 
 		*instance.name.path.last_mut().unwrap() = instance_name.clone().into();
 
-		if self.ty_instances.read().unwrap().contains_key(&instance_name) {
+		if self
+			.ty_instances
+			.read()
+			.unwrap()
+			.contains_key(&instance_name)
+		{
 			// This instantiation exists already, add it to the current module
 
 			// We do this because otherwise we end up with "orphan" TypeDefs,
 			// which aren't stored anywhere except the Weak<> Arcs in TypeRefs
-			 
+
 			let instance_arc = self.ty_instances.read().unwrap()[&instance_name].clone();
 			let instance_lock = instance_arc.read().unwrap();
 
-			access.types.insert(instance_name.clone(), instance_arc.clone());
-			
+			access
+				.types
+				.insert(instance_name.clone(), instance_arc.clone());
+
 			// Register monoize job for dtor
 			if let Some(drop) = &instance_lock.drop {
 				if let Some(template) = access.fns_in.get(drop) {
@@ -455,7 +471,7 @@ impl MonomorphServer {
 			.unwrap()
 			.insert(Arc::new(func.clone()), body.clone());
 	}
-	
+
 	fn monoize_prototype(
 		&self,
 		func: &mut FnPrototype,
@@ -467,7 +483,7 @@ impl MonomorphServer {
 		for (param, ..) in &mut func.params.params {
 			self.monoize_type(param, args, access);
 		}
-		
+
 		self.monoize_type(&mut func.ret.1, args, access);
 
 		if let (Some(qualifier), _) = &mut func.path.qualifier {
@@ -486,21 +502,28 @@ impl MonomorphServer {
 		if args.is_empty() {
 			panic!("can't register a monoize job for a non-generic function!");
 		}
-		
+
 		let mut func_new = func.as_ref().clone();
-		
+
 		self.monoize_prototype(&mut func_new, args, access);
 
 		let func_new = Arc::new(func_new);
 		let extern_fn = CIRModuleBuilder::generate_prototype(&func_new);
 
 		// very silly how much we have to clone here because &(T, U) != (&T, &U)
-		if !self.fn_instances.read().unwrap().contains_key(&func_new) &&
-			!self.fn_jobs.read().unwrap().contains(&(func.clone(), args.clone())) 
+		if !self.fn_instances.read().unwrap().contains_key(&func_new)
+			&& !self
+				.fn_jobs
+				.read()
+				.unwrap()
+				.contains(&(func.clone(), args.clone()))
 		{
-			self.fn_jobs.write().unwrap().insert((func.clone(), args.clone()));
+			self.fn_jobs
+				.write()
+				.unwrap()
+				.insert((func.clone(), args.clone()));
 		}
-		
+
 		*func = func_new.clone();
 		(func_new, extern_fn)
 	}
