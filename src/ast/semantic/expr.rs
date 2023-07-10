@@ -267,7 +267,7 @@ impl Expr {
 			// jesse. we have to call METHods
 			Expr::Atom(Atom::FnCall { .. }, _) => {
 				let Expr::Atom(rhs_atom, ..) = rhs else { panic!() };
-				let ret = resolve_method_call(lhs_ty, lhs, rhs_atom, scope)?;
+				let ret = resolve_method_call(lhs_ty, lhs, rhs_atom, scope, meta.span)?;
 
 				rhs.get_node_data_mut().ty = Some(ret.clone());
 

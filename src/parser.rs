@@ -1106,8 +1106,8 @@ impl<'ctx> Parser {
 						NodeData {
 							ty: None,
 							span: SrcSpan {
-								start: begin_rhs,
-								len: end_rhs - begin_rhs,
+								start: begin_lhs,
+								len: end_rhs - begin_lhs,
 							},
 						},
 					);

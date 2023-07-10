@@ -208,6 +208,7 @@ pub fn resolve_method_call(
 	lhs: &Expr,
 	fn_call: &mut Atom,
 	scope: &mut FnScope,
+	span: SrcSpan,
 ) -> ComuneResult<Type> {
 	let Atom::FnCall { name, args, generic_args, resolved } = fn_call else { panic!() };
 
@@ -264,7 +265,7 @@ pub fn resolve_method_call(
 		args,
 		generic_args,
 		&mut candidates,
-		lhs.get_node_data().span,
+		span,
 		scope,
 	)?;
 
