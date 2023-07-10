@@ -765,13 +765,13 @@ impl<'ctx> Parser {
 			match op {
 				// Function declaration
 				"<" | "(" => {
-					let type_params = self.parse_generic_param_list(None)?;
+					let generics = self.parse_generic_param_list(None)?;
 
 					let t = FnPrototype {
 						path: Identifier::from_parent(&self.current_scope, name.clone()),
 						ret: (props, t),
 						params: self.parse_parameter_list(self_ty, None)?,
-						generics: type_params,
+						generics,
 						attributes,
 					};
 
@@ -1754,7 +1754,7 @@ impl<'ctx> Parser {
 		// Special case for self parameter
 		if let Some(self_ty) = self_ty {
 			let binding_props = self.parse_binding_props()?;
-			let self_name = "self".to_string();
+			let self_name = "self".into();
 
 			if binding_props.is_some() || matches!(self.get_current()?, Token::Name(name) if name == self_name) {
 				let binding_props = binding_props.unwrap_or_default();

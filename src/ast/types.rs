@@ -112,9 +112,9 @@ impl GenericParam {
 }
 
 impl GenericArg {
-	pub fn get_concrete_arg(&self, generics: &Generics, args: &[GenericArg]) -> GenericArg {
+	pub fn get_concrete_arg(&self, args: &[GenericArg]) -> GenericArg {
 		match self {
-			GenericArg::Type(ty) => GenericArg::Type(ty.get_concrete_type(generics, args)),
+			GenericArg::Type(ty) => GenericArg::Type(ty.get_concrete_type(args)),
 		}
 	}
 
@@ -133,7 +133,7 @@ impl GenericArg {
 	}
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub enum Type {
 	Basic(Basic),
 
@@ -270,7 +270,7 @@ impl TypeDef {
 
 		for (member_name, ty, _) in &self.members {
 			if member_name == name {
-				return Some((index, ty.get_concrete_type(&self.generics, generic_args)))
+				return Some((index, ty.get_concrete_type(generic_args)))
 			} else {
 				index += 1;
 			}
@@ -431,31 +431,32 @@ impl Basic {
 }
 
 impl Type {
-	pub fn get_concrete_type(&self, generics: &Generics, args: &[GenericArg]) -> Type {
+	pub fn get_concrete_type(&self, args: &[GenericArg]) -> Type {
 		match self {
 			Type::Basic(b) => Type::Basic(*b),
 
 			Type::Pointer { pointee, mutable } => Type::Pointer {
-				pointee: Box::new(pointee.get_concrete_type(generics, args)),
+				pointee: Box::new(pointee.get_concrete_type(args)),
 				mutable: *mutable,
 			},
 
 			Type::Array(arr_ty, size) => {
-				Type::Array(Box::new(arr_ty.get_concrete_type(generics, args)), size.clone())
+				Type::Array(Box::new(arr_ty.get_concrete_type(args)), size.clone())
 			}
 
-			Type::Slice(slicee) => Type::Slice(Box::new(slicee.get_concrete_type(generics, args))),
+			Type::Slice(slicee) => Type::Slice(Box::new(slicee.get_concrete_type(args))),
 
-			Type::TypeRef { def, args } => Type::TypeRef {
-				def: def.clone(),
-				args: args
-					.iter()
-					.map(|ty| ty.get_concrete_arg(&def.upgrade().unwrap().read().unwrap().generics, args))
-					.collect(),
+			Type::TypeRef { def, args: ty_args } => {
+				let ty_args_concrete: Vec<_> = ty_args.iter().map(|ty| ty.get_concrete_arg(args)).collect();
+
+				Type::TypeRef {
+					def: def.clone(),
+					args: ty_args_concrete,
+				}
 			},
 
 			Type::TypeParam(param) => {
-				if let Some((_, GenericParam::Type { arg: Some(concrete), .. })) = generics.params.get(*param) {
+				if let Some(GenericArg::Type(concrete)) = &args.get(*param) {
 					concrete.clone()
 				} else {
 					Type::TypeParam(*param)
@@ -468,14 +469,14 @@ impl Type {
 				*kind,
 				types
 					.iter()
-					.map(|ty| ty.get_concrete_type(generics, args))
+					.map(|ty| ty.get_concrete_type(args))
 					.collect(),
 			),
 
 			Type::Function(ret, fn_args) => Type::Function(
-				Box::new(ret.get_concrete_type(generics, args)),
+				Box::new(ret.get_concrete_type(args)),
 				fn_args.iter()
-					.map(|(props, arg)| (*props, arg.get_concrete_type(generics, args)))
+					.map(|(props, arg)| (*props, arg.get_concrete_type(args)))
 					.collect(),
 			),
 
@@ -569,7 +570,7 @@ impl Type {
 		let def = def.upgrade().unwrap();
 		let def = def.read().unwrap();
 
-		def.members[field].1.get_concrete_type(&def.generics, args)
+		def.members[field].1.get_concrete_type(args)
 	}
 
 	pub fn ptr_type(&self, mutable: bool) -> Self {
@@ -829,12 +830,12 @@ impl Hash for Type {
 			Type::Unresolved {
 				name,
 				scope,
-				generic_args: type_args,
+				generic_args,
 				span: _,
 			} => {
 				name.hash(state);
 				scope.hash(state);
-				type_args.hash(state);
+				generic_args.hash(state);
 			}
 
 			Type::TypeRef { def, args } => {
@@ -856,6 +857,22 @@ impl Hash for Type {
 				args.hash(state)
 			}
 		}
+	}
+}
+
+impl PartialEq for BindingProps {
+	fn eq(&self, other: &Self) -> bool {
+		(self.is_mut, self.is_ref, self.is_new) == (other.is_mut, other.is_ref, other.is_new)
+	}
+}
+
+impl Eq for BindingProps {}
+
+impl Hash for BindingProps {
+	fn hash<H: Hasher>(&self, state: &mut H) {
+		self.is_mut.hash(state);
+		self.is_ref.hash(state);
+		self.is_new.hash(state);
 	}
 }
 
@@ -942,7 +959,7 @@ impl Display for Type {
 				if !args.is_empty() {
 					let mut iter = args.iter();
 					let first = iter.next().unwrap();
-					
+
 					write!(f, "({}{}", first.1, first.0)?;
 
 					for (props, arg) in iter {
@@ -1078,49 +1095,3 @@ impl Display for BindingProps {
 		Ok(())
 	}
 }
-
-impl std::fmt::Debug for Type {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		match self {
-			Type::Basic(arg0) => f.debug_tuple("Basic").field(arg0).finish(),
-			Type::Pointer { .. } => f.debug_tuple("Pointer").finish(),
-			Type::Array(t, _) => f.debug_tuple("Array").field(t).finish(),
-			Type::Slice(t) => f.debug_tuple("Slice").field(t).finish(),
-			Type::Unresolved {
-				name: arg0,
-				scope: arg1,
-				generic_args: arg2,
-				span: _,
-			} => f
-				.debug_tuple("Unresolved")
-				.field(arg0)
-				.field(arg1)
-				.field(arg2)
-				.finish(),
-			Type::TypeRef {
-				def: arg0,
-				args: arg1,
-			} => f.debug_tuple("TypeRef").field(arg0).field(arg1).finish(),
-			Type::TypeParam(arg0) => f.debug_tuple("TypeParam").field(arg0).finish(),
-			Type::Never => f.debug_tuple("Never").finish(),
-			Type::Tuple(kind, types) => f.debug_tuple("Tuple").field(kind).field(types).finish(),
-			Type::Function(ret, args) => f.debug_tuple("Function").field(ret).field(args).finish(),
-		}
-	}
-}
-
-impl PartialEq for BindingProps {
-	fn eq(&self, other: &Self) -> bool {
-		(self.is_mut, self.is_ref, self.is_new) == (other.is_mut, other.is_ref, other.is_new)
-	}
-}
-
-impl Hash for BindingProps {
-	fn hash<H: Hasher>(&self, state: &mut H) {
-		self.is_mut.hash(state);
-		self.is_ref.hash(state);
-		self.is_new.hash(state);
-	}
-}
-
-impl Eq for BindingProps {}

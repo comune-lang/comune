@@ -60,7 +60,7 @@ pub fn resolve_interface_types(parser: &mut Parser) -> ComuneResult<()> {
 							..
 						} = func;
 
-						generics.params.push(("Self".into(), GenericParam::blank_type()));
+						generics.insert_self_type();
 
 						resolve_type(&mut ret.1, interface, generics)?;
 						check_dst_indirection(&ret.1, &BindingProps::default())?;
@@ -131,8 +131,7 @@ pub fn resolve_interface_types(parser: &mut Parser) -> ComuneResult<()> {
 		im.write().unwrap().canonical_root.qualifier = trait_qualif.clone();
 
 		let mut trait_functions_found = HashSet::new();
-
-		let im = &mut *im.write().unwrap();
+		let mut im = im.write().unwrap();
 
 		for (fn_name, fns) in &mut im.functions {
 			for func_og in fns {
@@ -160,7 +159,6 @@ pub fn resolve_interface_types(parser: &mut Parser) -> ComuneResult<()> {
 					resolve_type(param, interface, &fn_generics)?;
 					check_dst_indirection(param, props)?;
 				}
-			
 
 				if let Some(tr) = &resolved_trait {
 					// Check if the function signature matches a declaration in the trait
@@ -177,44 +175,39 @@ pub fn resolve_interface_types(parser: &mut Parser) -> ComuneResult<()> {
 
 					let mut found_match = false;
 
-					if let Some(funcs) = def.items.get(fn_name) {
+					if let Some(trait_fns) = def.items.get(fn_name) {
 						// Go through the overloads in the trait definition
 						// and look for one that matches this impl function
 
-						'overloads: for func in funcs {
-							if func.params.params.len() != params.params.len() {
+						'overloads: for trait_fn in trait_fns {
+							if trait_fn.params.params.len() != params.params.len() {
 								continue 'overloads;
 							}
 
-							if func.params.variadic != params.variadic {
+							if trait_fn.params.variadic != params.variadic {
 								continue 'overloads;
 							}
 
-							if ret.1 != func.ret.1.get_concrete_type(fn_generics, &args) {
+							if ret.1 != trait_fn.ret.1.get_concrete_type(&args) {
 								continue 'overloads;
 							}
 
-							for (i, (ty, _, props)) in func.params.params.iter().enumerate() {
+							for (i, (ty, _, props)) in trait_fn.params.params.iter().enumerate() {
 								if params.params[i].2 != *props {
 									continue 'overloads;
 								}
 
-								let concrete_self = params.params[i].0.get_concrete_type(fn_generics, &args);
-								let concrete_other = ty.get_concrete_type(fn_generics, &args);
+								let concrete_self = params.params[i].0.get_concrete_type(&args);
+								let concrete_other = ty.get_concrete_type(&args);
 
 								if concrete_self != concrete_other {
-									println!(
-										"mismatch between {concrete_self} and {concrete_other}"
-									);
-									println!("type args: {:?}", args);
-
 									continue 'overloads;
 								}
 							}
 
 							// Checks out!
 							found_match = true;
-							trait_functions_found.insert(func.clone());
+							trait_functions_found.insert(trait_fn.clone());
 							break;
 						}
 					}
@@ -319,11 +312,17 @@ pub fn resolve_type(
 			};
 
 			if let Some(Type::TypeRef { def, mut args }) = result {
-				args.append(generic_args);
-				*ty = Type::TypeRef { def, args };
+				generic_args.append(&mut args);
+
+				*ty = Type::TypeRef { 
+					def, 
+					args: generic_args.drain(..).collect()
+				};
+
 				Ok(())
 			} else if let Some(resolved) = result {
 				*ty = resolved;
+
 				Ok(())
 			} else {
 				Err(ComuneError::new(

@@ -115,7 +115,7 @@ struct DropTest {
 }
 
 impl DropTest {
-	void consume(Self& self) {
+	void consume(DropTest& self) {
 		printf(c"Consuming DropTest %i\n", self.num);
 	}
 }
