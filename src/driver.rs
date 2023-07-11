@@ -291,7 +291,6 @@ pub fn compile_comune_module(
 			}
 		};
 
-		let target_machine = llvm::get_target_machine();
 		let out_path = get_module_out_path(&state, &module_name);
 
 		if state.emit_types.contains(&EmitType::LLVMIr) {
@@ -301,7 +300,7 @@ pub fn compile_comune_module(
 		}
 
 		if state.requires_linking() {
-			target_machine
+			result.target_machine
 				.write_to_file(&result.module, FileType::Object, &out_path)
 				.unwrap();
 		}
@@ -610,8 +609,6 @@ pub fn generate_monomorph_module(state: Arc<CompilerState>) -> ComuneResult<()> 
 		&context,
 	)?;
 
-	let target_machine = llvm::get_target_machine();
-
 	if state.emit_types.contains(&EmitType::LLVMIr) {
 		let mut llvm_out_path = out_path.clone();
 		llvm_out_path.set_extension("ll");
@@ -619,7 +616,8 @@ pub fn generate_monomorph_module(state: Arc<CompilerState>) -> ComuneResult<()> 
 	}
 
 	if state.requires_linking() {
-		target_machine
+		result
+			.target_machine
 			.write_to_file(&result.module, FileType::Object, &out_path)
 			.unwrap();
 	}

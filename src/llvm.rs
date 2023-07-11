@@ -30,27 +30,13 @@ use crate::{
 	constexpr::{ConstExpr, ConstValue},
 };
 
-pub fn get_target_machine() -> TargetMachine {
-	Target::initialize_x86(&InitializationConfig::default());
-	let target = Target::from_name("x86-64").unwrap();
-
-	target
-		.create_target_machine(
-			&TargetTriple::create("x86_64-pc-linux-gnu"),
-			"x86-64",
-			"+avx2",
-			inkwell::OptimizationLevel::Default,
-			inkwell::targets::RelocMode::Default,
-			inkwell::targets::CodeModel::Default,
-		)
-		.unwrap()
-}
 
 type LLVMResult<T> = Result<T, String>;
 
 pub struct LLVMBackend<'ctx> {
 	pub context: &'ctx Context,
 	pub module: Module<'ctx>,
+	pub target_machine: TargetMachine,
 	builder: Builder<'ctx>,
 	di_builder: Option<DebugInfoBuilder<'ctx>>,
 	fn_value_opt: Option<FunctionValue<'ctx>>,
@@ -97,9 +83,23 @@ impl<'ctx> LLVMBackend<'ctx> {
 			(None, None)
 		};
 
+		Target::initialize_x86(&InitializationConfig::default());
+		let target = Target::from_name("x86-64").unwrap();
+		let target_machine = target
+			.create_target_machine(
+				&TargetTriple::create("x86_64-pc-linux-gnu"),
+				"x86-64",
+				"+avx2",
+				inkwell::OptimizationLevel::Default,
+				inkwell::targets::RelocMode::Default,
+				inkwell::targets::CodeModel::Default,
+			)
+			.unwrap();
+
 		Self {
 			context,
 			module,
+			target_machine,
 			builder,
 			di_builder,
 			fn_value_opt: None,
@@ -969,7 +969,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 				Basic::Integral { size, .. } => match size {
 					IntSize::IAddr => self
 						.context
-						.ptr_sized_int_type(&get_target_machine().get_target_data(), None),
+						.ptr_sized_int_type(&self.target_machine.get_target_data(), None),
 
 					IntSize::I64 => self.context.i64_type(),
 					IntSize::I32 => self.context.i32_type(),
@@ -1053,7 +1053,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 					TupleKind::Sum => {
 						let discriminant = self.context.i32_type(); // TODO: Adapt to variant count
-						let target_data = get_target_machine().get_target_data();
+						let target_data = self.target_machine.get_target_data();
 
 						let biggest_variant = types_mapped
 							.iter()
