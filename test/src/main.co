@@ -115,7 +115,7 @@ struct DropTest {
 }
 
 impl DropTest {
-	void consume(DropTest& self) {
+	void consume(Self& self) {
 		printf(c"Consuming DropTest %i\n", self.num);
 	}
 }
@@ -184,7 +184,7 @@ int main() {
 
 	Vector<float> b = a;
 
-	a.push(12.0f);
+	//a.push(12.0f);
 
 	int i;
 

@@ -170,7 +170,7 @@ pub fn resolve_interface_types(parser: &mut Parser) -> ComuneResult<()> {
 					};
 
 					let mut args = args.clone();
-					args.insert(0, GenericArg::Type(ty.read().unwrap().clone()));
+					args.push(GenericArg::Type(ty.read().unwrap().clone()));
 
 					let def = def.upgrade().unwrap();
 					let def = def.read().unwrap();

@@ -115,8 +115,7 @@ impl<'ctx> Parser {
 			if let ModuleASTElem::Unparsed(idx) = ast {
 				self.lexer.borrow_mut().seek_token_idx(*idx);
 
-				let scope = FnScope::new(&self.interface, proto.path.clone(), proto.ret.clone())
-					.with_params(proto.generics.clone());
+				let scope = FnScope::new(&self.interface, proto.path.clone(), proto.ret.clone(), &proto.generics);
 
 				fn_impls.insert(
 					proto.clone(),

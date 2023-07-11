@@ -21,7 +21,7 @@ pub fn validate_function_body(
 	namespace: &ModuleInterface,
 ) -> ComuneResult<()> {
 	let mut scope =
-		FnScope::new(namespace, scope, func.ret.clone()).with_params(func.generics.clone());
+		FnScope::new(namespace, scope, func.ret.clone(), &func.generics);
 
 	for (param, name, props) in &func.params.params {
 		scope.add_variable(param.clone(), name.clone().unwrap(), *props)
@@ -40,10 +40,10 @@ pub fn validate_function_body(
 		if let Some(expr) = result {
 			let expr_ty = expr.get_type();
 
-			if !expr_ty.castable_to(&scope.fn_return_type.1) && !scope.fn_return_type.1.is_void() {
+			if !expr_ty.castable_to(&scope.ret.1) && !scope.ret.1.is_void() {
 				return Err(ComuneError::new(
 					ComuneErrCode::ReturnTypeMismatch {
-						expected: scope.fn_return_type.1,
+						expected: scope.ret.1,
 						got: expr_ty.clone(),
 					},
 					elem.get_node_data().span,
@@ -53,7 +53,7 @@ pub fn validate_function_body(
 			let expr = *result.take().unwrap();
 			let node_data = expr.get_node_data().clone();
 
-			if scope.fn_return_type.1.is_void() {
+			if scope.ret.1.is_void() {
 				items.push(Stmt::Expr(expr));
 
 				items.push(Stmt::Expr(Expr::Atom(
@@ -76,10 +76,10 @@ pub fn validate_function_body(
 		};
 
 		if !has_return {
-			if scope.fn_return_type.1 != Type::Basic(Basic::Void) {
+			if scope.ret.1 != Type::Basic(Basic::Void) {
 				return Err(ComuneError::new(
 					ComuneErrCode::ReturnTypeMismatch {
-						expected: scope.fn_return_type.1.clone(),
+						expected: scope.ret.1.clone(),
 						got: Type::Basic(Basic::Void),
 					},
 					elem_node_data.span,

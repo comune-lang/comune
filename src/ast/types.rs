@@ -1,11 +1,11 @@
 use std::fmt::Display;
 use std::hash::{Hash, Hasher};
+use std::{ptr, mem};
 use std::sync::{Arc, RwLock, Weak};
-use std::{mem, ptr};
 
 use super::module::{Identifier, ItemRef, Name};
 use super::traits::TraitRef;
-use super::{write_arg_list, Attribute};
+use super::{Attribute, write_arg_list};
 use crate::constexpr::ConstExpr;
 use crate::lexer::SrcSpan;
 
@@ -45,6 +45,15 @@ impl Generics {
 		}
 	}
 
+	pub fn get_as_arg_list(&self) -> Vec<GenericArg> {
+		self.params.iter().enumerate().map(|(i, (_, param))| {
+			match param {
+				GenericParam::Type { arg: None, .. } => GenericArg::Type(Type::TypeParam(i)),
+				GenericParam::Type { arg: Some(ty), .. } => GenericArg::Type(ty.clone()),
+			}
+		}).collect()
+	}
+
 	// Take base_generics's parameters and add them to the start of self's
 	// Used for i.e. combining the generics from a method and its surrounding `impl` block
 	pub fn add_base_generics(&mut self, mut base_generics: Generics) {
@@ -53,8 +62,7 @@ impl Generics {
 	}
 
 	pub fn insert_self_type(&mut self) {
-		self.params
-			.push(("Self".into(), GenericParam::blank_type()))
+		self.params.push(("Self".into(), GenericParam::blank_type()))
 	}
 
 	#[allow(dead_code)]
@@ -73,16 +81,13 @@ impl Generics {
 			.find(|(n, _)| n == name)
 			.map(|(_, u)| u)
 	}
-
+	
 	pub fn is_empty(&self) -> bool {
 		self.params.is_empty()
 	}
 
 	pub fn non_defaulted_count(&self) -> usize {
-		self.params
-			.iter()
-			.filter(|(_, param)| !param.is_filled())
-			.count()
+		self.params.iter().filter(|(_, param)| !param.is_filled()).count()
 	}
 }
 
@@ -100,10 +105,7 @@ impl GenericParam {
 	}
 
 	pub fn blank_type() -> Self {
-		GenericParam::Type {
-			bounds: vec![],
-			arg: None,
-		}
+		GenericParam::Type { bounds: vec![], arg: None }
 	}
 
 	#[allow(dead_code)]
@@ -127,7 +129,9 @@ impl GenericArg {
 
 	pub fn fits_generic(&self, arg: &GenericArg) -> bool {
 		match (self, arg) {
-			(GenericArg::Type(self_ty), GenericArg::Type(arg_ty)) => self_ty.fits_generic(arg_ty),
+			(GenericArg::Type(self_ty), GenericArg::Type(arg_ty)) => {
+				self_ty.fits_generic(arg_ty)
+			}
 		}
 	}
 
@@ -275,7 +279,7 @@ impl TypeDef {
 
 		for (member_name, ty, _) in &self.members {
 			if member_name == name {
-				return Some((index, ty.get_concrete_type(generic_args)));
+				return Some((index, ty.get_concrete_type(generic_args)))
 			} else {
 				index += 1;
 			}
@@ -458,7 +462,7 @@ impl Type {
 					def: def.clone(),
 					args: ty_args_concrete,
 				}
-			}
+			},
 
 			Type::TypeParam(param) => {
 				if let Some(GenericArg::Type(concrete)) = &args.get(*param) {
@@ -472,13 +476,15 @@ impl Type {
 
 			Type::Tuple(kind, types) => Type::Tuple(
 				*kind,
-				types.iter().map(|ty| ty.get_concrete_type(args)).collect(),
+				types
+					.iter()
+					.map(|ty| ty.get_concrete_type(args))
+					.collect(),
 			),
 
 			Type::Function(ret, fn_args) => Type::Function(
 				Box::new(ret.get_concrete_type(args)),
-				fn_args
-					.iter()
+				fn_args.iter()
 					.map(|(props, arg)| (*props, arg.get_concrete_type(args)))
 					.collect(),
 			),
@@ -792,20 +798,9 @@ impl PartialEq for Type {
 				Arc::ptr_eq(&l0.upgrade().unwrap(), &r0.upgrade().unwrap()) && l1 == r1
 			}
 
-			(
-				Self::Unresolved {
-					name: l0,
-					scope: l1,
-					generic_args: l2,
-					..
-				},
-				Self::Unresolved {
-					name: r0,
-					scope: r1,
-					generic_args: r2,
-					..
-				},
-			) => l0 == r0 && l1 == r1 && l2 == r2,
+			(Self::Unresolved { name: l0, scope: l1, generic_args: l2, .. }, Self::Unresolved { name: r0, scope: r1, generic_args: r2, .. }) => {
+				l0 == r0 && l1 == r1 && l2 == r2
+			}
 
 			(Self::Slice(l0), Self::Slice(r0)) => l0 == r0,
 
@@ -929,7 +924,7 @@ impl Display for Type {
 				if !generic_args.is_empty() {
 					write_arg_list!(f, generic_args, "<", ">");
 				}
-
+				
 				Ok(())
 			}
 
@@ -1061,7 +1056,7 @@ impl Display for GenericParam {
 						write!(f, " + {bound}")?;
 					}
 				}
-
+				
 				if let Some(arg) = arg {
 					write!(f, " = {arg}")?;
 				}
@@ -1076,7 +1071,7 @@ impl Display for ItemRef<TraitRef> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match self {
 			ItemRef::Resolved(tr) => write!(f, "{}", tr.name),
-			ItemRef::Unresolved { name, .. } => write!(f, "`{name}`"),
+			ItemRef::Unresolved { name, .. } => write!(f, "`{name}`")
 		}
 	}
 }

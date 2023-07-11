@@ -33,11 +33,11 @@ pub struct FnScope<'ctx> {
 	context: &'ctx ModuleInterface,
 	scope: Identifier,
 	parent: Option<&'ctx FnScope<'ctx>>,
-	fn_return_type: (BindingProps, Type),
+	ret: (BindingProps, Type),
 	variables: Vec<(Name, Type, BindingProps)>,
 	is_inside_loop: bool,
 	is_unsafe: bool,
-	generics: Generics,
+	generics: &'ctx Generics,
 }
 
 impl<'ctx> FnScope<'ctx> {
@@ -46,11 +46,11 @@ impl<'ctx> FnScope<'ctx> {
 			context: parent.context,
 			scope: parent.scope.clone(),
 			parent: Some(parent),
-			fn_return_type: parent.fn_return_type.clone(),
+			ret: parent.ret.clone(),
 			variables: vec![],
 			is_inside_loop: is_loop_block | parent.is_inside_loop,
 			is_unsafe: is_unsafe | parent.is_unsafe,
-			generics: Generics::new(),
+			generics: parent.generics,
 		}
 	}
 
@@ -58,22 +58,18 @@ impl<'ctx> FnScope<'ctx> {
 		context: &'ctx ModuleInterface,
 		scope: Identifier,
 		ret: (BindingProps, Type),
+		generics: &'ctx Generics,
 	) -> Self {
 		FnScope {
 			context,
 			scope,
 			parent: None,
-			fn_return_type: ret,
+			ret,
 			variables: vec![],
 			is_inside_loop: false,
 			is_unsafe: false,
-			generics: Generics::new(),
+			generics,
 		}
-	}
-
-	pub fn with_params(mut self, mut params: Generics) -> Self {
-		self.generics.params.append(&mut params.params);
-		self
 	}
 
 	pub fn find_type(&self, id: &Identifier) -> Option<Type> {

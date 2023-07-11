@@ -31,10 +31,8 @@ impl Expr {
 			Expr::Cons([lhs, rhs], op, meta) => {
 				match op {
 					// Special cases for type-asymmetric operators
-					Operator::MemberAccess => {
-						let lhs_ty = lhs.validate(scope)?;
-						Self::validate_member_access(&lhs_ty, lhs, rhs, scope, meta)
-					}
+					Operator::MemberAccess => Self::validate_member_access(lhs, rhs, scope, meta),
+					
 
 					Operator::Subscr => {
 						let idx_type = Type::isize_type(false);
@@ -149,7 +147,7 @@ impl Expr {
 
 		result.validate(scope)?;
 
-		self.get_node_data_mut().ty.replace(result.clone());
+		self.get_node_data_mut().ty.replace(result.get_concrete_type(&scope.generics.get_as_arg_list()));
 
 		Ok(result)
 	}
@@ -204,26 +202,6 @@ impl Expr {
 						false
 					}
 
-					// commented out because these feel redundant in the face of
-					// the wildcard case? i honestly forgot how this part of typeck works.
-					// anyway the FnCall stuff causes problems with generic types
-
-					/*Atom::FnCall { resolved, .. } => {
-						if let FnRef::Direct(resolved) = resolved {
-							resolved.read().unwrap().ret.1 == *target
-						} else if let FnRef::Indirect(expr) = resolved {
-							let Some(Type::Function(ret, _)) = &expr.get_node_data().ty else {
-								panic!()
-							};
-
-							&**ret == target
-						} else {
-							false
-						}
-					}
-
-					Atom::Cast(_, cast_t) => target == cast_t,
-					*/
 					_ => from == target,
 				},
 
@@ -233,29 +211,32 @@ impl Expr {
 	}
 
 	fn validate_member_access(
-		lhs_ty: &Type,
-		lhs: &Expr,
+		lhs: &mut Expr,
 		rhs: &mut Expr,
 		scope: &mut FnScope,
 		meta: &NodeData,
 	) -> ComuneResult<Type> {
-		let Type::TypeRef { def, args } = lhs_ty else {
-			return Err(ComuneError::new(ComuneErrCode::InvalidSubscriptLHS { t: lhs_ty.clone() }, meta.span));
+		lhs.validate(scope)?;
+
+		// This feels pretty expensive to perform for every member access
+		let Type::TypeRef { def, args } = lhs.get_type() else {
+			return Err(ComuneError::new(ComuneErrCode::InvalidSubscriptLHS { t: lhs.get_type().clone() }, meta.span));
 		};
+
 		let def = def.upgrade().unwrap();
 		let def = def.read().unwrap();
 
 		match rhs {
 			// Member access
 			Expr::Atom(Atom::Identifier(id), _) => {
-				if let Some((_, m)) = def.get_member(id.name(), args) {
+				if let Some((_, m)) = def.get_member(id.name(), &args) {
 					rhs.get_node_data_mut().ty = Some(m.clone());
 
 					Ok(m)
 				} else {
 					Err(ComuneError::new(
 						ComuneErrCode::InvalidMemberAccess {
-							t: lhs_ty.clone(),
+							t: lhs.get_type().clone(),
 							idx: id.name().to_string(),
 						},
 						rhs.get_node_data().span,
@@ -267,7 +248,7 @@ impl Expr {
 			// jesse. we have to call METHods
 			Expr::Atom(Atom::FnCall { .. }, _) => {
 				let Expr::Atom(rhs_atom, ..) = rhs else { panic!() };
-				let ret = resolve_method_call(lhs_ty, lhs, rhs_atom, scope, meta.span)?;
+				let ret = resolve_method_call(lhs.get_type(), lhs, rhs_atom, scope, meta.span)?;
 
 				rhs.get_node_data_mut().ty = Some(ret.clone());
 
@@ -665,26 +646,26 @@ impl Atom {
 					if let Some(expr) = expr {
 						let expr_ty = expr.validate(scope)?;
 
-						if expr_ty == scope.fn_return_type.1 {
+						if expr_ty == scope.ret.1 {
 							Ok(Type::Never)
-						} else if expr.coercable_to(&expr_ty, &scope.fn_return_type.1, scope) {
-							expr.wrap_in_cast(scope.fn_return_type.1.clone());
+						} else if expr.coercable_to(&expr_ty, &scope.ret.1, scope) {
+							expr.wrap_in_cast(scope.ret.1.clone());
 							Ok(Type::Never)
 						} else {
 							Err(ComuneError::new(
 								ComuneErrCode::ReturnTypeMismatch {
-									expected: scope.fn_return_type.1.clone(),
+									expected: scope.ret.1.clone(),
 									got: expr_ty,
 								},
 								meta.span,
 							))
 						}
-					} else if scope.fn_return_type.1 == Type::void_type() {
+					} else if scope.ret.1 == Type::void_type() {
 						Ok(Type::Never)
 					} else {
 						Err(ComuneError::new(
 							ComuneErrCode::ReturnTypeMismatch {
-								expected: scope.fn_return_type.1.clone(),
+								expected: scope.ret.1.clone(),
 								got: Type::void_type(),
 							},
 							meta.span,
