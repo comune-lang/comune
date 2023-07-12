@@ -1,0 +1,5 @@
+
+enum Option<type T> {
+	Some(T),
+	None
+}

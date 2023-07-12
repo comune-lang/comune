@@ -7,4 +7,5 @@
 
 module mem;
 module ops;
+module option;
 module traits;

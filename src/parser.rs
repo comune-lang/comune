@@ -163,10 +163,10 @@ impl<'ctx> Parser {
 						{
 							self.parse_tuple_type(None)?
 						} else {
-							(TupleKind::Product, vec![])
+							(TupleKind::Empty, vec![])
 						};
 
-						if tuple_kind != TupleKind::Product {
+						if tuple_kind == TupleKind::Sum {
 							todo!("enum variants with data of sum type are not supported!")
 						}
 
@@ -311,7 +311,7 @@ impl<'ctx> Parser {
 
 							Token::Other('}') => break,
 
-							_ => return self.err(ComuneErrCode::ExpectedIdentifier),
+							_ => return self.err(ComuneErrCode::UnexpectedToken),
 						}
 					}
 
@@ -332,22 +332,20 @@ impl<'ctx> Parser {
 						return self.err(ComuneErrCode::UnexpectedToken);
 					};
 
+					self.get_next()?;
+					
+					let generics = self.parse_generic_param_list(None)?;
+
 					let mut this_trait = TraitInterface {
 						items: HashMap::new(),
-						types: HashMap::new(),
+						generics,
 						supers: vec![],
 						attributes: current_attributes,
 					};
 
-					let mut next = self.get_next()?;
+					self.consume(&Token::Other('{'))?;
 
-					if !token_compare(&next, "{") {
-						return self.err(ComuneErrCode::UnexpectedToken);
-					}
-
-					next = self.get_next()?; // Consume brace
-
-					while !token_compare(&next, "}") {
+					while self.get_current()? != Token::Other('}') {
 						let func_attributes = self.parse_attributes()?;
 
 						match self.parse_namespace_declaration(
@@ -367,7 +365,7 @@ impl<'ctx> Parser {
 							(DeclParseResult::Variable(..), _) => todo!(),
 						}
 
-						next = self.get_current()?;
+						self.get_current()?;
 					}
 
 					self.get_next()?; // Consume closing brace

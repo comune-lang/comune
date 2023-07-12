@@ -13,9 +13,6 @@ struct Vector<type T> {
 	usize len;
 	usize capacity;
 
-	// `new` and `drop` are special functions
-	// that handle construction and destruction.
-
 	new(new& self) {
 		self = new Vector<T> {
 			data: null_mut<T>(),
@@ -43,6 +40,7 @@ struct Vector<type T> {
 	}
 	
 	drop(mut& self) {		
+		// TODO: actually drop the elements lol
 		if self.capacity > 0 {
 			free(self.data as void mut*);
 		}
@@ -50,7 +48,6 @@ struct Vector<type T> {
 }
 
 impl<type T> Vector<T> {
-
 	void push(mut& self, T elem) {
 		if self.len >= self.capacity {
 			self.realloc(
@@ -87,5 +84,4 @@ impl<type T> Vector<T> {
 	T get(mut& self, usize i) {
 		unsafe { *(self.data + i) }
 	}
-
 }
