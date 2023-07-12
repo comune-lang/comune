@@ -78,11 +78,17 @@ void overload_test(i64 a) {
 	printf(c"i64 overload called!\n");
 }
 
-Vector<i32> generic_ret() {
-	new Vector<i32>()
+struct Faketor<type T> {
+	
 }
 
-using TestSumType = (i32 | f32);
+type GenericTypeAlias<type T> = Vector<T>;
+
+Vector<i32> generic_ret() {
+	new GenericTypeAlias<i32>()
+}
+
+type TestSumType = (i32 | f32);
 
 TestSumType sum_type_test(i32& value) {
 	return value;

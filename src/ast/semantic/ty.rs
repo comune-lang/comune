@@ -24,10 +24,13 @@ pub fn resolve_interface_types(parser: &mut Parser) -> ComuneResult<()> {
 	let interface = &parser.interface;
 	let module_impl = &mut parser.module_impl;
 
+	// Resolve type aliases before everything else, for Annoying Reasons
 	for child in interface.children.values() {
-		if let ModuleItemInterface::TypeAlias(alias) = child {
-			resolve_type(&mut *alias.write().unwrap(), interface, &Generics::new())?;
-			check_dst_indirection(&alias.read().unwrap(), &BindingProps::default())?;
+		if let ModuleItemInterface::TypeAlias(ty) = child {
+			let (ty, generics) = &mut *ty.write().unwrap();
+
+			resolve_type(ty, interface, generics)?;
+			check_dst_indirection(ty, &BindingProps::default())?;
 		}
 	}
 
@@ -41,11 +44,7 @@ pub fn resolve_interface_types(parser: &mut Parser) -> ComuneResult<()> {
 
 			ModuleItemInterface::Type(t) => resolve_type_def(t.clone(), interface, module_impl)?,
 
-			ModuleItemInterface::TypeAlias(ty) => {
-				resolve_type(&mut *ty.write().unwrap(), interface, &Generics::new())?
-			}
-
-			ModuleItemInterface::Alias(_) => {}
+			ModuleItemInterface::TypeAlias(_) | ModuleItemInterface::Alias(_) => {}
 
 			ModuleItemInterface::Trait(tr) => {
 				let TraitInterface { items, .. } = &mut *tr.write().unwrap();

@@ -15,7 +15,7 @@ use crate::{
 use super::{
 	expression::Expr,
 	traits::{ImplSolver, TraitInterface, TraitRef},
-	types::{Basic, FnPrototype, GenericArgs, Type, TypeDef},
+	types::{Basic, FnPrototype, GenericArgs, Type, TypeDef, Generics},
 };
 
 // String plays nicer with debuggers
@@ -73,7 +73,7 @@ pub enum ModuleItemInterface {
 	Functions(Arc<RwLock<Vec<Arc<FnPrototype>>>>),
 	Variable(Type),
 	Alias(Identifier),
-	TypeAlias(Arc<RwLock<Type>>),
+	TypeAlias(Arc<RwLock<(Type, Generics)>>),
 }
 
 impl ModuleImpl {
@@ -195,7 +195,7 @@ impl ModuleInterface {
 				self.resolve_type(alias, &Identifier::new(true))
 			}
 
-			Some((_, ModuleItemInterface::TypeAlias(alias))) => Some(alias.read().unwrap().clone()),
+			Some((_, ModuleItemInterface::TypeAlias(alias))) => Some(alias.read().unwrap().0.clone()),
 
 			_ => {
 				if let Some(imported) = self.imported.get(&id.path[0]) {

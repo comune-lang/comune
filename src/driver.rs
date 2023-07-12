@@ -27,7 +27,7 @@ use crate::{
 	clang::compile_cpp_module,
 	errors::{CMNMessageLog, ComuneErrCode, ComuneError, ComuneMessage, ERROR_COUNT},
 	lexer::{self, Lexer, SrcSpan},
-	llvm::{self, LLVMBackend},
+	llvm::LLVMBackend,
 	parser::{ComuneResult, Parser},
 };
 

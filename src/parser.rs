@@ -488,6 +488,25 @@ impl<'ctx> Parser {
 					}
 				}
 
+				Token::Keyword("type") => {
+					let Token::Name(name) = self.get_next()? else {
+						return self.err(ComuneErrCode::ExpectedIdentifier)
+					};
+					
+					self.get_next()?;
+
+					let generics = self.parse_generic_param_list(None)?;
+
+					self.consume(&Token::Operator("="))?;
+
+					let ty = self.parse_type(None)?;
+
+					self.interface.children.insert(
+						Identifier::from_parent(scope, name),
+						ModuleItemInterface::TypeAlias(Arc::new(RwLock::new((ty, generics)))),
+					);
+				}
+
 				Token::Keyword("using") => {
 					self.get_next()?;
 
@@ -499,22 +518,12 @@ impl<'ctx> Parser {
 							self.get_next()?;
 
 							let name = names[0].expect_scopeless()?.clone();
+							let aliased = self.parse_identifier(None)?;
 
-							if self.is_at_type_token(None)? {
-								let ty = self.parse_type(None)?;
-
-								self.interface.children.insert(
-									Identifier::from_parent(scope, name),
-									ModuleItemInterface::TypeAlias(Arc::new(RwLock::new(ty))),
-								);
-							} else {
-								let aliased = self.parse_identifier(None)?;
-
-								self.interface.children.insert(
-									Identifier::from_parent(scope, name),
-									ModuleItemInterface::Alias(aliased),
-								);
-							}
+							self.interface.children.insert(
+								Identifier::from_parent(scope, name),
+								ModuleItemInterface::Alias(aliased),
+							);
 
 							self.check_semicolon()?;
 						} else {

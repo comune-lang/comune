@@ -163,7 +163,7 @@ pub fn generate_cpp_header(
 			ModuleItemInterface::TypeAlias(aliased) => {
 				write!(result, "typedef ")?;
 
-				aliased.read().unwrap().cpp_format(&mut result)?;
+				aliased.read().unwrap().0.cpp_format(&mut result)?;
 
 				writeln!(result, " {name};\n")?;
 			}
