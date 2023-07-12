@@ -289,7 +289,7 @@ impl CIRModuleBuilder {
 				self.write(CIRStmt::StorageLive(var.local));
 
 				if let Some(val) = val {
-					self.write(CIRStmt::Assignment(var, val));
+					self.generate_raw_assign(var, val);
 				}
 
 				Some(())
@@ -324,7 +324,7 @@ impl CIRModuleBuilder {
 				};
 
 				if &ty != value_ty {
-					self.write(CIRStmt::Assignment(
+					self.generate_raw_assign(
 						store_place,
 						RValue::Cast {
 							to: ty,
@@ -332,9 +332,9 @@ impl CIRModuleBuilder {
 							val: Operand::LValueUse(value, BindingProps::value()),
 							span: SrcSpan::new(),
 						},
-					));
+					);
 				} else {
-					self.write(CIRStmt::Assignment(
+					self.generate_raw_assign(
 						store_place,
 						RValue::Atom(
 							ty,
@@ -342,7 +342,7 @@ impl CIRModuleBuilder {
 							Operand::LValueUse(value, BindingProps::value()),
 							SrcSpan::new(),
 						),
-					));
+					);
 				}
 			}
 
@@ -379,7 +379,7 @@ impl CIRModuleBuilder {
 
 		if let Some(elem) = elem {
 			if let Some(rval) = self.generate_expr(elem, props) {
-				self.write(CIRStmt::Assignment(lval, rval));
+				self.generate_raw_assign(lval, rval);
 			}
 		}
 	}
@@ -432,8 +432,7 @@ impl CIRModuleBuilder {
 			};
 
 			if let Some(result_location) = result_location {
-				self.write(CIRStmt::Assignment(result_location.clone(), result_ir));
-
+				self.generate_raw_assign(result_location.clone(), result_ir);
 				self.generate_scope_end();
 
 				(
@@ -455,12 +454,17 @@ impl CIRModuleBuilder {
 		}
 	}
 
+	fn generate_raw_assign(&mut self, location: LValue, expr: RValue) {
+		assert!(!expr.get_type().is_void_or_never());
+		self.write(CIRStmt::Assignment(location, expr));
+	}
+
 	fn generate_drop_and_assign(&mut self, location: LValue, expr: RValue) {
 		if self.needs_drop(location.local) {
 			self.generate_drop_shim(location.clone());
 		}
 
-		self.write(CIRStmt::Assignment(location, expr));
+		self.generate_raw_assign(location, expr);
 	}
 
 	fn generate_scope_end(&mut self) {
@@ -554,7 +558,7 @@ impl CIRModuleBuilder {
 							Operator::Add,
 						));
 
-						self.write(CIRStmt::Assignment(tmp_idx, expr_ir))
+						self.generate_raw_assign(tmp_idx, expr_ir)
 					}
 
 					Some(RValue::Atom(
@@ -671,7 +675,7 @@ impl CIRModuleBuilder {
 								mem_lval.props.span = fields[i].1.get_span();
 
 								if let Some(mem_expr) = mem_expr {
-									self.write(CIRStmt::Assignment(mem_lval, mem_expr))
+									self.generate_raw_assign(mem_lval, mem_expr)
 								}
 							}
 
@@ -712,7 +716,7 @@ impl CIRModuleBuilder {
 									// The return type is a plain value, just assign it
 									let ret = self.generate_expr(expr, self.get_fn().ret.0)?;
 
-									self.write(CIRStmt::Assignment(lval, ret));
+									self.generate_raw_assign(lval, ret);
 								}
 							}
 						}
@@ -757,7 +761,7 @@ impl CIRModuleBuilder {
 
 						if let Some(if_val) = block_ir {
 							if let Some(result) = &result_loc {
-								self.write(CIRStmt::Assignment(result.clone(), if_val));
+								self.generate_raw_assign(result.clone(), if_val);
 							}
 
 							if cont_block.is_none() {
@@ -783,7 +787,7 @@ impl CIRModuleBuilder {
 
 							if let Some(else_val) = else_ir {
 								if let Some(result) = &result_loc {
-									self.write(CIRStmt::Assignment(result.clone(), else_val));
+									self.generate_raw_assign(result.clone(), else_val);
 								}
 
 								if cont_block.is_none() {
@@ -1112,10 +1116,10 @@ impl CIRModuleBuilder {
 
 							if let Some(match_result) = match_result {
 								if let Some(result_loc) = &result_loc {
-									self.write(CIRStmt::Assignment(
+									self.generate_raw_assign(
 										result_loc.clone(),
 										match_result,
-									));
+									);
 								}
 
 								self.write(CIRStmt::Jump(cont_block));
@@ -1652,15 +1656,15 @@ impl CIRModuleBuilder {
 	}
 
 	fn insert_variable(&mut self, name: Option<Name>, props: BindingProps, ty: Type) -> LValue {
+		assert!(!ty.is_void_or_never());
+
 		let idx = self.get_fn().variables.len();
 
-		//if let Some(name) = &name {
 		self.scope_stack
 			.last_mut()
 			.unwrap()
 			.variables
 			.push((name.clone(), idx));
-		//}
 
 		self.get_fn_mut().variables.push((ty, props, name));
 
@@ -1683,6 +1687,8 @@ impl CIRModuleBuilder {
 	}
 
 	fn insert_temporary(&mut self, ty: Type, rval: RValue, span: SrcSpan) -> LValue {
+		assert!(!ty.is_void_or_never());
+		
 		let props = BindingProps {
 			is_mut: true,
 			is_ref: false,
@@ -1705,7 +1711,7 @@ impl CIRModuleBuilder {
 			props,
 		};
 
-		self.write(CIRStmt::Assignment(lval.clone(), rval));
+		self.generate_raw_assign(lval.clone(), rval);
 
 		lval
 	}
