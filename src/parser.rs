@@ -46,9 +46,9 @@ enum DeclParseResult {
 }
 
 impl<'ctx> Parser {
-	pub fn new(lexer: Lexer) -> Parser {
+	pub fn new(lexer: Lexer, module_name: Identifier) -> Parser {
 		Parser {
-			interface: ModuleInterface::new(Identifier::new(true)),
+			interface: ModuleInterface::new(module_name),
 			module_impl: ModuleImpl::new(),
 			lexer: RefCell::new(lexer),
 			current_scope: Arc::new(Identifier::new(true)),

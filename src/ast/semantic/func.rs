@@ -1,10 +1,10 @@
-use std::{cmp::Ordering, sync::Arc};
+use std::{cmp::Ordering, sync::Arc, collections::HashSet};
 
 use crate::{
 	ast::{
 		controlflow::ControlFlow,
 		expression::{Atom, Expr, FnRef, NodeData},
-		module::{Identifier, ModuleASTElem, ModuleInterface, ModuleItemInterface, Name, ModuleImportKind, ModuleImport},
+		module::{Identifier, ModuleASTElem, ModuleInterface, ModuleItemInterface, Name, ModuleImportKind},
 		statement::Stmt,
 		types::{Basic, BindingProps, FnPrototype, GenericArg, GenericArgs, Type},
 		FnScope,
@@ -238,13 +238,10 @@ pub fn resolve_method_call(
 	}
 
 	// List of method candidates matched to their implementing types
-	let mut candidates = vec![];
-
-	collect_impl_candidates(
+	let candidates = collect_impl_candidates(
 		&scope.context, 
 		name.expect_scopeless().unwrap(), 
-		receiver, 
-		&mut candidates
+		receiver
 	);
 
 	let mut candidates: Vec<_> = candidates
@@ -432,10 +429,38 @@ fn collect_impl_candidates(
 	interface: &ModuleInterface,
 	name: &Name,
 	receiver: &Type,
-	candidates: &mut Vec<Arc<FnPrototype>>
+) -> Vec<Arc<FnPrototype>> {
+	let mut result = vec![];
+	
+	collect_impl_candidates_recursive(
+		interface, 
+		name, 
+		receiver, 
+		&mut result, 
+		&mut HashSet::new(),
+		true
+	);
+
+	result
+}
+
+fn collect_impl_candidates_recursive(
+	interface: &ModuleInterface,
+	name: &Name,
+	receiver: &Type,
+	candidates: &mut Vec<Arc<FnPrototype>>,
+	already_visited: &mut HashSet<Identifier>,
+	collect_imports: bool,
 ) {
+	if already_visited.contains(&interface.path) {
+		return
+	}
+
+	already_visited.insert(interface.path.clone());
+
 	for (ty, im) in &interface.impl_solver.impls {
 		let im = &*im.read().unwrap();
+		let ty = &*ty.read().unwrap();
 
 		if let Some(fns) = im.functions.get(name) {
 			if receiver.fits_generic(ty) {
@@ -445,8 +470,17 @@ fn collect_impl_candidates(
 			}
 		}
 	}
-	
-	for (_, import) in &interface.imported {
-		collect_impl_candidates(&import.interface, name, receiver, candidates)
+
+	for (import_name, import) in &interface.imported {
+		if collect_imports || matches!(&import.import_kind, ModuleImportKind::Child(_)) {			
+			collect_impl_candidates_recursive(
+				&import.interface, 
+				name, 
+				receiver, 
+				candidates, 
+				already_visited,
+				false
+			)
+		}
 	}
 }

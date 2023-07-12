@@ -84,7 +84,7 @@ pub fn resolve_interface_types(parser: &mut Parser) -> ComuneResult<()> {
 		};
 	}
 
-	for (ty, im) in &interface.impl_solver.local_impls {
+	for (ty, im) in &interface.impl_solver.impls {
 		// Create type parameter list with empty Self param
 		let mut generics = im.read().unwrap().params.clone();
 		generics.insert_self_type();

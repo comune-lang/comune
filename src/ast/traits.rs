@@ -104,8 +104,7 @@ impl ImplDatabase {
 pub struct ImplSolver {
 	answer_cache: HashMap<Type, HashMap<TraitRef, TraitDeduction>>,
 	finalized: bool,
-	pub impls: Vec<(Type, Arc<RwLock<ImplBlockInterface>>)>,
-	pub local_impls: Vec<(Arc<RwLock<Type>>, Arc<RwLock<ImplBlockInterface>>)>,
+	pub impls: Vec<(Arc<RwLock<Type>>, Arc<RwLock<ImplBlockInterface>>)>,
 }
 
 impl ImplSolver {
@@ -113,28 +112,12 @@ impl ImplSolver {
 		Self {
 			answer_cache: HashMap::new(),
 			finalized: false,
-			local_impls: vec![],
 			impls: vec![],
 		}
 	}
 
-	pub fn finalize(&mut self) {
-		// Move local_impls into impls
-		self.impls.extend(
-			self.local_impls
-				.iter()
-				.map(|(ty, im)| (ty.read().unwrap().clone(), im.clone())),
-		);
-
-		self.finalized = true;
-	}
-
-	pub fn is_finalized(&self) -> bool {
-		self.finalized
-	}
-
 	pub fn register_impl(&mut self, ty: Type, im: ImplBlockInterface) {
-		self.local_impls
+		self.impls
 			.push((Arc::new(RwLock::new(ty)), Arc::new(RwLock::new(im))));
 	}
 
@@ -187,6 +170,7 @@ impl ImplSolver {
 		}
 
 		for (im_ty, im) in self.impls.iter() {
+			let im_ty = &*im_ty.read().unwrap();
 			let im = im.read().unwrap();
 
 			let Some(ItemRef::Resolved(implements)) = &im.implements else {

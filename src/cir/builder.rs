@@ -62,7 +62,7 @@ impl CIRModuleBuilder {
 	fn register_module(&mut self, module: &ModuleInterface) {
 		assert!(module.is_typed);
 
-		for (_, im) in &module.impl_solver.local_impls {
+		for (_, im) in &module.impl_solver.impls {
 			let im = &*im.read().unwrap();
 
 			for (_, fns) in &im.functions {

@@ -42,7 +42,6 @@ pub fn validate_interface(_state: &Arc<CompilerState>, parser: &mut Parser) -> C
 
 	validate_attributes(&mut parser.interface)?;
 
-	parser.interface.impl_solver.finalize();
 	parser.interface.is_typed = true;
 
 	Ok(())

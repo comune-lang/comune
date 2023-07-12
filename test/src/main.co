@@ -78,10 +78,6 @@ void overload_test(i64 a) {
 	printf(c"i64 overload called!\n");
 }
 
-struct Faketor<type T> {
-	
-}
-
 type GenericTypeAlias<type T> = Vector<T>;
 
 Vector<i32> generic_ret() {
@@ -187,8 +183,6 @@ int main() {
 	Vector<float> mut a;
 	
 	new_ref_test(a);
-
-	Vector<float> b = a;
 
 	a.push(12.0f);
 

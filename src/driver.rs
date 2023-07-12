@@ -136,7 +136,7 @@ pub fn compile_comune_module(
 	error_sender: Sender<CMNMessageLog>,
 	s: &rayon::Scope,
 ) -> Result<(), ComuneError> {
-	let mut parser = match parse_interface(&state, &src_path, error_sender.clone()) {
+	let mut parser = match parse_interface(&state, &src_path, module_name.clone(), error_sender.clone()) {
 		Ok(parser) => parser,
 
 		Err(e) => {
@@ -312,11 +312,11 @@ pub fn compile_comune_module(
 pub fn parse_interface(
 	_state: &Arc<CompilerState>,
 	path: &Path,
+	module_name: Identifier,
 	error_sender: Sender<CMNMessageLog>,
 ) -> Result<Parser, ComuneError> {
 	// First phase of module compilation: create Lexer and Parser, and parse the module at the namespace level
-
-	let mut mod_state = Parser::new(match Lexer::new(path, error_sender) {
+	let lexer = match Lexer::new(path, error_sender) {
 		Ok(f) => f,
 		Err(e) => {
 			println!(
@@ -330,21 +330,23 @@ pub fn parse_interface(
 				SrcSpan::new(),
 			));
 		}
-	});
+	};
+
+	let mut parser = Parser::new(lexer, module_name);
 
 	// TODO: HEY ASH TOMORROW MORNING MAKE IT SO CORE DOESN'T IMPORT STD
 	// TODO: FUCK YOU I'M TIRED AND I HAVE TOO MUCH TO DO. IT WORKS FOR NOW
-	mod_state.interface.import_names = HashSet::from([
+	parser.interface.import_names = HashSet::from([
 		ModuleImportKind::Language("core".into()),
 		ModuleImportKind::Language("std".into()),
 	]);
 
 	// Parse namespace level
 
-	return match mod_state.parse_interface() {
-		Ok(_) => Ok(mod_state),
+	return match parser.parse_interface() {
+		Ok(_) => Ok(parser),
 		Err(e) => {
-			mod_state
+			parser
 				.lexer
 				.borrow()
 				.log_msg(ComuneMessage::Error(e.clone()));
@@ -489,9 +491,6 @@ pub fn generate_code<'ctx>(
 
 		return Err(e);
 	}
-
-	// Finalize impl solver, so we can query it
-	parser.interface.impl_solver.finalize();
 
 	// Validate code
 	if let Err(e) = validate_module_impl(&parser.interface, &mut parser.module_impl) {

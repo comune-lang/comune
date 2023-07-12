@@ -935,7 +935,8 @@ impl<'ctx> LLVMBackend<'ctx> {
 			AnyTypeEnum::PointerType(p) => p.as_basic_type_enum(),
 			AnyTypeEnum::StructType(s) => s.as_basic_type_enum(),
 			AnyTypeEnum::VectorType(v) => v.as_basic_type_enum(),
-			_ => panic!(),
+			AnyTypeEnum::VoidType(_) => panic!("attempted to convert VoidType to BasicTypeEnum!"),
+			AnyTypeEnum::FunctionType(_) => panic!("attempted to convert FunctionType to BasicTypeEnum!"),
 		}
 	}
 
