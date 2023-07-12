@@ -12,10 +12,12 @@ use ast::module::Name;
 use ast::{module::Identifier, types};
 use clap::Parser;
 use colored::Colorize;
+use errors::CMNMessageLog;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::RwLock;
+use std::sync::mpsc::Sender;
 use std::{
 	ffi::OsString,
 	io::{self, Write},
@@ -118,6 +120,10 @@ fn main() -> color_eyre::eyre::Result<()> {
 			);
 		}
 	});
+	
+	if !check_last_phase_ok(&error_sender) {
+		return Ok(())
+	}
 
 	rayon::in_place_scope(|_| {
 		match driver::generate_monomorph_module(compiler_state.clone()) {
@@ -128,21 +134,10 @@ fn main() -> color_eyre::eyre::Result<()> {
 		};
 	});
 
-	if errors::ERROR_COUNT.load(Ordering::Acquire) > 0 {
-		error_sender
-			.send(errors::CMNMessageLog::Raw(format!(
-				"\n{:>10} build due to {} previous error(s)\n\n",
-				"aborted".bold().red(),
-				errors::ERROR_COUNT.load(Ordering::Acquire)
-			)))
-			.unwrap();
-
-		// Block until the error logger is done writing, so we don't exit early
-		let _ = std::io::stdout().lock();
-
-		return Ok(());
+	if !check_last_phase_ok(&error_sender) {
+		return Ok(())
 	}
-
+	
 	let compile_time = build_time.elapsed();
 
 	// Link into binary
@@ -231,4 +226,23 @@ fn get_file_suffix(path: &Path) -> Option<Name> {
 	name.truncate(name.rfind('.').unwrap_or(name.len()));
 
 	Some(name.into())
+}
+
+fn check_last_phase_ok(error_sender: &Sender<CMNMessageLog>) -> bool {
+	if errors::ERROR_COUNT.load(Ordering::Acquire) > 0 {
+		error_sender
+			.send(errors::CMNMessageLog::Raw(format!(
+				"\n{:>10} build due to {} previous error(s)\n\n",
+				"aborted".bold().red(),
+				errors::ERROR_COUNT.load(Ordering::Acquire)
+			)))
+			.unwrap();
+
+		// Block until the error logger is done writing, so we don't exit early
+		let _ = std::io::stdout().lock();
+
+		return false
+	}
+
+	true
 }
