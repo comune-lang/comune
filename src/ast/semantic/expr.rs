@@ -104,7 +104,7 @@ impl Expr {
 
 									Operator::PostDec | Operator::PostInc => Ok(first_t),
 
-									Operator::Assign | _ if op.is_compound_assignment() => {
+									_ if matches!(op, Operator::Assign) || op.is_compound_assignment() => {
 										Ok(Type::void_type())
 									}
 

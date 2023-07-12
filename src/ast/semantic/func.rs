@@ -471,7 +471,7 @@ fn collect_impl_candidates_recursive(
 		}
 	}
 
-	for (import_name, import) in &interface.imported {
+	for (_, import) in &interface.imported {
 		if collect_imports || matches!(&import.import_kind, ModuleImportKind::Child(_)) {			
 			collect_impl_candidates_recursive(
 				&import.interface, 
