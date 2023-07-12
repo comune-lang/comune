@@ -129,6 +129,10 @@ impl ImplSolver {
 		self.finalized = true;
 	}
 
+	pub fn is_finalized(&self) -> bool {
+		self.finalized
+	}
+
 	pub fn register_impl(&mut self, ty: Type, im: ImplBlockInterface) {
 		self.local_impls
 			.push((Arc::new(RwLock::new(ty)), Arc::new(RwLock::new(im))));

@@ -4,7 +4,7 @@ use crate::{
 	ast::{
 		controlflow::ControlFlow,
 		expression::{Atom, Expr, FnRef, NodeData},
-		module::{Identifier, ModuleASTElem, ModuleInterface, ModuleItemInterface, Name},
+		module::{Identifier, ModuleASTElem, ModuleInterface, ModuleItemInterface, Name, ModuleImportKind, ModuleImport},
 		statement::Stmt,
 		types::{Basic, BindingProps, FnPrototype, GenericArg, GenericArgs, Type},
 		FnScope,
@@ -240,20 +240,12 @@ pub fn resolve_method_call(
 	// List of method candidates matched to their implementing types
 	let mut candidates = vec![];
 
-	// Go through all the impls in scope and find method candidates
-	for (ty, im) in &scope.context.impl_solver.impls {
-		let name = name.expect_scopeless().unwrap();
-
-		let im = &*im.read().unwrap();
-
-		if let Some(fns) = im.functions.get(name) {
-			if receiver.fits_generic(ty) {
-				for func in fns {
-					candidates.push(func.clone());
-				}
-			}
-		}
-	}
+	collect_impl_candidates(
+		&scope.context, 
+		name.expect_scopeless().unwrap(), 
+		receiver, 
+		&mut candidates
+	);
 
 	let mut candidates: Vec<_> = candidates
 		.into_iter()
@@ -434,4 +426,27 @@ fn validate_arg_list(
 	}
 
 	Ok(())
+}
+
+fn collect_impl_candidates(
+	interface: &ModuleInterface,
+	name: &Name,
+	receiver: &Type,
+	candidates: &mut Vec<Arc<FnPrototype>>
+) {
+	for (ty, im) in &interface.impl_solver.impls {
+		let im = &*im.read().unwrap();
+
+		if let Some(fns) = im.functions.get(name) {
+			if receiver.fits_generic(ty) {
+				for func in fns {
+					candidates.push(func.clone());
+				}
+			}
+		}
+	}
+	
+	for (_, import) in &interface.imported {
+		collect_impl_candidates(&import.interface, name, receiver, candidates)
+	}
 }

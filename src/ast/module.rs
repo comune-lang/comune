@@ -117,6 +117,7 @@ impl ModuleInterface {
 			for (_, import) in &result.imported {
 				assert!(import.interface.is_typed);
 			}
+			assert!(self.impl_solver.is_finalized());
 		}
 
 		result
