@@ -571,6 +571,29 @@ impl Type {
 		}
 	}
 
+	pub fn needs_drop(&self) -> bool {
+		match self {
+			Type::TypeRef { def, .. } => {
+				let def = def.upgrade().unwrap();
+				let def = def.read().unwrap();
+
+				if def.drop.is_some() {
+					return true
+				}
+
+				def.members.iter().any(|(_, ty, _)| ty.needs_drop())
+			}
+
+			Type::Array(arr_ty, _) => arr_ty.needs_drop(),
+
+			Type::TypeParam(_) => true, // Can't be sure, conservative estimate
+
+			Type::Tuple(_, types) => types.iter().any(|ty| ty.needs_drop()),
+
+			_ => false,
+		}
+	}
+
 	pub fn get_field_type(&self, field: usize) -> Type {
 		let Type::TypeRef { def, args } = self else {
 			panic!()

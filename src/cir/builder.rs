@@ -487,9 +487,9 @@ impl CIRModuleBuilder {
 	}
 
 	fn needs_drop(&self, var: VarIndex) -> bool {
-		let (_, props, _) = &self.get_fn().variables[var];
+		let (ty, props, _) = &self.get_fn().variables[var];
 
-		!props.is_ref && !self.is_return_location(var)
+		!props.is_ref && !self.is_return_location(var) && ty.needs_drop()
 	}
 
 	fn is_return_location(&self, var: VarIndex) -> bool {
