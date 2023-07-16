@@ -32,6 +32,61 @@ pub struct DefInitFlow;
 pub struct VarInitCheck;
 pub struct ElaborateDrops;
 
+impl CIRStmt {
+	fn inspect_lvalue_uses(&self, mut f: impl FnMut(&LValue, &BindingProps)) {
+		match self {
+			CIRStmt::Assignment(_, rval) => self.inspect_rvalue(rval, f),
+
+			CIRStmt::Call { args, .. } | CIRStmt::Invoke { args, .. } => {
+				for (lval, _, props) in args {
+					f(lval, props)
+				}
+			}
+
+			// FIXME: Store BindingProps in RefInit
+			CIRStmt::RefInit(_, lval) => f(lval, &BindingProps::reference()),
+		
+			CIRStmt::Switch(op, branches, _) => {
+				if let Operand::LValueUse(lval, props) = op {
+					f(lval, props)
+				}
+
+				for (_, branch, _) in branches {
+					if let Operand::LValueUse(lval, props) = branch {
+						f(lval, props)
+					}
+				}
+			}
+
+			CIRStmt::Expression(rval) => self.inspect_rvalue(rval, f),
+
+			// FIXME: Incorrect for reference bindings
+			CIRStmt::DropShim { var, .. } => f(var, &BindingProps::value()),
+			
+			_ => {},
+		}
+	}
+	
+	fn inspect_rvalue(&self, rval: &RValue, mut f: impl FnMut(&LValue, &BindingProps)) {
+		match rval {
+			RValue::Atom(.., Operand::LValueUse(lval, props), _) => f(lval, props),
+			
+			RValue::Cons(_, [(_, lhs), (_, rhs)], ..) => {
+				if let Operand::LValueUse(lval, props) = lhs {
+					f(lval, props)
+				}
+				if let Operand::LValueUse(lval, props) = rhs {
+					f(lval, props)
+				}
+			}
+			
+			RValue::Cast { val: Operand::LValueUse(lval, props), .. } => f(lval, props),
+			
+			_ => {}
+		}
+	}
+}
+
 #[derive(Debug, Clone)]
 pub struct LiveVarCheckState {
 	liveness: HashMap<LValue, LivenessState>,
@@ -479,22 +534,95 @@ impl AnalysisResultHandler<DefInitFlow> for ElaborateDrops {
 
 		let mut func_out = func.clone();
 		let mut drop_flags = HashMap::new();
-
+		
+		// Collect drop flags
 		for (i, block) in func.blocks.iter().enumerate() {
-			if let CIRStmt::DropShim { var, next } = block.items.last().unwrap() {
-				func_out.blocks[i].items.pop();
-
+			if let CIRStmt::DropShim { var, .. } = block.items.last().unwrap() {
 				let state = result.get_state_before(i, block.items.len() - 1);
 
 				let mut elaborator = DropElaborator {
 					current_block: i,
 					current_fn: &mut func_out,
-					drop_flags: &mut drop_flags,
 					state: &state,
 				};
 
-				elaborator.elaborate_drop(&var, &func.get_lvalue_type(var), *next);
+				elaborator.collect_drop_flags(&var, &mut drop_flags);
+			}
+		}
+
+		// Generate destructors
+		for (i, block) in func.blocks.iter().enumerate() {
+			if let CIRStmt::DropShim { var, next } = block.items.last().unwrap() {
+				let state = result.get_state_before(i, block.items.len() - 1);
+
+				func_out.blocks[i].items.pop();
+
+				let mut elaborator = DropElaborator {
+					current_block: i,
+					current_fn: &mut func_out,
+					state: &state,
+				};
+
+				elaborator.elaborate_drop(&var, &func.get_lvalue_type(var), *next, &drop_flags);
 				elaborator.write(CIRStmt::Jump(*next));
+			}
+		}
+
+		// Go through all the dynamic drop flags we've generated 
+		// and generate their appropriate assignments
+		for block in func_out.blocks.iter_mut() {
+			let mut j = 0;
+			
+			while j < block.items.len() {
+				block.items[j].clone().inspect_lvalue_uses(|lval, props| {
+					
+					if props.is_ref && !props.is_new { 
+						return
+					}
+
+					if let Some(flag) = drop_flags.get(lval) {
+						block.items.insert(
+							j + 1, 
+							CIRStmt::Assignment(
+								LValue {
+									local: *flag,
+									projection: vec![],
+									props: BindingProps::mut_value()
+								}, 
+								if props.is_new {
+									RValue::const_bool(true)
+								} else {
+									RValue::const_bool(false)
+								}
+							)
+						);
+					}
+				});
+
+				match &block.items[j] {
+					CIRStmt::Assignment(lval, _)
+					| CIRStmt::Call { result: Some(lval), .. }
+					| CIRStmt::Invoke { result: Some(lval), .. } => 
+					{
+						if let Some(flag) = drop_flags.get(lval) {
+							block.items.insert(
+								j + 1,
+								CIRStmt::Assignment(
+									LValue {
+										local: *flag,
+										projection: vec![],
+										props: BindingProps::mut_value(),
+									},
+									RValue::const_bool(true),
+								)
+							);
+						}
+					}
+
+					_ => {}
+				}
+
+				j += 1
 			}
 		}
 
@@ -509,7 +637,6 @@ impl AnalysisResultHandler<DefInitFlow> for ElaborateDrops {
 struct DropElaborator<'func> {
 	current_block: BlockIndex,
 	current_fn: &'func mut CIRFunction,
-	drop_flags: &'func mut HashMap<LValue, VarIndex>,
 	state: &'func LiveVarCheckState,
 }
 
@@ -528,28 +655,50 @@ impl<'func> DropElaborator<'func> {
 		self.current_block
 	}
 
-	fn elaborate_drop(&mut self, lval: &LValue, ty: &Type, next: BlockIndex) {
+	fn collect_drop_flags(&mut self, lval: &LValue, drop_flags: &mut HashMap<LValue, VarIndex>) {
+		if drop_flags.contains_key(lval) { 
+			return
+		}
+
 		match self.state.get_liveness(lval) {
-			Some(LivenessState::Live) => {
-				self.build_destructor(lval, ty, next);
+			Some(LivenessState::MaybeUninit) => {
+				self.current_fn.variables.push((
+					Type::bool_type(),
+					BindingProps::mut_value(),
+					None,
+				));
+
+				let flag = self.current_fn.variables.len() - 1;
+
+				// Write a zero-initializer
+				self.current_fn.blocks[0].items.insert(
+					0,
+					CIRStmt::Assignment(
+						LValue::new(flag), 
+						RValue::Atom(
+							Type::bool_type(), 
+							None, 
+							Operand::BoolLit(false, SrcSpan::new()), 
+							SrcSpan::new()
+						)
+					)
+				);
+
+				drop_flags.insert(lval.clone(), flag);
 			}
 
-			/* Some(LivenessState::MaybeUninit) => {
-				let flag = if let Some(flag) = self.drop_flags.get(&lval) {
-					*flag
-				} else {
-					self.current_fn.variables.push((
-						Type::bool_type(),
-						BindingProps::mut_value(),
-						None,
-					));
+			_ => {}
+		}
+	}
 
-					self.drop_flags
-						.insert(lval.clone(), self.current_fn.variables.len() - 1);
+	fn elaborate_drop(&mut self, lval: &LValue, ty: &Type, next: BlockIndex, drop_flags: &HashMap<LValue, VarIndex>) {
+		match self.state.get_liveness(lval) {
+			Some(LivenessState::Live) => {
+				self.build_destructor(lval, ty, next, drop_flags);
+			}
 
-					self.current_fn.variables.len() - 1
-				};
-
+			Some(LivenessState::MaybeUninit) => {
+				let flag = drop_flags[&lval];
 				let start_idx = self.current_block;
 				let drop_idx = self.current_fn.blocks.len();
 
@@ -564,7 +713,7 @@ impl<'func> DropElaborator<'func> {
 				self.current_fn.blocks.push(drop_block);
 				self.current_block = drop_idx;
 
-				self.build_destructor(lval, ty, next);
+				self.build_destructor(lval, ty, next, drop_flags);
 
 				self.current_block = start_idx;
 				self.write(CIRStmt::Switch(
@@ -581,32 +730,52 @@ impl<'func> DropElaborator<'func> {
 					.succs
 					.push(drop_idx);
 				self.current_block = self.current_fn.blocks.len() - 1;
-			}*/
+			}
+			
 			_ => {}
 		}
 	}
 
-	fn build_destructor(&mut self, lval: &LValue, ty: &Type, next: BlockIndex) {
+	fn build_destructor(&mut self, lval: &LValue, ty: &Type, next: BlockIndex, drop_flags: &HashMap<LValue, VarIndex>) {
 		match ty {
 			Type::TypeRef { def, args } => {
 				let def = def.upgrade().unwrap();
 				let def = def.read().unwrap();
 
 				if let Some(drop) = &def.drop {
-					if self.state.get_liveness(lval) == Some(LivenessState::Live) {
-						let drop = drop.clone();
+					let drop = drop.clone();
 
-						self.write(CIRStmt::Call {
-							id: CIRCallId::Direct(drop, SrcSpan::new()),
-							args: vec![(lval.clone(), ty.clone(), BindingProps::mut_reference())],
-							generic_args: args.clone(),
-							result: None,
-						});
+					self.write(CIRStmt::Call {
+						id: CIRCallId::Direct(drop, SrcSpan::new()),
+						args: vec![(lval.clone(), ty.clone(), BindingProps::mut_reference())],
+						generic_args: args.clone(),
+						result: None,
+					});
+
+					if let Some(flag) = drop_flags.get(lval) {
+						self.write(
+							CIRStmt::Assignment(
+								LValue {
+									local: *flag,
+									projection: vec![],
+									props: BindingProps::mut_value()
+								},
+								RValue::const_bool(false)
+							)
+						);
 					}
 				}
 
-				for (_, member, _) in def.members.iter() {
-					self.elaborate_drop(lval, member, next);
+				for (i, (_, member_ty, _)) in def.members.iter().enumerate() {
+					let mut member = lval.clone();
+
+					member.projection.push(PlaceElem::Field(i));
+					
+					if def.drop.is_some() {
+						self.build_destructor(&member, member_ty, next, drop_flags)
+					} else {
+						self.elaborate_drop(&member, member_ty, next, drop_flags)
+					}
 				}
 			}
 
@@ -617,7 +786,7 @@ impl<'func> DropElaborator<'func> {
 					let mut lval = lval.clone();
 					lval.projection.push(PlaceElem::Field(i));
 
-					self.elaborate_drop(&lval, ty, next);
+					self.elaborate_drop(&lval, ty, next, drop_flags);
 				}
 			}
 
@@ -626,7 +795,7 @@ impl<'func> DropElaborator<'func> {
 					panic!()
 				};
 
-				self.elaborate_drop(lval, ty, next);
+				self.elaborate_drop(lval, ty, next, drop_flags);
 			}
 
 			_ => {}

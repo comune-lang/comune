@@ -527,6 +527,15 @@ pub fn generate_code<'ctx>(
 
 	let cir_errors = cir_man.run_on_module(&mut module_mono);
 
+	if state.emit_types.contains(&EmitType::ComuneIrMono) {
+		// Write optimized cIR to file
+		fs::write(
+			get_module_out_path(state, input_module).with_extension("cir_mono"),
+			module_mono.to_string(),
+		)
+		.unwrap();
+	}
+
 	// And handle any errors again
 
 	if !cir_errors.is_empty() {
@@ -541,15 +550,6 @@ pub fn generate_code<'ctx>(
 			ComuneErrCode::Pack(return_errors),
 			SrcSpan::new(),
 		));
-	}
-
-	if state.emit_types.contains(&EmitType::ComuneIrMono) {
-		// Write optimized cIR to file
-		fs::write(
-			get_module_out_path(state, input_module).with_extension("cir_mono"),
-			module_mono.to_string(),
-		)
-		.unwrap();
 	}
 
 	generate_llvm_ir(
