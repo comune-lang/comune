@@ -454,6 +454,75 @@ impl CIRModuleBuilder {
 		}
 	}
 
+	#[must_use]
+	fn generate_lvalue_block(
+		&mut self,
+		items: &Vec<Stmt>,
+		result: &Option<Box<Expr>>,
+		append_current: bool,
+	) -> (BlockIndex, Option<LValue>) {
+		let jump_idx = if append_current {
+			self.current_block
+		} else {
+			self.append_block()
+		};
+
+		let result_location = if let Some(result) = result {
+			if result.get_type().is_void_or_never() {
+				None
+			} else {
+				Some(self.insert_variable(None, BindingProps::value(), result.get_type().clone()))
+			}
+		} else {
+			None
+		};
+
+		self.scope_stack.push(CIRBuilderScope {
+			start: self.current_block,
+			end: None,
+			label: None,
+			variables: vec![],
+			is_loop: false,
+		});
+
+		for item in items {
+			if self.generate_stmt(item).is_none() {
+				// Be sure to pop the scope stack when returning early,
+				// otherwise drops will get desynced from the actual scopes
+				self.scope_stack.pop();
+				return (jump_idx, None);
+			}
+		}
+
+		// Block must have a result expression, this is an lvalue context
+		let Some(result) = result else {
+			panic!()
+		};
+
+		let Some(result_ir) = self.generate_lvalue_expr(result) else {
+			self.scope_stack.pop();
+			return (jump_idx, None);
+		};
+
+		let Some(result_location) = result_location else {
+			panic!()
+		};
+
+		self.generate_raw_assign(result_location.clone(), RValue::Atom(
+			result.get_type().clone(),
+			None,
+			Operand::LValueUse(result_ir.clone(), result_ir.props),
+			result.get_span(),
+		));
+		self.generate_scope_end();
+
+		(
+			jump_idx,
+			Some(result_location),
+		)
+	
+	}
+
 	fn generate_raw_assign(&mut self, location: LValue, expr: RValue) {
 		assert!(!expr.get_type().is_void_or_never());
 		self.write(CIRStmt::Assignment(location, expr));
@@ -1463,6 +1532,8 @@ impl CIRModuleBuilder {
 				Some(self.get_local_lvalue(local))
 			}
 
+			Expr::Atom(Atom::Block { items, result, .. }, _) => self.generate_lvalue_block(items, result, true).1,
+
 			Expr::Cons([lhs, rhs], op, _) => match op {
 				Operator::MemberAccess => {
 					let mut lhs_ir = self.generate_lvalue_expr(lhs)?;
@@ -1473,7 +1544,9 @@ impl CIRModuleBuilder {
 					let def = def.upgrade().unwrap();
 					let def = def.read().unwrap();
 
-					let Expr::Atom(Atom::Identifier(id), _) = &**rhs else { panic!() };
+					let Expr::Atom(Atom::Identifier(id), _) = &**rhs else { 
+						panic!("invalid lvalue expression:\n{expr}") 
+					};
 
 					let idx = def
 						.members
@@ -1529,7 +1602,7 @@ impl CIRModuleBuilder {
 				}
 			},
 
-			_ => panic!(),
+			_ => panic!("invalid lvalue expression:\n{expr}"),
 		}
 	}
 

@@ -31,8 +31,15 @@ impl Expr {
 			Expr::Cons([lhs, rhs], op, meta) => {
 				match op {
 					// Special cases for type-asymmetric operators
-					Operator::MemberAccess => Self::validate_member_access(lhs, rhs, scope, meta),
-					
+					Operator::MemberAccess => {
+						let ty = Self::validate_member_access(lhs, rhs, scope, meta)?;
+						
+						if matches!(&**rhs, Expr::Atom(Atom::FnCall { .. }, _)) {
+							*self = *rhs.clone();
+						}
+
+						Ok(ty)
+					}
 
 					Operator::Subscr => {
 						let idx_type = Type::isize_type(false);

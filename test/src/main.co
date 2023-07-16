@@ -165,8 +165,8 @@ void drop_test() {
 
 	printf(c"\nLeft Vector<DropTest> scope\n\n");
 
-	temp_drop_test(new DropTest(7));
-	new DropTest(8).consume();
+	temp_drop_test(new DropTest(8));
+	new DropTest(9).consume();
 }
 
 void new_ref_test(Vector<float> new& test) {
