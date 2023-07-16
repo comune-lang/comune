@@ -126,7 +126,7 @@ fn main() -> color_eyre::eyre::Result<()> {
 	}
 
 	rayon::in_place_scope(|_| {
-		match driver::generate_monomorph_module(compiler_state.clone()) {
+		match driver::generate_monomorph_module(compiler_state.clone(), &error_sender) {
 			Ok(()) => {}
 			Err(_) => {
 				errors::ERROR_COUNT.fetch_add(1, Ordering::Relaxed);

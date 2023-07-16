@@ -42,6 +42,12 @@ struct Vector<type T> {
 	drop(mut& self) {		
 		// TODO: actually drop the elements lol
 		if self.capacity > 0 {
+			for (usize i = 0; i < self.len; i++) {
+				unsafe {
+					drop *(self.data + i);
+				}
+			}
+
 			free(self.data as void mut*);
 		}
 	}

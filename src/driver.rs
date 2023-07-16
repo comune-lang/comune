@@ -504,7 +504,7 @@ pub fn generate_code<'ctx>(
 
 	// Generate cIR
 	let module_name = input_module.to_string();
-	let cir_module = CIRModuleBuilder::from_ast(parser).module;
+	let mut cir_module = CIRModuleBuilder::from_ast(parser).module;
 
 	if state.emit_types.contains(&EmitType::ComuneIr) {
 		// Write cIR to file
@@ -515,25 +515,41 @@ pub fn generate_code<'ctx>(
 		.unwrap();
 	}
 
+	let mut cir_man = CIRPassManager::new();
+		
+	// NOTE: VarInitCheck happens BEFORE ElaborateDrops, because
+	// ElaborateDrops strips any DropShims from the IR and replaces them
+	// with the appropriate destructor code (if any).
+	cir_man.add_mut_pass(DataFlowPass::new(DefInitFlow, VarInitCheck));
+	cir_man.add_pass(verify::Verify);
+
+	let cir_errors = cir_man.run_on_module(&mut cir_module);
+
+	// Handle any errors
+	if !cir_errors.is_empty() {
+		for error in &cir_errors {
+			parser.lexer.borrow().log_msg(ComuneMessage::Error(error.clone()));
+		}
+
+		return Err(ComuneError::new(
+			ComuneErrCode::Pack(cir_errors),
+			SrcSpan::new(),
+		));
+	}
+
 	// Monomorphize the module
 	let mut module_mono = state.monomorph_server.monoize_module(cir_module);
 
 	// Perform post-monomorphization passes, including drop elaboration
 	let mut cir_man = CIRPassManager::new();
-	cir_man.add_pass(verify::Verify);
 
-	// NOTE: VarInitCheck happens BEFORE ElaborateDrops, because
-	// ElaborateDrops strips any DropShims from the IR and replaces them
-	// with the appropriate destructor code (if any).
-	cir_man.add_mut_pass(DataFlowPass::new(DefInitFlow, VarInitCheck));
 	cir_man.add_mut_pass(DataFlowPass::new(DefInitFlow, ElaborateDrops));
-	
 	cir_man.add_pass(verify::Verify);
 
 	let cir_errors = cir_man.run_on_module(&mut module_mono);
 
+	// Write finalized cIR to file
 	if state.emit_types.contains(&EmitType::ComuneIrMono) {
-		// Write optimized cIR to file
 		fs::write(
 			get_module_out_path(state, input_module).with_extension("cir_mono"),
 			module_mono.to_string(),
@@ -542,17 +558,13 @@ pub fn generate_code<'ctx>(
 	}
 
 	// And handle any errors again
-
 	if !cir_errors.is_empty() {
-		let mut return_errors = vec![];
-
-		for error in cir_errors {
-			return_errors.push(error.clone());
-			parser.lexer.borrow().log_msg(ComuneMessage::Error(error));
+		for error in &cir_errors {
+			parser.lexer.borrow().log_msg(ComuneMessage::Error(error.clone()));
 		}
 
 		return Err(ComuneError::new(
-			ComuneErrCode::Pack(return_errors),
+			ComuneErrCode::Pack(cir_errors),
 			SrcSpan::new(),
 		));
 	}
@@ -567,7 +579,7 @@ pub fn generate_code<'ctx>(
 	)
 }
 
-pub fn generate_monomorph_module(state: Arc<CompilerState>) -> ComuneResult<()> {
+pub fn generate_monomorph_module(state: Arc<CompilerState>, error_sender: &Sender<CMNMessageLog>) -> ComuneResult<()> {
 	let mut out_path = PathBuf::from(&state.output_dir);
 	out_path.push("monomorph-module");
 
@@ -584,13 +596,19 @@ pub fn generate_monomorph_module(state: Arc<CompilerState>) -> ComuneResult<()> 
 
 	let mut cir_man = CIRPassManager::new();
 
-	cir_man.add_mut_pass(DataFlowPass::new(DefInitFlow, ElaborateDrops));
 	cir_man.add_mut_pass(DataFlowPass::new(DefInitFlow, VarInitCheck));
+	cir_man.add_mut_pass(DataFlowPass::new(DefInitFlow, ElaborateDrops));
 
 	let errors = cir_man.run_on_module(&mut module);
 
 	if !errors.is_empty() {
-		// TODO: log errors
+		for error in &errors {
+			error_sender.send(CMNMessageLog::Plain {
+				msg: ComuneMessage::Error(error.clone()),
+				filename: "monomorph-module".to_string()
+			}).unwrap();
+		}
+
 		return Err(ComuneError::new(
 			ComuneErrCode::Pack(errors),
 			SrcSpan::new(),
