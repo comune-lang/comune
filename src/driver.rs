@@ -520,9 +520,9 @@ pub fn generate_code<'ctx>(
 
 	// Perform post-monomorphization passes, including drop elaboration
 	let mut cir_man = CIRPassManager::new();
-
-	cir_man.add_mut_pass(DataFlowPass::new(DefInitFlow, ElaborateDrops));
+	cir_man.add_pass(verify::Verify);
 	cir_man.add_mut_pass(DataFlowPass::new(DefInitFlow, VarInitCheck));
+	cir_man.add_mut_pass(DataFlowPass::new(DefInitFlow, ElaborateDrops));
 	cir_man.add_pass(verify::Verify);
 
 	let cir_errors = cir_man.run_on_module(&mut module_mono);
