@@ -25,7 +25,7 @@ enum EnumTest {
 
 impl Test {
 	int sum(Test& self) {
-		printf("This is a method call!\n");
+		printf(c"This is a method call!\n");
 		self.a + self.b
 	}
 	
@@ -37,7 +37,7 @@ impl Test {
 
 impl submodule_test::SubmoduleTrait for Test {
 	void foo() {
-		printf("This is a trait in a submodule!\n");
+		printf(c"This is a trait in a submodule!\n");
 	}
 }
 
@@ -55,7 +55,7 @@ impl Hello for Test {
 void impl_test() {
 	Test test = new Test { a: 413, b: 612, };
 	test.hello();
-	printf("The sum of a and b is %i!\n", test.sum());
+	printf(c"The sum of a and b is %i!\n", test.sum());
 }
 
 void ref_test(i32 mut& test) {
@@ -67,16 +67,16 @@ void fn_pointer_test(void(int) callback) {
 }
 
 void fn_pointer_callback(int number) {
-	printf("this is a callback! %i\n", number);
+	printf(c"this is a callback! %i\n", number);
 }
 
 
 void overload_test(i32 a) {
-	printf("i32 overload called!\n");
+	printf(c"i32 overload called!\n");
 }
 
 void overload_test(i64 a) {
-	printf("i64 overload called!\n");
+	printf(c"i64 overload called!\n");
 }
 
 type GenericTypeAlias<type T> = Vector<T>;
@@ -103,12 +103,12 @@ struct DropTest {
 	int mut* allocation;
 
 	drop(mut& self) {
-		printf("DropTest no. %i dropped\n", self.num);
+		printf(c"DropTest no. %i dropped\n", self.num);
 		free(self.allocation as void mut*)
 	}
 
 	new(new& self, int num) {
-		printf("DropTest no. %i created!\n", num);
+		printf(c"DropTest no. %i created!\n", num);
 
 		self = new DropTest {
 			num,
@@ -119,27 +119,27 @@ struct DropTest {
 
 impl DropTest {
 	void consume(Self self) {
-		printf("Consuming DropTest %i\n", self.num);
+		printf(c"Consuming DropTest %i\n", self.num);
 	}
 }
 
 void temp_drop_test(DropTest& test) {
-	printf("temp_drop_test(DropTest&) called\n");
+	printf(c"temp_drop_test(DropTest&) called\n");
 }
 
 void drop_test() {
-	printf("\nEntering drop_test\n\n");
+	printf(c"\nEntering drop_test\n\n");
 	
 	DropTest a = new DropTest(1);
 	DropTest b = new DropTest(2);
 
-	printf("\nEntering subscope\n\n");
+	printf(c"\nEntering subscope\n\n");
 	{
 		DropTest c = new DropTest(3);
 		
 		int mut i = 0;
 		
-		printf("\nEntering loop\n\n");
+		printf(c"\nEntering loop\n\n");
 
 		while i < 5 {
 			DropTest b = new DropTest(4);
@@ -151,19 +151,19 @@ void drop_test() {
 			i += 1;
 		}
 
-		printf("\nLeft loop\n\n");
+		printf(c"\nLeft loop\n\n");
 
 	}
-	printf("\nLeft subscope\n\n");
+	printf(c"\nLeft subscope\n\n");
 
-	printf("\nVector<DropTest> test:\n\n");
+	printf(c"\nVector<DropTest> test:\n\n");
 	{
 		Vector<DropTest> mut drop_vec = new Vector<DropTest>();
 		drop_vec.push(new DropTest(5));
 		drop_vec.push(new DropTest(6));
 	}
 
-	printf("\nLeft Vector<DropTest> scope\n\n");
+	printf(c"\nLeft Vector<DropTest> scope\n\n");
 
 	temp_drop_test(new DropTest(7));
 	new DropTest(8).consume();
