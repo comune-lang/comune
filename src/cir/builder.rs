@@ -474,6 +474,7 @@ impl CIRModuleBuilder {
 			if self.needs_drop(var) {
 				self.generate_drop_shim(self.get_local_lvalue(var));
 			}
+			self.write(CIRStmt::StorageDead(var));
 		}
 	}
 
