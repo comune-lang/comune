@@ -334,11 +334,22 @@ impl<'ctx> LLVMBackend<'ctx> {
 						let callsite = self.builder.build_call(fn_v, &args_mapped, "");
 
 						if let Some(result) = result {
-							self.builder.build_store(
-								self.generate_lvalue_use(result, BindingProps::mut_reference())
-									.into_pointer_value(),
-								callsite.try_as_basic_value().unwrap_left(),
-							);
+							if result.props.is_ref {
+								// Function return value is a reference - perform reference initialization 
+								assert!(result.projection.is_empty());
+
+								self.builder.build_store(
+									self.variables[result.local].0,
+									callsite.try_as_basic_value().unwrap_left(),
+								);
+							} else {
+								// Function return value is a plain value - use normal assignment
+								self.builder.build_store(
+									self.generate_lvalue_use(result, BindingProps::mut_reference())
+										.into_pointer_value(),
+									callsite.try_as_basic_value().unwrap_left(),
+								);
+							}
 						}
 					}
 
@@ -388,11 +399,22 @@ impl<'ctx> LLVMBackend<'ctx> {
 						if let Some(result) = result {
 							self.builder.position_at_end(self.blocks[*next]);
 
-							self.builder.build_store(
-								self.generate_lvalue_use(result, BindingProps::mut_reference())
-									.into_pointer_value(),
-								callsite.try_as_basic_value().unwrap_left(),
-							);
+							if result.props.is_ref {
+								// Function return value is a reference - perform reference initialization 
+								assert!(result.projection.is_empty());
+
+								self.builder.build_store(
+									self.variables[result.local].0,
+									callsite.try_as_basic_value().unwrap_left(),
+								);
+							} else {
+								// Function return value is a plain value - use normal assignment
+								self.builder.build_store(
+									self.generate_lvalue_use(result, BindingProps::mut_reference())
+										.into_pointer_value(),
+									callsite.try_as_basic_value().unwrap_left(),
+								);
+							}
 						}
 					}
 

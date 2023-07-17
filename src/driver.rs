@@ -31,8 +31,9 @@ use crate::{
 	parser::{ComuneResult, Parser},
 };
 
+pub const COMUNE_TOOLCHAIN_KEY: &str = "COMUNE_TOOLCHAIN";
+
 pub struct CompilerState {
-	pub libcomune_dir: OsString,
 	pub import_paths: Vec<OsString>,
 	pub max_threads: usize,
 	pub verbose_output: bool,
@@ -374,7 +375,8 @@ pub fn await_imports_ready(
 			ModuleImportKind::Extern(name) => (name.name().clone(), name),
 		};
 
-		let import_path = get_module_source_path(&state, src_path.clone(), &fs_name).unwrap();
+		let import_path = get_module_source_path(&state, src_path.clone(), &fs_name)
+							.expect(&format!("could not find module source path: {fs_name}!"));
 
 		let error_sender = error_sender.clone();
 
@@ -721,7 +723,8 @@ pub fn get_module_source_path(
 	// Resolve built-in library paths. This is currently hard-coded, but
 	// there's probably a more elegant solution to be written down the line
 	if module.absolute && matches!(module.path[0].to_string().as_str(), "core" | "std") {
-		current_path = PathBuf::from(state.libcomune_dir.clone());
+		current_path = PathBuf::from(std::env::var(COMUNE_TOOLCHAIN_KEY).unwrap());
+		current_path.push("libcomune")
 	} else {
 		current_path.pop();
 	}
@@ -753,16 +756,24 @@ pub fn get_module_source_path(
 			}
 		}
 	}
+	println!("could not find {current_path:?}");
 
 	None
 }
 
 pub fn get_module_out_path(state: &CompilerState, module: &Identifier) -> PathBuf {
 	let mut result = PathBuf::from(&state.output_dir);
+	let mut filename = String::new();
+	let mut iter = module.path.iter();
+	
+	filename.push_str(iter.next().unwrap());
 
-	for scope in &module.path {
-		result.push(&**scope);
+	for scope in iter {
+		filename.push('-');
+		filename.push_str(scope);
 	}
+
+	result.push(filename);
 
 	fs::create_dir_all(result.parent().unwrap()).unwrap();
 	result.set_extension("o");

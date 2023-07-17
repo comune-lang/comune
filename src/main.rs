@@ -26,7 +26,7 @@ use std::{
 };
 
 use crate::cir::monoize::MonomorphServer;
-use crate::driver::EmitType;
+use crate::driver::{EmitType, COMUNE_TOOLCHAIN_KEY};
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -65,6 +65,14 @@ fn main() -> color_eyre::eyre::Result<()> {
 		return Ok(());
 	}
 
+	if let Err(e) = std::env::var(COMUNE_TOOLCHAIN_KEY) {
+		println!(
+			"{} no comune toolchain found!\nplease point the {COMUNE_TOOLCHAIN_KEY} environment variable to a valid comune toolchain. ({e})",
+			"error:".red().bold(),
+		);
+		std::process::exit(1);
+	}
+
 	let mut emit_types = vec![];
 
 	for ty in args.emit_types {
@@ -84,7 +92,6 @@ fn main() -> color_eyre::eyre::Result<()> {
 		.unwrap();
 
 	let compiler_state = Arc::new(driver::CompilerState {
-		libcomune_dir: "./libcomune".into(),
 		import_paths: vec![],
 		max_threads: args.num_jobs,
 		verbose_output: args.verbose,
@@ -135,7 +142,7 @@ fn main() -> color_eyre::eyre::Result<()> {
 	});
 
 	if !check_last_phase_ok(&error_sender) {
-		return Ok(())
+		std::process::exit(1);
 	}
 	
 	let compile_time = build_time.elapsed();

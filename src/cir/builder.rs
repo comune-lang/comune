@@ -471,7 +471,7 @@ impl CIRModuleBuilder {
 			if result.get_type().is_void_or_never() {
 				None
 			} else {
-				Some(self.insert_variable(None, BindingProps::value(), result.get_type().clone()))
+				Some(self.insert_variable(None, BindingProps::mut_reference(), result.get_type().clone()))
 			}
 		} else {
 			None
@@ -514,13 +514,10 @@ impl CIRModuleBuilder {
 			Operand::LValueUse(result_ir.clone(), result_ir.props),
 			result.get_span(),
 		));
+
 		self.generate_scope_end();
 
-		(
-			jump_idx,
-			Some(result_location),
-		)
-	
+		(jump_idx, Some(result_location))
 	}
 
 	fn generate_raw_assign(&mut self, location: LValue, expr: RValue) {
@@ -1601,6 +1598,20 @@ impl CIRModuleBuilder {
 					Some(derefee)
 				}
 			},
+
+			Expr::Atom(Atom::FnCall { args, generic_args, resolved, .. }, meta) => {
+				let result = self.generate_fn_call(args, generic_args, resolved, meta.span)?;
+
+				let RValue::Atom(_, None, Operand::LValueUse(lval, _), _) = result else {
+					panic!("function result is not an lvalue!")
+				};
+
+				if lval.props != BindingProps::mut_reference() {
+					panic!("function call in lvalue position does not return a mut&")
+				};
+
+				Some(lval)
+			}
 
 			_ => panic!("invalid lvalue expression:\n{expr}"),
 		}
