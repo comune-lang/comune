@@ -66,11 +66,10 @@ impl<type T> Vector<T> {
 		}
 		
 		unsafe {
-			memcpy(
-				(self.data + self.len) as void mut*,
-				&elem as void*,
-				size_of<T>()
-			)
+			core::mem::write<T>(
+				self.data + self.len,
+				elem
+			);
 		}
 		
 		self.len += 1;

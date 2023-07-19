@@ -46,3 +46,11 @@ T* null<type T>() {
 T mut* null_mut<type T>() {
 	bit_cast<usize, T mut*>(0)
 }
+
+void write<type T>(T mut* dest, T src) {
+	memcpy(
+		dest as void mut*,
+		&src as void*,
+		size_of<T>()
+	)
+}
