@@ -66,7 +66,11 @@ impl<type T> Vector<T> {
 		}
 		
 		unsafe {
-			*(self.data + self.len) = elem
+			memcpy(
+				(self.data + self.len) as void mut*,
+				&elem as void*,
+				size_of<T>()
+			)
 		}
 		
 		self.len += 1;

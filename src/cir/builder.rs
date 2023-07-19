@@ -507,13 +507,8 @@ impl CIRModuleBuilder {
 		let Some(result_location) = result_location else {
 			panic!()
 		};
-
-		self.generate_raw_assign(result_location.clone(), RValue::Atom(
-			result.get_type().clone(),
-			None,
-			Operand::LValueUse(result_ir.clone(), result_ir.props),
-			result.get_span(),
-		));
+		
+		self.write(CIRStmt::RefInit(result_location.local, result_ir));
 
 		self.generate_scope_end();
 
@@ -526,7 +521,7 @@ impl CIRModuleBuilder {
 	}
 
 	fn generate_drop_and_assign(&mut self, location: LValue, expr: RValue) {
-		if self.needs_drop(location.local) {
+		if expr.get_type().needs_drop() {
 			self.generate_drop_shim(location.clone());
 		}
 
@@ -537,7 +532,7 @@ impl CIRModuleBuilder {
 		let scope = self.scope_stack.pop().unwrap();
 
 		for (_, var) in scope.variables.into_iter().rev() {
-			if self.needs_drop(var) {
+			if self.needs_eol_drop(var) {
 				self.generate_drop_shim(self.get_local_lvalue(var));
 			}
 			self.write(CIRStmt::StorageDead(var));
@@ -553,7 +548,7 @@ impl CIRModuleBuilder {
 		self.current_block = next;
 	}
 
-	fn needs_drop(&self, var: VarIndex) -> bool {
+	fn needs_eol_drop(&self, var: VarIndex) -> bool {
 		let (ty, props, _) = &self.get_fn().variables[var];
 
 		!props.is_ref && !self.is_return_location(var) && ty.needs_drop()
@@ -790,7 +785,7 @@ impl CIRModuleBuilder {
 
 						for scope in self.scope_stack.clone().into_iter().rev() {
 							for (_, var) in scope.variables.iter().rev() {
-								if self.needs_drop(*var) {
+								if self.needs_eol_drop(*var) {
 									self.generate_drop_shim(self.get_local_lvalue(*var));
 								}
 							}
@@ -1007,7 +1002,7 @@ impl CIRModuleBuilder {
 							let scope_names = self.scope_stack[i].variables.clone();
 
 							for (_, var) in scope_names.into_iter().rev() {
-								if self.needs_drop(var) {
+								if self.needs_eol_drop(var) {
 									self.generate_drop_shim(self.get_local_lvalue(var));
 								}
 							}
