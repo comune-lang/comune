@@ -18,7 +18,7 @@ use lazy_static::lazy_static;
 
 use super::types::Type;
 use crate::ast::module::Name;
-use crate::ast::types::GenericArgs;
+use crate::ast::types::{GenericArgs, FnPrototype};
 use crate::ast::write_arg_list;
 use crate::lexer::SrcSpan;
 use crate::{
@@ -137,6 +137,7 @@ pub enum ComuneErrCode {
 	LocalNewReference,
 	LoopCtrlOutsideLoop(&'static str),
 	UnsafeOperation,
+	UnsafeCall(Arc<FnPrototype>),
 	DSTWithoutIndirection,
 	TraitFunctionMismatch,
 	MissingTraitFuncImpl(String),
@@ -295,7 +296,8 @@ impl Display for ComuneErrCode {
 			}
 
 			ComuneErrCode::LoopCtrlOutsideLoop(name) => write!(f, "{name} outside of loop"),
-			ComuneErrCode::UnsafeOperation => write!(f, "unsafe operation outside `unsafe` block"),
+			ComuneErrCode::UnsafeOperation => write!(f, "unsafe operation outside `unsafe` context"),
+			ComuneErrCode::UnsafeCall(call) => write!(f, "unsafe call to `{call}` outside `unsafe` context"),
 			ComuneErrCode::DSTWithoutIndirection => {
 				write!(f, "dynamically-sized type without indirection")
 			}

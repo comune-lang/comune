@@ -196,6 +196,13 @@ pub fn validate_fn_call(
 	)?;
 
 	validate_arg_list(args, &func.params.params, generic_args, scope)?;
+	
+	if func.is_unsafe && !scope.is_unsafe {
+		return Err(ComuneError::new(
+			ComuneErrCode::UnsafeCall(func.clone()),
+			node_data.span
+		))
+	}
 
 	*resolved = FnRef::Direct(func.clone());
 	*name = func.path.clone();
@@ -259,6 +266,13 @@ pub fn resolve_method_call(
 	)?;
 
 	validate_arg_list(args, &func.params.params, generic_args, scope)?;
+	
+	if func.is_unsafe && !scope.is_unsafe {
+		return Err(ComuneError::new(
+			ComuneErrCode::UnsafeCall(func.clone()),
+			span
+		))
+	}
 
 	*resolved = FnRef::Direct(func.clone());
 	*name = func.path.clone();

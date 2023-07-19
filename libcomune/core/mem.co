@@ -29,7 +29,7 @@ usize size_of<type T>() {
 	}
 }
 
-U bit_cast<type T, type U>(T t) {
+unsafe U bit_cast<type T, type U>(T t) {
 	if size_of<T>() != size_of<U>() {
 		// TODO: Replace this with a panic/throw when implemented
 		printf(c"ERROR: size_of<T> != size_of<U>!\n");
@@ -40,14 +40,18 @@ U bit_cast<type T, type U>(T t) {
 }
 
 T* null<type T>() {
-	bit_cast<usize, T*>(0)
+	unsafe {
+		bit_cast<usize, T*>(0)
+	}
 }
 
 T mut* null_mut<type T>() {
-	bit_cast<usize, T mut*>(0)
+	unsafe {
+		bit_cast<usize, T mut*>(0)
+	}
 }
 
-void write<type T>(T mut* dest, T src) {
+unsafe void write<type T>(T mut* dest, T src) {
 	memcpy(
 		dest as void mut*,
 		&src as void*,

@@ -133,6 +133,15 @@ impl<'ctx> Parser {
 		while !matches!(self.get_current()?, Token::Eof | Token::Other('}')) {
 			let mut current_attributes = self.parse_attributes()?;
 
+			// This should be set to `false` by any declaration that "consumes" it
+			let mut unsafe_token_store = false;
+			let decl_start_token = self.lexer.borrow().current_token_index();
+
+			if self.get_current()? == Token::Keyword("unsafe") {
+				self.get_next()?;
+				unsafe_token_store = true
+			}
+
 			match self.get_current()? {
 				Token::Other(';') => {
 					self.get_next()?;
@@ -283,6 +292,7 @@ impl<'ctx> Parser {
 									generics,
 									ret: (BindingProps::default(), Type::Basic(Basic::Void)),
 									attributes: vec![],
+									is_unsafe: false,
 								});
 
 								// Skip c'tor/d'tor body
@@ -443,6 +453,12 @@ impl<'ctx> Parser {
 							params,
 							generics,
 							attributes: func_attributes,
+							is_unsafe: if unsafe_token_store {
+								unsafe_token_store = false;
+								true
+							} else {
+								false
+							}
 						});
 
 						if let Some(existing) = functions.get_mut(&fn_name) {
@@ -582,7 +598,12 @@ impl<'ctx> Parser {
 					// Parse declaration/definition
 
 					match self.parse_namespace_declaration(current_attributes, None)? {
-						(DeclParseResult::Function(name, proto), ast) => {
+						(DeclParseResult::Function(name, mut proto), ast) => {
+							if unsafe_token_store {
+								unsafe_token_store = false;
+								Arc::get_mut(&mut proto).unwrap().is_unsafe = true
+							}
+
 							let id = Identifier::from_parent(scope, name);
 							let module_interface = &mut self.interface;
 
@@ -605,6 +626,11 @@ impl<'ctx> Parser {
 						(DeclParseResult::Variable(..), _) => todo!(),
 					}
 				}
+			}
+
+			if unsafe_token_store {
+				self.lexer.borrow_mut().seek_token_idx(decl_start_token);
+				return self.err(ComuneErrCode::UnexpectedKeyword);
 			}
 		}
 
@@ -779,6 +805,7 @@ impl<'ctx> Parser {
 						params: self.parse_parameter_list(self_ty, None)?,
 						generics,
 						attributes,
+						is_unsafe: false,
 					};
 
 					// Past the parameter list, check if we're at a function body or not
