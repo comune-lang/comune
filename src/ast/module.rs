@@ -15,7 +15,7 @@ use crate::{
 use super::{
 	expression::Expr,
 	traits::{ImplSolver, TraitInterface, TraitRef},
-	types::{Basic, FnPrototype, GenericArgs, Type, TypeDef, Generics},
+	types::{Basic, FnPrototype, GenericArgs, Generics, Type, TypeDef},
 };
 
 // String plays nicer with debuggers
@@ -159,6 +159,45 @@ impl ModuleInterface {
 			}
 		}
 
+		if id.qualifier.0.is_some() {
+			let qualif = id.qualifier.0.as_ref().map(|t| t.as_ref());
+
+			let qualif = if let Some(Type::Unresolved { name, scope, .. }) = qualif {
+				self.resolve_type(name, scope)?
+			} else if let Some(ty @ Type::TypeRef { .. }) = qualif {
+				ty.clone()
+			} else {
+				todo!()
+			};
+
+			let Type::TypeRef { def, .. } = qualif else {
+				todo!()
+			};
+
+			let mut current_subty = def.upgrade().unwrap();
+
+			for name in &id.path {
+				let subty_guard = current_subty.read().unwrap();
+
+				if let Some((_, subty)) = subty_guard
+					.variants
+					.iter()
+					.find(|(variant, ..)| variant == name)
+				{
+					let subty = subty.clone();
+					drop(subty_guard);
+					current_subty = subty;
+				} else {
+					return None;
+				}
+			}
+
+			return Some(Type::TypeRef {
+				def: Arc::downgrade(&current_subty),
+				args: vec![],
+			});
+		}
+
 		let mut found = None;
 
 		if !id.absolute {
@@ -195,10 +234,51 @@ impl ModuleInterface {
 				self.resolve_type(alias, &Identifier::new(true))
 			}
 
-			Some((_, ModuleItemInterface::TypeAlias(alias))) => Some(alias.read().unwrap().0.clone()),
+			Some((_, ModuleItemInterface::TypeAlias(alias))) => {
+				Some(alias.read().unwrap().0.clone())
+			}
 
 			_ => {
-				if let Some(imported) = self.imported.get(&id.path[0]) {
+				let id_root = Identifier::from_name(id.path[0].clone(), true);
+
+				if let Some(child) = self.children.get(&id_root) {
+					match child {
+						ModuleItemInterface::Alias(alias) => {
+							let mut alias_full = alias.clone();
+
+							alias_full.path.extend(&mut id.path[1..].iter().cloned());
+
+							self.resolve_type(&alias_full, &Identifier::new(true))
+						}
+
+						ModuleItemInterface::Type(ty) => {
+							let mut current_subty = ty.clone();
+
+							for name in &id.path[1..] {
+								let subty_guard = current_subty.read().unwrap();
+
+								if let Some((_, subty)) = subty_guard
+									.variants
+									.iter()
+									.find(|(variant, ..)| variant == name)
+								{
+									let subty = subty.clone();
+									drop(subty_guard);
+									current_subty = subty;
+								} else {
+									return None;
+								}
+							}
+
+							Some(Type::TypeRef {
+								def: Arc::downgrade(&current_subty),
+								args: vec![],
+							})
+						}
+
+						_ => None,
+					}
+				} else if let Some(imported) = self.imported.get(&id.path[0]) {
 					let mut id_sub = id.clone();
 					id_sub.path.remove(0);
 
@@ -325,40 +405,40 @@ impl Identifier {
 
 impl Display for Identifier {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		let mut result = String::new();
-
 		match &self.qualifier {
-			(Some(ty), None) => result.push_str(&format!("{ty}::")),
+			(Some(ty), None) => write!(f, "{ty}::")?,
 
 			(Some(ty), Some(tr)) => {
-				result.push('<');
+				write!(f, "<")?;
 
 				match &**tr {
 					ItemRef::Resolved(tr) => {
-						result.push_str(&format!("{ty} as {}", tr.name));
+						write!(f, "{ty} as {}", tr.name)?;
 					}
 
 					ItemRef::Unresolved { name, .. } => {
-						result.push_str(&format!("{ty} as \"{name}\""));
+						write!(f, "{ty} as \"{name}\"")?;
 					}
 				}
 
-				result.push_str(">::");
+				write!(f, ">::")?;
 			}
 
 			(None, Some(_)) => todo!(),
 
 			(None, None) => {}
+		};
+
+		let mut iter = self.path.iter();
+
+		write!(f, "{}", iter.next().unwrap())?;
+
+		for scope in iter {
+			write!(f, "::")?;
+			write!(f, "{scope}")?;
 		}
 
-		for scope in &self.path {
-			result.push_str(scope);
-			if scope != self.path.last().unwrap() {
-				result.push_str("::");
-			}
-		}
-
-		write!(f, "{result}")
+		Ok(())
 	}
 }
 

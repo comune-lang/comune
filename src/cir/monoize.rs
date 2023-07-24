@@ -197,7 +197,7 @@ impl MonomorphServer {
 						..
 					} => {
 						for arg in generic_args.iter_mut() {
-							self.monoiez_generic_arg(arg, param_map, access);
+							self.monoize_generic_arg(arg, param_map, access);
 						}
 
 						self.monoize_call(func, generic_args, access);
@@ -280,7 +280,7 @@ impl MonomorphServer {
 					// instantation we want exists already. If not, create it.
 
 					for arg in args.iter_mut() {
-						self.monoiez_generic_arg(arg, generic_args, access);
+						self.monoize_generic_arg(arg, generic_args, access);
 					}
 
 					*def = self.instantiate_type_def(def_up.clone(), args, access);
@@ -335,7 +335,7 @@ impl MonomorphServer {
 		}
 	}
 
-	fn monoiez_generic_arg(
+	fn monoize_generic_arg(
 		&self,
 		arg: &mut GenericArg,
 		generic_args: &GenericArgs,
@@ -359,16 +359,26 @@ impl MonomorphServer {
 			self.monoize_type(member, generic_args, access);
 		}
 
+		for (_, variant) in &mut instance.variants {
+			let variant_instance = self.instantiate_type_def(variant.clone(), generic_args, access);
+			*variant = variant_instance.upgrade().unwrap();
+		}
+
 		instance.generics.params.clear();
 
 		let mut iter = generic_args.iter();
-		let mut instance_name = instance.name.to_string() + "<" + &iter.next().unwrap().to_string();
+		let instance_name = instance.name.path.last_mut().unwrap();
+
+		instance_name.push_str("<");
+		instance_name.push_str(&iter.next().unwrap().to_string());
 
 		for param in iter {
+			instance_name.push_str(", ");
 			instance_name.push_str(&param.to_string())
 		}
 
-		instance_name += ">";
+		instance_name.push_str(">");
+		let instance_name = instance.name.to_string();
 
 		// Check if the current module has this instance already
 
@@ -377,9 +387,6 @@ impl MonomorphServer {
 		}
 
 		// Nope, check if the global instance map has it instead
-
-		*instance.name.path.last_mut().unwrap() = instance_name.clone().into();
-
 		if self
 			.ty_instances
 			.read()

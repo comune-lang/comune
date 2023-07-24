@@ -137,21 +137,22 @@ pub fn compile_comune_module(
 	error_sender: Sender<CMNMessageLog>,
 	s: &rayon::Scope,
 ) -> Result<(), ComuneError> {
-	let mut parser = match parse_interface(&state, &src_path, module_name.clone(), error_sender.clone()) {
-		Ok(parser) => parser,
+	let mut parser =
+		match parse_interface(&state, &src_path, module_name.clone(), error_sender.clone()) {
+			Ok(parser) => parser,
 
-		Err(e) => {
-			ERROR_COUNT.fetch_add(1, Ordering::Relaxed);
+			Err(e) => {
+				ERROR_COUNT.fetch_add(1, Ordering::Relaxed);
 
-			state
-				.module_states
-				.write()
-				.unwrap()
-				.insert(src_path, ModuleState::ParsingFailed);
+				state
+					.module_states
+					.write()
+					.unwrap()
+					.insert(src_path, ModuleState::ParsingFailed);
 
-			return Err(e);
-		}
-	};
+				return Err(e);
+			}
+		};
 
 	state.module_states.write().unwrap().insert(
 		src_path.clone(),
@@ -301,7 +302,8 @@ pub fn compile_comune_module(
 		}
 
 		if state.requires_linking() {
-			result.target_machine
+			result
+				.target_machine
 				.write_to_file(&result.module, FileType::Object, &out_path)
 				.unwrap();
 		}
@@ -376,7 +378,7 @@ pub fn await_imports_ready(
 		};
 
 		let import_path = get_module_source_path(&state, src_path.clone(), &fs_name)
-							.expect(&format!("could not find module source path: {fs_name}!"));
+			.expect(&format!("could not find module source path: {fs_name}!"));
 
 		let error_sender = error_sender.clone();
 
@@ -518,7 +520,7 @@ pub fn generate_code<'ctx>(
 	}
 
 	let mut cir_man = CIRPassManager::new();
-		
+
 	// NOTE: VarInitCheck happens BEFORE ElaborateDrops, because
 	// ElaborateDrops strips any DropShims from the IR and replaces them
 	// with the appropriate destructor code (if any).
@@ -530,7 +532,10 @@ pub fn generate_code<'ctx>(
 	// Handle any errors
 	if !cir_errors.is_empty() {
 		for error in &cir_errors {
-			parser.lexer.borrow().log_msg(ComuneMessage::Error(error.clone()));
+			parser
+				.lexer
+				.borrow()
+				.log_msg(ComuneMessage::Error(error.clone()));
 		}
 
 		return Err(ComuneError::new(
@@ -562,7 +567,10 @@ pub fn generate_code<'ctx>(
 	// And handle any errors again
 	if !cir_errors.is_empty() {
 		for error in &cir_errors {
-			parser.lexer.borrow().log_msg(ComuneMessage::Error(error.clone()));
+			parser
+				.lexer
+				.borrow()
+				.log_msg(ComuneMessage::Error(error.clone()));
 		}
 
 		return Err(ComuneError::new(
@@ -581,7 +589,10 @@ pub fn generate_code<'ctx>(
 	)
 }
 
-pub fn generate_monomorph_module(state: Arc<CompilerState>, error_sender: &Sender<CMNMessageLog>) -> ComuneResult<()> {
+pub fn generate_monomorph_module(
+	state: Arc<CompilerState>,
+	error_sender: &Sender<CMNMessageLog>,
+) -> ComuneResult<()> {
 	let mut out_path = PathBuf::from(&state.output_dir);
 	out_path.push("monomorph-module");
 
@@ -605,10 +616,12 @@ pub fn generate_monomorph_module(state: Arc<CompilerState>, error_sender: &Sende
 
 	if !errors.is_empty() {
 		for error in &errors {
-			error_sender.send(CMNMessageLog::Plain {
-				msg: ComuneMessage::Error(error.clone()),
-				filename: "monomorph-module".to_string()
-			}).unwrap();
+			error_sender
+				.send(CMNMessageLog::Plain {
+					msg: ComuneMessage::Error(error.clone()),
+					filename: "monomorph-module".to_string(),
+				})
+				.unwrap();
 		}
 
 		return Err(ComuneError::new(
@@ -765,7 +778,7 @@ pub fn get_module_out_path(state: &CompilerState, module: &Identifier) -> PathBu
 	let mut result = PathBuf::from(&state.output_dir);
 	let mut filename = String::new();
 	let mut iter = module.path.iter();
-	
+
 	filename.push_str(iter.next().unwrap());
 
 	for scope in iter {

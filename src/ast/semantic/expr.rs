@@ -33,7 +33,7 @@ impl Expr {
 					// Special cases for type-asymmetric operators
 					Operator::MemberAccess => {
 						let ty = Self::validate_member_access(lhs, rhs, scope, meta)?;
-						
+
 						if matches!(&**rhs, Expr::Atom(Atom::FnCall { .. }, _)) {
 							*self = *rhs.clone();
 						}
@@ -111,7 +111,9 @@ impl Expr {
 
 									Operator::PostDec | Operator::PostInc => Ok(first_t),
 
-									_ if matches!(op, Operator::Assign) || op.is_compound_assignment() => {
+									_ if matches!(op, Operator::Assign)
+										|| op.is_compound_assignment() =>
+									{
 										Ok(Type::void_type())
 									}
 
@@ -154,7 +156,9 @@ impl Expr {
 
 		result.validate(scope)?;
 
-		self.get_node_data_mut().ty.replace(result.get_concrete_type(&scope.generics.get_as_arg_list()));
+		self.get_node_data_mut()
+			.ty
+			.replace(result.get_concrete_type(&scope.generics.get_as_arg_list()));
 
 		Ok(result)
 	}

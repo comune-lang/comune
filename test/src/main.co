@@ -184,6 +184,13 @@ void mut_move_test(Vector<float> mut& test) {
 	test = tmp;
 }
 
+void enum_test() {
+	Option<i32> option = new Option<i32>::None;
+	Option<i32> option2 = new Option<i32>::Some {
+		value: 0,
+	};
+}
+
 int main() {
 	drop_test();
 	printf(c"Left drop_test\n\n");

@@ -1,4 +1,7 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{
+	collections::HashMap,
+	sync::{Arc, RwLock},
+};
 
 use crate::{
 	ast::{
@@ -7,7 +10,7 @@ use crate::{
 		module::{ModuleASTElem, ModuleImpl, ModuleInterface, ModuleItemInterface, Name},
 		pattern::{Binding, Pattern},
 		statement::Stmt,
-		types::{Basic, BindingProps, FnPrototype, GenericArgs, IntSize, TupleKind, Type},
+		types::{Basic, BindingProps, FnPrototype, GenericArgs, IntSize, TupleKind, Type, TypeDef},
 	},
 	lexer::SrcSpan,
 	parser::Parser,
@@ -80,7 +83,7 @@ impl CIRModuleBuilder {
 			self.register_module(&import.interface);
 		}
 
-		for (name, item) in &module.children {
+		for (_, item) in &module.children {
 			match item {
 				ModuleItemInterface::Functions(fns) => {
 					for func in &*fns.read().unwrap() {
@@ -91,24 +94,34 @@ impl CIRModuleBuilder {
 				}
 
 				ModuleItemInterface::Type(ty) => {
-					self.module.types.insert(name.to_string(), ty.clone());
-
-					if let Some(drop) = &ty.read().unwrap().drop {
-						let cir_fn = Self::generate_prototype(&drop);
-
-						self.module.functions.insert(drop.clone(), cir_fn);
-					}
-
-					for init in &ty.read().unwrap().init {
-						let proto = init.clone();
-						let cir_fn = Self::generate_prototype(&proto);
-
-						self.module.functions.insert(proto, cir_fn);
-					}
+					self.register_typedef(ty);
 				}
 
 				_ => {}
 			}
+		}
+	}
+
+	fn register_typedef(&mut self, ty: &Arc<RwLock<TypeDef>>) {
+		self.module
+			.types
+			.insert(ty.read().unwrap().name.to_string(), ty.clone());
+
+		for (_, variant) in &ty.read().unwrap().variants {
+			self.register_typedef(variant);
+		}
+
+		if let Some(drop) = &ty.read().unwrap().drop {
+			let cir_fn = Self::generate_prototype(&drop);
+
+			self.module.functions.insert(drop.clone(), cir_fn);
+		}
+
+		for init in &ty.read().unwrap().init {
+			let proto = init.clone();
+			let cir_fn = Self::generate_prototype(&proto);
+
+			self.module.functions.insert(proto, cir_fn);
 		}
 	}
 
@@ -471,7 +484,11 @@ impl CIRModuleBuilder {
 			if result.get_type().is_void_or_never() {
 				None
 			} else {
-				Some(self.insert_variable(None, BindingProps::mut_reference(), result.get_type().clone()))
+				Some(self.insert_variable(
+					None,
+					BindingProps::mut_reference(),
+					result.get_type().clone(),
+				))
 			}
 		} else {
 			None
@@ -507,7 +524,7 @@ impl CIRModuleBuilder {
 		let Some(result_location) = result_location else {
 			panic!()
 		};
-		
+
 		self.write(CIRStmt::RefInit(result_location.local, result_ir));
 
 		self.generate_scope_end();
@@ -1178,10 +1195,7 @@ impl CIRModuleBuilder {
 
 							if let Some(match_result) = match_result {
 								if let Some(result_loc) = &result_loc {
-									self.generate_raw_assign(
-										result_loc.clone(),
-										match_result,
-									);
+									self.generate_raw_assign(result_loc.clone(), match_result);
 								}
 
 								self.write(CIRStmt::Jump(cont_block));
@@ -1524,7 +1538,9 @@ impl CIRModuleBuilder {
 				Some(self.get_local_lvalue(local))
 			}
 
-			Expr::Atom(Atom::Block { items, result, .. }, _) => self.generate_lvalue_block(items, result, true).1,
+			Expr::Atom(Atom::Block { items, result, .. }, _) => {
+				self.generate_lvalue_block(items, result, true).1
+			}
 
 			Expr::Cons([lhs, rhs], op, _) => match op {
 				Operator::MemberAccess => {
@@ -1594,7 +1610,15 @@ impl CIRModuleBuilder {
 				}
 			},
 
-			Expr::Atom(Atom::FnCall { args, generic_args, resolved, .. }, meta) => {
+			Expr::Atom(
+				Atom::FnCall {
+					args,
+					generic_args,
+					resolved,
+					..
+				},
+				meta,
+			) => {
 				let result = self.generate_fn_call(args, generic_args, resolved, meta.span)?;
 
 				let RValue::Atom(_, None, Operand::LValueUse(lval, _), _) = result else {
@@ -1768,7 +1792,7 @@ impl CIRModuleBuilder {
 
 	fn insert_temporary(&mut self, ty: Type, rval: RValue, span: SrcSpan) -> LValue {
 		assert!(!ty.is_void_or_never());
-		
+
 		let props = BindingProps {
 			is_mut: true,
 			is_ref: false,

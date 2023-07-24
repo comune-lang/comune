@@ -1,10 +1,12 @@
-use std::{cmp::Ordering, sync::Arc, collections::HashSet};
+use std::{cmp::Ordering, collections::HashSet, sync::Arc};
 
 use crate::{
 	ast::{
 		controlflow::ControlFlow,
 		expression::{Atom, Expr, FnRef, NodeData},
-		module::{Identifier, ModuleASTElem, ModuleInterface, ModuleItemInterface, Name, ModuleImportKind},
+		module::{
+			Identifier, ModuleASTElem, ModuleImportKind, ModuleInterface, ModuleItemInterface, Name,
+		},
 		statement::Stmt,
 		types::{Basic, BindingProps, FnPrototype, GenericArg, GenericArgs, Type},
 		FnScope,
@@ -20,8 +22,7 @@ pub fn validate_function_body(
 	elem: &mut ModuleASTElem,
 	namespace: &ModuleInterface,
 ) -> ComuneResult<()> {
-	let mut scope =
-		FnScope::new(namespace, scope, func.ret.clone(), &func.generics);
+	let mut scope = FnScope::new(namespace, scope, func.ret.clone(), &func.generics);
 
 	for (param, name, props) in &func.params.params {
 		scope.add_variable(param.clone(), name.clone().unwrap(), *props)
@@ -196,12 +197,12 @@ pub fn validate_fn_call(
 	)?;
 
 	validate_arg_list(args, &func.params.params, generic_args, scope)?;
-	
+
 	if func.is_unsafe && !scope.is_unsafe {
 		return Err(ComuneError::new(
 			ComuneErrCode::UnsafeCall(func.clone()),
-			node_data.span
-		))
+			node_data.span,
+		));
 	}
 
 	*resolved = FnRef::Direct(func.clone());
@@ -245,33 +246,23 @@ pub fn resolve_method_call(
 	}
 
 	// List of method candidates matched to their implementing types
-	let candidates = collect_impl_candidates(
-		&scope.context, 
-		name.expect_scopeless().unwrap(), 
-		receiver
-	);
+	let candidates =
+		collect_impl_candidates(&scope.context, name.expect_scopeless().unwrap(), receiver);
 
 	let mut candidates: Vec<_> = candidates
 		.into_iter()
 		.filter(|func| is_candidate_viable(args, generic_args, func))
 		.collect();
 
-	let func = try_select_candidate(
-		name,
-		args,
-		generic_args,
-		&mut candidates,
-		span,
-		scope,
-	)?;
+	let func = try_select_candidate(name, args, generic_args, &mut candidates, span, scope)?;
 
 	validate_arg_list(args, &func.params.params, generic_args, scope)?;
-	
+
 	if func.is_unsafe && !scope.is_unsafe {
 		return Err(ComuneError::new(
 			ComuneErrCode::UnsafeCall(func.clone()),
-			span
-		))
+			span,
+		));
 	}
 
 	*resolved = FnRef::Direct(func.clone());
@@ -444,14 +435,14 @@ fn collect_impl_candidates(
 	receiver: &Type,
 ) -> Vec<Arc<FnPrototype>> {
 	let mut result = vec![];
-	
+
 	collect_impl_candidates_recursive(
-		interface, 
-		name, 
-		receiver, 
-		&mut result, 
+		interface,
+		name,
+		receiver,
+		&mut result,
 		&mut HashSet::new(),
-		true
+		true,
 	);
 
 	result
@@ -466,7 +457,7 @@ fn collect_impl_candidates_recursive(
 	collect_imports: bool,
 ) {
 	if already_visited.contains(&interface.path) {
-		return
+		return;
 	}
 
 	already_visited.insert(interface.path.clone());
@@ -485,14 +476,14 @@ fn collect_impl_candidates_recursive(
 	}
 
 	for (_, import) in &interface.imported {
-		if collect_imports || matches!(&import.import_kind, ModuleImportKind::Child(_)) {			
+		if collect_imports || matches!(&import.import_kind, ModuleImportKind::Child(_)) {
 			collect_impl_candidates_recursive(
-				&import.interface, 
-				name, 
-				receiver, 
-				candidates, 
+				&import.interface,
+				name,
+				receiver,
+				candidates,
 				already_visited,
-				false
+				false,
 			)
 		}
 	}

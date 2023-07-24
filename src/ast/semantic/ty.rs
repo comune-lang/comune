@@ -379,10 +379,8 @@ pub fn resolve_type_def(
 		},
 	));
 
-	for (_, types) in &mut ty.variants {
-		for ty in types {
-			resolve_type(ty, interface, &generics)?;
-		}
+	for (_, variant) in &mut ty.variants {
+		resolve_type_def(variant.clone(), interface, module_impl)?;
 	}
 
 	for (_, ty, _) in &mut ty.members {

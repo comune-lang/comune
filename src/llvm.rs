@@ -23,13 +23,12 @@ use crate::{
 	ast::{
 		expression::Operator,
 		types::{
-			Basic, BindingProps, DataLayout, FloatSize, FnPrototype, IntSize, TupleKind, Type,
+			Basic, BindingProps, DataLayout, FloatSize, FnPrototype, IntSize, TupleKind, Type, TypeDef,
 		},
 	},
 	cir::{CIRCallId, CIRFunction, CIRModule, CIRStmt, LValue, Operand, PlaceElem, RValue},
 	constexpr::{ConstExpr, ConstValue},
 };
-
 
 type LLVMResult<T> = Result<T, String>;
 
@@ -128,9 +127,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 			let ty = ty.read().unwrap();
 			let mut members_ir = vec![];
 
-			for (_, mem, _) in &ty.members {
-				members_ir.push(Self::to_basic_type(self.get_llvm_type(mem)));
-			}
+			self.generate_type_body(&ty, &mut members_ir);
 
 			let type_ir = self.type_map[i].into_struct_type();
 
@@ -154,6 +151,22 @@ impl<'ctx> LLVMBackend<'ctx> {
 		}
 
 		Ok(())
+	}
+
+	pub fn generate_type_body(&self, ty: &TypeDef, members_ir: &mut Vec<BasicTypeEnum<'ctx>>) {
+		for (_, mem, _) in &ty.members {
+			members_ir.push(Self::to_basic_type(self.get_llvm_type(mem)));
+		}
+
+		if !ty.variants.is_empty() {
+			// enum discriminant
+			// TODO: there's room for space optimization here
+			members_ir.push(self.context.i32_type().as_basic_type_enum());
+
+			for (_, variant) in &ty.variants {
+				self.generate_type_body(&variant.read().unwrap(), members_ir)
+			}
+		}
 	}
 
 	pub fn generate_libc_bindings(&self) {
@@ -335,7 +348,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 						if let Some(result) = result {
 							if result.props.is_ref {
-								// Function return value is a reference - perform reference initialization 
+								// Function return value is a reference - perform reference initialization
 								assert!(result.projection.is_empty());
 
 								self.builder.build_store(
@@ -400,7 +413,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 							self.builder.position_at_end(self.blocks[*next]);
 
 							if result.props.is_ref {
-								// Function return value is a reference - perform reference initialization 
+								// Function return value is a reference - perform reference initialization
 								assert!(result.projection.is_empty());
 
 								self.builder.build_store(
@@ -590,6 +603,60 @@ impl<'ctx> LLVMBackend<'ctx> {
 						self.builder.build_store(ptr, val)
 					}
 
+					Type::TypeRef { def: to_def, .. } => {
+						let Type::TypeRef { def: from_def, .. } = from else {
+							panic!()
+						};
+
+						let to_def = to_def.upgrade().unwrap();
+						let to_def = to_def.read().unwrap();
+
+						if let Some((idx, _)) =
+							to_def
+								.variants
+								.iter()
+								.enumerate()
+								.find(|(_, (_, variant))| {
+									Arc::ptr_eq(variant, &from_def.upgrade().unwrap())
+								}) {
+							// Cast from enum variant type to enum type
+
+							if !to_def.members.is_empty() {
+								panic!("enum structs are not yet implemented!")
+							}
+
+							let val = self.generate_operand(from, val);
+							let discriminant = self
+								.context
+								.i32_type()
+								.const_int(idx as u64, false)
+								.as_basic_value_enum();
+
+							self.builder.build_store(
+								self.builder.build_struct_gep(store, 0, "").unwrap(),
+								discriminant,
+							);
+
+							let ptr = self.builder.build_pointer_cast(
+								self.builder.build_struct_gep(store, 1, "").unwrap(),
+								val.get_type().ptr_type(AddressSpace::Generic),
+								"",
+							);
+
+							self.builder.build_store(ptr, val)
+						} else {
+							println!(
+								"{} is not a variant of {}",
+								from_def.upgrade().unwrap().read().unwrap().name,
+								to_def.name
+							);
+							println!("variants of {}:", to_def.name);
+							for (name, variant) in &to_def.variants {
+								println!("{name}: {}", variant.read().unwrap().name);
+							}
+							unimplemented!()
+						}
+					}
 					_ => match from {
 						Type::Basic(b) => {
 							if from.is_integral() || from.is_floating_point() {
@@ -749,7 +816,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 							)
 						}
 
-						_ => todo!(),
+						_ => unimplemented!(),
 					},
 				}
 			}
@@ -958,7 +1025,9 @@ impl<'ctx> LLVMBackend<'ctx> {
 			AnyTypeEnum::StructType(s) => s.as_basic_type_enum(),
 			AnyTypeEnum::VectorType(v) => v.as_basic_type_enum(),
 			AnyTypeEnum::VoidType(_) => panic!("attempted to convert VoidType to BasicTypeEnum!"),
-			AnyTypeEnum::FunctionType(_) => panic!("attempted to convert FunctionType to BasicTypeEnum!"),
+			AnyTypeEnum::FunctionType(_) => {
+				panic!("attempted to convert FunctionType to BasicTypeEnum!")
+			}
 		}
 	}
 

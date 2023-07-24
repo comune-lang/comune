@@ -28,9 +28,9 @@ impl Stmt {
 				}
 
 				let (binding_ty, binding_name, binding_props) = names[0].clone();
+				binding_ty.validate(scope)?;
 
 				if let Some(expr) = expr {
-					binding_ty.validate(scope)?;
 					expr.get_node_data_mut().ty = Some(binding_ty.clone());
 
 					let expr_ty = expr.validate(scope)?;
