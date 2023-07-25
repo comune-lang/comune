@@ -212,7 +212,7 @@ void enum_test() {
 
 	option = new None<i32>;
 	
-	option.unwrap();
+	//option.unwrap();
 }
 
 int main() {

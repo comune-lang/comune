@@ -707,8 +707,8 @@ impl Atom {
 						return Ok(Type::void_type());
 					}
 
-					let mut last_branch_type = None;
 					let scrutinee_type = scrutinee.validate(scope)?;
+					let mut branch_types = vec![];
 
 					for branch in branches {
 						let mut subscope = FnScope::from_parent(scope, false, false);
@@ -724,22 +724,20 @@ impl Atom {
 							}
 						}
 
-						let branch_ty = branch.1.validate(&mut subscope)?;
-
-						if let Some(last_branch_type) = last_branch_type {
-							if branch_ty != last_branch_type {
-								todo!()
-							}
-						}
-
-						last_branch_type = Some(branch_ty);
+						branch_types.push(branch.1.validate(&mut subscope)?);
 
 						if !branch.0.get_type().is_subtype_of(&scrutinee_type) {
-							todo!()
+							return Err(ComuneError::new(
+								ComuneErrCode::AssignTypeMismatch { 
+									expr: scrutinee_type, 
+									to: branch.0.get_type().clone()
+								},
+								branch.1.get_span()
+							))
 						}
 					}
 
-					Ok(last_branch_type.unwrap()) // TODO: This'll panic with an empty match expression
+					Ok(Type::common_type(&branch_types)) // TODO: This'll panic with an empty match expression
 				}
 			},
 		}

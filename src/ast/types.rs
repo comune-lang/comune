@@ -3,6 +3,8 @@ use std::hash::{Hash, Hasher};
 use std::sync::{Arc, RwLock, Weak};
 use std::{mem, ptr};
 
+use itertools::Itertools;
+
 use super::module::{Identifier, ItemRef, Name};
 use super::traits::TraitRef;
 use super::{write_arg_list, Attribute};
@@ -448,6 +450,19 @@ impl Basic {
 }
 
 impl Type {
+	pub fn common_type<'iter>(types: impl IntoIterator<Item = &'iter Type>) -> Type {
+		let types = types
+			.into_iter()
+			.unique()
+			.collect_vec();
+		
+		if let [ty] = *types.as_slice() {
+			ty.clone()
+		} else {
+			Type::Tuple(TupleKind::Sum, types.into_iter().cloned().collect())
+		}
+	}
+
 	pub fn get_concrete_type(&self, args: &[GenericArg]) -> Type {
 		match self {
 			Type::Basic(b) => Type::Basic(*b),
