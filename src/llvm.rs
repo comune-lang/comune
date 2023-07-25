@@ -437,6 +437,8 @@ impl<'ctx> LLVMBackend<'ctx> {
 					CIRStmt::StorageDead(_) => {}
 
 					CIRStmt::DropShim { .. } => panic!("encountered DropShim in LLVM codegen!"),
+
+					CIRStmt::Unreachable => { self.builder.build_unreachable(); }
 				}
 			}
 		}
@@ -1086,6 +1088,8 @@ impl<'ctx> LLVMBackend<'ctx> {
 				Basic::Void => self.context.void_type().as_any_type_enum(),
 			},
 
+			Type::Never => self.context.void_type().as_any_type_enum(),
+
 			Type::Array(arr_ty, size) => Self::to_basic_type(self.get_llvm_type(arr_ty))
 				.array_type(
 					if let ConstExpr::Result(ConstValue::Integral(e, _)) = &*size.read().unwrap() {
@@ -1192,8 +1196,6 @@ impl<'ctx> LLVMBackend<'ctx> {
 			Type::TypeParam(_) => panic!("unexpected TypeParam in codegen!"),
 
 			Type::Unresolved { .. } => panic!(),
-
-			Type::Never => panic!(),
 		}
 	}
 

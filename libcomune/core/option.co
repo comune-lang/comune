@@ -1,5 +1,23 @@
 
+@no_mangle
+never abort();
+
 enum Option<type T> {
 	Some { T value; },
 	None
+}
+
+impl<type T> Option<T> {
+	T unwrap(self) {
+		match self {
+			Option<T>::Some some => {
+				return some.value
+			}
+
+			Option<T>::None none => {
+				abort()
+			}
+		}
+		abort()
+	}
 }

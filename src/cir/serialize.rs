@@ -146,6 +146,7 @@ impl Display for CIRStmt {
 			CIRStmt::StorageLive(var) => write!(f, "StorageLive(_{var});\n"),
 			CIRStmt::StorageDead(var) => write!(f, "StorageDead(_{var});\n"),
 			CIRStmt::DropShim { var, next } => write!(f, "drop {var} => bb{next};\n"),
+			CIRStmt::Unreachable => write!(f, "unreachable;\n"),
 		}
 	}
 }

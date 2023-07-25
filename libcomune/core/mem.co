@@ -15,7 +15,7 @@ void mut* memcpy(void mut* dest, void* src, usize count);
 int printf(u8* fmt, ...);
 
 @no_mangle
-void abort();
+never abort();
 
 // TODO: Replace this with an intrinsic lol
 usize size_of<type T>() {

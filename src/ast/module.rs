@@ -157,6 +157,9 @@ impl ModuleInterface {
 			if let Some(basic) = Basic::get_basic_type(id.name()) {
 				return Some(Type::Basic(basic));
 			}
+			if id.name() == "never" {
+				return Some(Type::Never);
+			}
 		}
 
 		if id.qualifier.0.is_some() {
