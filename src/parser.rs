@@ -171,7 +171,6 @@ impl<'ctx> Parser {
 
 					next = self.get_next()?; // Consume brace
 
-					// TODO: Actually finish this
 					let parent_name = Identifier {
 						qualifier: (
 							Some(Box::new(Type::TypeRef {
@@ -181,7 +180,7 @@ impl<'ctx> Parser {
 							None,
 						),
 						path: vec![],
-						absolute: false,
+						absolute: true,
 					};
 
 					while !token_compare(&next, "}") {
@@ -1030,7 +1029,7 @@ impl<'ctx> Parser {
 							_ => return self.err(ComuneErrCode::UnexpectedToken)
 						};
 					}
-					
+
 					self.get_next()?;
 
 					Ok(Pattern::Destructure(patterns, pattern_ty))

@@ -3,7 +3,16 @@
 never abort();
 
 enum Option<type T> {
-	Some { T value; },
+	Some { 
+		T value;
+
+		new(new& self, T value) {
+			self = new Option<T>::Some { 
+				value: value,
+			};
+		}
+	},
+
 	None
 }
 
