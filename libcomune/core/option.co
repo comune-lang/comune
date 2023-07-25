@@ -10,11 +10,11 @@ enum Option<type T> {
 impl<type T> Option<T> {
 	T unwrap(self) {
 		match self {
-			Option<T>::Some some => {
-				return some.value
+			Option<T>::Some { value } => {
+				return value
 			}
 
-			Option<T>::None none => {
+			Option<T>::None _ => {
 				abort()
 			}
 		}

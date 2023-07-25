@@ -209,6 +209,10 @@ void enum_test() {
 	};
 
 	i32 unwrapped = option.unwrap();
+
+	option = new None<i32>;
+	
+	option.unwrap();
 }
 
 int main() {

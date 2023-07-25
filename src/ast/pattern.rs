@@ -12,9 +12,14 @@ pub struct Binding {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Pattern {
-	Binding(Binding), // Binding pattern, matches any value. If None, it's a wildcard
-	Destructure(Vec<(Option<Name>, Pattern)>, Type), // Destructures an aggregate type into its constituents
-	Or(Vec<Pattern>, Type),                          // Combines two or more patterns
+	// Binding pattern, matches any value. If `name` is None, it's a wildcard
+	Binding(Binding),
+	
+	// Destructures an aggregate type into its constituents
+	Destructure(Vec<Pattern>, Type),
+
+	// Combines two or more patterns
+	Or(Vec<Pattern>, Type),
 }
 
 impl Pattern {
@@ -32,7 +37,7 @@ impl Pattern {
 
 			Pattern::Destructure(elems, _) => {
 				let mut result = vec![];
-				for (_, elem_pat) in elems {
+				for elem_pat in elems {
 					result.append(&mut elem_pat.get_bindings());
 				}
 				result

@@ -980,7 +980,7 @@ impl<'ctx> Parser {
 	fn parse_pattern(&self, scope: &FnScope<'ctx>) -> ComuneResult<Pattern> {
 		if self.is_at_type_token(Some(scope))? {
 			let pattern_ty = self.parse_type(Some(scope))?;
-			let props = self.parse_binding_props()?;
+			let props = self.parse_binding_props()?.unwrap_or_default();
 
 			match self.get_current()? {
 				Token::Name(id) => {
@@ -989,11 +989,52 @@ impl<'ctx> Parser {
 					Ok(Pattern::Binding(Binding {
 						name: Some(id),
 						ty: pattern_ty,
-						props: props.unwrap_or_default(),
+						props,
 					}))
 				}
 
-				Token::Other('{') => todo!(),
+				Token::Other('{') => {
+					let Type::TypeRef { def, args } = &pattern_ty else {
+						todo!()
+					};
+
+					let def = def.upgrade().unwrap();
+					let def = def.read().unwrap();
+
+					self.get_next()?;
+					
+					let mut patterns = vec![];
+
+					while self.get_current()? != Token::Other('}') {
+						let Token::Name(name) = self.get_current()? else {
+							return self.err(ComuneErrCode::UnexpectedToken)
+						};
+
+						let Some((_, ty)) = def.get_member(&name, args) else {
+							todo!()
+						};
+
+						patterns.push(Pattern::Binding(
+							Binding { 
+								name: Some(name), 
+								ty, 
+								props 
+							}
+						));
+
+						match self.get_next()? {
+							Token::Other(',') => self.get_next()?,
+							
+							Token::Other('}') => break,
+
+							_ => return self.err(ComuneErrCode::UnexpectedToken)
+						};
+					}
+					
+					self.get_next()?;
+
+					Ok(Pattern::Destructure(patterns, pattern_ty))
+				},
 
 				_ => self.err(ComuneErrCode::UnexpectedToken),
 			}
