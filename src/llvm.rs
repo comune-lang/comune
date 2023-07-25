@@ -603,61 +603,113 @@ impl<'ctx> LLVMBackend<'ctx> {
 						self.builder.build_store(ptr, val)
 					}
 
-					Type::TypeRef { def: to_def, .. } => {
-						let Type::TypeRef { def: from_def, .. } = from else {
-							panic!()
-						};
-
+					Type::TypeRef { def: to_def, .. } if to.get_variant_index(from).is_some() => {
 						let to_def = to_def.upgrade().unwrap();
 						let to_def = to_def.read().unwrap();
 
-						if let Some((idx, _)) =
-							to_def
-								.variants
-								.iter()
-								.enumerate()
-								.find(|(_, (_, variant))| {
-									Arc::ptr_eq(variant, &from_def.upgrade().unwrap())
-								}) {
-							// Cast from enum variant type to enum type
+						let idx = to.get_variant_index(from).unwrap();
+					
+						// Cast from enum variant type to enum type
 
-							if !to_def.members.is_empty() {
-								panic!("enum structs are not yet implemented!")
-							}
+						if !to_def.members.is_empty() {
+							panic!("enum structs are not yet implemented!")
+						}
 
+						let val = self.generate_operand(from, val);
+						let discriminant = self
+							.context
+							.i32_type()
+							.const_int(idx as u64, false)
+							.as_basic_value_enum();
+
+						self.builder.build_store(
+							self.builder.build_struct_gep(store, 0, "").unwrap(),
+							discriminant,
+						);
+
+						let ptr = self.builder.build_pointer_cast(
+							self.builder.build_struct_gep(store, 1, "").unwrap(),
+							val.get_type().ptr_type(AddressSpace::Generic),
+							"",
+						);
+
+						self.builder.build_store(ptr, val)
+					}
+					
+					_ => match from {
+						Type::Pointer { .. } => {
 							let val = self.generate_operand(from, val);
-							let discriminant = self
-								.context
-								.i32_type()
-								.const_int(idx as u64, false)
-								.as_basic_value_enum();
+							let to_ir = self.get_llvm_type(to);
+
+							if to.is_boolean() {
+								self.builder.build_store(
+									store,
+									self.builder.build_is_not_null(val.into_pointer_value(), ""),
+								)
+							} else {
+								self.builder.build_store(
+									store,
+									self.builder
+										.build_pointer_cast(
+											val.into_pointer_value(),
+											to_ir.into_pointer_type(),
+											"",
+										)
+										.as_basic_value_enum(),
+								)
+							}
+						}
+
+						Type::Tuple(TupleKind::Sum, _) => {
+							// Tuple downcast, aka just indexing into the data field
+							let val = self.generate_operand(from, val);
+							let tmp = self.builder.build_alloca(val.get_type(), "");
+
+							self.builder.build_store(tmp, val);
+
+							let gep = self.builder.build_struct_gep(tmp, 1, "").unwrap();
+
+							let cast = self
+								.builder
+								.build_bitcast(
+									gep,
+									Self::to_basic_type(self.get_llvm_type(to))
+										.ptr_type(AddressSpace::Generic),
+									"",
+								)
+								.into_pointer_value();
 
 							self.builder.build_store(
-								self.builder.build_struct_gep(store, 0, "").unwrap(),
-								discriminant,
-							);
-
-							let ptr = self.builder.build_pointer_cast(
-								self.builder.build_struct_gep(store, 1, "").unwrap(),
-								val.get_type().ptr_type(AddressSpace::Generic),
-								"",
-							);
-
-							self.builder.build_store(ptr, val)
-						} else {
-							println!(
-								"{} is not a variant of {}",
-								from_def.upgrade().unwrap().read().unwrap().name,
-								to_def.name
-							);
-							println!("variants of {}:", to_def.name);
-							for (name, variant) in &to_def.variants {
-								println!("{name}: {}", variant.read().unwrap().name);
-							}
-							unimplemented!()
+								store,
+								self.builder.build_load(cast, "").as_basic_value_enum(),
+							)
 						}
-					}
-					_ => match from {
+
+						Type::TypeRef { .. } if from.get_variant_index(to).is_some() => {
+							// Enum downcast (i.e. `Option` -> `Option::Some`)
+							let val = self.generate_operand(from, val);
+							let tmp = self.builder.build_alloca(val.get_type(), "");
+
+							self.builder.build_store(tmp, val);
+
+							let gep = self.builder.build_struct_gep(tmp, 1, "").unwrap();
+
+							let cast = self
+								.builder
+								.build_bitcast(
+									gep,
+									Self::to_basic_type(self.get_llvm_type(to))
+										.ptr_type(AddressSpace::Generic),
+									"",
+								)
+								.into_pointer_value();
+
+							self.builder.build_store(
+								store,
+								self.builder.build_load(cast, "").as_basic_value_enum(),
+							)
+						}
+
 						Type::Basic(b) => {
 							if from.is_integral() || from.is_floating_point() {
 								let val = self.generate_operand(from, val);
@@ -742,81 +794,34 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 								match b {
 									Basic::Bool => {
-										if let Type::Basic(Basic::Integral { signed, .. }) = to {
-											let val = self
-												.generate_operand(from, val)
-												.as_basic_value_enum()
-												.into_int_value();
-											self.builder.build_store(
-												store,
-												self.builder
-													.build_int_cast_sign_flag(
-														val,
-														self.get_llvm_type(to).into_int_type(),
-														*signed,
-														"",
-													)
-													.as_basic_value_enum(),
-											)
-										} else {
+										let Type::Basic(Basic::Integral { signed, .. }) = to else {
 											panic!()
-										}
+										};
+
+										let val = self
+											.generate_operand(from, val)
+											.as_basic_value_enum()
+											.into_int_value();
+
+										self.builder.build_store(
+											store,
+											self.builder
+												.build_int_cast_sign_flag(
+													val,
+													self.get_llvm_type(to).into_int_type(),
+													*signed,
+													"",
+												)
+												.as_basic_value_enum(),
+										)
 									}
 
-									_ => todo!(),
+									_ => unimplemented!(),
 								}
 							}
 						}
 
-						Type::Pointer { .. } => {
-							let val = self.generate_operand(from, val);
-							let to_ir = self.get_llvm_type(to);
-
-							if to.is_boolean() {
-								self.builder.build_store(
-									store,
-									self.builder.build_is_not_null(val.into_pointer_value(), ""),
-								)
-							} else {
-								self.builder.build_store(
-									store,
-									self.builder
-										.build_pointer_cast(
-											val.into_pointer_value(),
-											to_ir.into_pointer_type(),
-											"",
-										)
-										.as_basic_value_enum(),
-								)
-							}
-						}
-
-						Type::Tuple(TupleKind::Sum, _) => {
-							// Tuple downcast, aka just indexing into the data field
-							let val = self.generate_operand(from, val);
-							let tmp = self.builder.build_alloca(val.get_type(), "");
-
-							self.builder.build_store(tmp, val);
-
-							let gep = self.builder.build_struct_gep(tmp, 1, "").unwrap();
-
-							let cast = self
-								.builder
-								.build_bitcast(
-									gep,
-									Self::to_basic_type(self.get_llvm_type(to))
-										.ptr_type(AddressSpace::Generic),
-									"",
-								)
-								.into_pointer_value();
-
-							self.builder.build_store(
-								store,
-								self.builder.build_load(cast, "").as_basic_value_enum(),
-							)
-						}
-
-						_ => unimplemented!(),
+						_ => unimplemented!("cast from {from} to {to}"),
 					},
 				}
 			}

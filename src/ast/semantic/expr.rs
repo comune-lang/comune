@@ -213,10 +213,10 @@ impl Expr {
 						false
 					}
 
-					_ => from == target,
+					_ => from.is_subtype_of(target),
 				},
 
-				_ => from == target,
+				_ => from.is_subtype_of(target),
 			},
 		}
 	}

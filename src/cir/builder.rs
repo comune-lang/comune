@@ -1636,19 +1636,12 @@ impl CIRModuleBuilder {
 		}
 	}
 
-	// TODO: Support for enum types in these
 	fn is_trivially_matchable(branches: &Vec<(Pattern, Expr)>, scrutinee_ty: &Type) -> bool {
-		let types = match scrutinee_ty {
-			Type::Tuple(TupleKind::Sum, types) => types.as_slice(),
-
-			_ => panic!(),
-		};
-
 		for (branch, _) in branches {
 			match branch {
 				Pattern::Binding(Binding { ty, .. }) => {
-					if !types.iter().any(|t| t == ty) {
-						return false;
+					if scrutinee_ty.get_variant_index(ty).is_none() {
+						return false
 					}
 				}
 
@@ -1660,14 +1653,8 @@ impl CIRModuleBuilder {
 	}
 
 	fn get_trivial_match_value(branch: &Pattern, scrutinee_ty: &Type) -> usize {
-		let types = match scrutinee_ty {
-			Type::Tuple(TupleKind::Sum, types) => types.as_slice(),
-
-			_ => panic!(),
-		};
-
 		match branch {
-			Pattern::Binding(Binding { ty, .. }) => types.iter().position(|t| t == ty).unwrap(),
+			Pattern::Binding(Binding { ty, .. }) => scrutinee_ty.get_variant_index(ty).unwrap(),
 
 			_ => panic!(),
 		}

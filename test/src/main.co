@@ -185,13 +185,25 @@ void mut_move_test(Vector<float> mut& test) {
 }
 
 void enum_test() {
-	Option<i32> option = new Option<i32>::None;
-	Option<i32> option2 = new Option<i32>::Some {
-		value: 0,
+	Option<i32> mut option = new Option<i32>::None;
+	
+	option = new Option<i32>::Some {
+		value: 23,
 	};
+
+	match option {
+		Option<i32>::None none => { 
+			printf(c"It's the None variant!");
+		}
+
+		Option<i32>::Some some => {
+			printf(c"It's the Some(%i) variant!", some.value);
+		}
+	}
 }
 
 int main() {
+	enum_test();
 	drop_test();
 	printf(c"Left drop_test\n\n");
 

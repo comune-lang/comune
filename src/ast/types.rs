@@ -641,6 +641,25 @@ impl Type {
 		}
 	}
 
+	pub fn get_variant_index(&self, variant: &Type) -> Option<usize> {
+		match self {
+			Type::TypeRef { def, .. } => {
+				let def = def.upgrade().unwrap();
+				let def = def.read().unwrap();
+				
+				let Type::TypeRef { def: variant_def, .. } = variant else {
+					return None
+				};
+
+				def.variants.iter().position(|(_, var)| Arc::ptr_eq(var, &variant_def.upgrade().unwrap()))
+			}
+
+			Type::Tuple(TupleKind::Sum, types) => types.iter().position(|ty| ty == variant),
+
+			_ => None
+		}
+	}
+
 	// Convenience
 	pub fn is_numeric(&self) -> bool {
 		if let Type::Basic(b) = self {
@@ -725,6 +744,17 @@ impl Type {
 				signed: false,
 				size: IntSize::I32,
 			}),
+
+			Type::TypeRef { def, .. } => {
+				if !def.upgrade().unwrap().read().unwrap().variants.is_empty() {
+					Some(Basic::Integral { 
+						signed: false, 
+						size: IntSize::I32 
+					})
+				} else {
+					None
+				}
+			}
 
 			_ => None,
 		}
