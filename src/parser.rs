@@ -1413,7 +1413,7 @@ impl<'ctx> Parser {
 										}
 
 										// shorthand when `expr` is equal to the member name
-										Token::Other(',') => {
+										Token::Other(',') | Token::Other('}') => {
 											let expr = Expr::Atom(
 												Atom::Identifier(Identifier::from_name(
 													member_name.clone(),
@@ -1424,8 +1424,6 @@ impl<'ctx> Parser {
 
 											inits.push((member_name, expr))
 										}
-
-										Token::Other('}') => break,
 
 										_ => return self.err(ComuneErrCode::UnexpectedToken),
 									}
