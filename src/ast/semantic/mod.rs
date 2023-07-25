@@ -16,6 +16,7 @@ use super::{
 
 pub mod expr;
 pub mod func;
+pub mod stmt;
 pub mod ty;
 
 pub fn validate_module_impl(

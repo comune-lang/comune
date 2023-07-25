@@ -1721,7 +1721,9 @@ impl CIRModuleBuilder {
 					todo!()
 				}
 			}
+
 			Pattern::Destructure(_, _) => todo!(),
+
 			Pattern::Or(_, _) => todo!(),
 		}
 	}
