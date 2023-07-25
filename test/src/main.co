@@ -184,22 +184,31 @@ void mut_move_test(Vector<float> mut& test) {
 	test = tmp;
 }
 
+type None<type T> = Option<T>::None;
+type Some<type T> = Option<T>::Some;
+
 void enum_test() {
-	Option<i32> mut option = new Option<i32>::None;
+	Option<i32> mut option = new None<i32>;
 	
-	option = new Option<i32>::Some {
+	option = new Some<i32> {
 		value: 23,
 	};
 
 	match option {
-		Option<i32>::None none => { 
+		None<i32> none => { 
 			printf(c"It's the None variant!");
 		}
 
-		Option<i32>::Some some => {
+		Some<i32> some => {
 			printf(c"It's the Some(%i) variant!", some.value);
 		}
 	}
+
+	Option<i32> mut option = new Some<i32> {
+		value: 1
+	};
+
+	i32 unwrapped = option.unwrap();
 }
 
 int main() {

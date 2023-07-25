@@ -764,6 +764,10 @@ impl Type {
 		self == &Type::Basic(Basic::Void)
 	}
 
+	pub fn is_never(&self) -> bool {
+		self == &Type::Never
+	}
+
 	pub fn is_void_or_never(&self) -> bool {
 		matches!(self, Type::Basic(Basic::Void) | Type::Never)
 	}

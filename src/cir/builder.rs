@@ -209,6 +209,10 @@ impl CIRModuleBuilder {
 		// Find block preds & succs
 
 		for i in 0..func.blocks.len() {
+			if func.blocks[i].items.is_empty() {
+				panic!("encountered empty basic block in cIR!");
+			}
+
 			let succs = match func.blocks[i].items.last().unwrap() {
 				CIRStmt::Invoke { next, except, .. } => vec![*next, *except],
 
@@ -226,6 +230,8 @@ impl CIRModuleBuilder {
 				CIRStmt::Return => vec![],
 
 				CIRStmt::DropShim { next, .. } => vec![*next],
+
+				CIRStmt::Unreachable => vec![],
 
 				term => panic!("invalid terminator in cIR: {term:?}"),
 			};
@@ -1064,7 +1070,7 @@ impl CIRModuleBuilder {
 
 						let start_block = self.current_block;
 
-						let result_loc = if !expr_ty.is_void() {
+						let result_loc = if !expr_ty.is_void_or_never() {
 							Some(self.insert_temporary(
 								expr_ty.clone(),
 								RValue::Atom(expr_ty.clone(), None, Operand::Undef, SrcSpan::new()),
@@ -1176,7 +1182,12 @@ impl CIRModuleBuilder {
 							}
 						}
 
+						
 						let cont_block = self.append_block();
+						
+						if expr_ty.is_never() {
+							self.write(CIRStmt::Unreachable);
+						}
 
 						// Generate branches
 
@@ -1432,8 +1443,11 @@ impl CIRModuleBuilder {
 						Operand::LValueUse(result, ret_props),
 						span,
 					))
-				} else {
+				} else if ret.is_void() {
 					Some(Self::get_void_rvalue())
+				} else {
+					self.write(CIRStmt::Unreachable);
+					None
 				}
 			}
 

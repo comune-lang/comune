@@ -191,6 +191,11 @@ pub enum CIRStmt {
 		var: LValue,
 		next: BlockIndex,
 	},
+
+	// Defines an unreachable point in the IR. Terminator.
+	// Reaching this statement is UB, so care must be taken
+	// when writing codegen involving it (usually around Never types)
+	Unreachable,
 }
 
 #[derive(Debug, Clone)]
