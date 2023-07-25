@@ -1425,6 +1425,8 @@ impl<'ctx> Parser {
 											inits.push((member_name, expr))
 										}
 
+										Token::Other('}') => break,
+
 										_ => return self.err(ComuneErrCode::UnexpectedToken),
 									}
 								} else if self.get_current()? != Token::Other('}') {

@@ -7,9 +7,7 @@ enum Option<type T> {
 		T value;
 
 		new(new& self, T value) {
-			self = new Option<T>::Some { 
-				value: value,
-			};
+			self = new Option<T>::Some { value };
 		}
 	},
 
