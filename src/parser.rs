@@ -155,6 +155,10 @@ impl<'ctx> Parser {
 				Token::Keyword("enum") => {
 					let def = Arc::new(RwLock::new(TypeDef::new()));
 					let mut def_write = def.write().unwrap();
+					let self_ty = Type::TypeRef {
+						def: Arc::downgrade(&def),
+						args: vec![],
+					};
 
 					let Token::Name(name) = self.get_next()? else { return self.err(ComuneErrCode::ExpectedIdentifier) };
 					let full_name = Identifier::from_parent(scope, name);
@@ -163,13 +167,11 @@ impl<'ctx> Parser {
 
 					def_write.generics = self.parse_generic_param_list(None)?;
 
-					let mut next = self.get_current()?;
-
-					if !token_compare(&next, "{") {
+					if self.get_current()? != Token::Other('{') {
 						return self.err(ComuneErrCode::UnexpectedToken);
 					}
 
-					next = self.get_next()?; // Consume brace
+					self.get_next()?; // Consume brace
 
 					let parent_name = Identifier {
 						qualifier: (
@@ -183,49 +185,77 @@ impl<'ctx> Parser {
 						absolute: true,
 					};
 
-					while !token_compare(&next, "}") {
-						let Token::Name(variant_name) = next else { return self.err(ComuneErrCode::UnexpectedToken) };
+					loop {
+						match self.get_current()? {
+							Token::Name(variant_name) => {
+								let variant = if self.get_next()? == Token::Other('{') {
+									self.parse_struct_body(
+										variant_name.clone(),
+										&parent_name,
+										def_write.generics.clone(),
+										vec![],
+									)?
+								} else {
+									Arc::new(RwLock::new(TypeDef {
+										members: vec![],
+										variants: vec![],
+										name: Identifier {
+											qualifier: (
+												Some(Box::new(Type::TypeRef {
+													def: Arc::downgrade(&def),
+													args: vec![],
+												})),
+												None,
+											),
+											..Identifier::from_name(variant_name.clone(), false)
+										},
+										layout: DataLayout::Declared,
+										generics: def_write.generics.clone(),
+										attributes: vec![],
+										init: vec![],
+										drop: None,
+									}))
+								};
 
-						let variant = if self.get_next()? == Token::Other('{') {
-							self.parse_struct_body(
-								variant_name.clone(),
-								&parent_name,
-								def_write.generics.clone(),
-								vec![],
-							)?
-						} else {
-							Arc::new(RwLock::new(TypeDef {
-								members: vec![],
-								variants: vec![],
-								name: Identifier {
-									qualifier: (
-										Some(Box::new(Type::TypeRef {
-											def: Arc::downgrade(&def),
-											args: vec![],
-										})),
-										None,
-									),
-									..Identifier::from_name(variant_name.clone(), false)
-								},
-								layout: DataLayout::Declared,
-								generics: def_write.generics.clone(),
-								attributes: vec![],
-								init: vec![],
-								drop: None,
-							}))
-						};
+								def_write.variants.push((variant_name, variant));
 
-						def_write.variants.push((variant_name, variant));
+								match self.get_current()? {
+									Token::Other(',') => self.get_next()?,
 
-						next = self.get_current()?;
+									Token::Other('}') => break,
 
-						match next {
-							Token::Other(',') => next = self.get_next()?,
+									_ => return self.err(ComuneErrCode::UnexpectedToken),
+								};
+							}
+
+							Token::Keyword(k @ ("new" | "drop")) => {
+								let func = self.parse_xtor(
+									scope,
+									def_write.generics.clone(),
+									&self_ty,
+									k
+								)?;
+			
+								match k {
+									"drop" => {
+										// TODO: Proper error reporting
+										assert!(def_write.drop.is_none());
+										def_write.drop.replace(func);
+									}
+									
+									"new" => {
+										def_write.init.push(func);
+									}
+			
+									_ => unreachable!()
+								}
+							}
 
 							Token::Other('}') => break,
 
 							_ => return self.err(ComuneErrCode::UnexpectedToken),
 						}
+
 					}
 
 					self.get_next()?; // Consume closing brace
@@ -646,44 +676,25 @@ impl<'ctx> Parser {
 				}
 
 				Token::Keyword(k @ ("new" | "drop")) => {
-					self.get_next()?;
-
-					let mut generics = self.parse_generic_param_list(None)?;
-					generics.add_base_generics(def_write.generics.clone());
-
-					let params = self.parse_parameter_list(Some(&self_ty), None)?;
-
-					let mut path = Identifier::from_parent(&scope, k.into());
-					path.qualifier.0 = Some(Box::new(self_ty.clone()));
-
-					let func = Arc::new(FnPrototype {
-						path,
-						params,
-						generics,
-						ret: (BindingProps::default(), Type::Basic(Basic::Void)),
-						attributes: vec![],
-						is_unsafe: false,
-					});
-
-					// Skip c'tor/d'tor body
-					let ast = self.get_current_token_index();
-					self.skip_block()?;
-
-					// Add fn to module impl
-					self.module_impl
-						.fn_impls
-						.insert(func.clone(), ModuleASTElem::Unparsed(ast));
+					let func = self.parse_xtor(
+						scope,
+						def_write.generics.clone(),
+						&self_ty,
+						k
+					)?;
 
 					match k {
+						"drop" => {
+							// TODO: Proper error reporting
+							assert!(def_write.drop.is_none());
+							def_write.drop.replace(func);
+						}
+
 						"new" => {
 							def_write.init.push(func);
 						}
 
-						"drop" => {
-							def_write.drop = Some(func);
-						}
-
-						_ => unreachable!(),
+						_ => unreachable!()
 					}
 				}
 
@@ -699,6 +710,44 @@ impl<'ctx> Parser {
 
 		drop(def_write);
 		Ok(def)
+	}
+
+	fn parse_xtor(
+		&mut self,
+		scope: &Identifier,
+		base_generics: Generics,
+		self_ty: &Type,
+		keyword: &str,
+	) -> ComuneResult<Arc<FnPrototype>> {
+		self.get_next()?;
+
+		let mut generics = self.parse_generic_param_list(None)?;
+		generics.add_base_generics(base_generics);
+
+		let params = self.parse_parameter_list(Some(&self_ty), None)?;
+
+		let mut path = Identifier::from_parent(&scope, keyword.into());
+		path.qualifier.0 = Some(Box::new(self_ty.clone()));
+
+		let func = Arc::new(FnPrototype {
+			path,
+			params,
+			generics,
+			ret: (BindingProps::default(), Type::Basic(Basic::Void)),
+			attributes: vec![],
+			is_unsafe: false,
+		});
+
+		// Skip c'tor/d'tor body
+		let ast = self.get_current_token_index();
+		self.skip_block()?;
+
+		// Add fn to module impl
+		self.module_impl
+			.fn_impls
+			.insert(func.clone(), ModuleASTElem::Unparsed(ast));
+
+		Ok(func)
 	}
 
 	fn skip_block(&self) -> ComuneResult<Token> {

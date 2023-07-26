@@ -143,6 +143,7 @@ pub enum ComuneErrCode {
 	MissingTraitFuncImpl(String),
 	CtorSelfParam(Identifier),
 	DtorSelfParam(Identifier),
+	DtorDefOverlap,
 
 	// Resolution errors
 	ModuleNotFound(OsString),
@@ -274,7 +275,9 @@ impl Display for ComuneErrCode {
 			ComuneErrCode::DtorSelfParam(id) => {
 				write!(f, "destructor of `{id}` must take a `mut& self` parameter")
 			}
-
+			ComuneErrCode::DtorDefOverlap => {
+				write!(f, "overlapping definitions of `drop`")
+			}
 			ComuneErrCode::UnresolvedTrait(tr) => write!(f, "failed to resolve trait `{tr}`"),
 			ComuneErrCode::UninitReference => {
 				write!(f, "a reference binding must be immediately initialized")

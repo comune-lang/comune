@@ -378,9 +378,18 @@ pub fn resolve_type_def(
 			}),
 		},
 	));
+	
+	let ty_has_drop = ty.drop.is_some();
 
 	for (_, variant) in &mut ty.variants {
 		resolve_type_def(variant.clone(), interface, module_impl)?;
+		
+		if ty_has_drop && variant.read().unwrap().drop.is_some() {
+			return Err(ComuneError::new(
+				ComuneErrCode::DtorDefOverlap,
+				SrcSpan::new()
+			));
+		}
 	}
 
 	for (_, ty, _) in &mut ty.members {

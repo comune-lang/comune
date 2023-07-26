@@ -11,7 +11,9 @@ enum Option<type T> {
 		}
 	},
 
-	None
+	None,
+
+	//drop(mut& self) {}
 }
 
 impl<type T> Option<T> {

@@ -112,26 +112,21 @@ impl<'ctx> LLVMBackend<'ctx> {
 	pub fn compile_module(&mut self, module: &CIRModule) -> LLVMResult<()> {
 		// Add opaque types
 
-		for (i, _) in &module.types {
+		for (name, _) in &module.types {
 			let opaque = self
 				.context
-				.opaque_struct_type(&i.to_string())
+				.opaque_struct_type(name)
 				.as_any_type_enum();
 
-			self.type_map.insert(i.clone(), opaque);
+			self.type_map.insert(name.clone(), opaque);
 		}
 
 		// Define type bodies
 
-		for (i, ty) in &module.types {
+		for (name, ty) in &module.types {
 			let ty = ty.read().unwrap();
-			let mut members_ir = vec![];
 
-			self.generate_type_body(&ty, &mut members_ir);
-
-			let type_ir = self.type_map[i].into_struct_type();
-
-			type_ir.set_body(&members_ir, ty.layout == DataLayout::Packed);
+			self.generate_type_body(name, &ty);
 		}
 
 		for (proto, func) in &module.functions {
@@ -153,7 +148,13 @@ impl<'ctx> LLVMBackend<'ctx> {
 		Ok(())
 	}
 
-	pub fn generate_type_body(&self, ty: &TypeDef, members_ir: &mut Vec<BasicTypeEnum<'ctx>>) {
+	pub fn generate_type_body(&self, name: &str, ty: &TypeDef) {
+		if !self.type_map[name].into_struct_type().is_opaque() {
+			return
+		}
+
+		let mut members_ir = vec![];
+
 		for (_, mem, _) in &ty.members {
 			members_ir.push(Self::to_basic_type(self.get_llvm_type(mem)));
 		}
@@ -162,11 +163,33 @@ impl<'ctx> LLVMBackend<'ctx> {
 			// enum discriminant
 			// TODO: there's room for space optimization here
 			members_ir.push(self.context.i32_type().as_basic_type_enum());
+			
+			// enum data store
+			let mut max_size = 0;
 
 			for (_, variant) in &ty.variants {
-				self.generate_type_body(&variant.read().unwrap(), members_ir)
+				let variant_name = variant.read().unwrap().name.to_string();
+				
+				self.generate_type_body(&variant_name, &variant.read().unwrap());
+
+				let variant_type = self.type_map[&variant_name].into_struct_type();
+				let variant_size = self.target_machine.get_target_data().get_store_size(&variant_type);
+				
+				max_size = max_size.max(variant_size);
+			}
+			
+			if max_size > 0 {
+				members_ir.push(self.context
+					.i8_type()
+					.vec_type(max_size as u32)
+					.as_basic_type_enum()
+				);
 			}
 		}
+		
+		let type_ir = self.type_map[name].into_struct_type();
+
+		type_ir.set_body(&members_ir, ty.layout == DataLayout::Packed);
 	}
 
 	pub fn generate_libc_bindings(&self) {
