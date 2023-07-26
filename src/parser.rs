@@ -177,7 +177,7 @@ impl<'ctx> Parser {
 						qualifier: (
 							Some(Box::new(Type::TypeRef {
 								def: Arc::downgrade(&def),
-								args: vec![],
+								args: def_write.generics.get_as_arg_list(),
 							})),
 							None,
 						),
@@ -199,16 +199,7 @@ impl<'ctx> Parser {
 									Arc::new(RwLock::new(TypeDef {
 										members: vec![],
 										variants: vec![],
-										name: Identifier {
-											qualifier: (
-												Some(Box::new(Type::TypeRef {
-													def: Arc::downgrade(&def),
-													args: vec![],
-												})),
-												None,
-											),
-											..Identifier::from_name(variant_name.clone(), false)
-										},
+										name: Identifier::from_parent(&parent_name, variant_name.clone()),
 										layout: DataLayout::Declared,
 										generics: def_write.generics.clone(),
 										attributes: vec![],

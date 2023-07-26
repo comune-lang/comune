@@ -353,21 +353,10 @@ impl MonomorphServer {
 		generic_args: &GenericArgs,
 		access: &mut ModuleAccess,
 	) -> Weak<RwLock<TypeDef>> {
-		let mut instance = def.read().unwrap().clone();
-
-		for (_, member, _) in &mut instance.members {
-			self.monoize_type(member, generic_args, access);
-		}
-
-		for (_, variant) in &mut instance.variants {
-			let variant_instance = self.instantiate_type_def(variant.clone(), generic_args, access);
-			*variant = variant_instance.upgrade().unwrap();
-		}
-
-		instance.generics.params.clear();
-
+		// Generate the monomorphized type name
+		let mut ty_name = def.read().unwrap().name.clone();
 		let mut iter = generic_args.iter();
-		let instance_name = instance.name.path.last_mut().unwrap();
+		let instance_name = ty_name.path.last_mut().unwrap();
 
 		instance_name.push_str("<");
 		instance_name.push_str(&iter.next().unwrap().to_string());
@@ -378,7 +367,7 @@ impl MonomorphServer {
 		}
 
 		instance_name.push_str(">");
-		let instance_name = instance.name.to_string();
+		let instance_name = ty_name.to_string();
 
 		// Check if the current module has this instance already
 
@@ -394,10 +383,6 @@ impl MonomorphServer {
 			.contains_key(&instance_name)
 		{
 			// This instantiation exists already, add it to the current module
-
-			// We do this because otherwise we end up with "orphan" TypeDefs,
-			// which aren't stored anywhere except the Weak<> Arcs in TypeRefs
-
 			let instance_arc = self.ty_instances.read().unwrap()[&instance_name].clone();
 			let instance_lock = instance_arc.read().unwrap();
 
@@ -430,8 +415,10 @@ impl MonomorphServer {
 			Arc::downgrade(&instance_arc)
 		} else {
 			// Couldn't find this instance in the global map either, so register it
-			let instance_arc = Arc::new(RwLock::new(instance));
+			let instance_arc = Arc::new(RwLock::new(def.read().unwrap().clone()));
 			let mut instance_lock = instance_arc.write().unwrap();
+
+			instance_lock.name = ty_name.clone();
 
 			self.ty_instances
 				.write()
@@ -439,6 +426,17 @@ impl MonomorphServer {
 				.insert(instance_name.clone(), instance_arc.clone());
 
 			access.types.insert(instance_name, instance_arc.clone());
+			
+			for (_, member, _) in &mut instance_lock.members {
+				self.monoize_type(member, generic_args, access);
+			}
+
+			for (_, variant) in &mut instance_lock.variants {
+				let variant_instance = self.instantiate_type_def(variant.clone(), generic_args, access);
+				*variant = variant_instance.upgrade().unwrap();
+			}
+
+			instance_lock.generics.params.clear();
 
 			// Register and monoize dtor
 			if let Some(drop) = &mut instance_lock.drop {

@@ -112,13 +112,8 @@ impl<'ctx> LLVMBackend<'ctx> {
 	pub fn compile_module(&mut self, module: &CIRModule) -> LLVMResult<()> {
 		// Add opaque types
 
-		for (name, _) in &module.types {
-			let opaque = self
-				.context
-				.opaque_struct_type(name)
-				.as_any_type_enum();
-
-			self.type_map.insert(name.clone(), opaque);
+		for (name, ty) in &module.types {
+			self.register_type(name.clone(), &ty.read().unwrap())
 		}
 
 		// Define type bodies
@@ -146,6 +141,21 @@ impl<'ctx> LLVMBackend<'ctx> {
 		}
 
 		Ok(())
+	}
+
+	pub fn register_type(&mut self, name: String, ty: &TypeDef) {
+		let opaque = self
+				.context
+				.opaque_struct_type(&name)
+				.as_any_type_enum();
+
+		self.type_map.insert(name, opaque);
+
+		for (_, variant) in &ty.variants {
+			let variant_name = variant.read().unwrap().name.to_string();
+
+			self.register_type(variant_name, &variant.read().unwrap());
+		}
 	}
 
 	pub fn generate_type_body(&self, name: &str, ty: &TypeDef) {
