@@ -82,11 +82,11 @@ impl EmitType {
 }
 
 impl CompilerState {
-	pub fn requires_linking(&self) -> bool {
+	pub fn requires_obj_output(&self) -> bool {
 		self.emit_types.iter().any(|emit| {
 			matches!(
 				emit,
-				EmitType::Binary | EmitType::DynamicLib | EmitType::StaticLib
+				EmitType::Binary | EmitType::DynamicLib | EmitType::StaticLib | EmitType::Object
 			)
 		})
 	}
@@ -301,7 +301,7 @@ pub fn compile_comune_module(
 			result.module.print_to_file(llvm_out_path).unwrap();
 		}
 
-		if state.requires_linking() {
+		if state.requires_obj_output() {
 			result
 				.target_machine
 				.write_to_file(&result.module, FileType::Object, &out_path)
@@ -652,7 +652,7 @@ pub fn generate_monomorph_module(
 		result.module.print_to_file(llvm_out_path).unwrap();
 	}
 
-	if state.requires_linking() {
+	if state.requires_obj_output() {
 		result
 			.target_machine
 			.write_to_file(&result.module, FileType::Object, &out_path)
