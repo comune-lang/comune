@@ -144,6 +144,10 @@ impl<'ctx> LLVMBackend<'ctx> {
 	}
 
 	pub fn register_type(&mut self, name: String, ty: &TypeDef) {
+		if self.type_map.contains_key(&name) { 
+			return
+		}
+		
 		let opaque = self
 				.context
 				.opaque_struct_type(&name)
