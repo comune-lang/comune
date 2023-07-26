@@ -356,7 +356,7 @@ impl MonomorphServer {
 		// Generate the monomorphized type name
 		let mut ty_name = def.read().unwrap().name.clone();
 		let mut iter = generic_args.iter();
-		let instance_name = ty_name.path.last_mut().unwrap();
+		let mut instance_name = ty_name.path.last().unwrap().to_string();
 
 		instance_name.push_str("<");
 		instance_name.push_str(&iter.next().unwrap().to_string());
@@ -367,6 +367,9 @@ impl MonomorphServer {
 		}
 
 		instance_name.push_str(">");
+		
+		*ty_name.path.last_mut().unwrap() = instance_name.into();
+		
 		let instance_name = ty_name.to_string();
 
 		// Check if the current module has this instance already
