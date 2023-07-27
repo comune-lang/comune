@@ -388,7 +388,7 @@ pub fn resolve_type_def(
 			return Err(ComuneError::new(
 				ComuneErrCode::DtorDefOverlap,
 				SrcSpan::new()
-			).with_note("hi :)".to_string(), SrcSpan::new()));
+			));
 		}
 	}
 
