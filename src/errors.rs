@@ -37,7 +37,7 @@ pub struct ComuneError {
 	pub code: ComuneErrCode,
 	pub span: SrcSpan,
 	pub origin: Option<Backtrace>,
-	pub notes: Vec<(Option<SrcSpan>, String)>,
+	pub notes: Vec<(SrcSpan, String)>,
 }
 
 impl ComuneError {
@@ -56,7 +56,7 @@ impl ComuneError {
 		}
 	}
 
-	pub fn with_note(mut self, note: String, location: Option<SrcSpan>) -> Self {
+	pub fn with_note(mut self, note: String, location: SrcSpan) -> Self {
 		self.notes.push((location, note));
 		self
 	}
@@ -208,35 +208,35 @@ impl Display for ComuneErrCode {
 			ComuneErrCode::UnresolvedTypename(id) => write!(f, "unresolved typename `{id}`"),
 			ComuneErrCode::ExprTypeMismatch(a, b, op) => write!(
 				f,
-				"type mismatch; cannot apply operator {op:?} to {a} and {b}"
+				"type mismatch; cannot apply operator {op:?} to `{a}` and `{b}`"
 			),
 			ComuneErrCode::AssignTypeMismatch { expr, to } => write!(
 				f,
-				"cannot assign value of type {expr} to variable of type {to}"
+				"cannot assign value of type `{expr}` to variable of type `{to}`"
 			),
 			ComuneErrCode::CastTypeMismatch { from, to } => {
-				write!(f, "cannot cast from {} to {}", from, to)
+				write!(f, "cannot cast from `{from}` to `{to}`")
 			}
 			ComuneErrCode::InvalidCoercion { from, to } => {
-				write!(f, "cannot coerce from {} to {}", from, to)
+				write!(f, "cannot coerce from `{from}` to `{to}`")
 			}
 			ComuneErrCode::InvalidLValue => write!(f, "invalid lvalue"),
-			ComuneErrCode::InvalidSubscriptLHS { t } => write!(f, "can't index into type {t}"),
+			ComuneErrCode::InvalidSubscriptLHS { t } => write!(f, "can't index into type `{t}`"),
 			ComuneErrCode::InvalidSubscriptRHS { t } => {
-				write!(f, "can't index into array with index type {t}")
+				write!(f, "can't index into array with index type `{t}`")
 			}
 			ComuneErrCode::ReturnTypeMismatch { expected, got } => {
-				write!(f, "return type mismatch; expected {expected}, got {got}")
+				write!(f, "return type mismatch; expected `{expected}`, got `{got}`")
 			}
 			ComuneErrCode::ParamCountMismatch { expected, got } => write!(
 				f,
-				"parameter count mismatch; expected {expected}, got {got}",
+				"parameter count mismatch; expected `{expected}`, got `{got}`",
 			),
 			ComuneErrCode::InvalidMemberAccess { t, idx } => {
-				write!(f, "variable of type {t} has no member '{idx}'")
+				write!(f, "variable of type `{t}` has no member `{idx}`")
 			}
-			ComuneErrCode::NotCallable(id) => write!(f, "{id} is not callable"),
-			ComuneErrCode::InvalidDeref(ty) => write!(f, "can't dereference value of type {ty}"),
+			ComuneErrCode::NotCallable(id) => write!(f, "`{id}` is not callable"),
+			ComuneErrCode::InvalidDeref(ty) => write!(f, "can't dereference value of type `{ty}`"),
 			ComuneErrCode::InfiniteSizeType => write!(f, "cyclical type dependency found"),
 			ComuneErrCode::UnstableFeature(feat) => write!(f, "feature `{feat}` is unstable"),
 			ComuneErrCode::NoCandidateFound {
@@ -258,7 +258,7 @@ impl Display for ComuneErrCode {
 				let mut iter = members.iter();
 				write!(
 					f,
-					"missing initializers for type {ty}: {}",
+					"missing initializers for type `{ty}`: {}",
 					iter.next().unwrap()
 				)?;
 
@@ -322,7 +322,7 @@ impl Display for ComuneErrCode {
 			ComuneErrCode::InvalidUse { variable, state } => {
 				write!(
 					f,
-					"use of {} variable {variable}",
+					"use of {} variable `{variable}`",
 					match state {
 						LivenessState::Uninit => "uninitialized",
 						LivenessState::Live => "live (how did you trigger this error??)",
@@ -337,7 +337,7 @@ impl Display for ComuneErrCode {
 			ComuneErrCode::InvalidNewReference { variable } => {
 				write!(
 					f,
-					"variable {variable} must be uninitialized to pass as new&"
+					"variable `{variable}` must be uninitialized to pass as new&"
 				)
 			}
 
@@ -374,7 +374,7 @@ impl Display for ComuneWarning {
 }
 
 impl ComuneMessage {
-	pub fn get_notes(&self) -> &Vec<(Option<SrcSpan>, String)> {
+	pub fn get_notes(&self) -> &Vec<(SrcSpan, String)> {
 		match self {
 			ComuneMessage::Error(e) => &e.notes,
 			ComuneMessage::Warning(_) => todo!(),
@@ -548,8 +548,11 @@ pub fn spawn_logger(backtrace_on_error: bool) -> Sender<CMNMessageLog> {
 						}
 
 						CMNMessageLog::Plain { .. } => {
-							writeln!(out, "{}", format!(" in {}", filename).bright_black())
-								.unwrap();
+							writeln!(
+								out,
+								"{}",
+								format!(" - in {}\n", filename).bright_black()
+							).unwrap();
 						}
 
 						_ => panic!(),
@@ -558,7 +561,7 @@ pub fn spawn_logger(backtrace_on_error: bool) -> Sender<CMNMessageLog> {
 					let notes = msg.get_notes();
 
 					for note in notes {
-						writeln!(out, "{} {}\n", "note:".bold().italic(), note.1.italic()).unwrap();
+						writeln!(out, "{} {}\n", "note:".bold(), note.1).unwrap();
 					}
 
 					// Print compiler backtrace

@@ -59,7 +59,6 @@ impl Display for CIRFunction {
 impl Display for CIRStmt {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match self {
-			CIRStmt::Expression(expr) => writeln!(f, "{expr};"),
 			CIRStmt::Assignment(lval, expr) => writeln!(f, "{lval} = {expr};"),
 			CIRStmt::RefInit(lval, expr) => writeln!(f, "{lval} := {expr};"),
 			CIRStmt::Jump(block) => writeln!(f, "jmp bb{block};"),

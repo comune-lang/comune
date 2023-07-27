@@ -6,7 +6,6 @@ use crate::{
 	errors::{ComuneErrCode, ComuneError},
 	lexer::SrcSpan,
 };
-pub struct CFGWalkerTest;
 pub struct Verify;
 
 impl CIRPass for Verify {

@@ -28,74 +28,74 @@ pub fn validate_function_body(
 		scope.add_variable(param.clone(), name.clone().unwrap(), *props)
 	}
 
-	if let ModuleASTElem::Parsed(elem) = elem {
-		let elem_node_data = elem.get_node_data().clone();
+	let ModuleASTElem::Parsed(elem) = elem else {
+		panic!("unparsed function body in semantic phase!")
+	};
 
-		// Validate function block & get return type, make sure it matches the signature
-		elem.validate(&mut scope)?;
+	// Validate function block & get return type, make sure it matches the signature
+	elem.validate(&mut scope)?;
 
-		let Expr::Atom(Atom::Block { items, result, .. }, _) = elem else { panic!() };
+	let Expr::Atom(Atom::Block { items, result, .. }, meta) = elem else { panic!() };
 
-		// Turn result values into explicit return expressions
+	// Turn result values into explicit return expressions
+	if let Some(expr) = result {
+		let expr_ty = expr.get_type();
 
-		if let Some(expr) = result {
-			let expr_ty = expr.get_type();
-
-			if !expr_ty.castable_to(&scope.ret.1) && !scope.ret.1.is_void() {
-				return Err(ComuneError::new(
-					ComuneErrCode::ReturnTypeMismatch {
-						expected: scope.ret.1,
-						got: expr_ty.clone(),
-					},
-					elem.get_node_data().span,
-				));
-			}
-
-			let expr = *result.take().unwrap();
-			let node_data = expr.get_node_data().clone();
-
-			if scope.ret.1.is_void() {
-				items.push(Stmt::Expr(expr));
-
-				items.push(Stmt::Expr(Expr::Atom(
-					Atom::CtrlFlow(Box::new(ControlFlow::Return { expr: None })),
-					node_data,
-				)));
-			} else {
-				items.push(Stmt::Expr(Expr::Atom(
-					Atom::CtrlFlow(Box::new(ControlFlow::Return { expr: Some(expr) })),
-					node_data,
-				)));
-			}
+		if !expr_ty.castable_to(&scope.ret.1) && !scope.ret.1.is_void() {
+			return Err(ComuneError::new(
+				ComuneErrCode::ReturnTypeMismatch {
+					expected: scope.ret.1,
+					got: expr_ty.clone(),
+				},
+				meta.span,
+			));
 		}
 
-		let has_return = if let Some(Stmt::Expr(Expr::Atom(Atom::CtrlFlow(ctrl), _))) = items.last()
-		{
-			matches!(&**ctrl, ControlFlow::Return { .. })
-		} else {
-			false
-		};
+		let expr = *result.take().unwrap();
+		let expr_meta = expr.get_node_data().clone();
 
-		if !has_return {
-			if scope.ret.1 != Type::Basic(Basic::Void) {
-				return Err(ComuneError::new(
-					ComuneErrCode::ReturnTypeMismatch {
-						expected: scope.ret.1.clone(),
-						got: Type::Basic(Basic::Void),
-					},
-					elem_node_data.span,
-				));
-			}
+		if scope.ret.1.is_void() {
+			items.push(Stmt::Expr(expr));
 
 			items.push(Stmt::Expr(Expr::Atom(
 				Atom::CtrlFlow(Box::new(ControlFlow::Return { expr: None })),
-				NodeData {
-					ty: Some(Type::Basic(Basic::Void)),
-					span: elem_node_data.span,
-				},
-			)))
+				expr_meta,
+			)));
+		} else {
+			items.push(Stmt::Expr(Expr::Atom(
+				Atom::CtrlFlow(Box::new(ControlFlow::Return { expr: Some(expr) })),
+				expr_meta,
+			)));
 		}
 	}
+
+	let has_return = if let Some(Stmt::Expr(Expr::Atom(Atom::CtrlFlow(ctrl), _))) = items.last()
+	{
+		matches!(&**ctrl, ControlFlow::Return { .. })
+	} else {
+		false
+	};
+
+	if !has_return {
+		if scope.ret.1 != Type::Basic(Basic::Void) {
+			return Err(ComuneError::new(
+				ComuneErrCode::ReturnTypeMismatch {
+					expected: scope.ret.1.clone(),
+					got: Type::Basic(Basic::Void),
+				},
+				meta.span,
+			));
+		}
+
+		items.push(Stmt::Expr(Expr::Atom(
+			Atom::CtrlFlow(Box::new(ControlFlow::Return { expr: None })),
+			NodeData {
+				ty: Some(Type::Basic(Basic::Void)),
+				span: meta.span,
+			},
+		)))
+	}
+
 
 	Ok(())
 }

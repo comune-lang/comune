@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use std::{
 	collections::HashMap,
 	ffi::CString,
@@ -31,7 +29,6 @@ type StmtIndex = usize;
 type VarIndex = usize;
 type FieldIndex = usize;
 type TypeName = String;
-type TypeParamIndex = usize;
 type FuncID = Arc<FnPrototype>;
 
 // An LValue is an expression that results in a memory location.
@@ -133,10 +130,6 @@ pub enum CIRCallId {
 
 #[derive(Debug, Clone)]
 pub enum CIRStmt {
-	// Plain expression. Non-terminator.
-	// Has no side effects by definition, and may be optimized out.
-	Expression(RValue),
-
 	// Assignment to a variable. Non-terminator.
 	Assignment(LValue, RValue),
 
@@ -165,6 +158,7 @@ pub enum CIRStmt {
 	},
 
 	// Throwing fn call. Terminator.
+	#[allow(dead_code)]
 	Invoke {
 		id: CIRCallId,
 		args: Vec<(LValue, Type, BindingProps)>,
@@ -286,21 +280,7 @@ impl CIRFunction {
 
 		ty
 	}
-
-	pub fn get_extern(&self) -> CIRFunction {
-		CIRFunction {
-			variables: self.variables[0..self.arg_count].to_vec(),
-			blocks: vec![],
-			ret: self.ret.clone(),
-			arg_count: self.arg_count,
-			generics: self.generics.clone(),
-			attributes: self.attributes.clone(),
-			is_extern: true,
-			is_variadic: self.is_variadic,
-			mangled_name: self.mangled_name.clone(),
-		}
-	}
-
+	
 	pub fn get_return_lvalue(&self) -> Option<LValue> {
 		if self.ret.1.is_void() {
 			None
