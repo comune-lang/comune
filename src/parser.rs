@@ -155,10 +155,6 @@ impl<'ctx> Parser {
 				Token::Keyword("enum") => {
 					let def = Arc::new(RwLock::new(TypeDef::new()));
 					let mut def_write = def.write().unwrap();
-					let self_ty = Type::TypeRef {
-						def: Arc::downgrade(&def),
-						args: vec![],
-					};
 
 					let Token::Name(name) = self.get_next()? else { return self.err(ComuneErrCode::ExpectedIdentifier) };
 					let full_name = Identifier::from_parent(scope, name);
@@ -166,6 +162,11 @@ impl<'ctx> Parser {
 					self.get_next()?;
 
 					def_write.generics = self.parse_generic_param_list(None)?;
+					
+					let self_ty = Type::TypeRef {
+						def: Arc::downgrade(&def),
+						args: def_write.generics.get_as_arg_list(),
+					};
 
 					if self.get_current()? != Token::Other('{') {
 						return self.err(ComuneErrCode::UnexpectedToken);
@@ -175,10 +176,7 @@ impl<'ctx> Parser {
 
 					let parent_name = Identifier {
 						qualifier: (
-							Some(Box::new(Type::TypeRef {
-								def: Arc::downgrade(&def),
-								args: def_write.generics.get_as_arg_list(),
-							})),
+							Some(Box::new(self_ty.clone())),
 							None,
 						),
 						path: vec![],
@@ -268,9 +266,10 @@ impl<'ctx> Parser {
 
 					self.get_next()?;
 
+					let generics = self.parse_generic_param_list(None)?;
+
 					// Register algebraic type
-					let def =
-						self.parse_struct_body(name, scope, Generics::new(), current_attributes)?;
+					let def = self.parse_struct_body(name, scope, generics, current_attributes)?;
 					let def_name = def.read().unwrap().name.clone();
 
 					self.interface
@@ -605,10 +604,6 @@ impl<'ctx> Parser {
 
 		let def = Arc::new(RwLock::new(TypeDef::new()));
 		let mut def_write = def.write().unwrap();
-		let mut self_ty = Type::TypeRef {
-			def: Arc::downgrade(&def),
-			args: vec![],
-		};
 
 		let full_name = Identifier::from_parent(scope, name);
 
@@ -617,18 +612,12 @@ impl<'ctx> Parser {
 		attributes = vec![];
 
 		// Get the generic params
-		def_write.generics = self.parse_generic_param_list(None)?;
-		def_write.generics.add_base_generics(generics);
-
-		// Add every param as an arg to self_ty
-		// This is analogous to doing `impl<type T, type U> MyType<T, U>`
-		for i in 0..def_write.generics.params.len() {
-			let Type::TypeRef { args, .. } = &mut self_ty else {
-				unreachable!()
-			};
-
-			args.push(GenericArg::Type(Type::TypeParam(i)));
-		}
+		def_write.generics = generics;
+		
+		let self_ty = Type::TypeRef {
+			def: Arc::downgrade(&def),
+			args: def_write.generics.get_as_arg_list(),
+		};
 
 		self.consume(&Token::Other('{'))?; // Consume brace
 

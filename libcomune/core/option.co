@@ -13,7 +13,7 @@ enum Option<type T> {
 
 	None,
 
-	//drop(mut& self) {}
+	drop(mut& self) {}
 }
 
 impl<type T> Option<T> {
