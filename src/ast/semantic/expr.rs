@@ -49,7 +49,7 @@ impl Expr {
 
 						if let Type::Array(ty, _) = &first_t {
 							if second_t != idx_type {
-								if rhs.coercable_to(&second_t, &idx_type, scope) {
+								if rhs.coercable_to(&idx_type, scope) {
 									rhs.wrap_in_cast(idx_type);
 								} else {
 									return Err(ComuneError::new(
@@ -84,9 +84,9 @@ impl Expr {
 								if first_t != second_t {
 									// Try to coerce one to the other
 
-									if lhs.coercable_to(&first_t, &second_t, scope) {
+									if lhs.coercable_to(&second_t, scope) {
 										lhs.wrap_in_cast(second_t.clone());
-									} else if rhs.coercable_to(&second_t, &first_t, scope) {
+									} else if rhs.coercable_to(&first_t, scope) {
 										rhs.wrap_in_cast(first_t.clone());
 									} else {
 										return Err(ComuneError::new(
@@ -164,12 +164,12 @@ impl Expr {
 	}
 
 	// Check whether an Expr is coercable to a type
-	pub fn coercable_to(&self, from: &Type, target: &Type, scope: &FnScope) -> bool {
+	pub fn coercable_to(&self, target: &Type, scope: &FnScope) -> bool {
 		match target {
 			Type::Tuple(TupleKind::Sum, types) => {
 				let tuple_matches = types
 					.iter()
-					.filter(|ty| self.coercable_to(from, ty, scope))
+					.filter(|ty| self.coercable_to(ty, scope))
 					.count();
 
 				match tuple_matches {
@@ -181,21 +181,10 @@ impl Expr {
 
 			_ => match self {
 				Expr::Atom(a, _) => match a {
-					Atom::IntegerLit(_, t) => {
-						if t.is_some() {
-							*target == Type::Basic(t.unwrap())
-						} else {
-							target.is_integral()
-						}
-					}
+					Atom::IntegerLit(_, Some(t)) | Atom::FloatLit(_, Some(t)) => *target == Type::Basic(*t),
 
-					Atom::FloatLit(_, t) => {
-						if t.is_some() {
-							*target == Type::Basic(t.unwrap())
-						} else {
-							target.is_floating_point()
-						}
-					}
+					Atom::IntegerLit(_, None) => target.is_integral(),
+					Atom::FloatLit(_, None) => target.is_floating_point(),
 
 					Atom::BoolLit(_) => target.is_boolean(),
 
@@ -213,10 +202,10 @@ impl Expr {
 						false
 					}
 
-					_ => from.is_subtype_of(target),
+					_ => self.get_type().is_subtype_of(target),
 				},
 
-				_ => from.is_subtype_of(target),
+				_ => self.get_type().is_subtype_of(target),
 			},
 		}
 	}
@@ -281,7 +270,7 @@ impl Atom {
 			Atom::IntegerLit(_, t) => {
 				if let Some(t) = t {
 					Ok(Type::Basic(*t))
-				} else if let Some(Type::Basic(_)) = meta.ty {
+				} else if let Some(Type::Basic(Basic::Integral { .. })) = meta.ty {
 					Ok(meta.ty.as_ref().unwrap().clone())
 				} else {
 					Ok(Type::i32_type(true))
@@ -291,8 +280,7 @@ impl Atom {
 			Atom::FloatLit(_, t) => {
 				if let Some(t) = t {
 					Ok(Type::Basic(*t))
-				} else if let Some(Type::Basic(b)) = meta.ty {
-					*t = Some(b);
+				} else if let Some(Type::Basic(Basic::Float { .. })) = meta.ty {
 					Ok(meta.ty.as_ref().unwrap().clone())
 				} else {
 					*t = Some(Basic::Float {
@@ -436,7 +424,7 @@ impl Atom {
 
 							let expr_ty = expr.validate(scope)?;
 
-							if !expr.coercable_to(&expr_ty, &member_ty, scope) {
+							if !expr.coercable_to(&member_ty, scope) {
 								return Err(ComuneError::new(
 									ComuneErrCode::AssignTypeMismatch {
 										expr: expr_ty,
@@ -467,7 +455,35 @@ impl Atom {
 					}
 
 					XtorKind::Constructor { args, resolved } => {
-						if placement.is_none() {
+						if let Some(placement) = placement {
+							// Constructor call
+
+							for arg in args.iter_mut() {
+								arg.validate(scope)?;
+							}
+
+							if resolved == &FnRef::None {
+								args.insert(0, *placement.clone());
+							}
+
+							let mut candidates: Vec<_> = def
+								.init
+								.iter()
+								.filter(|init| func::is_candidate_viable(args, &generic_args, init))
+								.cloned()
+								.collect();
+
+							let func = func::try_select_candidate(
+								&def.name,
+								args,
+								generic_args,
+								&mut candidates,
+								meta.span,
+								scope,
+							)?;
+
+							*resolved = FnRef::Direct(func);
+						} else {
 							// Desugar `x = new T()` into `x = { T _tmp; new (_tmp) T(args); _tmp }`
 
 							let tmp_id: Name = "_tmp".into();
@@ -513,41 +529,10 @@ impl Atom {
 								is_unsafe: false,
 							};
 
+							// re-validate, now with the desugared placement-new form
 							*self = block;
 							return self.validate(scope, meta);
 						}
-
-						// Constructor call
-
-						for arg in args.iter_mut() {
-							arg.validate(scope)?;
-						}
-
-						let Some(placement) = placement else {
-							panic!()
-						};
-
-						if resolved == &FnRef::None {
-							args.insert(0, *placement.clone());
-						}
-
-						let mut candidates: Vec<_> = def
-							.init
-							.iter()
-							.filter(|init| func::is_candidate_viable(args, &generic_args, init))
-							.cloned()
-							.collect();
-
-						let func = func::try_select_candidate(
-							&def.name,
-							args,
-							generic_args,
-							&mut candidates,
-							meta.span,
-							scope,
-						)?;
-
-						*resolved = FnRef::Direct(func);
 					}
 				}
 
@@ -613,7 +598,7 @@ impl Atom {
 						if body_ty == else_ty {
 							Ok(body_ty)
 						} else {
-							todo!()
+							Ok(Type::common_type([&body_ty, &else_ty]))
 						}
 					} else {
 						Ok(Type::void_type())
@@ -659,7 +644,7 @@ impl Atom {
 
 						if expr_ty == scope.ret.1 {
 							Ok(Type::Never)
-						} else if expr.coercable_to(&expr_ty, &scope.ret.1, scope) {
+						} else if expr.coercable_to(&scope.ret.1, scope) {
 							expr.wrap_in_cast(scope.ret.1.clone());
 							Ok(Type::Never)
 						} else {
@@ -737,7 +722,7 @@ impl Atom {
 						}
 					}
 
-					Ok(Type::common_type(&branch_types)) // TODO: This'll panic with an empty match expression
+					Ok(Type::common_type(&branch_types))
 				}
 			},
 		}

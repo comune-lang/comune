@@ -352,7 +352,7 @@ fn candidate_compare(args: &[Expr], l: &FnPrototype, r: &FnPrototype, scope: &Fn
 
 		if let Some((l_ty, ..)) = l.params.params.get(i) {
 			if arg_ty != l_ty {
-				if arg.coercable_to(arg_ty, l_ty, scope) {
+				if arg.coercable_to(l_ty, scope) {
 					l_coerces += 1
 				} else {
 					l_casts += 1
@@ -362,7 +362,7 @@ fn candidate_compare(args: &[Expr], l: &FnPrototype, r: &FnPrototype, scope: &Fn
 
 		if let Some((r_ty, ..)) = r.params.params.get(i) {
 			if arg_ty != r_ty {
-				if arg.coercable_to(arg_ty, r_ty, scope) {
+				if arg.coercable_to(r_ty, scope) {
 					r_coerces += 1
 				} else {
 					r_casts += 1
@@ -399,7 +399,7 @@ fn validate_arg_list(
 
 			let arg_type = arg.validate(scope)?.get_concrete_type(generic_args);
 
-			if !arg.coercable_to(&arg_type, &param_concrete, scope) {
+			if !arg.coercable_to(&param_concrete, scope) {
 				return Err(ComuneError::new(
 					ComuneErrCode::InvalidCoercion {
 						from: arg_type,

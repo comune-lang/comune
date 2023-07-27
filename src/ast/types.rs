@@ -451,7 +451,13 @@ impl Basic {
 
 impl Type {
 	pub fn common_type<'iter>(types: impl IntoIterator<Item = &'iter Type>) -> Type {
-		let types = types
+		let mut types_flat = vec![];
+
+		for ty in types.into_iter() {
+			Type::flatten_sum_type(ty, &mut types_flat);
+		}
+
+		let types = types_flat
 			.into_iter()
 			.unique()
 			.collect_vec();
@@ -460,6 +466,18 @@ impl Type {
 			ty.clone()
 		} else {
 			Type::Tuple(TupleKind::Sum, types.into_iter().cloned().collect())
+		}
+	}
+
+	fn flatten_sum_type<'iter>(ty: &'iter Type, vec: &mut Vec<&'iter Type>) {
+		match ty {
+			Type::Tuple(TupleKind::Sum, types) => {
+				for ty in types {
+					Type::flatten_sum_type(ty, vec)
+				}
+			}
+
+			_ => vec.push(ty),
 		}
 	}
 
