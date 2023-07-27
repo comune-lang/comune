@@ -19,7 +19,7 @@ use crate::{
 
 use super::{
 	builder::CIRModuleBuilder, CIRCallId, CIRFnMap, CIRFunction, CIRModule, CIRStmt, CIRTyMap,
-	RValue, Type,
+	Type, RValue,
 };
 
 // The monomorphization server (MonomorphServer) stores the bodies of generic
@@ -182,10 +182,10 @@ impl MonomorphServer {
 				}
 
 				match stmt {
-					CIRStmt::Expression(expr) | CIRStmt::Assignment(_, expr) => {
+					CIRStmt::Assignment(_, expr) => {
 						self.monoize_rvalue_types(expr, param_map, access);
 					}
-
+					
 					CIRStmt::Invoke {
 						id: CIRCallId::Direct(func, _),
 						generic_args,
@@ -236,7 +236,7 @@ impl MonomorphServer {
 			access.fns_out.insert(func.clone(), body);
 		}
 	}
-
+	
 	fn monoize_rvalue_types(
 		&self,
 		rval: &mut RValue,

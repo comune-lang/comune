@@ -25,6 +25,7 @@ use super::{
 pub struct CIRBuilderScope {
 	start: BlockIndex,
 	end: Option<BlockIndex>,
+	#[allow(dead_code)]
 	label: Option<Name>,
 	variables: Vec<(Option<Name>, VarIndex)>,
 	is_loop: bool,
@@ -32,8 +33,6 @@ pub struct CIRBuilderScope {
 
 pub struct CIRModuleBuilder {
 	pub module: CIRModule,
-
-	type_param_counter: usize, // Used to assign unique names to type parameters
 
 	current_fn: Option<CIRFunction>,
 	current_block: BlockIndex,
@@ -51,7 +50,6 @@ impl CIRModuleBuilder {
 			},
 
 			current_fn: None,
-			type_param_counter: 0,
 			current_block: 0,
 			scope_stack: vec![],
 		};
@@ -169,7 +167,6 @@ impl CIRModuleBuilder {
 		};
 
 		self.current_fn = Some(func);
-
 		self.scope_stack.clear();
 		self.current_block = 0;
 
@@ -368,38 +365,6 @@ impl CIRModuleBuilder {
 			Pattern::Binding(Binding { name: None, .. }) => {}
 
 			_ => todo!(),
-		}
-	}
-
-	fn generate_binding(
-		&mut self,
-		ty: &Type,
-		name: Name,
-		props: BindingProps,
-		elem: &Option<Box<Expr>>,
-	) {
-		let idx = self.get_fn().variables.len();
-
-		self.get_fn_mut()
-			.variables
-			.push((ty.clone(), props, Some(name.clone())));
-
-		self.scope_stack
-			.last_mut()
-			.unwrap()
-			.variables
-			.push((Some(name), idx));
-
-		let lval = LValue {
-			local: self.get_fn().variables.len() - 1,
-			projection: vec![],
-			props,
-		};
-
-		if let Some(elem) = elem {
-			if let Some(rval) = self.generate_expr(elem, props) {
-				self.generate_raw_assign(lval, rval);
-			}
 		}
 	}
 
@@ -1549,7 +1514,7 @@ impl CIRModuleBuilder {
 				let mut lval = self.get_local_lvalue(local);
 				lval.props.span = meta.span;
 
-				Some(self.get_local_lvalue(local))
+				Some(lval)
 			}
 
 			Expr::Atom(Atom::Block { items, result, .. }, _) => {

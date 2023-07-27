@@ -58,8 +58,6 @@ impl CIRStmt {
 				}
 			}
 
-			CIRStmt::Expression(rval) => self.inspect_rvalue(rval, f),
-
 			// FIXME: Incorrect for reference bindings
 			CIRStmt::DropShim { var, .. } => f(var, &BindingProps::value()),
 
@@ -520,12 +518,6 @@ impl AnalysisResultHandler<DefInitFlow> for VarInitCheck {
 	}
 }
 
-enum DropStyle {
-	Live,
-	Conditional,
-	Dead,
-}
-
 impl AnalysisResultHandler<DefInitFlow> for ElaborateDrops {
 	fn process_result(
 		&self,
@@ -648,16 +640,6 @@ struct DropElaborator<'func> {
 impl<'func> DropElaborator<'func> {
 	fn write(&mut self, stmt: CIRStmt) {
 		self.current_fn.blocks[self.current_block].items.push(stmt)
-	}
-
-	fn append_block(&mut self) -> BlockIndex {
-		self.current_fn.blocks.push(CIRBlock {
-			items: vec![],
-			preds: vec![],
-			succs: vec![],
-		});
-		self.current_block = self.current_fn.blocks.len() - 1;
-		self.current_block
 	}
 
 	fn collect_drop_flags(&mut self, lval: &LValue, drop_flags: &mut HashMap<LValue, VarIndex>) {

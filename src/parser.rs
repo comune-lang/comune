@@ -168,11 +168,7 @@ impl<'ctx> Parser {
 						args: def_write.generics.get_as_arg_list(),
 					};
 
-					if self.get_current()? != Token::Other('{') {
-						return self.err(ComuneErrCode::UnexpectedToken);
-					}
-
-					self.get_next()?; // Consume brace
+					self.consume(&Token::Other('{'))?;
 
 					let parent_name = Identifier {
 						qualifier: (

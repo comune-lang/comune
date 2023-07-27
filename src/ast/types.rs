@@ -977,6 +977,8 @@ impl Hash for Type {
 	}
 }
 
+// SrcSpan equality is not a requirement for BindingProps equality,
+// it's just metadata for error lints
 impl PartialEq for BindingProps {
 	fn eq(&self, other: &Self) -> bool {
 		(self.is_mut, self.is_ref, self.is_new) == (other.is_mut, other.is_ref, other.is_new)

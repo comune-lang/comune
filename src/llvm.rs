@@ -285,10 +285,6 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 			for stmt in block.items.iter() {
 				match stmt {
-					CIRStmt::Expression(..) => {
-						panic!("loose Expression found in LLVM codegen!")
-					}
-
 					CIRStmt::Assignment(lval, expr) => {
 						self.generate_expr(
 							self.generate_lvalue_use(lval, BindingProps::mut_reference())
