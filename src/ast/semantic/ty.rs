@@ -80,7 +80,7 @@ pub fn resolve_interface_types(parser: &mut Parser) -> ComuneResult<()> {
 				}
 			}
 
-			_ => todo!(),
+			ModuleItemInterface::Variable(ty) => resolve_type(&mut ty.write().unwrap(), interface, &Generics::new())?,
 		};
 	}
 

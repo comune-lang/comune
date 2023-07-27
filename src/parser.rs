@@ -541,16 +541,15 @@ impl<'ctx> Parser {
 							}
 
 							let id = Identifier::from_parent(scope, name);
-							let module_interface = &mut self.interface;
 
 							self.module_impl.fn_impls.insert(proto.clone(), ast);
 
 							if let Some(ModuleItemInterface::Functions(existing)) =
-								module_interface.children.get(&id)
+								self.interface.children.get(&id)
 							{
 								existing.write().unwrap().push(proto);
 							} else {
-								module_interface.children.insert(
+								self.interface.children.insert(
 									id,
 									ModuleItemInterface::Functions(Arc::new(RwLock::new(vec![
 										proto,
@@ -559,7 +558,16 @@ impl<'ctx> Parser {
 							}
 						}
 
-						(DeclParseResult::Variable(..), _) => todo!(),
+						(DeclParseResult::Variable(name, ty), ModuleASTElem::NoElem) => {
+							let id = Identifier::from_parent(scope, name);
+
+							self.interface.children.insert(
+								id, 
+								ModuleItemInterface::Variable(Arc::new(RwLock::new(ty)))
+							);
+						}
+
+						_ => todo!()
 					}
 				}
 			}
@@ -726,7 +734,21 @@ impl<'ctx> Parser {
 		Ok(func)
 	}
 
-	fn skip_block(&self) -> ComuneResult<Token> {
+	fn skip_expression(&self) -> ComuneResult<()> {
+		loop {
+			match self.get_next()? {
+				Token::Other('{') => self.skip_block()?,
+				
+				Token::Other(';') | Token::Eof => break,
+
+				_ => { self.get_next()?; }
+			}
+		}
+
+		Ok(())
+	}
+
+	fn skip_block(&self) -> ComuneResult<()> {
 		let mut current = self.get_current()?;
 
 		if current != Token::Other('{') {
@@ -745,7 +767,8 @@ impl<'ctx> Parser {
 			}
 		}
 
-		self.get_next()
+		self.get_next()?;
+		Ok(())
 	}
 
 	fn parse_block(&self, scope: &FnScope<'ctx>) -> ComuneResult<Expr> {
@@ -882,32 +905,31 @@ impl<'ctx> Parser {
 
 					// Past the parameter list, check if we're at a function body or not
 
-					let ast;
-
 					match self.get_current()? {
 						Token::Other('{') => {
-							ast = ModuleASTElem::Unparsed(self.get_current_token_index());
+							item = ModuleASTElem::Unparsed(self.get_current_token_index());
 							self.skip_block()?;
 						}
 
 						Token::Other(';') => {
-							ast = ModuleASTElem::NoElem;
+							item = ModuleASTElem::NoElem;
 							self.get_next()?;
 						}
 
 						_ => return self.err(ComuneErrCode::UnexpectedToken),
-					}
+					};
 
 					interface = DeclParseResult::Function(name, Arc::new(t));
-					item = ast;
 				}
 
 				"=" => {
 					self.get_next()?;
-					// TODO: Skip expression
+					
+					item = ModuleASTElem::Unparsed(self.get_current_token_index());
+					interface = DeclParseResult::Variable(name, t);
 
+					self.skip_expression()?;
 					self.check_semicolon()?;
-					todo!();
 				}
 
 				_ => {
@@ -915,9 +937,9 @@ impl<'ctx> Parser {
 				}
 			}
 		} else {
+			self.check_semicolon()?;
 			interface = DeclParseResult::Variable(name, t);
 			item = ModuleASTElem::NoElem;
-			self.check_semicolon()?;
 		}
 
 		Ok((interface, item))

@@ -71,7 +71,7 @@ pub enum ModuleItemInterface {
 	Type(Arc<RwLock<TypeDef>>),
 	Trait(Arc<RwLock<TraitInterface>>),
 	Functions(Arc<RwLock<Vec<Arc<FnPrototype>>>>),
-	Variable(Type),
+	Variable(Arc<RwLock<Type>>),
 	Alias(Identifier),
 	TypeAlias(Arc<RwLock<(Type, Generics)>>),
 }

@@ -127,6 +127,8 @@ void temp_drop_test(DropTest& test) {
 	printf(c"temp_drop_test(DropTest&) called\n");
 }
 
+int global_var_test;
+
 void drop_test() {
 	printf(c"\nEntering drop_test\n\n");
 	
