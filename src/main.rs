@@ -158,19 +158,23 @@ fn main() -> color_eyre::eyre::Result<()> {
 		.to_string_lossy()
 		.to_string();
 
-	println!(
-		"\n{:>10} target {}",
-		"linking".bold().green(),
-		build_name.bold()
-	);
-
+	println!();
 	// invoke linker for all EmitTypes that need it
 	// We use clang here because fuck dude i don't know how to use ld manually
 
 	let mut link_errors = 0;
+	let mut link_jobs = 0;
 
 	for emit_type in &compiler_state.emit_types {
 		if let EmitType::Binary | EmitType::DynamicLib | EmitType::StaticLib = emit_type {
+			link_jobs += 1;
+			
+			println!(
+				"{:>10} target {}",
+				"linking".bold().green(),
+				build_name.bold()
+			);
+
 			let mut output = Command::new("clang");
 
 			for module in &*compiler_state.output_modules.lock().unwrap() {
@@ -214,13 +218,21 @@ fn main() -> color_eyre::eyre::Result<()> {
 
 	let link_time = build_time.elapsed() - compile_time;
 
-	println!(
-		"{:>10} building in {}s (compile: {}s, link: {}s)\n",
+	print!(
+		"{:>10} building in {}s",
 		"finished".bold().green(),
 		build_time.elapsed().as_millis() as f64 / 1000.0,
-		compile_time.as_millis() as f64 / 1000.0,
-		link_time.as_millis() as f64 / 1000.0
 	);
+
+	if link_jobs > 0 {
+		print!(
+			" (compile: {}s, link: {}s)",
+			compile_time.as_millis() as f64 / 1000.0,
+			link_time.as_millis() as f64 / 1000.0
+		);
+	}
+	
+	print!("\n\n");
 
 	// Block until all output is written
 	let _ = std::io::stdout().lock();
