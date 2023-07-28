@@ -1,5 +1,7 @@
 import main;
 
+using core::libc::printf;
+
 u64 fib(u64 n) {
 	u64 mut a = 0;
 	u64 mut b = 1;
@@ -9,7 +11,7 @@ u64 fib(u64 n) {
 		c = a + b;
 		a = b;
 		b = c;
-		main::printf(c"Loop!\n");
+		printf(c"Loop!\n");
 	};
 
 	return b;

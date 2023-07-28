@@ -1157,7 +1157,9 @@ impl CIRModuleBuilder {
 						// Generate branches
 
 						for (i, (pattern, branch)) in branches.iter().enumerate() {
-							let Expr::Atom(Atom::Block { items, result, .. }, _) = branch else { panic!() };
+							let Expr::Atom(Atom::Block { items, result, .. }, _) = branch else { 
+								panic!("invalid match arm: {branch:?}")
+							};
 
 							let binding_idx = self.append_block();
 

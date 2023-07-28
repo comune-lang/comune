@@ -711,11 +711,13 @@ impl Atom {
 
 						branch_types.push(branch.1.validate(&mut subscope)?);
 
+						branch.1.wrap_in_block();
+
 						if !branch.0.get_type().is_subtype_of(&scrutinee_type) {
 							return Err(ComuneError::new(
-								ComuneErrCode::AssignTypeMismatch { 
-									expr: scrutinee_type, 
-									to: branch.0.get_type().clone()
+								ComuneErrCode::MatchTypeMismatch { 
+									scrutinee: scrutinee_type, 
+									branch: branch.0.get_type().clone()
 								},
 								branch.1.get_span()
 							))

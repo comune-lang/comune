@@ -89,6 +89,10 @@ pub enum ComuneErrCode {
 		expr: Type,
 		to: Type,
 	},
+	MatchTypeMismatch {
+		scrutinee: Type,
+		branch: Type,
+	},
 	CastTypeMismatch {
 		from: Type,
 		to: Type,
@@ -210,10 +214,12 @@ impl Display for ComuneErrCode {
 				f,
 				"type mismatch; cannot apply operator {op:?} to `{a}` and `{b}`"
 			),
-			ComuneErrCode::AssignTypeMismatch { expr, to } => write!(
-				f,
-				"cannot assign value of type `{expr}` to variable of type `{to}`"
-			),
+			ComuneErrCode::AssignTypeMismatch { expr, to } => {
+				write!(f, "cannot assign value of type `{expr}` to variable of type `{to}`")
+			}
+			ComuneErrCode::MatchTypeMismatch { scrutinee, branch } => {
+				write!(f, "branch type `{branch}` is not a subtype of matched type `{scrutinee}`")
+			}
 			ComuneErrCode::CastTypeMismatch { from, to } => {
 				write!(f, "cannot cast from `{from}` to `{to}`")
 			}

@@ -4,8 +4,7 @@
 // and contains the most fundamental library features of
 // the language. things like built-in trait definitions,
 // primitive type impls, that sorta thing
-
+module libc;
 module mem;
-module ops;
 module option;
 module traits;

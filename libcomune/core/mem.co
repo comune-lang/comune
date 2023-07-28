@@ -1,21 +1,4 @@
-
-@no_mangle
-void mut* malloc(usize size);
-
-@no_mangle
-void mut* realloc(void mut* ptr, usize capacity);
-
-@no_mangle
-void free(void mut* ptr);
-
-@no_mangle
-void mut* memcpy(void mut* dest, void* src, usize count);
-
-@no_mangle
-int printf(u8* fmt, ...);
-
-@no_mangle
-never abort();
+using core::libc::{printf, abort, malloc, memcpy};
 
 // TODO: Replace this with an intrinsic lol
 usize size_of<type T>() {

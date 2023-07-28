@@ -352,6 +352,21 @@ impl Expr {
 		}
 	}
 
+	pub fn wrap_in_block(&mut self) {
+		let node_data = self.get_node_data().clone();
+
+		unsafe {	
+			let tmp = ptr::read(self);
+			
+			let new = Expr::Atom(
+				Atom::Block { items: vec![], result: Some(Box::new(tmp)), is_unsafe: false },
+				node_data
+			);
+
+			ptr::write(self, new);
+		}
+	}
+
 	pub fn try_wrap_in_cast(&mut self, to: Type) -> ComuneResult<()> {
 		if self.get_type() == &to {
 			return Ok(());

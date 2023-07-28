@@ -1,11 +1,14 @@
-using core::mem::{
+using core::libc::{
 	abort,
-	size_of, 
 	malloc, 
 	realloc, 
-	free, 
+	free,
+	memcpy,
+};
+
+using core::mem::{
+	size_of,
 	bit_cast, 
-	memcpy, 
 	null_mut
 };
 

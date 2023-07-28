@@ -180,6 +180,8 @@ impl<'ctx> Parser {
 					};
 
 					loop {
+						let attributes = self.parse_attributes()?;
+
 						match self.get_current()? {
 							Token::Name(variant_name) => {
 								let variant = if self.get_next()? == Token::Other('{') {
@@ -187,7 +189,7 @@ impl<'ctx> Parser {
 										variant_name.clone(),
 										&parent_name,
 										def_write.generics.clone(),
-										vec![],
+										attributes,
 									)?
 								} else {
 									Arc::new(RwLock::new(TypeDef {
@@ -196,7 +198,7 @@ impl<'ctx> Parser {
 										name: Identifier::from_parent(&parent_name, variant_name.clone()),
 										layout: DataLayout::Declared,
 										generics: def_write.generics.clone(),
-										attributes: vec![],
+										attributes,
 										init: vec![],
 										drop: None,
 									}))
