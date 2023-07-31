@@ -53,7 +53,7 @@ pub enum ModuleState {
 	InterfaceComplete(Arc<ModuleInterface>),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum EmitType {
 	DynamicLib,
 	StaticLib,
@@ -63,6 +63,7 @@ pub enum EmitType {
 	ComuneIrMono,
 	LLVMIrRaw,
 	LLVMIr,
+	None,
 }
 
 impl EmitType {
@@ -76,6 +77,7 @@ impl EmitType {
 			"cirmono" => Some(EmitType::ComuneIrMono),
 			"llraw" => Some(EmitType::LLVMIrRaw),
 			"ll" => Some(EmitType::LLVMIr),
+			"none" => Some(EmitType::None),
 			_ => None,
 		}
 	}

@@ -13,6 +13,7 @@ use ast::{module::Identifier, types};
 use clap::Parser;
 use colored::Colorize;
 use errors::CMNMessageLog;
+use itertools::Itertools;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -61,12 +62,12 @@ fn main() -> color_eyre::eyre::Result<()> {
 	let build_time = Instant::now();
 
 	if args.input_files.is_empty() {
-		println!("{} no input modules", "fatal:".red().bold());
-		return Ok(());
+		eprintln!("{} no input modules", "fatal:".red().bold());
+		std::process::exit(1);
 	}
 
 	if let Err(e) = std::env::var(COMUNE_TOOLCHAIN_KEY) {
-		println!(
+		eprintln!(
 			"{} no comune toolchain found!\nplease point the {COMUNE_TOOLCHAIN_KEY} environment variable to a valid comune toolchain. ({e})",
 			"error:".red().bold(),
 		);
@@ -84,6 +85,13 @@ fn main() -> color_eyre::eyre::Result<()> {
 
 	if emit_types.is_empty() {
 		emit_types = vec![EmitType::Binary];
+	}
+	
+	let emit_types = emit_types.into_iter().unique().collect_vec();
+
+	if emit_types.contains(&EmitType::None) && emit_types.len() != 1 {
+		eprintln!("{} emit type `none` cannot be used in combination with other options.", "error:".red().bold());
+		std::process::exit(1);
 	}
 
 	rayon::ThreadPoolBuilder::new()
