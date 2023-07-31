@@ -7,4 +7,5 @@
 module libc;
 module mem;
 module option;
+module result;
 module traits;

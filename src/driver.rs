@@ -322,7 +322,7 @@ pub fn parse_interface(
 	let lexer = match Lexer::new(path, error_sender) {
 		Ok(f) => f,
 		Err(e) => {
-			println!(
+			eprintln!(
 				"{} failed to open module '{}' ({})",
 				"fatal:".red().bold(),
 				path.file_name().unwrap().to_string_lossy(),
@@ -685,7 +685,7 @@ pub fn generate_llvm_ir<'ctx>(
 	backend.generate_libc_bindings();
 
 	if let Err(e) = backend.module.verify() {
-		println!(
+		eprintln!(
 			"{}\n{}\n",
 			"an internal compiler error occurred:".red().bold(),
 			lexer::get_escaped(e.to_str().unwrap())
@@ -696,7 +696,7 @@ pub fn generate_llvm_ir<'ctx>(
 		// Output bogus LLVM here, for debugging purposes
 		backend.module.print_to_file(boguspath.as_os_str()).unwrap();
 
-		println!(
+		eprintln!(
 			"{} ill-formed LLVM IR printed to {}",
 			"note:".bold(),
 			boguspath.to_string_lossy().bold()
@@ -769,7 +769,6 @@ pub fn get_module_source_path(
 			}
 		}
 	}
-	println!("could not find {current_path:?}");
 
 	None
 }

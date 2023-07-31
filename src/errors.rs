@@ -422,7 +422,7 @@ pub fn spawn_logger(backtrace_on_error: bool) -> Sender<CMNMessageLog> {
 						_ => panic!(),
 					};
 
-					let mut out = io::stdout().lock();
+					let mut out = io::stderr().lock();
 
 					// Print message
 					match msg {

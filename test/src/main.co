@@ -204,7 +204,7 @@ void enum_test() {
 		}
 	}
 
-	Option<i32> mut option = new Some<i32>(1);
+	Option<i32> option = new Some<i32>(1);
 
 	i32 unwrapped = option.unwrap();
 
