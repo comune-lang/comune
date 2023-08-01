@@ -181,7 +181,9 @@ impl Expr {
 
 			_ => match self {
 				Expr::Atom(a, _) => match a {
-					Atom::IntegerLit(_, Some(t)) | Atom::FloatLit(_, Some(t)) => *target == Type::Basic(*t),
+					Atom::IntegerLit(_, Some(t)) | Atom::FloatLit(_, Some(t)) => {
+						*target == Type::Basic(*t)
+					}
 
 					Atom::IntegerLit(_, None) => target.is_integral(),
 					Atom::FloatLit(_, None) => target.is_floating_point(),
@@ -715,12 +717,12 @@ impl Atom {
 
 						if !branch.0.get_type().is_subtype_of(&scrutinee_type) {
 							return Err(ComuneError::new(
-								ComuneErrCode::MatchTypeMismatch { 
-									scrutinee: scrutinee_type, 
-									branch: branch.0.get_type().clone()
+								ComuneErrCode::MatchTypeMismatch {
+									scrutinee: scrutinee_type,
+									branch: branch.0.get_type().clone(),
 								},
-								branch.1.get_span()
-							))
+								branch.1.get_span(),
+							));
 						}
 					}
 

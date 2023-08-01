@@ -1,13 +1,10 @@
-
 use crate::{
+	ast::statement::Stmt,
 	errors::{ComuneErrCode, ComuneError},
-	parser::ComuneResult, ast::statement::Stmt,
+	parser::ComuneResult,
 };
 
-use crate::ast::{
-	types::Type,
-	FnScope,
-};
+use crate::ast::{types::Type, FnScope};
 
 impl Stmt {
 	pub fn validate<'ctx>(&mut self, scope: &mut FnScope<'ctx>) -> ComuneResult<Type> {

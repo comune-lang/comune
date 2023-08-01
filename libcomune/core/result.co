@@ -1,0 +1,5 @@
+
+enum Result<type T, type E> {
+	Ok { T value; },
+	Err { E err; },
+}

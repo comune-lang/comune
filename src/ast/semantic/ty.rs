@@ -80,7 +80,9 @@ pub fn resolve_interface_types(parser: &mut Parser) -> ComuneResult<()> {
 				}
 			}
 
-			ModuleItemInterface::Variable(ty) => resolve_type(&mut ty.write().unwrap(), interface, &Generics::new())?,
+			ModuleItemInterface::Variable(ty) => {
+				resolve_type(&mut ty.write().unwrap(), interface, &Generics::new())?
+			}
 		};
 	}
 
@@ -378,16 +380,16 @@ pub fn resolve_type_def(
 			}),
 		},
 	));
-	
+
 	let ty_has_drop = ty.drop.is_some();
 
 	for (_, variant) in &mut ty.variants {
 		resolve_type_def(variant.clone(), interface, module_impl)?;
-		
+
 		if ty_has_drop && variant.read().unwrap().drop.is_some() {
 			return Err(ComuneError::new(
 				ComuneErrCode::DtorDefOverlap,
-				SrcSpan::new()
+				SrcSpan::new(),
 			));
 		}
 	}

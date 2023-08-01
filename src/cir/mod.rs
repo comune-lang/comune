@@ -280,7 +280,7 @@ impl CIRFunction {
 
 		ty
 	}
-	
+
 	pub fn get_return_lvalue(&self) -> Option<LValue> {
 		if self.ret.1.is_void() {
 			None

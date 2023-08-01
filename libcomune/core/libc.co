@@ -1,0 +1,20 @@
+// this module contains manual bindings to important libc functions.
+// after basic C++ integration is implemented, this should become obsolete, as we can just import the C standard library directly on applicable platforms.
+
+@no_mangle
+void mut* malloc(usize size);
+
+@no_mangle
+void mut* realloc(void mut* ptr, usize capacity);
+
+@no_mangle
+void free(void mut* ptr);
+
+@no_mangle
+void mut* memcpy(void mut* dest, void* src, usize count);
+
+@no_mangle
+int printf(u8* fmt, ...);
+
+@no_mangle
+never abort();

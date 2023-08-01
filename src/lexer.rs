@@ -5,7 +5,7 @@ use std::io::{self, Error, Read};
 use std::path::Path;
 use std::sync::mpsc::Sender;
 
-use crate::errors::{CMNMessageLog, ComuneMessage};
+use crate::errors::{ComuneMessage, MessageLog};
 
 use crate::ast::module::Name;
 
@@ -135,14 +135,14 @@ pub struct Lexer {
 	char_buffer: Option<char>,
 	token_buffer: Vec<(SrcSpan, Token)>,
 	token_index: usize,
-	error_logger: Sender<CMNMessageLog>,
+	error_logger: Sender<MessageLog>,
 	pub file_name: OsString,
 }
 
 impl Lexer {
 	pub fn new<P: AsRef<Path>>(
 		path: P,
-		error_logger: Sender<CMNMessageLog>,
+		error_logger: Sender<MessageLog>,
 	) -> std::io::Result<Lexer> {
 		let mut result = Lexer {
 			file_buffer: String::new(),
@@ -565,7 +565,7 @@ impl Lexer {
 			}
 
 			self.error_logger
-				.send(CMNMessageLog::Annotated {
+				.send(MessageLog::Annotated {
 					msg: e,
 					lines_text,
 					filename: self.file_name.to_string_lossy().into_owned(),
@@ -576,7 +576,7 @@ impl Lexer {
 				.unwrap();
 		} else {
 			self.error_logger
-				.send(CMNMessageLog::Plain {
+				.send(MessageLog::Plain {
 					msg: e,
 					filename: self.file_name.to_string_lossy().into_owned(),
 				})

@@ -69,8 +69,7 @@ pub fn validate_function_body(
 		}
 	}
 
-	let has_return = if let Some(Stmt::Expr(Expr::Atom(Atom::CtrlFlow(ctrl), _))) = items.last()
-	{
+	let has_return = if let Some(Stmt::Expr(Expr::Atom(Atom::CtrlFlow(ctrl), _))) = items.last() {
 		matches!(&**ctrl, ControlFlow::Return { .. })
 	} else {
 		false
@@ -95,7 +94,6 @@ pub fn validate_function_body(
 			},
 		)))
 	}
-
 
 	Ok(())
 }

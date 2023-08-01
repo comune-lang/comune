@@ -162,7 +162,7 @@ impl<'ctx> Parser {
 					self.get_next()?;
 
 					def_write.generics = self.parse_generic_param_list(None)?;
-					
+
 					let self_ty = Type::TypeRef {
 						def: Arc::downgrade(&def),
 						args: def_write.generics.get_as_arg_list(),
@@ -171,10 +171,7 @@ impl<'ctx> Parser {
 					self.consume(&Token::Other('{'))?;
 
 					let parent_name = Identifier {
-						qualifier: (
-							Some(Box::new(self_ty.clone())),
-							None,
-						),
+						qualifier: (Some(Box::new(self_ty.clone())), None),
 						path: vec![],
 						absolute: true,
 					};
@@ -195,7 +192,10 @@ impl<'ctx> Parser {
 									Arc::new(RwLock::new(TypeDef {
 										members: vec![],
 										variants: vec![],
-										name: Identifier::from_parent(&parent_name, variant_name.clone()),
+										name: Identifier::from_parent(
+											&parent_name,
+											variant_name.clone(),
+										),
 										layout: DataLayout::Declared,
 										generics: def_write.generics.clone(),
 										attributes,
@@ -220,21 +220,21 @@ impl<'ctx> Parser {
 									scope,
 									def_write.generics.clone(),
 									&self_ty,
-									k
+									k,
 								)?;
-			
+
 								match k {
 									"drop" => {
 										// TODO: Proper error reporting
 										assert!(def_write.drop.is_none());
 										def_write.drop.replace(func);
 									}
-									
+
 									"new" => {
 										def_write.init.push(func);
 									}
-			
-									_ => unreachable!()
+
+									_ => unreachable!(),
 								}
 							}
 
@@ -242,7 +242,6 @@ impl<'ctx> Parser {
 
 							_ => return self.err(ComuneErrCode::UnexpectedToken),
 						}
-
 					}
 
 					self.get_next()?; // Consume closing brace
@@ -564,12 +563,12 @@ impl<'ctx> Parser {
 							let id = Identifier::from_parent(scope, name);
 
 							self.interface.children.insert(
-								id, 
-								ModuleItemInterface::Variable(Arc::new(RwLock::new(ty)))
+								id,
+								ModuleItemInterface::Variable(Arc::new(RwLock::new(ty))),
 							);
 						}
 
-						_ => todo!()
+						_ => todo!(),
 					}
 				}
 			}
@@ -619,7 +618,7 @@ impl<'ctx> Parser {
 
 		// Get the generic params
 		def_write.generics = generics;
-		
+
 		let self_ty = Type::TypeRef {
 			def: Arc::downgrade(&def),
 			args: def_write.generics.get_as_arg_list(),
@@ -662,12 +661,7 @@ impl<'ctx> Parser {
 				}
 
 				Token::Keyword(k @ ("new" | "drop")) => {
-					let func = self.parse_xtor(
-						scope,
-						def_write.generics.clone(),
-						&self_ty,
-						k
-					)?;
+					let func = self.parse_xtor(scope, def_write.generics.clone(), &self_ty, k)?;
 
 					match k {
 						"drop" => {
@@ -680,7 +674,7 @@ impl<'ctx> Parser {
 							def_write.init.push(func);
 						}
 
-						_ => unreachable!()
+						_ => unreachable!(),
 					}
 				}
 
@@ -740,10 +734,12 @@ impl<'ctx> Parser {
 		loop {
 			match self.get_next()? {
 				Token::Other('{') => self.skip_block()?,
-				
+
 				Token::Other(';') | Token::Eof => break,
 
-				_ => { self.get_next()?; }
+				_ => {
+					self.get_next()?;
+				}
 			}
 		}
 
@@ -926,7 +922,7 @@ impl<'ctx> Parser {
 
 				"=" => {
 					self.get_next()?;
-					
+
 					item = ModuleASTElem::Unparsed(self.get_current_token_index());
 					interface = DeclParseResult::Variable(name, t);
 
@@ -1050,7 +1046,7 @@ impl<'ctx> Parser {
 					let def = def.read().unwrap();
 
 					self.get_next()?;
-					
+
 					let mut patterns = vec![];
 
 					while self.get_current()? != Token::Other('}') {
@@ -1062,27 +1058,25 @@ impl<'ctx> Parser {
 							todo!()
 						};
 
-						patterns.push(Pattern::Binding(
-							Binding { 
-								name: Some(name), 
-								ty, 
-								props 
-							}
-						));
+						patterns.push(Pattern::Binding(Binding {
+							name: Some(name),
+							ty,
+							props,
+						}));
 
 						match self.get_next()? {
 							Token::Other(',') => self.get_next()?,
-							
+
 							Token::Other('}') => break,
 
-							_ => return self.err(ComuneErrCode::UnexpectedToken)
+							_ => return self.err(ComuneErrCode::UnexpectedToken),
 						};
 					}
 
 					self.get_next()?;
 
 					Ok(Pattern::Destructure(patterns, pattern_ty))
-				},
+				}
 
 				_ => self.err(ComuneErrCode::UnexpectedToken),
 			}

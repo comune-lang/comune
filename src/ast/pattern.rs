@@ -14,7 +14,7 @@ pub struct Binding {
 pub enum Pattern {
 	// Binding pattern, matches any value. If `name` is None, it's a wildcard
 	Binding(Binding),
-	
+
 	// Destructures an aggregate type into its constituents
 	Destructure(Vec<Pattern>, Type),
 

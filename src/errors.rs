@@ -16,8 +16,8 @@ use std::{
 use backtrace::Backtrace;
 use lazy_static::lazy_static;
 
-use super::types::Type;
 use crate::ast::module::Name;
+use crate::ast::types::Type;
 use crate::ast::types::{FnPrototype, GenericArgs};
 use crate::ast::write_arg_list;
 use crate::lexer::SrcSpan;
@@ -27,10 +27,10 @@ use crate::{
 };
 
 lazy_static! {
-	pub(crate) static ref ERROR_COUNT: Arc<AtomicU32> = Arc::new(AtomicU32::new(0));
+	pub static ref ERROR_COUNT: Arc<AtomicU32> = Arc::new(AtomicU32::new(0));
 }
 
-pub(crate) static mut CAPTURE_BACKTRACE: bool = false;
+pub static mut CAPTURE_BACKTRACE: bool = false;
 
 #[derive(Debug, Clone)]
 pub struct ComuneError {
@@ -215,10 +215,16 @@ impl Display for ComuneErrCode {
 				"type mismatch; cannot apply operator {op:?} to `{a}` and `{b}`"
 			),
 			ComuneErrCode::AssignTypeMismatch { expr, to } => {
-				write!(f, "cannot assign value of type `{expr}` to variable of type `{to}`")
+				write!(
+					f,
+					"cannot assign value of type `{expr}` to variable of type `{to}`"
+				)
 			}
 			ComuneErrCode::MatchTypeMismatch { scrutinee, branch } => {
-				write!(f, "branch type `{branch}` is not a subtype of matched type `{scrutinee}`")
+				write!(
+					f,
+					"branch type `{branch}` is not a subtype of matched type `{scrutinee}`"
+				)
 			}
 			ComuneErrCode::CastTypeMismatch { from, to } => {
 				write!(f, "cannot cast from `{from}` to `{to}`")
@@ -232,7 +238,10 @@ impl Display for ComuneErrCode {
 				write!(f, "can't index into array with index type `{t}`")
 			}
 			ComuneErrCode::ReturnTypeMismatch { expected, got } => {
-				write!(f, "return type mismatch; expected `{expected}`, got `{got}`")
+				write!(
+					f,
+					"return type mismatch; expected `{expected}`, got `{got}`"
+				)
 			}
 			ComuneErrCode::ParamCountMismatch { expected, got } => write!(
 				f,
@@ -388,7 +397,7 @@ impl ComuneMessage {
 	}
 }
 
-pub enum CMNMessageLog {
+pub enum MessageLog {
 	Annotated {
 		msg: ComuneMessage,
 		filename: String,
@@ -407,18 +416,18 @@ pub enum CMNMessageLog {
 	Raw(String),
 }
 
-pub fn spawn_logger(backtrace_on_error: bool) -> Sender<CMNMessageLog> {
-	let (sender, receiver) = mpsc::channel::<CMNMessageLog>();
+pub fn spawn_logger(backtrace_on_error: bool) -> Sender<MessageLog> {
+	let (sender, receiver) = mpsc::channel::<MessageLog>();
 
 	thread::spawn(move || {
 		loop {
 			match receiver.recv() {
-				Ok(CMNMessageLog::Raw(text)) => print!("{}", text),
+				Ok(MessageLog::Raw(text)) => print!("{}", text),
 
 				Ok(message) => {
 					let (msg, filename) = match &message {
-						CMNMessageLog::Annotated { msg, filename, .. }
-						| CMNMessageLog::Plain { msg, filename, .. } => (msg, filename),
+						MessageLog::Annotated { msg, filename, .. }
+						| MessageLog::Plain { msg, filename, .. } => (msg, filename),
 						_ => panic!(),
 					};
 
@@ -448,7 +457,7 @@ pub fn spawn_logger(backtrace_on_error: bool) -> Sender<CMNMessageLog> {
 
 					// Print file:row:column
 					match &message {
-						CMNMessageLog::Annotated {
+						MessageLog::Annotated {
 							lines,
 							column,
 							lines_text,
@@ -553,12 +562,9 @@ pub fn spawn_logger(backtrace_on_error: bool) -> Sender<CMNMessageLog> {
 							}
 						}
 
-						CMNMessageLog::Plain { .. } => {
-							writeln!(
-								out,
-								"{}",
-								format!(" - in {}\n", filename).bright_black()
-							).unwrap();
+						MessageLog::Plain { .. } => {
+							writeln!(out, "{}", format!(" - in {}\n", filename).bright_black())
+								.unwrap();
 						}
 
 						_ => panic!(),

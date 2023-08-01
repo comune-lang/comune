@@ -1147,9 +1147,8 @@ impl CIRModuleBuilder {
 							}
 						}
 
-						
 						let cont_block = self.append_block();
-						
+
 						if expr_ty.is_never() {
 							self.write(CIRStmt::Unreachable);
 						}
@@ -1533,7 +1532,7 @@ impl CIRModuleBuilder {
 					let def = def.upgrade().unwrap();
 					let def = def.read().unwrap();
 
-					let Expr::Atom(Atom::Identifier(id), _) = &**rhs else { 
+					let Expr::Atom(Atom::Identifier(id), _) = &**rhs else {
 						panic!("invalid lvalue expression:\n{expr}") 
 					};
 
@@ -1622,7 +1621,7 @@ impl CIRModuleBuilder {
 			match branch {
 				Pattern::Binding(Binding { ty, .. }) => {
 					if scrutinee_ty.get_variant_index(ty).is_none() {
-						return false
+						return false;
 					}
 				}
 

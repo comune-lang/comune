@@ -1,33 +1,14 @@
-mod ast;
-mod cir;
-mod clang;
-mod constexpr;
-mod driver;
-mod errors;
-mod lexer;
-mod llvm;
-mod parser;
-
-use ast::module::Name;
-use ast::{module::Identifier, types};
 use clap::Parser;
 use colored::Colorize;
-use errors::CMNMessageLog;
-use itertools::Itertools;
+use comune::llvm::LLVMBackend;
 use std::fs;
-use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::path::PathBuf;
 use std::sync::mpsc::Sender;
-use std::sync::RwLock;
-use std::{
-	ffi::OsString,
-	io::{self, Write},
-	sync::{atomic::Ordering, Arc, Mutex},
-	time::Instant,
-};
+use std::{ffi::OsString, sync::atomic::Ordering, time::Instant};
 
-use crate::cir::monoize::MonomorphServer;
-use crate::driver::{EmitType, COMUNE_TOOLCHAIN_KEY};
+use comune::ast::module::Identifier;
+use comune::driver::{Compiler, COMUNE_TOOLCHAIN_KEY};
+use comune::errors::{self, MessageLog};
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -76,21 +57,15 @@ fn main() -> color_eyre::eyre::Result<()> {
 
 	let mut emit_types = vec![];
 
-	for ty in args.emit_types {
-		emit_types.extend(ty.split(',').map(|arg| {
-			EmitType::from_string(arg)
-				.unwrap_or_else(|| panic!("invalid argument to --emit: {arg}"))
-		}));
+	for ty in &args.emit_types {
+		emit_types.push(ty.as_str());
 	}
 
-	if emit_types.is_empty() {
-		emit_types = vec![EmitType::Binary];
-	}
-	
-	let emit_types = emit_types.into_iter().unique().collect_vec();
-
-	if emit_types.contains(&EmitType::None) && emit_types.len() != 1 {
-		eprintln!("{} emit type `none` cannot be used in combination with other options.", "error:".red().bold());
+	if emit_types.contains(&"none") && emit_types.len() != 1 {
+		eprintln!(
+			"{} emit type `none` cannot be used in combination with other options.",
+			"error:".red().bold()
+		);
 		std::process::exit(1);
 	}
 
@@ -99,35 +74,32 @@ fn main() -> color_eyre::eyre::Result<()> {
 		.build_global()
 		.unwrap();
 
-	let compiler_state = Arc::new(driver::CompilerState {
-		import_paths: vec![],
-		max_threads: args.num_jobs,
-		verbose_output: args.verbose,
-		output_modules: Mutex::new(vec![]),
-		output_dir: args.output_dir,
-		emit_types,
-		backtrace_on_error: args.backtrace,
-		module_states: RwLock::default(),
-		monomorph_server: MonomorphServer::new(),
-	});
-
-	if compiler_state.backtrace_on_error {
+	if args.backtrace {
 		unsafe {
-			errors::CAPTURE_BACKTRACE = true;
+			comune::errors::CAPTURE_BACKTRACE = true;
 		}
 	}
 
+	let compiler = Compiler::<LLVMBackend>::new(
+		&[],
+		args.verbose,
+		args.output_dir,
+		args.output_file,
+		&emit_types,
+		1,
+	);
+
 	// Launch multithreaded compilation
 
-	let error_sender = errors::spawn_logger(args.backtrace);
+	let error_sender = comune::errors::spawn_logger(args.backtrace);
 
 	rayon::in_place_scope(|s| {
 		for input_file in &args.input_files {
 			let input_file = fs::canonicalize(input_file).unwrap();
-			let module_name = Identifier::from_name(get_file_suffix(&input_file).unwrap(), true);
+			let module_name =
+				Identifier::from_name(comune::driver::get_file_suffix(&input_file).unwrap(), true);
 
-			let _ = driver::launch_module_compilation(
-				compiler_state.clone(),
+			let _ = compiler.launch_module_compilation(
 				input_file,
 				module_name,
 				error_sender.clone(),
@@ -137,11 +109,11 @@ fn main() -> color_eyre::eyre::Result<()> {
 	});
 
 	if !check_last_phase_ok(&error_sender) {
-		return Ok(());
+		std::process::exit(1);
 	}
 
 	rayon::in_place_scope(|_| {
-		match driver::generate_monomorph_module(compiler_state.clone(), &error_sender) {
+		match compiler.generate_monomorph_module(&error_sender) {
 			Ok(()) => {}
 			Err(_) => {
 				errors::ERROR_COUNT.fetch_add(1, Ordering::Relaxed);
@@ -154,38 +126,51 @@ fn main() -> color_eyre::eyre::Result<()> {
 	}
 
 	let compile_time = build_time.elapsed();
-
-	// Link into binary
-
-	let mut output_file = PathBuf::from(&compiler_state.output_dir);
-	output_file.push(args.output_file);
-
-	let build_name = output_file
-		.file_name()
-		.unwrap()
-		.to_string_lossy()
-		.to_string();
+	let output_file = PathBuf::from(&compiler.output_file);
 
 	println!();
-	// invoke linker for all EmitTypes that need it
-	// We use clang here because fuck dude i don't know how to use ld manually
 
-	let mut link_errors = 0;
-	let mut link_jobs = 0;
+	if compiler.requires_linking() {
+		let build_name = output_file
+			.file_name()
+			.unwrap()
+			.to_string_lossy()
+			.to_string();
 
-	for emit_type in &compiler_state.emit_types {
+		println!(
+			"{:>10} target {}",
+			"linking".bold().green(),
+			build_name.bold()
+		);
+
+		match compiler.link() {
+			Ok(_) => {}
+			Err(_) => std::process::exit(1),
+		}
+
+		let link_time = build_time.elapsed() - compile_time;
+
+		println!(
+			"{:>10} building in {}s (compile: {}s, link: {}s)\n",
+			"finished".bold().green(),
+			build_time.elapsed().as_millis() as f64 / 1000.0,
+			compile_time.as_millis() as f64 / 1000.0,
+			link_time.as_millis() as f64 / 1000.0
+		);
+	} else {
+		println!(
+			"{:>10} building in {}s\n",
+			"finished".bold().green(),
+			build_time.elapsed().as_millis() as f64 / 1000.0,
+		);
+	}
+
+	/*for emit_type in compiler.emit_types {
 		if let EmitType::Binary | EmitType::DynamicLib | EmitType::StaticLib = emit_type {
-			link_jobs += 1;
-			
-			println!(
-				"{:>10} target {}",
-				"linking".bold().green(),
-				build_name.bold()
-			);
 
 			let mut output = Command::new("clang");
 
-			for module in &*compiler_state.output_modules.lock().unwrap() {
+			for module in &*compiler.output_modules.lock().unwrap() {
 				output.arg(module);
 			}
 
@@ -214,33 +199,11 @@ fn main() -> color_eyre::eyre::Result<()> {
 		}
 	}
 
-	if !compiler_state.emit_types.contains(&EmitType::Object) {
-		for module in &*compiler_state.output_modules.lock().unwrap() {
+	if !compiler.emit_types.contains(&EmitType::Object) {
+		for module in &*compiler.output_modules.lock().unwrap() {
 			let _ = fs::remove_file(module);
 		}
-	}
-
-	if link_errors > 0 {
-		std::process::exit(1);
-	}
-
-	let link_time = build_time.elapsed() - compile_time;
-
-	print!(
-		"{:>10} building in {}s",
-		"finished".bold().green(),
-		build_time.elapsed().as_millis() as f64 / 1000.0,
-	);
-
-	if link_jobs > 0 {
-		print!(
-			" (compile: {}s, link: {}s)",
-			compile_time.as_millis() as f64 / 1000.0,
-			link_time.as_millis() as f64 / 1000.0
-		);
-	}
-	
-	print!("\n\n");
+	}*/
 
 	// Block until all output is written
 	let _ = std::io::stdout().lock();
@@ -248,17 +211,10 @@ fn main() -> color_eyre::eyre::Result<()> {
 	Ok(())
 }
 
-fn get_file_suffix(path: &Path) -> Option<Name> {
-	let mut name = path.file_name()?.to_string_lossy().to_string();
-	name.truncate(name.rfind('.').unwrap_or(name.len()));
-
-	Some(name.into())
-}
-
-fn check_last_phase_ok(error_sender: &Sender<CMNMessageLog>) -> bool {
+fn check_last_phase_ok(error_sender: &Sender<MessageLog>) -> bool {
 	if errors::ERROR_COUNT.load(Ordering::Acquire) > 0 {
 		error_sender
-			.send(errors::CMNMessageLog::Raw(format!(
+			.send(errors::MessageLog::Raw(format!(
 				"\n{:>10} build due to {} previous error(s)\n\n",
 				"aborted".bold().red(),
 				errors::ERROR_COUNT.load(Ordering::Acquire)

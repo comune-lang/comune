@@ -457,11 +457,8 @@ impl Type {
 			Type::flatten_sum_type(ty, &mut types_flat);
 		}
 
-		let types = types_flat
-			.into_iter()
-			.unique()
-			.collect_vec();
-		
+		let types = types_flat.into_iter().unique().collect_vec();
+
 		if let [ty] = *types.as_slice() {
 			ty.clone()
 		} else {
@@ -679,17 +676,19 @@ impl Type {
 			Type::TypeRef { def, .. } => {
 				let def = def.upgrade().unwrap();
 				let def = def.read().unwrap();
-				
+
 				let Type::TypeRef { def: variant_def, .. } = variant else {
 					return None
 				};
 
-				def.variants.iter().position(|(_, var)| Arc::ptr_eq(var, &variant_def.upgrade().unwrap()))
+				def.variants
+					.iter()
+					.position(|(_, var)| Arc::ptr_eq(var, &variant_def.upgrade().unwrap()))
 			}
 
 			Type::Tuple(TupleKind::Sum, types) => types.iter().position(|ty| ty == variant),
 
-			_ => None
+			_ => None,
 		}
 	}
 
@@ -780,9 +779,9 @@ impl Type {
 
 			Type::TypeRef { def, .. } => {
 				if !def.upgrade().unwrap().read().unwrap().variants.is_empty() {
-					Some(Basic::Integral { 
-						signed: false, 
-						size: IntSize::I32 
+					Some(Basic::Integral {
+						signed: false,
+						size: IntSize::I32,
 					})
 				} else {
 					None

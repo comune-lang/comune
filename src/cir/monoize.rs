@@ -19,7 +19,7 @@ use crate::{
 
 use super::{
 	builder::CIRModuleBuilder, CIRCallId, CIRFnMap, CIRFunction, CIRModule, CIRStmt, CIRTyMap,
-	Type, RValue,
+	RValue, Type,
 };
 
 // The monomorphization server (MonomorphServer) stores the bodies of generic
@@ -185,7 +185,7 @@ impl MonomorphServer {
 					CIRStmt::Assignment(_, expr) => {
 						self.monoize_rvalue_types(expr, param_map, access);
 					}
-					
+
 					CIRStmt::Invoke {
 						id: CIRCallId::Direct(func, _),
 						generic_args,
@@ -236,7 +236,7 @@ impl MonomorphServer {
 			access.fns_out.insert(func.clone(), body);
 		}
 	}
-	
+
 	fn monoize_rvalue_types(
 		&self,
 		rval: &mut RValue,
@@ -367,9 +367,9 @@ impl MonomorphServer {
 		}
 
 		instance_name.push_str(">");
-		
+
 		*ty_name.path.last_mut().unwrap() = instance_name.into();
-		
+
 		let instance_name = ty_name.to_string();
 
 		// Check if the current module has this instance already
@@ -429,13 +429,14 @@ impl MonomorphServer {
 				.insert(instance_name.clone(), instance_arc.clone());
 
 			access.types.insert(instance_name, instance_arc.clone());
-			
+
 			for (_, member, _) in &mut instance_lock.members {
 				self.monoize_type(member, generic_args, access);
 			}
 
 			for (_, variant) in &mut instance_lock.variants {
-				let variant_instance = self.instantiate_type_def(variant.clone(), generic_args, access);
+				let variant_instance =
+					self.instantiate_type_def(variant.clone(), generic_args, access);
 				*variant = variant_instance.upgrade().unwrap();
 			}
 

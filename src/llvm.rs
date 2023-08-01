@@ -1,5 +1,13 @@
-use std::{collections::HashMap, rc::Rc, sync::Arc};
+use std::{
+	collections::HashMap,
+	io::{self, Write},
+	path::{Path, PathBuf},
+	process::Command,
+	rc::Rc,
+	sync::Arc,
+};
 
+use color_eyre::owo_colors::OwoColorize;
 use inkwell::{
 	attributes::{Attribute, AttributeLoc},
 	basic_block::BasicBlock,
@@ -7,7 +15,8 @@ use inkwell::{
 	context::Context,
 	debug_info::DebugInfoBuilder,
 	module::{Linkage, Module},
-	targets::{InitializationConfig, Target, TargetMachine, TargetTriple},
+	passes::PassManager,
+	targets::{FileType, InitializationConfig, Target, TargetMachine, TargetTriple},
 	types::{
 		AnyType, AnyTypeEnum, BasicMetadataTypeEnum, BasicType, BasicTypeEnum, FunctionType,
 		StructType,
@@ -23,16 +32,26 @@ use crate::{
 	ast::{
 		expression::Operator,
 		types::{
-			Basic, BindingProps, DataLayout, FloatSize, FnPrototype, IntSize, TupleKind, Type, TypeDef,
+			Basic, BindingProps, DataLayout, FloatSize, FnPrototype, IntSize, TupleKind, Type,
+			TypeDef,
 		},
 	},
+	backend::Backend,
 	cir::{CIRCallId, CIRFunction, CIRModule, CIRStmt, LValue, Operand, PlaceElem, RValue},
 	constexpr::{ConstExpr, ConstValue},
+	driver::Compiler,
+	errors::{ComuneErrCode, ComuneError},
+	lexer::{self, SrcSpan},
+	parser::ComuneResult,
 };
 
 type LLVMResult<T> = Result<T, String>;
 
-pub struct LLVMBackend<'ctx> {
+pub struct LLVMBackend {
+	context: Context,
+}
+
+pub struct LLVMBuilder<'ctx> {
 	pub context: &'ctx Context,
 	pub module: Module<'ctx>,
 	pub target_machine: TargetMachine,
@@ -45,7 +64,160 @@ pub struct LLVMBackend<'ctx> {
 	variables: Vec<(PointerValue<'ctx>, BindingProps, Type)>,
 }
 
-impl<'ctx> LLVMBackend<'ctx> {
+impl Backend for LLVMBackend {
+	type Output<'out> = LLVMBuilder<'out>;
+
+	fn create_instance(_: &Compiler<Self>) -> Self {
+		Self {
+			context: Context::create(),
+		}
+	}
+
+	fn generate_code<'out>(
+		&'out self,
+		module: &CIRModule,
+		_compiler: &Compiler<Self>,
+		module_name: &str,
+		source_file: &str,
+	) -> ComuneResult<Self::Output<'out>> {
+		let mut builder = LLVMBuilder::new(&self.context, module_name, source_file, false, false);
+
+		builder.compile_module(&module).unwrap();
+		builder.generate_libc_bindings();
+
+		if let Err(e) = builder.module.verify() {
+			eprintln!(
+				"{}\n{}\n",
+				"an internal compiler error occurred:".red().bold(),
+				lexer::get_escaped(e.to_str().unwrap())
+			);
+
+			//let boguspath = out_path.with_extension("llbogus");
+
+			// Output bogus LLVM here, for debugging purposes
+			//builder.module.print_to_file(boguspath.as_os_str()).unwrap();
+
+			//eprintln!(
+			//	"{} ill-formed LLVM IR printed to {}",
+			//	"note:".bold(),
+			//	boguspath.to_string_lossy().bold()
+			//);
+
+			return Err(ComuneError::new(ComuneErrCode::LLVMError, SrcSpan::new()));
+		};
+
+		Ok(builder)
+	}
+
+	fn emit(
+		&self,
+		compiler: &Compiler<Self>,
+		builder: &Self::Output<'_>,
+		emit_type: &str,
+		out_path: &Path,
+	) {
+		if emit_type == "llraw" {
+			builder
+				.module
+				.print_to_file(out_path.with_extension("llraw").as_os_str())
+				.unwrap()
+		}
+
+		if compiler.opt_level == 1 {
+			// Optimization passes
+			let mpm = PassManager::create(());
+
+			mpm.add_instruction_combining_pass();
+			mpm.add_reassociate_pass();
+			mpm.add_gvn_pass();
+			mpm.add_cfg_simplification_pass();
+			mpm.add_basic_alias_analysis_pass();
+			mpm.add_promote_memory_to_register_pass();
+			mpm.add_instruction_combining_pass();
+			mpm.add_reassociate_pass();
+
+			mpm.run_on(&builder.module);
+		}
+
+		match emit_type {
+			"ll" => builder
+				.module
+				.print_to_file(out_path.with_extension("ll").as_os_str())
+				.unwrap(),
+
+			"llraw" => {}
+
+			"obj" => builder
+				.target_machine
+				.write_to_file(&builder.module, FileType::Object, &out_path)
+				.unwrap(),
+
+			_ => panic!(),
+		}
+	}
+
+	fn link(compiler: &Compiler<Self>, link_type: &str) -> ComuneResult<()> {
+		let mut output = Command::new("clang");
+
+		for module in &*compiler.output_modules.lock().unwrap() {
+			output.arg(module);
+		}
+
+		output
+			.arg("-lstdc++")
+			.arg("-fdiagnostics-color=always")
+			.arg("-no-pie");
+
+		let mut output_file = PathBuf::from(&compiler.output_dir);
+		output_file.push(&compiler.output_file);
+
+		output.arg("-o").arg(output_file);
+
+		match link_type {
+			"bin" => {}
+
+			"lib" => {
+				output.arg("--static");
+			}
+
+			"dylib" => {
+				output.arg("--shared");
+			}
+
+			_ => panic!(),
+		}
+
+		let output_result = output.output().expect("fatal: failed to invoke linker");
+
+		if !output_result.status.success() {
+			println!("");
+			io::stdout().write_all(&output_result.stdout).unwrap();
+			io::stderr().write_all(&output_result.stderr).unwrap();
+			println!("");
+			Err(ComuneError::new(ComuneErrCode::Other, SrcSpan::new()))
+		} else {
+			Ok(())
+		}
+	}
+
+	fn supported_emit_types() -> &'static [&'static str] {
+		&["obj", "ll", "llraw"]
+	}
+
+	fn supported_link_types() -> &'static [&'static str] {
+		&["bin", "lib", "dylib"]
+	}
+
+	fn required_emit_types(_: &str) -> &'static [&'static str] {
+		&["obj"]
+	}
+
+	fn default_link_types() -> &'static [&'static str] {
+		&["bin"]
+	}
+}
+
+impl<'ctx> LLVMBuilder<'ctx> {
 	pub fn new(
 		context: &'ctx Context,
 		module_name: &str,
@@ -144,14 +316,11 @@ impl<'ctx> LLVMBackend<'ctx> {
 	}
 
 	pub fn register_type(&mut self, name: String, ty: &TypeDef) {
-		if self.type_map.contains_key(&name) { 
-			return
+		if self.type_map.contains_key(&name) {
+			return;
 		}
-		
-		let opaque = self
-				.context
-				.opaque_struct_type(&name)
-				.as_any_type_enum();
+
+		let opaque = self.context.opaque_struct_type(&name).as_any_type_enum();
 
 		self.type_map.insert(name, opaque);
 
@@ -164,7 +333,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 	pub fn generate_type_body(&self, name: &str, ty: &TypeDef) {
 		if !self.type_map[name].into_struct_type().is_opaque() {
-			return
+			return;
 		}
 
 		let mut members_ir = vec![];
@@ -177,30 +346,34 @@ impl<'ctx> LLVMBackend<'ctx> {
 			// enum discriminant
 			// TODO: there's room for space optimization here
 			members_ir.push(self.context.i32_type().as_basic_type_enum());
-			
+
 			// enum data store
 			let mut max_size = 0;
 
 			for (_, variant) in &ty.variants {
 				let variant_name = variant.read().unwrap().name.to_string();
-				
+
 				self.generate_type_body(&variant_name, &variant.read().unwrap());
 
 				let variant_type = self.type_map[&variant_name].into_struct_type();
-				let variant_size = self.target_machine.get_target_data().get_store_size(&variant_type);
-				
+				let variant_size = self
+					.target_machine
+					.get_target_data()
+					.get_store_size(&variant_type);
+
 				max_size = max_size.max(variant_size);
 			}
-			
+
 			if max_size > 0 {
-				members_ir.push(self.context
-					.i8_type()
-					.vec_type(max_size as u32)
-					.as_basic_type_enum()
+				members_ir.push(
+					self.context
+						.i8_type()
+						.vec_type(max_size as u32)
+						.as_basic_type_enum(),
 				);
 			}
 		}
-		
+
 		let type_ir = self.type_map[name].into_struct_type();
 
 		type_ir.set_body(&members_ir, ty.layout == DataLayout::Packed);
@@ -471,7 +644,9 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 					CIRStmt::DropShim { .. } => panic!("encountered DropShim in LLVM codegen!"),
 
-					CIRStmt::Unreachable => { self.builder.build_unreachable(); }
+					CIRStmt::Unreachable => {
+						self.builder.build_unreachable();
+					}
 				}
 			}
 		}
@@ -643,7 +818,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 						let to_def = to_def.read().unwrap();
 
 						let idx = to.get_variant_index(from).unwrap();
-					
+
 						// Cast from enum variant type to enum type
 
 						if !to_def.members.is_empty() {
@@ -670,7 +845,7 @@ impl<'ctx> LLVMBackend<'ctx> {
 
 						self.builder.build_store(ptr, val)
 					}
-					
+
 					_ => match from {
 						Type::Pointer { .. } => {
 							let val = self.generate_operand(from, val);

@@ -355,12 +355,16 @@ impl Expr {
 	pub fn wrap_in_block(&mut self) {
 		let node_data = self.get_node_data().clone();
 
-		unsafe {	
+		unsafe {
 			let tmp = ptr::read(self);
-			
+
 			let new = Expr::Atom(
-				Atom::Block { items: vec![], result: Some(Box::new(tmp)), is_unsafe: false },
-				node_data
+				Atom::Block {
+					items: vec![],
+					result: Some(Box::new(tmp)),
+					is_unsafe: false,
+				},
+				node_data,
 			);
 
 			ptr::write(self, new);

@@ -13,99 +13,98 @@ use crate::{
 		module::{Identifier, ModuleImportKind, ModuleInterface, ModuleItemInterface},
 		types::{Basic, FloatSize, IntSize, TupleKind, Type, TypeDef},
 	},
-	driver::{await_imports_ready, get_module_out_path, CompilerState, ModuleState},
-	errors::{CMNMessageLog, ComuneError},
-	get_file_suffix,
+	backend::Backend,
+	driver::{get_file_suffix, Compiler, ModuleState},
+	errors::{ComuneError, MessageLog},
 };
 
-pub fn compile_cpp_module(
-	state: Arc<CompilerState>,
-	src_path: PathBuf,
-	module_name: &Identifier,
-	error_sender: Sender<CMNMessageLog>,
-	s: &rayon::Scope,
-) -> Result<(), ComuneError> {
-	let out_path = get_module_out_path(&state, &module_name);
-	let processed_path = out_path.with_extension("cpp");
+impl<'ctx, T: Backend> Compiler<'ctx, T> {
+	pub fn compile_cpp_module(
+		&'ctx self,
+		src_path: PathBuf,
+		module_name: &Identifier,
+		error_sender: Sender<MessageLog>,
+		s: &rayon::Scope<'ctx>,
+	) -> Result<(), ComuneError> {
+		let out_path = self.get_module_out_path(&module_name);
+		let processed_path = out_path.with_extension("cpp");
 
-	let (cpp_source, deps) = preprocess_cpp_file(&state, &src_path).unwrap();
+		let (cpp_source, deps) = preprocess_cpp_file(&src_path).unwrap();
 
-	// Temporarily write processed source to build dir
+		// Temporarily write processed source to build dir
 
-	let mut cpp_out = File::create(&processed_path).unwrap();
-	cpp_out.write_all(cpp_source.as_bytes()).unwrap();
+		let mut cpp_out = File::create(&processed_path).unwrap();
+		cpp_out.write_all(cpp_source.as_bytes()).unwrap();
 
-	// Generate C++ headers for comune dependencies
-	let modules = deps
-		.into_iter()
-		.map(|module| {
-			ModuleImportKind::Extern(Identifier::from_name(
-				get_file_suffix(&module).unwrap(),
-				false,
-			))
-		})
-		.collect();
+		// Generate C++ headers for comune dependencies
+		let modules = deps
+			.into_iter()
+			.map(|module| {
+				ModuleImportKind::Extern(Identifier::from_name(
+					get_file_suffix(&module).unwrap(),
+					false,
+				))
+			})
+			.collect();
 
-	let interfaces = await_imports_ready(&state, &src_path, module_name, modules, error_sender, s)?;
+		let interfaces =
+			self.await_imports_ready(&src_path, module_name, modules, error_sender, s)?;
 
-	for (name, interface) in interfaces {
-		let header = generate_cpp_header(&state, &interface.interface).unwrap();
-		let mut header_out = File::create(
-			out_path
-				.with_file_name(name.to_string())
-				.with_extension("hpp"),
-		)
-		.unwrap();
+		for (name, interface) in interfaces {
+			let header = generate_cpp_header(&interface.interface).unwrap();
+			let mut header_out = File::create(
+				out_path
+					.with_file_name(name.to_string())
+					.with_extension("hpp"),
+			)
+			.unwrap();
 
-		header_out.write_all(header.as_bytes()).unwrap();
+			header_out.write_all(header.as_bytes()).unwrap();
+		}
+
+		// Invoke clang via CLI
+
+		let mut output = Command::new("clang");
+
+		output
+			.arg(processed_path.clone())
+			.arg("-c")
+			.arg("-funsigned-char")
+			.arg("-fdiagnostics-color=always")
+			.arg("-I./libcomune/cpp/")
+			.arg("--output")
+			.arg(out_path.with_extension("o"));
+
+		let output_result = output.output().expect("fatal: failed to invoke clang");
+
+		io::stdout().write_all(&output_result.stdout).unwrap();
+		io::stderr().write_all(&output_result.stderr).unwrap();
+
+		if output_result.status.success() {
+			// This just writes an empty comune interface for now,
+			// leaving the C++ code not directly accessible from comune.
+			// TODO: Implement a C++->comune interface, probably using libclang
+			self.module_states.write().unwrap().insert(
+				src_path,
+				ModuleState::InterfaceComplete(Arc::new(ModuleInterface {
+					is_typed: true, // hack to make some assertions pass
+					..Default::default()
+				})),
+			);
+		} else {
+			self.module_states
+				.write()
+				.unwrap()
+				.insert(src_path, ModuleState::ParsingFailed);
+		}
+
+		fs::remove_file(processed_path).unwrap();
+
+		Ok(())
 	}
-
-	// Invoke clang via CLI
-
-	let mut output = Command::new("clang");
-
-	output
-		.arg(processed_path.clone())
-		.arg("-c")
-		.arg("-funsigned-char")
-		.arg("-fdiagnostics-color=always")
-		.arg("-I./libcomune/cpp/")
-		.arg("--output")
-		.arg(out_path.with_extension("o"));
-
-	let output_result = output.output().expect("fatal: failed to invoke clang");
-
-	io::stdout().write_all(&output_result.stdout).unwrap();
-	io::stderr().write_all(&output_result.stderr).unwrap();
-
-	if output_result.status.success() {
-		// This just writes an empty comune interface for now,
-		// leaving the C++ code not directly accessible from comune.
-		// TODO: Implement a C++->comune interface, probably using libclang
-		state.module_states.write().unwrap().insert(
-			src_path,
-			ModuleState::InterfaceComplete(Arc::new(ModuleInterface {
-				is_typed: true, // hack to make some assertions pass
-				..Default::default()
-			})),
-		);
-	} else {
-		state
-			.module_states
-			.write()
-			.unwrap()
-			.insert(src_path, ModuleState::ParsingFailed);
-	}
-
-	fs::remove_file(processed_path).unwrap();
-
-	Ok(())
 }
 
-pub fn preprocess_cpp_file(
-	_state: &Arc<CompilerState>,
-	file: &PathBuf,
-) -> io::Result<(String, Vec<PathBuf>)> {
+pub fn preprocess_cpp_file(file: &PathBuf) -> io::Result<(String, Vec<PathBuf>)> {
 	let mut file_in = String::new();
 
 	File::open(file)?.read_to_string(&mut file_in)?;
@@ -147,10 +146,7 @@ pub fn preprocess_cpp_file(
 // if you can think of a less horrible approach to this
 // problem, you are MORE than welcome to give it a shot
 //
-pub fn generate_cpp_header(
-	_state: &Arc<CompilerState>,
-	input: &ModuleInterface,
-) -> Result<String, std::fmt::Error> {
+pub fn generate_cpp_header(input: &ModuleInterface) -> Result<String, std::fmt::Error> {
 	let mut result = String::from("#pragma once\n\n#include \"bridge/bridge.hpp\"\n\n");
 
 	// Write type declarations first
