@@ -33,6 +33,13 @@ use crate::{
 
 pub const COMUNE_TOOLCHAIN_KEY: &str = "COMUNE_TOOLCHAIN";
 
+pub struct DummyScope<'ctx>(PhantomData<&'ctx u32>);
+
+#[cfg(rayon)]
+pub type RayonScope<'ctx> = rayon::Scope<'ctx>;
+#[cfg(not(rayon))]
+pub type RayonScope<'ctx> = DummyScope<'ctx>;
+
 pub struct Compiler<'ctx, T: Backend + ?Sized> {
 	pub import_paths: &'ctx [OsString],
 	pub output_dir: OsString,
@@ -52,6 +59,19 @@ pub struct Compiler<'ctx, T: Backend + ?Sized> {
 	// so we use PhantomData<fn() -> T> to signal that T doesn't
 	// have to be Send or Sync
 	backend: PhantomData<fn() -> T>,
+}
+
+pub struct CompileState {
+	parser: Parser,
+	error_sender: Sender<MessageLog>,
+	module_name: Identifier,
+	src_path: PathBuf,
+}
+
+#[derive(Clone)]
+pub enum JobSpawner<T> {
+	Concurrent(T),
+	Synchronous(Arc<RwLock<Vec<CompileState>>>)
 }
 
 #[derive(Clone)]
@@ -114,7 +134,7 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 		src_path: PathBuf,
 		module_name: Identifier,
 		error_sender: Sender<MessageLog>,
-		s: &rayon::Scope<'ctx>,
+		s: JobSpawner<&RayonScope<'ctx>>,
 	) -> Result<(), ComuneError> {
 		if self.module_states.read().unwrap().contains_key(&src_path) {
 			return Ok(());
@@ -151,7 +171,7 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 		src_path: PathBuf,
 		module_name: Identifier,
 		error_sender: Sender<MessageLog>,
-		s: &rayon::Scope<'ctx>,
+		s: JobSpawner<&RayonScope<'ctx>>,
 	) -> Result<(), ComuneError> {
 		let mut parser =
 			match self.parse_interface(&src_path, module_name.clone(), error_sender.clone()) {
@@ -183,7 +203,7 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 			.collect_vec();
 
 		parser.interface.imported =
-			self.await_imports_ready(&src_path, &module_name, modules, error_sender.clone(), s)?;
+			self.await_imports_ready(&src_path, &module_name, modules, error_sender.clone(), s.clone())?;
 
 		match ast::semantic::validate_interface(&mut parser) {
 			Ok(_) => {}
@@ -211,137 +231,165 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 			ModuleState::InterfaceComplete(Arc::new(parser.interface.get_external_interface(true))),
 		);
 
-		// The rest of the module's compilation happens in a worker thread
-
-		s.spawn(move |_s| {
-			// Wait for all module interfaces to be finalized
-			parser.interface.imported.clear();
-
-			let module_names = parser.interface.import_names.clone();
-
-			let mut imports_left = module_names
-				.into_iter()
-				.map(|m_kind| {
-					let m_kind_clone = m_kind.clone();
-					match m_kind {
-						ModuleImportKind::Child(name) => {
-							(m_kind_clone, Identifier::from_parent(&module_name, name))
-						}
-						ModuleImportKind::Language(name) => {
-							(m_kind_clone, Identifier::from_name(name, true))
-						}
-						ModuleImportKind::Extern(name) => (m_kind_clone, name),
-					}
-				})
-				.collect_vec();
-
-			// Loop over remaining pending imports
-			while let Some(import_name) = imports_left.first() {
-				let import_path = self
-					.get_module_source_path(src_path.clone(), &import_name.1)
-					.unwrap();
-
-				// Get the current import's compilation state
-
-				let import_state = self
-					.module_states
-					.read()
-					.unwrap()
-					.get(&import_path)
-					.cloned()
-					.unwrap();
-
-				// If the imported module is ready, remove it from the list.
-				// If not, push it to the end of the list so we get a chance
-				// to check up on the other imports in the meantime
-
-				match import_state {
-					ModuleState::InterfaceComplete(complete) => {
-						parser.interface.imported.insert(
-							import_name.1.name().clone(),
-							ModuleImport {
-								interface: complete,
-								import_kind: import_name.0.clone(),
-								path: import_path,
-							},
-						);
-
-						imports_left.remove(0);
-					}
-
-					ModuleState::InterfaceUntyped(_) => {
-						let first = imports_left.remove(0);
-						imports_left.push(first);
-						continue;
-					}
-
-					// Upstream parsing failed somewhere, abort
-					ModuleState::ParsingFailed => return,
-
-					ModuleState::Parsing => {}
-				};
-			}
-
-			let src_name = src_path.file_name().unwrap().to_str().unwrap();
-
-			// generate_cir() is a bit of a misleading name; this function takes care of
-			// everything from AST parsing, to type checking, to cIR generation and validation.
-			// should be broken up into discrete functions at some point honestly
-
-			let module_mono = match self.generate_cir(&mut parser, &module_name) {
-				Ok(res) => res,
-				Err(_) => {
-					ERROR_COUNT.fetch_add(1, Ordering::Relaxed);
-
-					error_sender
-						.send(MessageLog::Raw(format!(
-							"\n{:>10} compiling {}\n",
-							"failed".bold().red(),
-							src_name.bold()
-						)))
-						.unwrap();
-					return;
-				}
-			};
-
-			// Time to generate some code baby!!! god this module is messy lmao
-
-			let backend = T::create_instance(self);
-			let out_path = self.get_module_out_path(&module_name);
-
-			let result = match backend.generate_code(
-				&module_mono,
-				self,
-				&module_name.to_string(),
-				src_path.to_str().unwrap(),
-			) {
-				Ok(res) => res,
-				Err(_) => {
-					ERROR_COUNT.fetch_add(1, Ordering::Relaxed);
-
-					error_sender
-						.send(MessageLog::Raw(format!(
-							"\n{:>10} compiling {}\n",
-							"failed".bold().red(),
-							src_name.bold()
-						)))
-						.unwrap();
-					return;
-				}
-			};
-
-			for ty in &self.emit_types {
-				if !BUILTIN_EMIT_TYPES.contains(ty) {
-					backend.emit(self, &result, ty, &out_path);
-				}
-			}
-
-			for ty in &self.dep_emit_types {
-				backend.emit(self, &result, ty, &out_path);
-			}
-		});
+		// The rest of the module's compilation happens later,
+		// either in a worker thread, or when the single-threaded
+		// spawner is done with the rest of the imports
+		self.spawn(s, CompileState { parser, error_sender, module_name, src_path });
 
 		Ok(())
+	}
+
+	pub fn finish_module_job(&self, module_state: CompileState) {
+		let CompileState {
+			mut parser,
+			error_sender,
+			module_name,
+			src_path
+		} = module_state;
+
+		// Wait for all module interfaces to be finalized
+		parser.interface.imported.clear();
+
+		let module_names = parser.interface.import_names.clone();
+
+		let mut imports_left = module_names
+			.into_iter()
+			.map(|m_kind| {
+				let m_kind_clone = m_kind.clone();
+				match m_kind {
+					ModuleImportKind::Child(name) => {
+						(m_kind_clone, Identifier::from_parent(&module_name, name))
+					}
+					ModuleImportKind::Language(name) => {
+						(m_kind_clone, Identifier::from_name(name, true))
+					}
+					ModuleImportKind::Extern(name) => (m_kind_clone, name),
+				}
+			})
+			.collect_vec();
+
+		// Loop over remaining pending imports
+		while let Some(import_name) = imports_left.first() {
+			let import_path = self
+				.get_module_source_path(src_path.clone(), &import_name.1)
+				.unwrap();
+
+			// Get the current import's compilation state
+
+			let import_state = self
+				.module_states
+				.read()
+				.unwrap()
+				.get(&import_path)
+				.cloned()
+				.unwrap();
+
+			// If the imported module is ready, remove it from the list.
+			// If not, push it to the end of the list so we get a chance
+			// to check up on the other imports in the meantime
+
+			match import_state {
+				ModuleState::InterfaceComplete(complete) => {
+					parser.interface.imported.insert(
+						import_name.1.name().clone(),
+						ModuleImport {
+							interface: complete,
+							import_kind: import_name.0.clone(),
+							path: import_path,
+						},
+					);
+
+					imports_left.remove(0);
+				}
+
+				ModuleState::InterfaceUntyped(_) => {
+					let first = imports_left.remove(0);
+					imports_left.push(first);
+					continue;
+				}
+
+				// Upstream parsing failed somewhere, abort
+				ModuleState::ParsingFailed => return,
+
+				ModuleState::Parsing => {}
+			};
+		}
+
+		let src_name = src_path.file_name().unwrap().to_str().unwrap();
+
+		// generate_cir() is a bit of a misleading name; this function takes care of
+		// everything from AST parsing, to type checking, to cIR generation and validation.
+		// should be broken up into discrete functions at some point honestly
+
+		let module_mono = match self.generate_cir(&mut parser, &module_name) {
+			Ok(res) => res,
+			Err(_) => {
+				ERROR_COUNT.fetch_add(1, Ordering::Relaxed);
+
+				error_sender
+					.send(MessageLog::Raw(format!(
+						"\n{:>10} compiling {}\n",
+						"failed".bold().red(),
+						src_name.bold()
+					)))
+					.unwrap();
+				return;
+			}
+		};
+
+		// Time to generate some code baby!!! god this module is messy lmao
+
+		let backend = T::create_instance(self);
+		let out_path = self.get_module_out_path(&module_name);
+
+		let result = match backend.generate_code(
+			&module_mono,
+			self,
+			&module_name.to_string(),
+			src_path.to_str().unwrap(),
+		) {
+			Ok(res) => res,
+			Err(_) => {
+				ERROR_COUNT.fetch_add(1, Ordering::Relaxed);
+
+				error_sender
+					.send(MessageLog::Raw(format!(
+						"\n{:>10} compiling {}\n",
+						"failed".bold().red(),
+						src_name.bold()
+					)))
+					.unwrap();
+				return;
+			}
+		};
+
+		for ty in &self.emit_types {
+			if !BUILTIN_EMIT_TYPES.contains(ty) {
+				backend.emit(self, &result, ty, &out_path);
+			}
+		}
+
+		for ty in &self.dep_emit_types {
+			backend.emit(self, &result, ty, &out_path);
+		}
+	}
+
+	pub fn spawn(&'ctx self, s: JobSpawner<&RayonScope<'ctx>>, state: CompileState) {
+		match s {
+			#[cfg(concurrent)]
+			JobSpawner::Concurrent(s) => {
+				s.spawn(|_| self.finish_module_job(state));
+			}
+
+			#[cfg(not(concurrent))]
+			JobSpawner::Concurrent(_) => {
+				panic!("feature `concurrent` is not enabled!");
+			}
+
+			JobSpawner::Synchronous(s) => {
+				s.write().unwrap().push(state);
+			}
+		}
 	}
 
 	pub fn parse_interface(
@@ -396,7 +444,7 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 		module_name: &Identifier,
 		mut modules: Vec<ModuleImportKind>,
 		error_sender: Sender<MessageLog>,
-		s: &rayon::Scope<'ctx>,
+		s: JobSpawner<&RayonScope<'ctx>>,
 	) -> ComuneResult<HashMap<Name, ModuleImport>> {
 		let mut imports = HashMap::new();
 
@@ -431,7 +479,7 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 						import_path.clone(),
 						fs_name.clone(),
 						error_sender.clone(),
-						s,
+						s.clone(),
 					) {
 						Ok(()) => {}
 						Err(e) => {

@@ -7,7 +7,7 @@ edition = "2021"
 inkwell = { git = "https://github.com/TheDan64/inkwell", branch = "master" }
 clap = { version = "4.0.9", features = ["derive"] }
 colored = "2.0.0"
-rayon = "1.5"
+rayon = { version = "1.5", optional = true }
 backtrace = "0.3"
 color-eyre = "0.6"
 lazy_static = "1.4.0"
@@ -15,9 +15,11 @@ clang = { version = "2.0.0", features = ["clang_10_0"] }
 itertools = "0.11.0"
 
 [features]
+default = ["concurrent"]
 llvm12 = ["inkwell/llvm12-0"]
 llvm13 = ["inkwell/llvm13-0"]
 llvm14 = ["inkwell/llvm14-0"]
+concurrent = ["rayon"]
 
 # color-eyre's backtrace perfors horribly on debug, so we compile it with optimizations
 [profile.dev.package.backtrace]

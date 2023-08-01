@@ -14,17 +14,20 @@ use crate::{
 		types::{Basic, FloatSize, IntSize, TupleKind, Type, TypeDef},
 	},
 	backend::Backend,
-	driver::{get_file_suffix, Compiler, ModuleState},
+	driver::{get_file_suffix, Compiler, ModuleState, JobSpawner, RayonScope},
 	errors::{ComuneError, MessageLog},
 };
 
-impl<'ctx, T: Backend> Compiler<'ctx, T> {
+impl<'ctx, T> Compiler<'ctx, T>
+where
+	T: Backend,
+{
 	pub fn compile_cpp_module(
 		&'ctx self,
 		src_path: PathBuf,
 		module_name: &Identifier,
 		error_sender: Sender<MessageLog>,
-		s: &rayon::Scope<'ctx>,
+		s: JobSpawner<&RayonScope<'ctx>>,
 	) -> Result<(), ComuneError> {
 		let out_path = self.get_module_out_path(&module_name);
 		let processed_path = out_path.with_extension("cpp");

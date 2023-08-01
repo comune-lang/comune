@@ -3,11 +3,12 @@ use colored::Colorize;
 use comune::llvm::LLVMBackend;
 use std::fs;
 use std::path::PathBuf;
+use std::sync::{RwLock, Arc};
 use std::sync::mpsc::Sender;
 use std::{ffi::OsString, sync::atomic::Ordering, time::Instant};
 
 use comune::ast::module::Identifier;
-use comune::driver::{Compiler, COMUNE_TOOLCHAIN_KEY};
+use comune::driver::{Compiler, COMUNE_TOOLCHAIN_KEY, JobSpawner, get_file_suffix};
 use comune::errors::{self, MessageLog};
 
 #[derive(Parser, Debug)]
@@ -69,10 +70,12 @@ fn main() -> color_eyre::eyre::Result<()> {
 		std::process::exit(1);
 	}
 
+	#[cfg(concurrent)]
 	rayon::ThreadPoolBuilder::new()
 		.num_threads(args.num_jobs)
 		.build_global()
 		.unwrap();
+
 
 	if args.backtrace {
 		unsafe {
@@ -89,29 +92,61 @@ fn main() -> color_eyre::eyre::Result<()> {
 		1,
 	);
 
-	// Launch multithreaded compilation
-
 	let error_sender = comune::errors::spawn_logger(args.backtrace);
+	
+	#[cfg(not(concurrent))]
+	{
+		// Launch single-threaded compilation
+		let jobs = Arc::new(RwLock::new(vec![]));
 
-	rayon::in_place_scope(|s| {
 		for input_file in &args.input_files {
 			let input_file = fs::canonicalize(input_file).unwrap();
-			let module_name =
-				Identifier::from_name(comune::driver::get_file_suffix(&input_file).unwrap(), true);
+			let module_name = Identifier::from_name(get_file_suffix(&input_file).unwrap(), true);
 
 			let _ = compiler.launch_module_compilation(
 				input_file,
 				module_name,
 				error_sender.clone(),
-				s,
+				JobSpawner::Synchronous(jobs.clone()),
 			);
 		}
-	});
+
+		for job in jobs.write().unwrap().drain(..) {
+			compiler.finish_module_job(job)
+		}
+	}
+	
+	#[cfg(concurrent)]
+	{
+		// Launch multithreaded compilation
+		rayon::in_place_scope(|s| {
+			for input_file in &args.input_files {
+				let input_file = fs::canonicalize(input_file).unwrap();
+				let module_name = Identifier::from_name(get_file_suffix(&input_file).unwrap(), true);
+
+				let _ = compiler.launch_module_compilation(
+					input_file,
+					module_name,
+					error_sender.clone(),
+					JobSpawner::Concurrent(s),
+				);
+			}
+		});
+	}
 
 	if !check_last_phase_ok(&error_sender) {
 		std::process::exit(1);
 	}
 
+	#[cfg(not(concurrent))]
+	match compiler.generate_monomorph_module(&error_sender) {
+		Ok(()) => {}
+		Err(_) => {
+			errors::ERROR_COUNT.fetch_add(1, Ordering::Relaxed);
+		}
+	};
+
+	#[cfg(concurrent)]
 	rayon::in_place_scope(|_| {
 		match compiler.generate_monomorph_module(&error_sender) {
 			Ok(()) => {}
@@ -120,6 +155,7 @@ fn main() -> color_eyre::eyre::Result<()> {
 			}
 		};
 	});
+	
 
 	if !check_last_phase_ok(&error_sender) {
 		std::process::exit(1);
@@ -164,7 +200,7 @@ fn main() -> color_eyre::eyre::Result<()> {
 			build_time.elapsed().as_millis() as f64 / 1000.0,
 		);
 	}
-	
+
 	// Block until all output is written
 	let _ = std::io::stdout().lock();
 
