@@ -35,9 +35,9 @@ pub const COMUNE_TOOLCHAIN_KEY: &str = "COMUNE_TOOLCHAIN";
 
 pub struct DummyScope<'ctx>(PhantomData<&'ctx u32>);
 
-#[cfg(rayon)]
+#[cfg(feature = "concurrent")]
 pub type RayonScope<'ctx> = rayon::Scope<'ctx>;
-#[cfg(not(rayon))]
+#[cfg(not(feature = "concurrent"))]
 pub type RayonScope<'ctx> = DummyScope<'ctx>;
 
 pub struct Compiler<'ctx, T: Backend + ?Sized> {
@@ -376,12 +376,12 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 
 	pub fn spawn(&'ctx self, s: JobSpawner<&RayonScope<'ctx>>, state: CompileState) {
 		match s {
-			#[cfg(concurrent)]
+			#[cfg(feature = "concurrent")]
 			JobSpawner::Concurrent(s) => {
 				s.spawn(|_| self.finish_module_job(state));
 			}
 
-			#[cfg(not(concurrent))]
+			#[cfg(not(feature = "concurrent"))]
 			JobSpawner::Concurrent(_) => {
 				panic!("feature `concurrent` is not enabled!");
 			}

@@ -3,7 +3,11 @@ use colored::Colorize;
 use comune::llvm::LLVMBackend;
 use std::fs;
 use std::path::PathBuf;
+
+// ironic, isn't it?
+#[cfg(not(feature = "concurrent"))]
 use std::sync::{RwLock, Arc};
+
 use std::sync::mpsc::Sender;
 use std::{ffi::OsString, sync::atomic::Ordering, time::Instant};
 
@@ -70,7 +74,7 @@ fn main() -> color_eyre::eyre::Result<()> {
 		std::process::exit(1);
 	}
 
-	#[cfg(concurrent)]
+	#[cfg(feature = "concurrent")]
 	rayon::ThreadPoolBuilder::new()
 		.num_threads(args.num_jobs)
 		.build_global()
@@ -94,7 +98,7 @@ fn main() -> color_eyre::eyre::Result<()> {
 
 	let error_sender = comune::errors::spawn_logger(args.backtrace);
 	
-	#[cfg(not(concurrent))]
+	#[cfg(not(feature = "concurrent"))]
 	{
 		// Launch single-threaded compilation
 		let jobs = Arc::new(RwLock::new(vec![]));
@@ -116,7 +120,7 @@ fn main() -> color_eyre::eyre::Result<()> {
 		}
 	}
 	
-	#[cfg(concurrent)]
+	#[cfg(feature = "concurrent")]
 	{
 		// Launch multithreaded compilation
 		rayon::in_place_scope(|s| {
@@ -138,7 +142,7 @@ fn main() -> color_eyre::eyre::Result<()> {
 		std::process::exit(1);
 	}
 
-	#[cfg(not(concurrent))]
+	#[cfg(not(feature = "concurrent"))]
 	match compiler.generate_monomorph_module(&error_sender) {
 		Ok(()) => {}
 		Err(_) => {
@@ -146,7 +150,7 @@ fn main() -> color_eyre::eyre::Result<()> {
 		}
 	};
 
-	#[cfg(concurrent)]
+	#[cfg(feature = "concurrent")]
 	rayon::in_place_scope(|_| {
 		match compiler.generate_monomorph_module(&error_sender) {
 			Ok(()) => {}

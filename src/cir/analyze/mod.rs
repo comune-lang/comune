@@ -3,9 +3,7 @@ use std::{
 	sync::RwLock,
 };
 
-use itertools::Itertools;
-
-#[cfg(concurrent)]
+#[cfg(feature = "concurrent")]
 use rayon::prelude::{IntoParallelRefIterator, ParallelIterator};
 
 use crate::{ast::traits::ImplSolver, errors::ComuneError};
@@ -87,17 +85,17 @@ impl CIRPassManager {
 		for pass in &self.passes {
 			match pass {
 				Pass::Shared(shared) => {
-					#[cfg(rayon)]
+					#[cfg(feature = "concurrent")]
 					let results = shared
 						.par_iter();
 
-					#[cfg(not(rayon))]
+					#[cfg(not(feature = "concurrent"))]
 					let results = shared
 						.iter();
 						
 					let results = results
 						.map(|p| p.on_module(module))
-						.collect_vec();
+						.collect::<Vec<_>>();
 
 					for mut result in results {
 						errors.append(&mut result);
@@ -120,17 +118,17 @@ impl CIRPassManager {
 			match pass {
 				Pass::Shared(shared) => {
 					
-					#[cfg(rayon)]
+					#[cfg(feature = "concurrent")]
 					let results = shared
 						.par_iter();
 
-					#[cfg(not(rayon))]
+					#[cfg(not(feature = "concurrent"))]
 					let results = shared
 						.iter();
 
 					let results = results
 						.map(|p| p.on_function(func))
-						.collect_vec();
+						.collect::<Vec<_>>();
 					
 					for mut result in results {
 						errors.append(&mut result);
