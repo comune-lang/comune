@@ -154,7 +154,6 @@ impl CIRModuleBuilder {
 			attributes: func.attributes.clone(),
 			is_extern: true,
 			is_variadic: func.params.variadic,
-			mangled_name: None,
 		}
 	}
 

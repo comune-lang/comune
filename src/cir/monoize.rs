@@ -5,16 +5,11 @@ use std::{
 	sync::{Arc, RwLock, Weak},
 };
 
-use crate::{
-	ast::{
-		get_attribute,
-		module::Identifier,
-		traits::ImplSolver,
-		types::{
-			Basic, FloatSize, FnPrototype, GenericArg, GenericArgs, GenericParam, IntSize, TypeDef,
-		},
+use crate::ast::{
+	traits::ImplSolver,
+	types::{
+		FnPrototype, GenericArg, GenericArgs, TypeDef,
 	},
-	lexer::Token,
 };
 
 use super::{
@@ -53,7 +48,6 @@ impl MonomorphServer {
 	// further instantiations by downstream modules
 	pub fn monoize_module(&self, mut module: CIRModule) -> CIRModule {
 		self.monoize_generics(&mut module);
-		self.mangle(&mut module);
 		module
 	}
 
@@ -98,8 +92,6 @@ impl MonomorphServer {
 				break;
 			}
 		}
-
-		self.mangle(&mut module);
 
 		module
 	}
@@ -535,171 +527,5 @@ impl MonomorphServer {
 
 		*func = func_new.clone();
 		(func_new, extern_fn)
-	}
-
-	fn mangle(&self, module: &mut CIRModule) {
-		// Mangle functions
-
-		for (id, func) in &mut module.functions {
-			// Check if the function has a `no_mangle` or `export_as` attribute, or if it's `main`. If not, mangle the name
-			if get_attribute(&func.attributes, "no_mangle").is_some()
-				|| (&**id.path.name() == "main" && !id.path.is_scoped())
-			{
-				func.mangled_name = Some(id.path.name().to_string());
-			} else if let Some(export_name) = get_attribute(&func.attributes, "export_as") {
-				// Export with custom symbol name
-				if let Some(first_arg) = export_name.args.get(0) {
-					if let Some(Token::StringLiteral(name)) = first_arg.get(0) {
-						func.mangled_name = Some(name.clone())
-					} else {
-						panic!() //TODO: Proper error handling
-					}
-				}
-			} else {
-				// Mangle name
-				func.mangled_name = Some(mangle_name(&id.path, func));
-			}
-		}
-	}
-}
-
-// Basic implementation of the Itanium C++ ABI, which is used by GCC and Clang.
-// This is not complete or robust at all, but it should do for now.
-
-fn mangle_name(name: &Identifier, func: &CIRFunction) -> String {
-	let mut result = String::from("_Z");
-
-	assert!(name.absolute);
-
-	if !name.is_qualified() {
-		result.push_str(&name.name().len().to_string());
-		result.push_str(name.name());
-	} else {
-		result.push('N');
-
-		if let Some(ty_qualifier) = &name.qualifier.0 {
-			let Type::TypeRef { def, .. } = &**ty_qualifier else {
-				unimplemented!()
-			};
-
-			let def = def.upgrade().unwrap();
-			let typename = &def.read().unwrap().name;
-
-			for scope in &typename.path {
-				result.push_str(&scope.len().to_string());
-				result.push_str(scope);
-			}
-		}
-
-		for scope in &name.path {
-			result.push_str(&scope.len().to_string());
-			result.push_str(scope);
-		}
-
-		result.push('E');
-	}
-
-	if func.arg_count == 0 {
-		result.push('v');
-	} else {
-		for i in 0..func.arg_count {
-			let (ty, props, _) = &func.variables[i];
-
-			if props.is_ref {
-				result.push_str(&ty.ptr_type(props.is_mut).mangle())
-			} else {
-				result.push_str(&ty.mangle());
-			}
-		}
-	}
-
-	if !func.generics.is_empty() {
-		result.push('I');
-
-		for (.., param) in &func.generics.params {
-			let GenericParam::Type { arg: Some(ty), .. } = param else {
-				panic!() // Can't have un-monomorphized generics at this point 
-			};
-
-			result.push_str(&ty.mangle());
-		}
-
-		result.push('E');
-	}
-
-	result
-}
-
-impl Type {
-	fn mangle(&self) -> String {
-		match self {
-			Type::Basic(b) => String::from(b.mangle()),
-
-			Type::Pointer { pointee, .. } => {
-				if let Type::Slice(slicee) = &**pointee {
-					String::from("P") + &slicee.mangle() + "y"
-				} else {
-					String::from("P") + &pointee.mangle()
-				}
-			}
-
-			Type::TypeRef { .. } => String::from("S_"),
-
-			Type::Function(ret, args) => {
-				let mut result = String::from("PF");
-
-				result.push_str(&ret.mangle());
-
-				for (_, arg) in args {
-					result.push_str(&arg.mangle())
-				}
-
-				result
-			}
-
-			Type::Slice(_) => panic!("encountered Type::Slice without indirection!"),
-
-			_ => todo!(),
-		}
-	}
-}
-
-// See https://itanium-cxx-abi.github.io/cxx-abi/abi.html#mangle.builtin-type
-impl Basic {
-	fn mangle(&self) -> &str {
-		match self {
-			Basic::Bool => "b",
-
-			Basic::Integral { signed, size } => {
-				if *signed {
-					match size {
-						// FIXME: figure this out properly
-						IntSize::IAddr => "x",
-
-						IntSize::I64 => "x",
-						IntSize::I32 => "i",
-						IntSize::I16 => "s",
-						IntSize::I8 => "c",
-					}
-				} else {
-					match size {
-						// FIXME: ditto
-						IntSize::IAddr => "y",
-
-						IntSize::I64 => "y",
-						IntSize::I32 => "j",
-						IntSize::I16 => "t",
-						IntSize::I8 => "h",
-					}
-				}
-			}
-
-			Basic::Float { size } => match size {
-				FloatSize::F64 => "d",
-				FloatSize::F32 => "f",
-			},
-
-			Basic::Void => "v",
-		}
 	}
 }

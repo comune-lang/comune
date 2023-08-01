@@ -164,47 +164,7 @@ fn main() -> color_eyre::eyre::Result<()> {
 			build_time.elapsed().as_millis() as f64 / 1000.0,
 		);
 	}
-
-	/*for emit_type in compiler.emit_types {
-		if let EmitType::Binary | EmitType::DynamicLib | EmitType::StaticLib = emit_type {
-
-			let mut output = Command::new("clang");
-
-			for module in &*compiler.output_modules.lock().unwrap() {
-				output.arg(module);
-			}
-
-			output
-				.arg("-lstdc++")
-				.arg("-fdiagnostics-color=always")
-				.arg("-no-pie");
-
-			match emit_type {
-				EmitType::Binary => {
-					output.arg("-o").arg(output_file.clone());
-				}
-
-				_ => {}
-			}
-
-			let output_result = output.output().expect("fatal: failed to invoke linker");
-
-			if !output_result.status.success() {
-				link_errors += 1;
-				println!("");
-				io::stdout().write_all(&output_result.stdout).unwrap();
-				io::stderr().write_all(&output_result.stderr).unwrap();
-				println!("");
-			}
-		}
-	}
-
-	if !compiler.emit_types.contains(&EmitType::Object) {
-		for module in &*compiler.output_modules.lock().unwrap() {
-			let _ = fs::remove_file(module);
-		}
-	}*/
-
+	
 	// Block until all output is written
 	let _ = std::io::stdout().lock();
 

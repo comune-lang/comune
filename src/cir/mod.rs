@@ -211,7 +211,6 @@ pub struct CIRFunction {
 	pub attributes: Vec<Attribute>,
 	pub is_extern: bool,
 	pub is_variadic: bool,
-	pub mangled_name: Option<String>,
 }
 
 pub struct CIRModule {
