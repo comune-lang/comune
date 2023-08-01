@@ -42,9 +42,9 @@ pub struct Compiler<'ctx, T: Backend + ?Sized> {
 	pub module_states: RwLock<HashMap<PathBuf, ModuleState>>,
 	pub opt_level: u32,
 
-	emit_types: Vec<&'ctx str>,
-	dep_emit_types: Vec<&'ctx str>,
-	link_types: Vec<&'ctx str>,
+	pub emit_types: Vec<&'ctx str>,
+	pub dep_emit_types: Vec<&'ctx str>,
+	pub link_types: Vec<&'ctx str>,
 
 	monomorph_server: MonomorphServer,
 
@@ -700,70 +700,6 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 
 		Ok(())
 	}
-
-	/*pub(crate) fn generate_llvm_ir(
-		&self,
-		module_name: String,
-		module_mono: CIRModule,
-		src_path: &Path,
-		out_path: &Path,
-		context: &'ctx Context,
-	) -> ComuneResult<LLVMBackend<'ctx>> {
-		// Generate LLVM IR
-		let mut backend = LLVMBackend::new(
-			context,
-			&module_name,
-			src_path.to_str().unwrap(), // TODO: Handle invalid UTF-8 paths
-			false,
-			true,
-		);
-
-		backend.compile_module(&module_mono).unwrap();
-		backend.generate_libc_bindings();
-
-		if let Err(e) = backend.module.verify() {
-			eprintln!(
-				"{}\n{}\n",
-				"an internal compiler error occurred:".red().bold(),
-				lexer::get_escaped(e.to_str().unwrap())
-			);
-
-			let boguspath = out_path.with_extension("llbogus");
-
-			// Output bogus LLVM here, for debugging purposes
-			backend.module.print_to_file(boguspath.as_os_str()).unwrap();
-
-			eprintln!(
-				"{} ill-formed LLVM IR printed to {}",
-				"note:".bold(),
-				boguspath.to_string_lossy().bold()
-			);
-
-			return Err(ComuneError::new(ComuneErrCode::LLVMError, SrcSpan::new()));
-		};
-
-		if self.emit_types.contains(&"llraw") {
-			backend
-				.module
-				.print_to_file(out_path.with_extension("llraw").as_os_str())
-				.unwrap();
-		}
-
-		// Optimization passes
-		let mpm = PassManager::create(());
-
-		mpm.add_instruction_combining_pass();
-		mpm.add_reassociate_pass();
-		mpm.add_gvn_pass();
-		mpm.add_cfg_simplification_pass();
-		mpm.add_basic_alias_analysis_pass();
-		mpm.add_promote_memory_to_register_pass();
-		mpm.add_instruction_combining_pass();
-		mpm.add_reassociate_pass();
-
-		mpm.run_on(&backend.module);
-		Ok(backend)
-	}*/
 
 	pub(crate) fn get_module_source_path(
 		&self,

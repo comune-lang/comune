@@ -189,6 +189,12 @@ impl Backend for LLVMBackend {
 
 		let output_result = output.output().expect("fatal: failed to invoke linker");
 
+		if !compiler.emit_types.contains(&"obj") {
+			for module in &*compiler.output_modules.lock().unwrap() {
+				std::fs::remove_file(module).unwrap();
+			}
+		}
+
 		if !output_result.status.success() {
 			println!("");
 			io::stdout().write_all(&output_result.stdout).unwrap();
