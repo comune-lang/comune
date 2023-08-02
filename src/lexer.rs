@@ -44,8 +44,8 @@ static KEYWORDS: [&str; 32] = [
 	"drop",
 ];
 
-static OPERATORS: [&str; 42] = [
-	"+", "-", "/", "*", "%", "^", "|", "||", "&", "&&", "=", "==", "/=", "*=", "+=", "-=", "%=",
+static OPERATORS: [&str; 43] = [
+	"+", "-", "/", "*", "%", "^", "!", "|", "||", "&", "&&", "=", "==", "/=", "*=", "+=", "-=", "%=",
 	"&=", "|=", "^=", "++", "--", "->", "(", ")", "[", "]", ".", "::", "<", ">", "<=", ">=", "!=",
 	"<<", ">>", ">>=", "<<=", "..", "...", "=>", "as",
 ];
@@ -456,9 +456,11 @@ impl Lexer {
 
 				// Check for two-char operator
 				if OPERATORS.contains(&result_double.as_str()) {
+					self.get_next_char()?;
+
 					// Little hack for three-char operators
 					let mut result_triple = result_double.clone();
-					result_triple.push(self.get_next_char()?);
+					result_triple.push(self.peek_next_char()?);
 
 					if OPERATORS.contains(&result_triple.as_str()) {
 						self.get_next_char()?;

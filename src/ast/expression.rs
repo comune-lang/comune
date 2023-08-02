@@ -161,8 +161,8 @@ impl Operator {
 			Operator::AssBitAND => Operator::BitAND,
 			Operator::AssBitXOR => Operator::BitXOR,
 			Operator::AssBitOR => Operator::BitOR,
-			Operator::AssBitShL => Operator::AssBitShL,
-			Operator::AssBitShR => Operator::AssBitShR,
+			Operator::AssBitShL => Operator::BitShiftL,
+			Operator::AssBitShR => Operator::BitShiftR,
 			_ => panic!(),
 		}
 	}
@@ -200,6 +200,7 @@ impl Operator {
 				"::" => Some(Operator::ScopeRes),
 				"<" => Some(Operator::Less),
 				">" => Some(Operator::Greater),
+				"!" => Some(Operator::LogicNot),
 				"||" => Some(Operator::LogicOr),
 				"&&" => Some(Operator::LogicAnd),
 				"==" => Some(Operator::Eq),

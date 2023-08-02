@@ -60,7 +60,7 @@ impl Display for CIRStmt {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match self {
 			CIRStmt::Assignment(lval, expr) => writeln!(f, "{lval} = {expr};"),
-			CIRStmt::RefInit(lval, expr) => writeln!(f, "{lval} := {expr};"),
+			CIRStmt::RefInit(local, expr) => writeln!(f, "{local} := {expr};"),
 			CIRStmt::Jump(block) => writeln!(f, "jmp bb{block};"),
 			CIRStmt::Switch(expr, branches, else_branch) => {
 				writeln!(f, "switch {expr} {{")?;
@@ -70,6 +70,10 @@ impl Display for CIRStmt {
 				}
 
 				writeln!(f, "\t\telse => bb{else_branch},\n\t}}")
+			}
+			
+			CIRStmt::GlobalAccess { local, symbol } => {
+				writeln!(f, "{local} := global {symbol};")
 			}
 
 			CIRStmt::Return => writeln!(f, "ret;"),

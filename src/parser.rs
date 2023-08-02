@@ -1128,8 +1128,8 @@ impl<'ctx> Parser {
 			// Handle unary prefix operators
 			Token::Operator(tk) => {
 				let Some(op) = Operator::get_operator(tk, false) else {
-						return self.err(ComuneErrCode::UnexpectedToken)
-					};
+					return self.err(ComuneErrCode::UnexpectedToken)
+				};
 
 				self.get_next()?;
 
