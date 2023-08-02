@@ -213,7 +213,25 @@ void enum_test() {
 	//option.unwrap();
 }
 
+void ops_test() {
+	u8 mut bitwise_test = 0xFF;
+	bitwise_test &= 0x0Fu8;
+	bitwise_test <<= 2;
+	bitwise_test >>= 1;
+	
+	printf(c"value of bitwise_test: %i\n", bitwise_test);
+
+	bool this_value = !true;
+
+	printf(c"this_value is %s!\n", if this_value {
+		c"true"
+	} else {
+		c"false"
+	});
+}
+
 int main() {
+	ops_test();
 	enum_test();
 	drop_test();
 	printf(c"Left drop_test\n\n");
@@ -262,7 +280,7 @@ int main() {
 	void(int) function;
 	//function(12);
 	//fn_pointer_test(fn_pointer_callback);
-
+	
 	TestSumType mut who_knows = sum_type_test(322);
 
 	match who_knows {

@@ -135,6 +135,12 @@ pub enum CIRStmt {
 
 	// Reference initialization. Non-terminator.
 	RefInit(VarIndex, LValue),
+	
+	// Initialize a reference to a global variable or function.
+	GlobalAccess {
+		local: VarIndex,
+		symbol: String
+	},
 
 	// Unconditional jump to the block at BlockIndex. Terminator.
 	Jump(BlockIndex),

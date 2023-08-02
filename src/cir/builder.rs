@@ -619,33 +619,37 @@ impl CIRModuleBuilder {
 				}
 
 				Atom::Identifier(id) => {
-					let idx = self
-						.get_var_index(id.expect_scopeless().unwrap())
-						.unwrap_or_else(|| {
-							panic!(
-								"cIR error: failed to fetch variable {}",
-								id.expect_scopeless().unwrap()
-							)
-						});
+					if id.absolute {
+						todo!()
+					} else {
+						let idx = self
+							.get_var_index(id.expect_scopeless().unwrap())
+							.unwrap_or_else(|| {
+								panic!(
+									"cIR error: failed to fetch variable {}",
+									id.expect_scopeless().unwrap()
+								)
+							});
 
-					let (lval_ty, idprops, _) = &self.get_fn().variables[idx];
+						let (lval_ty, idprops, _) = &self.get_fn().variables[idx];
 
-					let mut idprops = *idprops;
-					idprops.span = span;
+						let mut idprops = *idprops;
+						idprops.span = span;
 
-					Some(RValue::Atom(
-						lval_ty.clone(),
-						None,
-						Operand::LValueUse(
-							LValue {
-								local: idx,
-								projection: vec![],
-								props: idprops,
-							},
-							props,
-						),
-						span,
-					))
+						Some(RValue::Atom(
+							lval_ty.clone(),
+							None,
+							Operand::LValueUse(
+								LValue {
+									local: idx,
+									projection: vec![],
+									props: idprops,
+								},
+								props,
+							),
+							span,
+						))
+					}
 				}
 
 				Atom::Cast(expr, to) => {

@@ -191,7 +191,7 @@ impl Backend for LLVMBackend {
 
 		if !compiler.emit_types.contains(&"obj") {
 			for module in &*compiler.output_modules.lock().unwrap() {
-				std::fs::remove_file(module).unwrap();
+				let _ = std::fs::remove_file(module);
 			}
 		}
 
@@ -508,6 +508,18 @@ impl<'ctx> LLVMBuilder<'ctx> {
 							.build_store(reference, self.generate_lvalue_use(lval, props));
 					}
 
+					CIRStmt::GlobalAccess { local, symbol } => {
+						let reference = self.variables[*local].0;
+						let props = self.variables[*local].1;
+
+						assert!(props.is_ref);
+
+						self.builder.build_store(
+							reference, 
+							self.module.get_global(&symbol).unwrap().as_basic_value_enum()
+						);
+					}
+
 					CIRStmt::Jump(block) => {
 						self.builder.build_unconditional_branch(self.blocks[*block]);
 					}
@@ -698,14 +710,12 @@ impl<'ctx> LLVMBuilder<'ctx> {
 			RValue::Atom(ty, op_opt, atom, _) => {
 				match op_opt {
 					Some(Operator::Deref) => {
-						let atom_ir = Self::to_basic_value(
-							self.generate_operand(ty, atom).as_any_value_enum(),
-						);
+						let atom_ir = self.generate_operand(ty, atom);
 
 						self.builder.build_store(
 							store,
 							self.builder
-								.build_load(atom_ir.as_basic_value_enum().into_pointer_value(), "")
+								.build_load(atom_ir.into_pointer_value(), "")
 								.as_basic_value_enum(),
 						)
 					}
@@ -721,6 +731,44 @@ impl<'ctx> LLVMBuilder<'ctx> {
 						} else {
 							panic!()
 						}
+					}
+
+					Some(Operator::UnaryMinus) => {
+						if ty.is_integral() {
+							let atom_ir = self.generate_operand(ty, atom).into_int_value();
+
+							assert!(ty.is_signed());
+							
+							self.builder.build_store(
+								store,
+								self.builder.build_int_neg(atom_ir, "")
+							)
+						} else if ty.is_floating_point() {
+							let atom_ir = self.generate_operand(ty, atom).into_float_value();
+							
+							self.builder.build_store(
+								store,
+								self.builder.build_float_neg(atom_ir, "")
+							)
+						} else {
+							panic!()
+						}
+					}
+
+					// honestly why do we even have this
+					Some(Operator::UnaryPlus) => {
+						self.builder.build_store(store, self.generate_operand(ty, atom))
+					}
+
+					Some(Operator::LogicNot) => {
+						let atom_ir = self.generate_operand(ty, atom).into_int_value();
+						
+						assert!(ty.is_boolean());
+
+						self.builder.build_store(
+							store,
+							self.builder.build_not(atom_ir, "")
+						)
 					}
 
 					// TODO: Unary minus, logical NOT, etc
@@ -745,6 +793,8 @@ impl<'ctx> LLVMBuilder<'ctx> {
 					let lhs_i = lhs_v.into_int_value();
 					let rhs_i = rhs_v.into_int_value();
 
+					assert!(lhs_ty.is_signed() == rhs_ty.is_signed());
+
 					result = match op {
 						Operator::Add => self.builder.build_int_add(lhs_i, rhs_i, ""),
 						Operator::Sub => self.builder.build_int_sub(lhs_i, rhs_i, ""),
@@ -756,8 +806,26 @@ impl<'ctx> LLVMBuilder<'ctx> {
 								self.builder.build_int_unsigned_div(lhs_i, rhs_i, "")
 							}
 						}
-
-						_ => panic!(),
+						
+						// NOTE: This translates to LLVM's srem and urem instructions,
+						// which are subtly different from a proper modulo operator,
+						// particularly in the sign of the result type.
+						// Is this fine? Should we do something about this? i dunno
+						Operator::Mod => {
+							if lhs_ty.is_signed() {
+								self.builder.build_int_signed_rem(lhs_i, rhs_i, "")
+							} else {
+								self.builder.build_int_unsigned_rem(lhs_i, rhs_i, "")
+							}
+						}
+						
+						Operator::BitAND => self.builder.build_and(lhs_i, rhs_i, ""),
+						Operator::BitOR => self.builder.build_or(lhs_i, rhs_i, ""),
+						Operator::BitXOR => self.builder.build_xor(lhs_i, rhs_i, ""),
+						Operator::BitShiftL => self.builder.build_left_shift(lhs_i, rhs_i, ""),
+						Operator::BitShiftR => self.builder.build_right_shift(lhs_i, rhs_i, false, ""),
+						
+						_ => unimplemented!()
 					}
 					.as_basic_value_enum();
 				} else if expr_ty.is_floating_point() {
