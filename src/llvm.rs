@@ -771,6 +771,10 @@ impl<'ctx> LLVMBuilder<'ctx> {
 						)
 					}
 
+<<<<<<< HEAD
+=======
+					// TODO: Unary minus, logical NOT, etc
+>>>>>>> d3832b08b4186bb7e3aa4e4e727ed24432f4475d
 					None => self
 						.builder
 						.build_store(store, self.generate_operand(ty, atom)),
