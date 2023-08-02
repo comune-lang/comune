@@ -81,6 +81,8 @@ pub enum ComuneErrCode {
 	ExpectedIdentifier,
 	InvalidSuffix,
 
+	RightShiftInGenericArgs(Option<Type>, Option<GenericArgs>),
+
 	// Semantic errors
 	UndeclaredIdentifier(String),
 	UnresolvedTypename(String),
@@ -205,6 +207,10 @@ impl Display for ComuneErrCode {
 			ComuneErrCode::UnexpectedKeyword => write!(f, "unexpected keyword"),
 			ComuneErrCode::ExpectedIdentifier => write!(f, "expected identifier"),
 			ComuneErrCode::InvalidSuffix => write!(f, "invalid suffix"),
+			
+			ComuneErrCode::RightShiftInGenericArgs(..) => {
+				write!(f, "`>>` in generic argument list interpreted as right shift operator")
+			}
 
 			ComuneErrCode::UndeclaredIdentifier(id) => {
 				write!(f, "`{id}` was not found in this scope")

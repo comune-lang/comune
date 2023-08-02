@@ -138,6 +138,7 @@ fn main() -> color_eyre::eyre::Result<()> {
 	}
 
 	if !check_last_phase_ok(&error_sender) {
+		await_output_written();
 		std::process::exit(1);
 	}
 
@@ -161,6 +162,7 @@ fn main() -> color_eyre::eyre::Result<()> {
 	
 
 	if !check_last_phase_ok(&error_sender) {
+		await_output_written();
 		std::process::exit(1);
 	}
 
@@ -204,8 +206,7 @@ fn main() -> color_eyre::eyre::Result<()> {
 		);
 	}
 
-	// Block until all output is written
-	let _ = std::io::stdout().lock();
+	await_output_written();
 
 	Ok(())
 }
@@ -227,4 +228,10 @@ fn check_last_phase_ok(error_sender: &Sender<MessageLog>) -> bool {
 	}
 
 	true
+}
+
+fn await_output_written() {
+	// Block until all output is written
+	let _ = std::io::stdout().lock();
+	let _ = std::io::stderr().lock();
 }

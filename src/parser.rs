@@ -2144,9 +2144,41 @@ impl<'ctx> Parser {
 					},
 				};
 			}
+			
+			if self.get_current()? == Token::Operator("<") {				
+				match self.parse_generic_arg_list(scope) {
+					Ok(mut args) => {
+						args_accum.append(&mut args);
+					}
 
-			if self.get_current()? == Token::Operator("<") {
-				args_accum.append(&mut self.parse_generic_arg_list(scope)?);
+					Err(ComuneError {
+						code: ComuneErrCode::RightShiftInGenericArgs(None, Some(mut args)),
+						origin,
+						span,
+						..
+					}) => {
+						args_accum.append(&mut args);
+
+						if !args_accum.is_empty() {
+							let (Type::TypeRef { args, .. } | Type::Unresolved { generic_args: args, .. }) = &mut result else {
+								panic!()
+							};
+			
+							*args = args_accum.clone();
+						}
+
+						return Err(
+							ComuneError {
+								code: ComuneErrCode::RightShiftInGenericArgs(Some(result), None),
+								span,
+								origin,
+								notes: vec![],
+							}
+						)
+					}
+
+					Err(err) => return Err(err)
+				}
 			}
 
 			if !args_accum.is_empty() {
@@ -2312,7 +2344,22 @@ impl<'ctx> Parser {
 		let mut result = vec![];
 
 		loop {
-			let generic = self.parse_type(scope)?;
+			let generic = match self.parse_type(scope) {
+				Ok(generic) => generic,
+				
+				Err(ComuneError { 
+					code: ComuneErrCode::RightShiftInGenericArgs(Some(ty), None), 
+					.. 
+				}) => {
+					result.push(GenericArg::Type(ty));
+					self.get_next()?;
+
+					return Ok(result)
+				},
+
+				Err(err) => return Err(err),
+			};
+
 			result.push(GenericArg::Type(generic));
 
 			if self.get_current()? == Token::Other(',') {
@@ -2322,14 +2369,22 @@ impl<'ctx> Parser {
 			}
 		}
 
-		if self.get_current()? != Token::Operator(">") {
-			return self.err(ComuneErrCode::UnexpectedToken);
+		match self.get_current()? {
+			Token::Operator(">") => {
+				// consume closing angle bracket
+				self.get_next()?;
+
+				Ok(result)
+			}
+
+			Token::Operator(">>") => {
+				self.err(ComuneErrCode::RightShiftInGenericArgs(None, Some(result)))
+			}
+			
+			_ => {
+				self.err(ComuneErrCode::UnexpectedToken)
+			}
 		}
-
-		// consume closing angle bracket
-		self.get_next()?;
-
-		Ok(result)
 	}
 
 	fn parse_tuple_type(

@@ -33,6 +33,8 @@ impl Test {
 	}
 }
 
+type NestedGenerics = Vector<Vector<Vector<Vector<Vector<int>>>>>;
+
 impl submodule_test::SubmoduleTrait for Test {
 	void foo() {
 		printf(c"This is a trait in a submodule!\n");
@@ -218,7 +220,7 @@ void ops_test() {
 	bitwise_test &= 0x0Fu8;
 	bitwise_test <<= 2;
 	bitwise_test >>= 1;
-	
+
 	printf(c"value of bitwise_test: %i\n", bitwise_test);
 
 	bool this_value = !true;
