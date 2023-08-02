@@ -21,12 +21,16 @@ comune is a simple `cargo` project, though you are required to pass in a feature
 
 ```$ cargo build --features=llvm12```
 
+to get tools like rust-analyzer working in VS Code, pass in the same feature flag in the Workspace Settings.
+
 on Windows, getting LLVM set up for development can be a veritable nightmare, so i recommend using WSL.
 
-to get rust-analyzer working in i.e. Visual Studio Code, pass in the same feature flag in the Workspace Settings.
+by default, the crate builds with the `concurrent` feature, which uses `rayon` for concurrent module compilation. this feature can optionally be disabled, which will remove the `rayon` dependency and use a single-threaded pipeline instead.
 
 # running
-to run the debug build, simply invoke `target/debug/comune` from the repo root. invoking the compiler with `--help` will provide a basic overview of the available command-line options.
+to run the debug build, simply invoke `target/debug/comune` from the repo root. invoking the compiler with `--help` will provide a basic overview of the available command-line options. 
+
+to compile anything, the compiler must know where to find the comune toolchain. this path is provided through the `COMUNE_TOOLCHAIN` environment variable, and when compiling from source, should just be the repository root.
 
 the compiler takes a list of input files, as well as any modules they import, and compiles them into the specified output types (by default, an executable). the output types can be specified with `--emit`, and the valid options include:
 
@@ -38,8 +42,9 @@ the compiler takes a list of input files, as well as any modules they import, an
 - `cirmono` - the monomorphized and optimized cIR, right before it goes into LLVM codegen. this is useful for diagnosing issues with cIR optimization and transformation passes, as well as monomorphization issues.
 - `llraw` - the plain, unoptimized LLVM IR emitted by the compiler. i apologize for the state of this. useful for debugging LLVM codegen issues.
 - `ll` - the optimized LLVM IR. in debug builds, this won't be very different from the `.ll_raw` stage, but it can still be useful for sanity-checking the IR as a whole - if code is being optimized away that shouldn't be, it's likely the IR codegen is invoking Undefined Behaviour.
+- `none` - don't emit any build artifacts. this item is mutually exclusive with every other emit type. useful for i.e. running the compiler as a language server.
 
-the compiler accepts any non-empty list of these options, and emits them into the directory specified by `--out-dir` (by default the current working directory). for output types that involve invoking the linker (`bin`, `lib` and `dylib`), the output filename can be specified with `--output` or `-o`. the default is `a.out`.
+the compiler accepts any valid, non-empty list of these options, and emits them into the directory specified by `--out-dir` (by default the current working directory). for output types that involve invoking the linker (`bin`, `lib` and `dylib`), the output filename can be specified with `--output` or `-o`. the default is `a.out`.
 
 # building the test code
 
