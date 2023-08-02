@@ -18,7 +18,6 @@ use comune::errors::{self, MessageLog};
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
 struct ComuneCLI {
-	// Verbose flag
 	#[clap(short = 'v', long = "verbose", default_value_t = false, value_parser)]
 	verbose: bool,
 

@@ -1373,7 +1373,20 @@ impl<'ctx> Parser {
 					let atom = if s.find('.').is_some() {
 						Atom::FloatLit(s.parse::<f64>().unwrap(), suffix_b)
 					} else {
-						Atom::IntegerLit(s.parse::<i128>().unwrap(), suffix_b)
+						Atom::IntegerLit(
+							if s.len() >= 2 {
+								if matches!(&s[0..2], "0x" | "0X") {
+									i128::from_str_radix(&s[2..], 16).unwrap()
+								} else if matches!(&s[0..2], "0b" | "0B") {
+									i128::from_str_radix(&s[2..], 2).unwrap()
+								} else {
+									s.parse::<i128>().unwrap()
+								}
+							} else {
+								s.parse::<i128>().unwrap()
+							}, 
+							suffix_b
+						)
 					};
 
 					result = Some(atom);

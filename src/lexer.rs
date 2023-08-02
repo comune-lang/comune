@@ -396,20 +396,45 @@ impl Lexer {
 				let mut suffix = String::new();
 				let mut next = self.get_next_char()?;
 
-				while next.is_numeric() {
-					result.push(next);
-					next = self.get_next_char()?;
-				}
-
-				// Parse decimal stuff
-				if next == '.' {
-					result.push(next);
-					next = self.get_next_char()?;
-					while next.is_numeric() {
+				match next {
+					'x' | 'X' => {
 						result.push(next);
 						next = self.get_next_char()?;
+						
+						while matches!(next, '0'..='9' | 'a'..='f' | 'A'..='F') {
+							result.push(next);
+							next = self.get_next_char()?;
+						}
+					}
+
+					'b' | 'B' => {
+						result.push(next);
+						next = self.get_next_char()?;
+
+						while matches!(next, '0' | '1') {
+							result.push(next);
+							next = self.get_next_char()?;
+						}
+					}
+
+					_ => {
+						while next.is_numeric() {
+							result.push(next);
+							next = self.get_next_char()?;
+						}
+		
+						// Parse decimal stuff
+						if next == '.' {
+							result.push(next);
+							next = self.get_next_char()?;
+							while next.is_numeric() {
+								result.push(next);
+								next = self.get_next_char()?;
+							}
+						}
 					}
 				}
+				
 				// Parse suffix
 				while next.is_alphanumeric() {
 					suffix.push(next);
