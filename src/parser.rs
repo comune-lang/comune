@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::{RefCell, Cell};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
@@ -38,6 +38,7 @@ pub struct Parser {
 	pub module_impl: ModuleImpl,
 	pub lexer: RefCell<Lexer>,
 	current_scope: Arc<Identifier>,
+	spec_parse_counter: Cell<usize>,
 }
 
 enum DeclParseResult {
@@ -52,14 +53,51 @@ impl<'ctx> Parser {
 			module_impl: ModuleImpl::new(),
 			lexer: RefCell::new(lexer),
 			current_scope: Arc::new(Identifier::new(true)),
+			spec_parse_counter: Cell::new(0),
 		}
 	}
 
+	// Speculative parsing is used in a couple places,
+	// where it might be prohibitively complex to
+	// resolve a syntactic ambiguity. in this case,
+	// we just try parsing it as one disambiguation,
+	// and fall back on the other if any errors crop up.
+	//
+	// kind of a blunt solution, but it works.
+	fn set_speculative_parsing(&self) {
+		self.spec_parse_counter.set(
+			self.spec_parse_counter.get() + 1
+		)
+	}
+
+	fn unset_speculative_parsing(&self) {
+		self.spec_parse_counter.set(
+			self.spec_parse_counter.get() - 1
+		)
+	}
+
+	fn parsing_speculatively(&self) -> bool {
+		self.spec_parse_counter.get() > 0
+	}
+
 	fn err<T>(&self, code: ComuneErrCode) -> ComuneResult<T> {
-		Err(ComuneError::new(
-			code,
-			self.lexer.borrow().current().unwrap().0,
-		))
+		if self.parsing_speculatively() {
+			// if parsing speculatively, don't use ComuneError::new(),
+			// which is potentially expensive (it might capture a backtrace)
+			// and disruptive to debugging
+			Err(ComuneError {
+				code,
+				span: self.lexer.borrow().current().unwrap().0,
+				origin: None,
+				notes: vec![]
+			})
+		} else {
+			Err(ComuneError::new(
+				code,
+				self.lexer.borrow().current().unwrap().0,
+			))
+		}
+
 	}
 
 	fn get_current(&self) -> ComuneResult<Token> {
@@ -1296,20 +1334,28 @@ impl<'ctx> Parser {
 				if self.get_current()? == Token::Operator("<") {
 					// Here lies the Turbofish, vanquished after a battle
 					// lasting months on end, at the cost of tuple syntax.
+					self.set_speculative_parsing();
 
 					type_args = match self.parse_generic_arg_list(Some(scope)) {
-						Ok(args) => args,
+						Ok(args) => {
+							self.unset_speculative_parsing();
+							args
+						}
 
 						Err(ComuneError {
 							code: ComuneErrCode::UnexpectedToken | ComuneErrCode::ExpectedIdentifier,
 							..
 						}) => {
 							self.lexer.borrow_mut().seek_token_idx(start_token);
+							self.unset_speculative_parsing();
 
 							return Ok(Atom::Identifier(id));
 						}
 
-						Err(e) => return Err(e),
+						Err(e) => {
+							self.unset_speculative_parsing();
+							return Err(e)
+						}
 					}
 				}
 
@@ -2353,6 +2399,7 @@ impl<'ctx> Parser {
 				}) => {
 					result.push(GenericArg::Type(ty));
 					self.get_next()?;
+					self.unset_speculative_parsing();
 
 					return Ok(result)
 				},
@@ -2378,6 +2425,7 @@ impl<'ctx> Parser {
 			}
 
 			Token::Operator(">>") => {
+				self.set_speculative_parsing();
 				self.err(ComuneErrCode::RightShiftInGenericArgs(None, Some(result)))
 			}
 			
