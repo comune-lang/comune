@@ -109,12 +109,16 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 			}
 		}
 
-		if emits.is_empty() {
-			links.extend(T::default_link_types());
-		}
-
 		for ty in &links {
 			dep_emits.extend(T::required_emit_types(&ty));
+		}
+
+		if emits.is_empty() && dep_emits.is_empty() {
+			links.extend(T::default_link_types());
+
+			for ty in &links {
+				dep_emits.extend(T::required_emit_types(&ty));
+			}	
 		}
 
 		Self {
