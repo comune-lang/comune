@@ -4,7 +4,6 @@ using core::libc::{
 	realloc, 
 	free,
 	memcpy,
-	printf
 };
 
 using core::mem::{
@@ -59,7 +58,6 @@ struct Vector<type T> {
 
 impl<type T> Vector<T> {
 	void push(mut& self, T elem) {
-		printf(c"Entered Vector<T>::push\n");
 		if self.len >= self.capacity {
 			self.realloc(
 				if self.capacity == 0 { 
@@ -71,16 +69,13 @@ impl<type T> Vector<T> {
 		}
 		
 		unsafe {
-			printf(c"Calling write\n");
 			core::mem::write<T>(
 				self.data + self.len,
 				elem
 			);
-			printf(c"Called write\n");
 		}
 		
 		self.len += 1;
-		printf(c"Leaving Vector<T>::push\n");
 	}
 
 	void realloc(mut& self, usize capacity) {		
