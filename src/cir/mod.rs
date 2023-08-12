@@ -145,7 +145,7 @@ pub enum CIRStmt {
 	// Initialize a reference to a global variable or function.
 	GlobalAccess {
 		local: VarIndex,
-		symbol: String
+		symbol: Identifier
 	},
 
 	// Unconditional jump to the block at BlockIndex. Terminator.

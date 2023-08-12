@@ -122,7 +122,7 @@ pub fn validate_fn_call(
 		// Local function pointer
 		if let Type::Function(ty_ret, ty_args) = local_ty {
 			for (arg, (_, param)) in args.iter_mut().zip(ty_args.iter()) {
-				arg.get_node_data_mut().ty = Some(param.clone());
+				arg.set_type_hint(param.clone());
 				arg.validate(scope)?;
 			}
 
@@ -393,7 +393,7 @@ fn validate_arg_list(
 		if let Some((param_ty, ..)) = params.get(i) {
 			let param_concrete = param_ty.get_concrete_type(generic_args);
 
-			arg.get_node_data_mut().ty.replace(param_concrete.clone());
+			arg.set_type_hint(param_concrete.clone());
 
 			let arg_type = arg.validate(scope)?.get_concrete_type(generic_args);
 

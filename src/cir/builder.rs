@@ -81,7 +81,7 @@ impl CIRModuleBuilder {
 			self.register_module(&import.interface);
 		}
 
-		for (_, item) in &module.children {
+		for (id, item) in &module.children {
 			match item {
 				ModuleItemInterface::Functions(fns) => {
 					for func in &*fns.read().unwrap() {
@@ -93,6 +93,12 @@ impl CIRModuleBuilder {
 
 				ModuleItemInterface::Type(ty) => {
 					self.register_typedef(ty);
+				}
+
+				ModuleItemInterface::Variable(var) => {
+					let ty = var.read().unwrap().clone();
+					
+					self.module.globals.insert(id.clone(), (ty.clone(), RValue::undef(ty)));
 				}
 
 				_ => {}
@@ -1586,12 +1592,27 @@ impl CIRModuleBuilder {
 	fn generate_lvalue_expr(&mut self, expr: &Expr) -> Option<LValue> {
 		match expr {
 			Expr::Atom(Atom::Identifier(id), meta) => {
-				let local = self.get_var_index(id.expect_scopeless().unwrap()).unwrap();
+				if id.absolute {
+					let global_access = self.insert_variable(
+						None, 
+						BindingProps::mut_reference(), 
+						expr.get_type().clone()
+					);
+					
+					self.write(CIRStmt::GlobalAccess { 
+						local: global_access.local, 
+						symbol: id.clone()
+					});
 
-				let mut lval = self.get_local_lvalue(local);
-				lval.props.span = meta.span;
+					Some(global_access)
+				} else {
+					let local = self.get_var_index(id.expect_scopeless().unwrap()).unwrap();
 
-				Some(lval)
+					let mut lval = self.get_local_lvalue(local);
+					lval.props.span = meta.span;
+
+					Some(lval)
+				}
 			}
 
 			Expr::Atom(Atom::Block { items, result, .. }, _) => {

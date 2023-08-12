@@ -304,6 +304,14 @@ impl<'ctx> LLVMBuilder<'ctx> {
 			self.generate_type_body(name, &ty);
 		}
 
+		for (name, (ty, _)) in &module.globals {
+			self.module.add_global(
+				Self::to_basic_type(self.get_llvm_type(ty)), 
+				None, 
+				&name.to_string()
+			);
+		}
+
 		// Register functions
 		for (proto, func) in &module.functions {
 			let mangled = self.get_mangled_name(&proto, func);
@@ -544,7 +552,7 @@ impl<'ctx> LLVMBuilder<'ctx> {
 
 						self.builder.build_store(
 							reference, 
-							self.module.get_global(&symbol).unwrap().as_basic_value_enum()
+							self.module.get_global(&symbol.to_string()).unwrap().as_basic_value_enum()
 						);
 					}
 

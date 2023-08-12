@@ -321,7 +321,7 @@ impl Expr {
 		if let Expr::Atom(Atom::IntegerLit(_, hint @ None), _) = self {
 			if let Type::Basic(basic @ Basic::Integral { .. }) = &to {
 				*hint = Some(*basic);
-				self.get_node_data_mut().ty = Some(Type::Basic(*basic));
+				self.set_type_hint(Type::Basic(*basic));
 				return;
 			}
 		}
@@ -330,7 +330,7 @@ impl Expr {
 		if let Expr::Atom(Atom::FloatLit(_, hint @ None), _) = self {
 			if let Type::Basic(basic @ Basic::Float { .. }) = &to {
 				*hint = Some(*basic);
-				self.get_node_data_mut().ty = Some(Type::Basic(*basic));
+				self.set_type_hint(Type::Basic(*basic));
 				return;
 			}
 		}
@@ -397,6 +397,10 @@ impl Expr {
 			.ty
 			.as_ref()
 			.expect("attempting to unwrap an unvalidated Expr's type!")
+	}
+
+	pub fn set_type_hint(&mut self, ty: Type) {
+		self.get_node_data_mut().ty = Some(ty)
 	}
 
 	pub fn get_span(&self) -> SrcSpan {

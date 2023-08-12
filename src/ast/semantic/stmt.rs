@@ -18,7 +18,7 @@ impl Stmt {
 				binding_ty.validate(scope)?;
 
 				if let Some(expr) = expr {
-					expr.get_node_data_mut().ty = Some(binding_ty.clone());
+					expr.set_type_hint(binding_ty.clone());
 
 					let expr_ty = expr.validate(scope)?;
 

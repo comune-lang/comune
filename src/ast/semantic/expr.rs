@@ -111,11 +111,8 @@ impl Expr {
 
 									Operator::PostDec | Operator::PostInc => Ok(first_t),
 
-									_ if matches!(op, Operator::Assign)
-										|| op.is_compound_assignment() =>
-									{
-										Ok(Type::void_type())
-									}
+									Operator::Assign => Ok(Type::void_type()),
+									_ if op.is_compound_assignment() => Ok(Type::void_type()),
 
 									_ => Ok(second_t),
 								}
@@ -156,9 +153,7 @@ impl Expr {
 
 		result.validate(scope)?;
 
-		self.get_node_data_mut()
-			.ty
-			.replace(result.get_concrete_type(&scope.generics.get_as_arg_list()));
+		self.set_type_hint(result.get_concrete_type(&scope.generics.get_as_arg_list()));
 
 		Ok(result)
 	}
@@ -232,7 +227,7 @@ impl Expr {
 			// Member access
 			Expr::Atom(Atom::Identifier(id), _) => {
 				if let Some(m) = def.get_member_type(id.name(), &args) {
-					rhs.get_node_data_mut().ty = Some(m.clone());
+					rhs.set_type_hint(m.clone());
 
 					Ok(m)
 				} else {
@@ -252,7 +247,7 @@ impl Expr {
 				let Expr::Atom(rhs_atom, ..) = rhs else { panic!() };
 				let ret = resolve_method_call(lhs.get_type(), lhs, rhs_atom, scope, meta.span)?;
 
-				rhs.get_node_data_mut().ty = Some(ret.clone());
+				rhs.set_type_hint(ret.clone());
 
 				Ok(ret)
 			}
@@ -344,8 +339,7 @@ impl Atom {
 				match &meta.ty {
 					Some(Type::Array(ty, _)) => {
 						for elem in elems {
-							elem.get_node_data_mut().ty = Some(*ty.clone());
-
+							elem.set_type_hint(*ty.clone());
 							elem.validate(scope)?;
 						}
 
@@ -422,7 +416,7 @@ impl Atom {
 								todo!()
 							};
 
-							expr.get_node_data_mut().ty.replace(member_ty.clone());
+							expr.set_type_hint(member_ty.clone());
 
 							let expr_ty = expr.validate(scope)?;
 

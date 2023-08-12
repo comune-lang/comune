@@ -116,8 +116,13 @@ impl<'ctx> FnScope<'ctx> {
 		if result.is_none() && search_namespace {
 			// Look for it in the namespace tree
 			self.context.with_item(id, &self.scope, |item, id| {
-				if let ModuleItemInterface::Functions(fns) = item {
-					if let [func] = fns.read().unwrap().as_slice() {
+				match item {
+					ModuleItemInterface::Functions(fns) => {
+						let fns = fns.read().unwrap();
+						let [func] = fns.as_slice() else {
+							todo!("taking address of overloaded function is not yet supported")
+						};
+						
 						result = Some((
 							id.clone(),
 							Type::Function(
@@ -129,9 +134,13 @@ impl<'ctx> FnScope<'ctx> {
 									.collect(),
 							),
 						));
-					} else {
-						todo!("taking address of overloaded function is not yet supported")
 					}
+
+					ModuleItemInterface::Variable(var) => {
+						result = Some((id.clone(), var.read().unwrap().clone()));
+					}
+
+					_ => {}
 				}
 			});
 		}
