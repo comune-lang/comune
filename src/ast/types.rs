@@ -328,13 +328,11 @@ impl TypeDef {
 			return true
 		}
 		
-		let members_drop = if args.is_empty() {
+		if args.is_empty() {
 			self.members.iter().any(|(_, ty, _)| ty.needs_drop())
 		} else {
 			self.members.iter().any(|(_, ty, _)| ty.get_concrete_type(args).needs_drop())
-		};
-
-		members_drop
+		}
 	}
 }
 
