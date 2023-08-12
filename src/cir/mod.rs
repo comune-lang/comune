@@ -13,7 +13,7 @@ use crate::{
 		types::{Basic, BindingProps, FnPrototype, GenericArgs, Generics, Type, TypeDef},
 		Attribute,
 	},
-	lexer::SrcSpan,
+	lexer::{SrcSpan, Token},
 };
 
 pub mod analyze;
@@ -55,6 +55,8 @@ pub enum PlaceElem {
 	Deref,
 	Field(FieldIndex),
 	Index(Type, Operand, Operator),
+	SumDisc, // sum type/enum discriminant field
+	SumData, // sum type/enum data field
 }
 
 impl PartialEq for PlaceElem {
@@ -69,6 +71,8 @@ impl PartialEq for PlaceElem {
 				}
 			}
 			PlaceElem::Index(..) => matches!(other, PlaceElem::Index(..)),
+			PlaceElem::SumData => matches!(other, PlaceElem::SumData),
+			PlaceElem::SumDisc => matches!(other, PlaceElem::SumDisc)
 		}
 	}
 }
@@ -81,6 +85,8 @@ impl Hash for PlaceElem {
 			PlaceElem::Deref => "deref".hash(state),
 			PlaceElem::Field(idx) => idx.hash(state),
 			PlaceElem::Index(..) => "index".hash(state),
+			PlaceElem::SumData => "sum_data".hash(state),
+			PlaceElem::SumDisc => "sum_disc".hash(state),
 		}
 	}
 }
@@ -236,11 +242,35 @@ impl RValue {
 		)
 	}
 
+	pub fn undef(ty: Type) -> Self {
+		RValue::Atom(
+			ty,
+			None,
+			Operand::Undef,
+			SrcSpan::new()
+		)
+	}
+
+	pub fn lvalue_use(ty: Type, lval: LValue, props: BindingProps) -> Self {
+		RValue::Atom(
+			ty,
+			None,
+			Operand::LValueUse(lval, props),
+			SrcSpan::new()
+		)
+	}
+
 	pub fn get_type(&self) -> &Type {
 		match self {
 			RValue::Atom(ty, ..) | RValue::Cons(ty, ..) => ty,
 			RValue::Cast { to, .. } => to,
 		}
+	}
+}
+
+impl CIRBlock {
+	fn new() -> Self {
+		CIRBlock { items: vec![], preds: vec![], succs: vec![] }
 	}
 }
 
@@ -280,6 +310,10 @@ impl CIRFunction {
 				PlaceElem::Field(field) => {
 					ty = ty.get_field_type(*field);
 				}
+
+				// TODO: figure out actual answers for these
+				PlaceElem::SumData => {},
+				PlaceElem::SumDisc => ty = Type::i32_type(true),
 			}
 		}
 
@@ -296,5 +330,23 @@ impl CIRFunction {
 				props: self.ret.0,
 			})
 		}
+	}
+
+	pub fn is_lang_function(&self, lang_item: &str) -> bool {
+		self.attributes.iter().any(|attr| {
+			if &attr.name != "lang" { 
+				return false 
+			}
+			
+			let [arg0] = attr.args.as_slice() else {
+				return false
+			};
+
+			let [Token::Name(name)] = arg0.as_slice() else {
+				return false
+			};
+
+			name == lang_item
+		})
 	}
 }

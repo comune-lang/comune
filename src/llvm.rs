@@ -76,7 +76,7 @@ impl Backend for LLVMBackend {
 	fn generate_code<'out>(
 		&'out self,
 		module: &CIRModule,
-		_compiler: &Compiler<Self>,
+		compiler: &Compiler<Self>,
 		module_name: &str,
 		source_file: &str,
 	) -> ComuneResult<Self::Output<'out>> {
@@ -92,16 +92,18 @@ impl Backend for LLVMBackend {
 				lexer::get_escaped(e.to_str().unwrap())
 			);
 
-			//let boguspath = out_path.with_extension("llbogus");
+			let mut boguspath = PathBuf::from(&compiler.output_dir);
+			boguspath.push(module_name);
+			boguspath.set_extension("llbogus");
 
 			// Output bogus LLVM here, for debugging purposes
-			//builder.module.print_to_file(boguspath.as_os_str()).unwrap();
+			builder.module.print_to_file(boguspath.as_os_str()).unwrap();
 
-			//eprintln!(
-			//	"{} ill-formed LLVM IR printed to {}",
-			//	"note:".bold(),
-			//	boguspath.to_string_lossy().bold()
-			//);
+			eprintln!(
+				"{} ill-formed LLVM IR printed to {}",
+				"note:".bold(),
+				boguspath.to_string_lossy().bold()
+			);
 
 			return Err(ComuneError::new(ComuneErrCode::LLVMError, SrcSpan::new()));
 		};
@@ -113,10 +115,10 @@ impl Backend for LLVMBackend {
 		&self,
 		compiler: &Compiler<Self>,
 		builder: &Self::Output<'_>,
-		emit_type: &str,
+		emit_types: &[&str],
 		out_path: &Path,
 	) {
-		if emit_type == "llraw" {
+		if emit_types.contains(&"llraw") {
 			builder
 				.module
 				.print_to_file(out_path.with_extension("llraw").as_os_str())
@@ -139,20 +141,22 @@ impl Backend for LLVMBackend {
 			mpm.run_on(&builder.module);
 		}
 
-		match emit_type {
-			"ll" => builder
-				.module
-				.print_to_file(out_path.with_extension("ll").as_os_str())
-				.unwrap(),
+		for emit_type in emit_types {
+			match *emit_type {
+				"ll" => builder
+					.module
+					.print_to_file(out_path.with_extension("ll").as_os_str())
+					.unwrap(),
 
-			"llraw" => {}
+				"llraw" => {}
 
-			"obj" => builder
-				.target_machine
-				.write_to_file(&builder.module, FileType::Object, &out_path)
-				.unwrap(),
+				"obj" => builder
+					.target_machine
+					.write_to_file(&builder.module, FileType::Object, &out_path)
+					.unwrap(),
 
-			_ => panic!(),
+				_ => panic!(),
+			}
 		}
 	}
 
@@ -491,11 +495,28 @@ impl<'ctx> LLVMBuilder<'ctx> {
 			for stmt in block.items.iter() {
 				match stmt {
 					CIRStmt::Assignment(lval, expr) => {
-						self.generate_expr(
-							self.generate_lvalue_use(lval, BindingProps::mut_reference())
-								.into_pointer_value(),
-							expr,
-						);
+						let store = self.generate_lvalue_use(
+							lval, 
+							BindingProps::mut_reference()
+						).into_pointer_value();
+
+						if matches!(lval.projection.last(), Some(PlaceElem::SumData)) {
+							let ty = Self::to_basic_type(self.get_llvm_type(expr.get_type()));
+							
+							self.generate_expr(
+								self.builder.build_bitcast(
+									store, 
+									ty.ptr_type(AddressSpace::Generic), 
+									""
+								).into_pointer_value(), 
+								expr
+							);
+						} else {
+							self.generate_expr(
+								store,
+								expr,
+							);
+						}
 					}
 
 					CIRStmt::RefInit(var, lval) => {
@@ -503,9 +524,16 @@ impl<'ctx> LLVMBuilder<'ctx> {
 						let props = self.variables[*var].1;
 
 						assert!(props.is_ref);
-
-						self.builder
-							.build_store(reference, self.generate_lvalue_use(lval, props));
+						
+						if matches!(lval.projection.last(), Some(PlaceElem::SumData)) {
+							self.builder.build_store(
+								reference,
+								self.generate_variant_lvalue_use(lval, props, Some(&t.variables[*var].0))
+							);
+						} else {
+							self.builder
+								.build_store(reference, self.generate_lvalue_use(lval, props));
+						}
 					}
 
 					CIRStmt::GlobalAccess { local, symbol } => {
@@ -888,23 +916,17 @@ impl<'ctx> LLVMBuilder<'ctx> {
 				span: _,
 			} => {
 				match to {
-					Type::Tuple(TupleKind::Sum, types) => {
+					Type::Tuple(TupleKind::Sum, _) => {
+						let Operand::LValueUse(LValue { projection, .. }, _) = val else {
+							panic!()
+						};
+
+						assert!(matches!(projection.last(), Some(PlaceElem::SumData)));
+
 						let val = self.generate_operand(from, val);
-						let idx = types.iter().position(|ty| ty == from).unwrap();
-
-						let discriminant = self
-							.context
-							.i32_type()
-							.const_int(idx as u64, false)
-							.as_basic_value_enum();
-
-						self.builder.build_store(
-							self.builder.build_struct_gep(store, 0, "").unwrap(),
-							discriminant,
-						);
 
 						let ptr = self.builder.build_pointer_cast(
-							self.builder.build_struct_gep(store, 1, "").unwrap(),
+							store,
 							val.get_type().ptr_type(AddressSpace::Generic),
 							"",
 						);
@@ -912,32 +934,17 @@ impl<'ctx> LLVMBuilder<'ctx> {
 						self.builder.build_store(ptr, val)
 					}
 
-					Type::TypeRef { def: to_def, .. } if to.get_variant_index(from).is_some() => {
-						let to_def = to_def.upgrade().unwrap();
-						let to_def = to_def.read().unwrap();
+					Type::TypeRef { .. } if to.get_variant_index(from).is_some() => {
+						let Operand::LValueUse(LValue { projection, .. }, _) = val else {
+							panic!()
+						};
 
-						let idx = to.get_variant_index(from).unwrap();
-
-						// Cast from enum variant type to enum type
-
-						if !to_def.members.is_empty() {
-							panic!("enum structs are not yet implemented!")
-						}
+						assert!(matches!(projection.last(), Some(PlaceElem::SumData)));
 
 						let val = self.generate_operand(from, val);
-						let discriminant = self
-							.context
-							.i32_type()
-							.const_int(idx as u64, false)
-							.as_basic_value_enum();
-
-						self.builder.build_store(
-							self.builder.build_struct_gep(store, 0, "").unwrap(),
-							discriminant,
-						);
 
 						let ptr = self.builder.build_pointer_cast(
-							self.builder.build_struct_gep(store, 1, "").unwrap(),
+							store,
 							val.get_type().ptr_type(AddressSpace::Generic),
 							"",
 						);
@@ -971,52 +978,24 @@ impl<'ctx> LLVMBuilder<'ctx> {
 
 						Type::Tuple(TupleKind::Sum, _) => {
 							// Tuple downcast, aka just indexing into the data field
-							let val = self.generate_operand(from, val);
-							let tmp = self.builder.build_alloca(val.get_type(), "");
+							let Operand::LValueUse(lvalue, props) = val else {
+								panic!()
+							};
 
-							self.builder.build_store(tmp, val);
-
-							let gep = self.builder.build_struct_gep(tmp, 1, "").unwrap();
-
-							let cast = self
-								.builder
-								.build_bitcast(
-									gep,
-									Self::to_basic_type(self.get_llvm_type(to))
-										.ptr_type(AddressSpace::Generic),
-									"",
-								)
-								.into_pointer_value();
-
-							self.builder.build_store(
-								store,
-								self.builder.build_load(cast, "").as_basic_value_enum(),
-							)
+							let val = self.generate_variant_lvalue_use(lvalue, *props, Some(to));
+							
+							self.builder.build_store(store, val)
 						}
 
 						Type::TypeRef { .. } if from.get_variant_index(to).is_some() => {
 							// Enum downcast (i.e. `Option` -> `Option::Some`)
-							let val = self.generate_operand(from, val);
-							let tmp = self.builder.build_alloca(val.get_type(), "");
+							let Operand::LValueUse(lvalue, props) = val else {
+								panic!()
+							};
 
-							self.builder.build_store(tmp, val);
-
-							let gep = self.builder.build_struct_gep(tmp, 1, "").unwrap();
-
-							let cast = self
-								.builder
-								.build_bitcast(
-									gep,
-									Self::to_basic_type(self.get_llvm_type(to))
-										.ptr_type(AddressSpace::Generic),
-									"",
-								)
-								.into_pointer_value();
-
-							self.builder.build_store(
-								store,
-								self.builder.build_load(cast, "").as_basic_value_enum(),
-							)
+							let val = self.generate_variant_lvalue_use(lvalue, *props, Some(to));
+							
+							self.builder.build_store(store, val)
 						}
 
 						Type::Basic(b) => {
@@ -1222,6 +1201,10 @@ impl<'ctx> LLVMBuilder<'ctx> {
 	}
 
 	fn generate_lvalue_use(&self, expr: &LValue, props: BindingProps) -> BasicValueEnum<'ctx> {
+		self.generate_variant_lvalue_use(expr, props, None)
+	}
+
+	fn generate_variant_lvalue_use(&self, expr: &LValue, props: BindingProps, variant: Option<&Type>) -> BasicValueEnum<'ctx> {
 		// Get the variable pointer from the function
 		let (mut local, lprops, ty) = &self.variables[expr.local];
 
@@ -1237,15 +1220,13 @@ impl<'ctx> LLVMBuilder<'ctx> {
 
 		// Perform geps and whatnot to get a pointer to the sublocation
 
-		for proj in &expr.projection {
+		for (i, proj) in expr.projection.iter().enumerate() {
 			local = match proj {
 				PlaceElem::Deref => self
 					.builder
 					.build_load(local, "")
 					.as_basic_value_enum()
 					.into_pointer_value(),
-
-				PlaceElem::Field(i) => self.builder.build_struct_gep(local, *i as u32, "").unwrap(),
 
 				PlaceElem::Index(index_ty, expr, op) => {
 					let mut idx = self
@@ -1260,6 +1241,38 @@ impl<'ctx> LLVMBuilder<'ctx> {
 					local = self.builder.build_load(local, "").into_pointer_value();
 
 					unsafe { self.builder.build_gep(local, &[idx], "") }
+				}
+
+				PlaceElem::Field(i) => 
+					self
+						.builder
+						.build_struct_gep(local, *i as u32, "")
+						.expect(&format!("failed to generate Field projection for `{expr}` into {:?}`", local.get_type())),
+
+				PlaceElem::SumDisc => 
+					self
+						.builder
+						.build_struct_gep(local, 0, "")
+						.expect(&format!("failed to generate SumDisc projection for `{expr} into {:?}`", local.get_type())),
+
+				PlaceElem::SumData => {
+					assert!(i == expr.projection.len() - 1);
+					
+					let data = self
+								.builder
+								.build_struct_gep(local, 1, "")
+								.unwrap();
+
+					if let Some(variant) = variant {
+						// SumData index requires a cast to variant type
+						self.builder.build_bitcast(
+							data,
+							Self::to_basic_type(self.get_llvm_type(variant)).ptr_type(AddressSpace::Generic),
+							""
+						).into_pointer_value()
+					} else {
+						data
+					}
 				}
 			}
 		}
@@ -1431,8 +1444,14 @@ impl<'ctx> LLVMBuilder<'ctx> {
 				}
 			}
 
-			Type::TypeRef { .. } => {
+			Type::TypeRef { def, .. } => {
 				let ir_typename = ty.get_ir_typename();
+				let ty = &self.type_map[&ir_typename];
+				
+				if ty.into_struct_type().is_opaque() {
+					self.generate_type_body(&ir_typename, &def.upgrade().unwrap().read().unwrap());
+				}
+
 				self.type_map[&ir_typename]
 			}
 

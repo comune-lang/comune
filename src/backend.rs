@@ -19,7 +19,7 @@ pub trait Backend {
 		&self,
 		compiler: &Compiler<Self>,
 		output: &Self::Output<'_>,
-		emit_type: &str,
+		emit_types: &[&str],
 		out_path: &Path,
 	);
 	

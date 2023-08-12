@@ -231,7 +231,7 @@ impl Expr {
 		match rhs {
 			// Member access
 			Expr::Atom(Atom::Identifier(id), _) => {
-				if let Some((_, m)) = def.get_member(id.name(), &args) {
+				if let Some(m) = def.get_member_type(id.name(), &args) {
 					rhs.get_node_data_mut().ty = Some(m.clone());
 
 					Ok(m)
@@ -417,7 +417,7 @@ impl Atom {
 						// Constructor literal
 
 						for (name, expr) in fields.iter_mut() {
-							let Some((_, member_ty)) = def.get_member(name, generic_args) else {
+							let Some(member_ty) = def.get_member_type(name, generic_args) else {
 								// Invalid member in strenum literal
 								todo!()
 							};

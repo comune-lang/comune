@@ -370,16 +370,18 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 				return;
 			}
 		};
+		
+		let custom_emits: Vec<_> = 
+			self
+				.emit_types
+				.iter()
+				.filter(|emit| !BUILTIN_EMIT_TYPES.contains(emit))
+				.chain(self.dep_emit_types.iter())
+				.unique()
+				.copied()
+				.collect();
 
-		for ty in &self.emit_types {
-			if !BUILTIN_EMIT_TYPES.contains(ty) {
-				backend.emit(self, &result, ty, &out_path);
-			}
-		}
-
-		for ty in &self.dep_emit_types {
-			backend.emit(self, &result, ty, &out_path);
-		}
+		backend.emit(self, &result, &custom_emits, &out_path);
 	}
 
 	pub fn spawn(&'ctx self, s: JobSpawner<&RayonScope<'ctx>>, state: CompileState) {
@@ -732,17 +734,17 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 			}
 		};
 
-		for ty in &self.emit_types {
-			if !BUILTIN_EMIT_TYPES.contains(ty) {
-				backend.emit(self, &result, ty, &out_path);
-			}
-		}
+		let custom_emits: Vec<_> = 
+			self
+				.emit_types
+				.iter()
+				.filter(|emit| !BUILTIN_EMIT_TYPES.contains(emit))
+				.chain(self.dep_emit_types.iter())
+				.unique()
+				.copied()
+				.collect();
 
-		for ty in &self.dep_emit_types {
-			if !BUILTIN_EMIT_TYPES.contains(ty) {
-				backend.emit(self, &result, ty, &out_path);
-			}
-		}
+		backend.emit(self, &result, &custom_emits, &out_path);
 
 		self.output_modules.lock().unwrap().push(out_path);
 

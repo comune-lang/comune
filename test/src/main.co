@@ -168,8 +168,13 @@ void drop_test() {
 
 	printf(c"\nLeft Vector<DropTest> scope\n\n");
 
-	temp_drop_test(new DropTest(8));
-	new DropTest(9).consume();
+	Option<DropTest> option = new Option<DropTest>::Some(
+		new DropTest(8)
+	);
+
+	temp_drop_test(new DropTest(9));
+
+	new DropTest(10).consume();
 }
 
 void new_ref_test(Vector<float> new& test) {

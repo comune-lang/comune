@@ -365,7 +365,7 @@ impl Display for ComuneErrCode {
 			ComuneErrCode::ImmutVarMutation { variable } => {
 				write!(
 					f,
-					"cannot mutate {variable}, as it is not declared as mutable"
+					"cannot mutate `{variable}`, as it is not declared as mutable"
 				)
 			}
 

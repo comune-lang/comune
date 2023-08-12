@@ -1092,7 +1092,7 @@ impl<'ctx> Parser {
 							return self.err(ComuneErrCode::UnexpectedToken)
 						};
 
-						let Some((_, ty)) = def.get_member(&name, args) else {
+						let Some(ty) = def.get_member_type(&name, args) else {
 							todo!()
 						};
 
@@ -1177,10 +1177,7 @@ impl<'ctx> Parser {
 
 					current = self.get_current()?;
 
-					if let Token::Operator(op) = current {
-						if op != ")" {
-							return self.err(ComuneErrCode::UnexpectedToken);
-						}
+					if let Token::Operator(")") = current {
 						self.get_next()?;
 						sub
 					} else {
@@ -1191,11 +1188,11 @@ impl<'ctx> Parser {
 
 					let end_index = self.get_prev_end_index();
 
-					let tk = SrcSpan {
+					let span = SrcSpan {
 						start: begin_lhs,
 						len: end_index - begin_lhs,
 					};
-					Expr::Unary(Box::new(rhs), op, NodeData { ty: None, span: tk })
+					Expr::Unary(Box::new(rhs), op, NodeData { ty: None, span })
 				}
 			}
 
@@ -1358,11 +1355,13 @@ impl<'ctx> Parser {
 						}
 					}
 				}
+				
+				self.consume(&Token::Operator("("))?;
 
 				// Function call
 				let mut args = vec![];
 
-				if self.get_next()? != Token::Operator(")") {
+				if self.get_current()? != Token::Operator(")") {
 					loop {
 						args.push(self.parse_expression(scope)?);
 
@@ -1544,10 +1543,11 @@ impl<'ctx> Parser {
 							});
 						} else if self.get_current()? == Token::Operator("(") {
 							// Parse constructor call
+							self.get_next()?;
 
 							let mut args = vec![];
 
-							if self.get_next()? != Token::Operator(")") {
+							if self.get_current()? != Token::Operator(")") {
 								loop {
 									args.push(self.parse_expression(scope)?);
 

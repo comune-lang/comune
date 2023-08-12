@@ -1,6 +1,6 @@
 // lifeline - the comune liveness & borrow checker
 
-use std::{collections::HashMap, fmt::Display};
+use std::{collections::HashMap, fmt::Display, sync::{RwLock, Arc}};
 
 use super::{
 	Analysis, AnalysisDomain, AnalysisResultHandler, Forward, JoinSemiLattice, ResultVisitor,
@@ -8,7 +8,7 @@ use super::{
 use crate::{
 	ast::{
 		traits::{ImplSolver, LangTrait},
-		types::{BindingProps, Generics, TupleKind},
+		types::{BindingProps, Generics, TupleKind, GenericArgs, TypeDef},
 	},
 	cir::{
 		BlockIndex, CIRBlock, CIRCallId, CIRFunction, CIRStmt, LValue, Operand, PlaceElem, RValue,
@@ -684,13 +684,18 @@ impl<'func> DropElaborator<'func> {
 		ty: &Type,
 		next: BlockIndex,
 		drop_flags: &HashMap<LValue, VarIndex>,
-	) {
+	) {	
 		match self.state.get_liveness(lval) {
 			Some(LivenessState::Live) => {
 				self.build_destructor(lval, ty, next, drop_flags);
 			}
 
 			Some(LivenessState::MaybeUninit) => {
+				if !drop_flags.contains_key(lval) {
+					eprintln!("COMPILER BUG: no drop flag for MaybeUninit lvalue {lval}, omitting destructor\n");
+					return
+				}
+
 				let flag = drop_flags[&lval];
 				let start_idx = self.current_block;
 				let drop_idx = self.current_fn.blocks.len();
@@ -737,44 +742,13 @@ impl<'func> DropElaborator<'func> {
 		drop_flags: &HashMap<LValue, VarIndex>,
 	) {
 		match ty {
-			Type::TypeRef { def, args } => {
-				let def = def.upgrade().unwrap();
-				let def = def.read().unwrap();
-
-				if let Some(drop) = &def.drop {
-					let drop = drop.clone();
-
-					self.write(CIRStmt::Call {
-						id: CIRCallId::Direct(drop, SrcSpan::new()),
-						args: vec![(lval.clone(), ty.clone(), BindingProps::mut_reference())],
-						generic_args: args.clone(),
-						result: None,
-					});
-
-					if let Some(flag) = drop_flags.get(lval) {
-						self.write(CIRStmt::Assignment(
-							LValue {
-								local: *flag,
-								projection: vec![],
-								props: BindingProps::mut_value(),
-							},
-							RValue::const_bool(false),
-						));
-					}
-				}
-
-				for (i, (_, member_ty, _)) in def.members.iter().enumerate() {
-					let mut member = lval.clone();
-
-					member.projection.push(PlaceElem::Field(i));
-
-					if def.drop.is_some() {
-						self.build_destructor(&member, member_ty, next, drop_flags)
-					} else {
-						self.elaborate_drop(&member, member_ty, next, drop_flags)
-					}
-				}
-			}
+			Type::TypeRef { def, args } => self.build_typedef_destructor(
+				lval, 
+				&def.upgrade().unwrap(), 
+				args, 
+				next, 
+				drop_flags
+			),
 
 			Type::Tuple(TupleKind::Sum, _) => {}
 
@@ -796,6 +770,128 @@ impl<'func> DropElaborator<'func> {
 			}
 
 			_ => {}
+		}
+	}
+
+	fn build_typedef_destructor(
+		&mut self,
+		lval: &LValue,
+		def: &Arc<RwLock<TypeDef>>,
+		args: &GenericArgs,
+		next: BlockIndex,
+		drop_flags: &HashMap<LValue, VarIndex>,
+	) {
+		let def_lock = def.read().unwrap();
+
+		if let Some(drop) = &def_lock.drop {
+			let drop = drop.clone();
+
+			self.write(CIRStmt::Call {
+				id: CIRCallId::Direct(drop, SrcSpan::new()),
+				args: vec![(
+					lval.clone(), 
+					Type::TypeRef { 
+						def: Arc::downgrade(def),
+						args: args.clone()
+					}, 
+					BindingProps::mut_reference()
+				)],
+				generic_args: args.clone(),
+				result: None,
+			});
+
+			if let Some(flag) = drop_flags.get(lval) {
+				self.write(CIRStmt::Assignment(
+					LValue {
+						local: *flag,
+						projection: vec![],
+						props: BindingProps::mut_value(),
+					},
+					RValue::const_bool(false),
+				));
+			}
+		}
+		
+		if !def_lock.variants.is_empty() {
+			let start_block = self.current_block;
+			let cont_block = self.current_fn.blocks.len();
+
+			// add cont block
+			self.current_fn.blocks.push(CIRBlock::new());
+			
+			let mut branches = vec![];
+
+			for (_, variant) in def_lock.variants.iter() {
+				self.current_block = self.current_fn.blocks.len();
+				self.current_fn.blocks.push(CIRBlock::new());
+				
+				branches.push(self.current_block);
+				
+				let mut variant_lval = lval.clone();
+				variant_lval.projection.push(PlaceElem::SumData);
+
+				self.current_fn.variables.push((
+					Type::TypeRef { 
+						def: Arc::downgrade(variant), 
+						args: vec![]
+					},
+					BindingProps::mut_reference(),
+					None
+				));
+
+				self.write(CIRStmt::RefInit(
+					self.current_fn.variables.len() - 1, 
+					variant_lval
+				));
+
+				self.build_typedef_destructor(
+					&LValue {
+						local: self.current_fn.variables.len() - 1,
+						projection: vec![],
+						props: BindingProps::mut_reference(),
+					}, 
+					variant, 
+					args, 
+					next, 
+					drop_flags
+				);
+
+				self.write(CIRStmt::Jump(cont_block));
+				self.current_fn.blocks[cont_block].preds.push(self.current_block);
+			}
+
+			let mut discriminant = lval.clone();
+			
+			discriminant.projection.push(PlaceElem::SumDisc);
+
+			// Generate switch to all the variants' destructors
+			self.current_fn.blocks[start_block].items.push(
+				CIRStmt::Switch(
+					Operand::LValueUse(discriminant, BindingProps::value()), 
+					branches
+						.iter()
+						.cloned()
+						.enumerate()
+						.map(|(i, idx)| (Type::i32_type(true), Operand::IntegerLit(i as i128, SrcSpan::new()), idx))
+						.collect(),
+					cont_block
+				)
+		 	);
+
+			self.current_block = cont_block;
+			self.current_fn.blocks[start_block].succs = branches;
+		}
+
+		for (i, (_, member_ty, _)) in def_lock.members.iter().enumerate() {
+			let mut member = lval.clone();
+
+			member.projection.push(PlaceElem::Field(i));
+
+			if def_lock.drop.is_some() {
+				self.build_destructor(&member, member_ty, next, drop_flags)
+			} else {
+				self.elaborate_drop(&member, member_ty, next, drop_flags)
+			}
 		}
 	}
 }

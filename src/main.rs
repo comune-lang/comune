@@ -62,7 +62,7 @@ fn main() -> color_eyre::eyre::Result<()> {
 	let mut emit_types = vec![];
 
 	for ty in &args.emit_types {
-		emit_types.push(ty.as_str());
+		emit_types.extend(ty.as_str().split(','));
 	}
 
 	if emit_types.contains(&"none") && emit_types.len() != 1 {

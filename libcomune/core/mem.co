@@ -39,5 +39,9 @@ unsafe void write<type T>(T mut* dest, T src) {
 		dest as void mut*,
 		&src as void*,
 		size_of<T>()
-	)
+	);
+	forget<T>(src);
 }
+
+@lang(forget)
+void forget<type T>(T t) { }

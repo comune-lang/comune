@@ -284,17 +284,39 @@ impl TypeDef {
 		}
 	}
 
-	pub fn get_member(&self, name: &Name, generic_args: &[GenericArg]) -> Option<(usize, Type)> {
-		let mut index = 0;
-
-		for (member_name, ty, _) in &self.members {
+	pub fn get_member_type(&self, name: &Name, generic_args: &[GenericArg]) -> Option<Type> {
+		for (member_name, ty, _) in self.members.iter() {
 			if member_name == name {
-				return Some((index, ty.get_concrete_type(generic_args)));
-			} else {
-				index += 1;
+				return Some(ty.get_concrete_type(generic_args));
 			}
 		}
 		None
+	}
+
+	pub fn get_member_index(&self, name: &Name) -> Option<usize> {
+		let idx = self.members.iter().position(|(mem, ..)| mem == name)?;
+		
+		if self.variants.is_empty() {
+			Some(idx)
+		} else {
+			Some(idx + 2)
+		}
+	}
+
+	pub fn get_enum_discriminant_index(&self) -> Option<usize> {
+		if self.variants.is_empty() {
+			None
+		} else {
+			Some(0)
+		}
+	}
+
+	pub fn get_enum_storage_index(&self) -> Option<usize> {
+		if self.variants.is_empty() {
+			None
+		} else {
+			Some(1)
+		}
 	}
 }
 
