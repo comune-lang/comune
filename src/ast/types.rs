@@ -319,10 +319,22 @@ impl TypeDef {
 		}
 	}
 
-	pub fn needs_drop(&self) -> bool {
-		self.drop.is_some()
-		|| self.members.iter().any(|(_, ty, _)| ty.needs_drop())
-		|| self.variants.iter().any(|(_, var)| var.read().unwrap().needs_drop())
+	pub fn needs_drop(&self, args: &GenericArgs) -> bool {
+		if self.drop.is_some() {
+			return true
+		}
+
+		if self.variants.iter().any(|(_, var)| var.read().unwrap().needs_drop(args)) {
+			return true
+		}
+		
+		let members_drop = if args.is_empty() {
+			self.members.iter().any(|(_, ty, _)| ty.needs_drop())
+		} else {
+			self.members.iter().any(|(_, ty, _)| ty.get_concrete_type(args).needs_drop())
+		};
+
+		members_drop
 	}
 }
 
@@ -637,8 +649,8 @@ impl Type {
 
 	pub fn needs_drop(&self) -> bool {
 		match self {
-			Type::TypeRef { def, .. } => {
-				def.upgrade().unwrap().read().unwrap().needs_drop()
+			Type::TypeRef { def, args } => {
+				def.upgrade().unwrap().read().unwrap().needs_drop(args)
 			}
 
 			Type::Array(arr_ty, _) => arr_ty.needs_drop(),
