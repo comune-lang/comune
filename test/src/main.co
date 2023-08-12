@@ -127,11 +127,13 @@ void temp_drop_test(DropTest& test) {
 	printf(c"temp_drop_test(DropTest&) called\n");
 }
 
-int global_var_test;
-
 void drop_test() {
 	printf(c"\nEntering drop_test\n\n");
-	
+	sub_drop_test();
+	printf(c"Left drop_test\n\n");
+}
+
+void sub_drop_test() {
 	DropTest a = new DropTest(1);
 	DropTest b = new DropTest(2);
 
@@ -237,11 +239,15 @@ void ops_test() {
 	});
 }
 
+int global_var;
+void global_var_test() {
+
+}
+
 int main() {
 	ops_test();
 	enum_test();
 	drop_test();
-	printf(c"Left drop_test\n\n");
 
 	submodule_test::bar();
 	printf(c"fib(10) = %i\n", module_test::fib(10));

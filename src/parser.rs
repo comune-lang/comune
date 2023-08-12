@@ -172,6 +172,24 @@ impl<'ctx> Parser {
 		Ok(())
 	}
 
+	fn register_module_item(&mut self, name: Identifier, item: ModuleItemInterface) -> ComuneResult<()> {
+		if let Some(predef) = self.interface.children.get(&name) {
+			match (item, predef) {
+				(ModuleItemInterface::Functions(lhs), ModuleItemInterface::Functions(rhs)) => {
+					rhs.write().unwrap().extend(lhs.write().unwrap().drain(..));
+					return Ok(())
+				}
+
+				_ => return Err(ComuneError::new(ComuneErrCode::AlreadyDefined(name), SrcSpan::new())),
+			}
+			
+		}
+		
+		self.interface.children.insert(name, item);
+		
+		Ok(())
+	}
+
 	pub fn parse_namespace(&mut self, scope: &Identifier) -> ComuneResult<()> {
 		while !matches!(self.get_current()?, Token::Eof | Token::Other('}')) {
 			let current_attributes = self.parse_attributes()?;
@@ -289,9 +307,7 @@ impl<'ctx> Parser {
 
 					drop(def_write);
 
-					self.interface
-						.children
-						.insert(full_name, ModuleItemInterface::Type(def));
+					self.register_module_item(full_name, ModuleItemInterface::Type(def))?;
 				}
 
 				Token::Keyword("struct") => {
@@ -307,9 +323,7 @@ impl<'ctx> Parser {
 					let def = self.parse_struct_body(name, scope, generics, current_attributes)?;
 					let def_name = def.read().unwrap().name.clone();
 
-					self.interface
-						.children
-						.insert(def_name, ModuleItemInterface::Type(def));
+					self.register_module_item(def_name, ModuleItemInterface::Type(def))?;
 				}
 
 				Token::Keyword("trait") => {
@@ -354,11 +368,11 @@ impl<'ctx> Parser {
 					}
 
 					self.get_next()?; // Consume closing brace
-
-					self.interface.children.insert(
+					
+					self.register_module_item(
 						Identifier::from_parent(scope, name),
 						ModuleItemInterface::Trait(Arc::new(RwLock::new(this_trait))),
-					);
+					)?;
 				}
 
 				Token::Keyword("impl") => {
@@ -490,10 +504,10 @@ impl<'ctx> Parser {
 
 					let ty = self.parse_type(None)?;
 
-					self.interface.children.insert(
+					self.register_module_item(
 						Identifier::from_parent(scope, name),
 						ModuleItemInterface::TypeAlias(Arc::new(RwLock::new((ty, generics)))),
-					);
+					)?;
 				}
 
 				Token::Keyword("using") => {
@@ -509,29 +523,29 @@ impl<'ctx> Parser {
 							let name = names[0].expect_scopeless()?.clone();
 							let aliased = self.parse_identifier(None)?;
 
-							self.interface.children.insert(
+							self.register_module_item(
 								Identifier::from_parent(scope, name),
 								ModuleItemInterface::Alias(aliased),
-							);
+							)?;
 
 							self.check_semicolon()?;
 						} else {
 							// No '=' token, just bring the name into scope
 							let name = names.remove(0);
 
-							self.interface.children.insert(
+							self.register_module_item(
 								Identifier::from_parent(scope, name.path.last().unwrap().clone()),
 								ModuleItemInterface::Alias(name),
-							);
+							)?;
 
 							self.check_semicolon()?;
 						}
 					} else {
 						for name in names {
-							self.interface.children.insert(
+							self.register_module_item(
 								Identifier::from_parent(scope, name.name().clone()),
 								ModuleItemInterface::Alias(name),
-							);
+							)?;
 						}
 
 						self.check_semicolon()?;
@@ -545,10 +559,18 @@ impl<'ctx> Parser {
 
 					match self.get_next()? {
 						Token::Other(';') => {
-							// TODO: Add submodule to import list
-							self.interface
-								.import_names
-								.insert(ModuleImportKind::Child(module));
+							let import = ModuleImportKind::Child(module.clone());
+
+							if self.interface.import_names.contains(&import) {
+								return self.err(ComuneErrCode::AlreadyDefined(
+									Identifier::from_parent(&self.current_scope, module)
+								))
+							} else {
+								self.interface
+									.import_names
+									.insert(import);
+							}
+
 							self.get_next()?;
 						}
 
@@ -583,27 +605,21 @@ impl<'ctx> Parser {
 
 							self.module_impl.fn_impls.insert(proto.clone(), ast);
 
-							if let Some(ModuleItemInterface::Functions(existing)) =
-								self.interface.children.get(&id)
-							{
-								existing.write().unwrap().push(proto);
-							} else {
-								self.interface.children.insert(
-									id,
-									ModuleItemInterface::Functions(Arc::new(RwLock::new(vec![
-										proto,
-									]))),
-								);
-							}
+							self.register_module_item(
+								id,
+								ModuleItemInterface::Functions(Arc::new(RwLock::new(vec![
+									proto,
+								]))),
+							)?;
 						}
 
 						(DeclParseResult::Variable(name, ty), ModuleASTElem::NoElem) => {
 							let id = Identifier::from_parent(scope, name);
 
-							self.interface.children.insert(
+							self.register_module_item(
 								id,
 								ModuleItemInterface::Variable(Arc::new(RwLock::new(ty))),
-							);
+							)?;
 						}
 
 						_ => todo!(),

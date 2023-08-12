@@ -228,7 +228,7 @@ impl Backend for LLVMBackend {
 }
 
 impl<'ctx> LLVMBuilder<'ctx> {
-	pub fn new(
+	fn new(
 		context: &'ctx Context,
 		module_name: &str,
 		source_file: &str,
@@ -291,7 +291,7 @@ impl<'ctx> LLVMBuilder<'ctx> {
 		}
 	}
 
-	pub fn compile_module(&mut self, module: &CIRModule) -> LLVMResult<()> {
+	fn compile_module(&mut self, module: &CIRModule) -> LLVMResult<()> {
 		// Add opaque types
 		for (name, ty) in &module.types {
 			self.register_type(name.clone(), &ty.read().unwrap())
@@ -328,7 +328,7 @@ impl<'ctx> LLVMBuilder<'ctx> {
 		Ok(())
 	}
 
-	pub fn register_type(&mut self, name: String, ty: &TypeDef) {
+	fn register_type(&mut self, name: String, ty: &TypeDef) {
 		if self.type_map.contains_key(&name) {
 			return;
 		}
@@ -344,7 +344,7 @@ impl<'ctx> LLVMBuilder<'ctx> {
 		}
 	}
 
-	pub fn generate_type_body(&self, name: &str, ty: &TypeDef) {
+	fn generate_type_body(&self, name: &str, ty: &TypeDef) {
 		if !self.type_map[name].into_struct_type().is_opaque() {
 			return;
 		}
@@ -392,7 +392,7 @@ impl<'ctx> LLVMBuilder<'ctx> {
 		type_ir.set_body(&members_ir, ty.layout == DataLayout::Packed);
 	}
 
-	pub fn generate_libc_bindings(&self) {
+	fn generate_libc_bindings(&self) {
 		let exit_t = self.context.void_type().fn_type(
 			&[BasicMetadataTypeEnum::IntType(self.context.i32_type())],
 			false,
@@ -709,10 +709,33 @@ impl<'ctx> LLVMBuilder<'ctx> {
 						}
 					}
 
-					// TODO: Generate LLVM intrinsics for these
-					CIRStmt::StorageLive(_) => {}
+					CIRStmt::StorageLive(_local) | CIRStmt::StorageDead(_local) => {
+						// yeah this doesn't work. no idea why
 
-					CIRStmt::StorageDead(_) => {}
+						/*
+						let intrinsic = if let CIRStmt::StorageLive(_) = stmt {
+							Intrinsic::find("llvm.lifetime.start").unwrap()
+						} else {
+							Intrinsic::find("llvm.lifetime.end").unwrap()
+						};
+
+						let i64_ty = self.context.i64_type();
+						let i8ptr_ty = self.context.i8_type().ptr_type(AddressSpace::Generic);
+
+						let lifetime_func = intrinsic.get_declaration(&self.module, &[
+							i64_ty.as_basic_type_enum(), 
+							i8ptr_ty.as_basic_type_enum()
+						]).unwrap();
+
+						let local = self.variables[*local].0;
+						let underlying_type = local.get_type().get_element_type();
+						let store_size = self.target_machine.get_target_data().get_store_size(&underlying_type);
+						
+						self.builder.build_call(lifetime_func, &[
+							self.context.i64_type().const_int(store_size, false).into(),
+							self.builder.build_bitcast(local, i8ptr_ty, "").into()
+						], ""); */
+					}
 
 					CIRStmt::DropShim { .. } => panic!("encountered DropShim in LLVM codegen!"),
 

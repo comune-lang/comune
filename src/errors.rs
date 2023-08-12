@@ -150,6 +150,7 @@ pub enum ComuneErrCode {
 	CtorSelfParam(Identifier),
 	DtorSelfParam(Identifier),
 	DtorDefOverlap,
+	AlreadyDefined(Identifier),
 
 	// Resolution errors
 	ModuleNotFound(OsString),
@@ -335,7 +336,7 @@ impl Display for ComuneErrCode {
 			ComuneErrCode::MissingTraitFuncImpl(name) => {
 				write!(f, "missing implementation for function `{name}`")
 			}
-
+			ComuneErrCode::AlreadyDefined(name) => write!(f, "conflicting definitions of `{name}`"),
 			ComuneErrCode::ModuleNotFound(m) => write!(f, "module not found: {m:#?}"),
 			ComuneErrCode::DependencyError => write!(f, "a dependency failed to compile"),
 			ComuneErrCode::LLVMError => write!(f, "an internal compiler error occurred"),
