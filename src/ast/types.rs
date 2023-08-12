@@ -318,6 +318,12 @@ impl TypeDef {
 			Some(1)
 		}
 	}
+
+	pub fn needs_drop(&self) -> bool {
+		self.drop.is_some()
+		|| self.members.iter().any(|(_, ty, _)| ty.needs_drop())
+		|| self.variants.iter().any(|(_, var)| var.read().unwrap().needs_drop())
+	}
 }
 
 impl BindingProps {
@@ -632,14 +638,7 @@ impl Type {
 	pub fn needs_drop(&self) -> bool {
 		match self {
 			Type::TypeRef { def, .. } => {
-				let def = def.upgrade().unwrap();
-				let def = def.read().unwrap();
-
-				if def.drop.is_some() {
-					return true;
-				}
-
-				def.members.iter().any(|(_, ty, _)| ty.needs_drop())
+				def.upgrade().unwrap().read().unwrap().needs_drop()
 			}
 
 			Type::Array(arr_ty, _) => arr_ty.needs_drop(),
