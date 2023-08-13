@@ -324,7 +324,7 @@ pub fn is_candidate_viable(
 
 	for (i, (param, ..)) in params.iter().enumerate() {
 		if let Some(arg) = args.get(i) {
-			let arg_concrete = arg.get_type().get_concrete_type(generic_args);
+			let arg_concrete = arg.get_type();
 			let param_concrete = param.get_concrete_type(generic_args);
 
 			if !arg_concrete.castable_to(&param_concrete) {

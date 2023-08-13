@@ -1342,14 +1342,14 @@ impl<'ctx> Parser {
 
 			if let Token::Operator("(" | "<") = self.get_current()? {
 				let start_token = self.get_current_token_index();
-				let mut type_args = vec![];
+				let mut generic_args = vec![];
 
 				if self.get_current()? == Token::Operator("<") {
 					// Here lies the Turbofish, vanquished after a battle
 					// lasting months on end, at the cost of tuple syntax.
 					self.set_speculative_parsing();
 
-					type_args = match self.parse_generic_arg_list(Some(scope)) {
+					generic_args = match self.parse_generic_arg_list(Some(scope)) {
 						Ok(args) => {
 							self.unset_speculative_parsing();
 							args
@@ -1395,7 +1395,7 @@ impl<'ctx> Parser {
 				result = Some(Atom::FnCall {
 					name: id,
 					args,
-					generic_args: type_args,
+					generic_args,
 					resolved: FnRef::None,
 				});
 			}
