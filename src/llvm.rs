@@ -508,23 +508,10 @@ impl<'ctx> LLVMBuilder<'ctx> {
 							BindingProps::mut_reference()
 						).into_pointer_value();
 
-						if matches!(lval.projection.last(), Some(PlaceElem::SumData)) {
-							let ty = Self::to_basic_type(self.get_llvm_type(expr.get_type()));
-							
-							self.generate_expr(
-								self.builder.build_bitcast(
-									store, 
-									ty.ptr_type(AddressSpace::Generic), 
-									""
-								).into_pointer_value(), 
-								expr
-							);
-						} else {
-							self.generate_expr(
-								store,
-								expr,
-							);
-						}
+						self.generate_expr(
+							store,
+							expr,
+						);
 					}
 
 					CIRStmt::RefInit(var, lval) => {
@@ -533,15 +520,7 @@ impl<'ctx> LLVMBuilder<'ctx> {
 
 						assert!(props.is_ref);
 						
-						if matches!(lval.projection.last(), Some(PlaceElem::SumData)) {
-							self.builder.build_store(
-								reference,
-								self.generate_variant_lvalue_use(lval, props, Some(&t.variables[*var].0))
-							);
-						} else {
-							self.builder
-								.build_store(reference, self.generate_lvalue_use(lval, props));
-						}
+						self.builder.build_store(reference, self.generate_lvalue_use(lval, props));
 					}
 
 					CIRStmt::GlobalAccess { local, symbol } => {
@@ -948,12 +927,6 @@ impl<'ctx> LLVMBuilder<'ctx> {
 			} => {
 				match to {
 					Type::Tuple(TupleKind::Sum, _) => {
-						let Operand::LValueUse(LValue { projection, .. }, _) = val else {
-							panic!()
-						};
-
-						assert!(matches!(projection.last(), Some(PlaceElem::SumData)));
-
 						let val = self.generate_operand(from, val);
 
 						let ptr = self.builder.build_pointer_cast(
@@ -966,12 +939,6 @@ impl<'ctx> LLVMBuilder<'ctx> {
 					}
 
 					Type::TypeRef { .. } if to.get_variant_index(from).is_some() => {
-						let Operand::LValueUse(LValue { projection, .. }, _) = val else {
-							panic!()
-						};
-
-						assert!(matches!(projection.last(), Some(PlaceElem::SumData)));
-
 						let val = self.generate_operand(from, val);
 
 						let ptr = self.builder.build_pointer_cast(
@@ -1013,7 +980,7 @@ impl<'ctx> LLVMBuilder<'ctx> {
 								panic!()
 							};
 
-							let val = self.generate_variant_lvalue_use(lvalue, *props, Some(to));
+							let val = self.generate_lvalue_use(lvalue, *props);
 							
 							self.builder.build_store(store, val)
 						}
@@ -1024,7 +991,7 @@ impl<'ctx> LLVMBuilder<'ctx> {
 								panic!()
 							};
 
-							let val = self.generate_variant_lvalue_use(lvalue, *props, Some(to));
+							let val = self.generate_lvalue_use(lvalue, *props);
 							
 							self.builder.build_store(store, val)
 						}
@@ -1232,10 +1199,6 @@ impl<'ctx> LLVMBuilder<'ctx> {
 	}
 
 	fn generate_lvalue_use(&self, expr: &LValue, props: BindingProps) -> BasicValueEnum<'ctx> {
-		self.generate_variant_lvalue_use(expr, props, None)
-	}
-
-	fn generate_variant_lvalue_use(&self, expr: &LValue, props: BindingProps, variant: Option<&Type>) -> BasicValueEnum<'ctx> {
 		// Get the variable pointer from the function
 		let (mut local, lprops, ty) = &self.variables[expr.local];
 
@@ -1251,7 +1214,7 @@ impl<'ctx> LLVMBuilder<'ctx> {
 
 		// Perform geps and whatnot to get a pointer to the sublocation
 
-		for (i, proj) in expr.projection.iter().enumerate() {
+		for proj in expr.projection.iter() {
 			local = match proj {
 				PlaceElem::Deref => self
 					.builder
@@ -1286,24 +1249,18 @@ impl<'ctx> LLVMBuilder<'ctx> {
 						.build_struct_gep(local, 0, "")
 						.expect(&format!("failed to generate SumDisc projection for `{expr} into {:?}`", local.get_type())),
 
-				PlaceElem::SumData => {
-					assert!(i == expr.projection.len() - 1);
-					
+				PlaceElem::SumData(ty) => {					
 					let data = self
 								.builder
 								.build_struct_gep(local, 1, "")
 								.unwrap();
 
-					if let Some(variant) = variant {
-						// SumData index requires a cast to variant type
-						self.builder.build_bitcast(
-							data,
-							Self::to_basic_type(self.get_llvm_type(variant)).ptr_type(AddressSpace::Generic),
-							""
-						).into_pointer_value()
-					} else {
-						data
-					}
+					// SumData index requires a cast to variant type
+					self.builder.build_bitcast(
+						data,
+						Self::to_basic_type(self.get_llvm_type(ty)).ptr_type(AddressSpace::Generic),
+						""
+					).into_pointer_value()
 				}
 			}
 		}

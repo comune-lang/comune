@@ -828,47 +828,18 @@ impl<'func> DropElaborator<'func> {
 				branches.push(self.current_block);
 				
 				let mut variant_lval = lval.clone();
-				variant_lval.projection.push(PlaceElem::SumData);
-
-				// insert a temporary that holds a mut& to the variant
-				self.current_fn.variables.push((
+				variant_lval.projection.push(PlaceElem::SumData(
 					Type::TypeRef { 
 						def: Arc::downgrade(variant), 
-						args: vec![]
-					},
-					BindingProps::mut_reference(),
-					None
+						args: args.clone()
+					}
 				));
-				
-				let tmp = self.current_fn.variables.len() - 1;
-				let tmp_lval = LValue {
-					local: tmp,
-					projection: vec![],
-					props: BindingProps::mut_reference(),
-				};
 
-				self.write(CIRStmt::RefInit(tmp, variant_lval));
-
-				// we need to create a sub-elaborator with the variant
-				// inserted into the liveness state, because otherwise
-				// elaborate_drops will think it's uninitialized and
-				// neglect to write a drop for it
-				// 
-				// TODO: there's probably a more efficient solution here
-				let mut state = self.state.clone();
-				state.liveness.insert(tmp_lval.clone(), LivenessState::Live);
-
-				let mut sub_elab = DropElaborator {
-					current_block: self.current_block,
-					current_fn: &mut self.current_fn,
-					state: &state,
-				};
-
-				sub_elab.build_typedef_destructor(
-					&tmp_lval, 
-					variant, 
-					args, 
-					next, 
+				self.build_typedef_destructor(
+					&variant_lval,
+					variant,
+					args,
+					next,
 					drop_flags
 				);
 

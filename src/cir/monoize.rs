@@ -14,7 +14,7 @@ use crate::ast::{
 
 use super::{
 	builder::CIRModuleBuilder, CIRCallId, CIRFnMap, CIRFunction, CIRModule, CIRStmt, CIRTyMap,
-	RValue, Type,
+	RValue, Type, LValue, PlaceElem, Operand,
 };
 
 // The monomorphization server (MonomorphServer) stores the bodies of generic
@@ -181,15 +181,22 @@ impl MonomorphServer {
 					CIRStmt::Invoke {
 						id: CIRCallId::Direct(func, _),
 						generic_args,
+						args,
 						..
 					}
 					| CIRStmt::Call {
 						id: CIRCallId::Direct(func, _),
 						generic_args,
+						args,
 						..
 					} => {
 						for arg in generic_args.iter_mut() {
 							self.monoize_generic_arg(arg, param_map, access);
+						}
+
+						for (arg, ty, _) in args.iter_mut() {
+							self.monoize_lvalue(arg, generic_args, access);
+							self.monoize_type(ty, generic_args, access);
 						}
 
 						self.monoize_call(func, generic_args, access);
@@ -232,24 +239,45 @@ impl MonomorphServer {
 	fn monoize_rvalue_types(
 		&self,
 		rval: &mut RValue,
-		param_map: &GenericArgs,
+		generic_args: &GenericArgs,
 		access: &mut ModuleAccess,
 	) {
 		match rval {
-			RValue::Atom(ty, ..) => {
-				self.monoize_type(ty, param_map, access);
+			RValue::Atom(ty, _, val, _) => {
+				self.monoize_type(ty, generic_args, access);
+				self.monoize_operand(val, generic_args, access);
 			}
 
-			RValue::Cons(ty, [(lty, _), (rty, _)], ..) => {
-				self.monoize_type(lty, param_map, access);
-				self.monoize_type(rty, param_map, access);
+			RValue::Cons(ty, [(lty, lhs), (rty, rhs)], ..) => {
+				self.monoize_type(lty, generic_args, access);
+				self.monoize_type(rty, generic_args, access);
+				self.monoize_operand(lhs, generic_args, access);
+				self.monoize_operand(rhs, generic_args, access);
 
-				self.monoize_type(ty, param_map, access);
+				self.monoize_type(ty, generic_args, access);
 			}
 
-			RValue::Cast { from, to, .. } => {
-				self.monoize_type(from, param_map, access);
-				self.monoize_type(to, param_map, access);
+			RValue::Cast { from, to, val, .. } => {
+				self.monoize_type(from, generic_args, access);
+				self.monoize_type(to, generic_args, access);
+				self.monoize_operand(val, generic_args, access);
+			}
+		}
+	}
+
+	fn monoize_operand(&self, op: &mut Operand, generic_args: &GenericArgs, access: &mut ModuleAccess) {
+		match op {
+			Operand::LValueUse(lval, _) => self.monoize_lvalue(lval, generic_args, access),
+			_ => {}
+		}
+	}
+
+	fn monoize_lvalue(&self, lval: &mut LValue, generic_args: &GenericArgs, access: &mut ModuleAccess) {
+		for proj in lval.projection.iter_mut() {
+			match proj {
+				PlaceElem::SumData(ty) => self.monoize_type(ty, generic_args, access),
+				PlaceElem::Index(ty, ..) => self.monoize_type(ty, generic_args, access),
+				_ => {}
 			}
 		}
 	}

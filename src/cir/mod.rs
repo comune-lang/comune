@@ -47,6 +47,14 @@ impl LValue {
 			props: BindingProps::default(),
 		}
 	}
+	
+	pub fn with_props(local: VarIndex, props: BindingProps) -> Self {
+		LValue {
+			local,
+			projection: vec![],
+			props
+		}
+	}
 }
 
 // A PlaceELem describes an element of an LValue expression, such as a deref or member access operation.
@@ -56,7 +64,7 @@ pub enum PlaceElem {
 	Field(FieldIndex),
 	Index(Type, Operand, Operator),
 	SumDisc, // sum type/enum discriminant field
-	SumData, // sum type/enum data field
+	SumData(Type), // sum type/enum data field
 }
 
 impl PartialEq for PlaceElem {
@@ -71,8 +79,14 @@ impl PartialEq for PlaceElem {
 				}
 			}
 			PlaceElem::Index(..) => matches!(other, PlaceElem::Index(..)),
-			PlaceElem::SumData => matches!(other, PlaceElem::SumData),
-			PlaceElem::SumDisc => matches!(other, PlaceElem::SumDisc)
+			PlaceElem::SumDisc => matches!(other, PlaceElem::SumDisc),
+			PlaceElem::SumData(ty) => {
+				if let PlaceElem::SumData(other) = other {
+					ty == other
+				} else {
+					false
+				}
+			}
 		}
 	}
 }
@@ -85,9 +99,11 @@ impl Hash for PlaceElem {
 			PlaceElem::Deref => "deref".hash(state),
 			PlaceElem::Field(idx) => idx.hash(state),
 			PlaceElem::Index(..) => "index".hash(state),
-			PlaceElem::SumData => "sum_data".hash(state),
+			PlaceElem::SumData(ty) => { "sum_data".hash(state); ty.hash(state) }
 			PlaceElem::SumDisc => "sum_disc".hash(state),
-		}
+		};
+
+		".".hash(state)
 	}
 }
 
@@ -311,8 +327,7 @@ impl CIRFunction {
 					ty = ty.get_field_type(*field);
 				}
 
-				// TODO: figure out actual answers for these
-				PlaceElem::SumData => {},
+				PlaceElem::SumData(variant) => ty = variant.clone(),
 				PlaceElem::SumDisc => ty = Type::i32_type(true),
 			}
 		}

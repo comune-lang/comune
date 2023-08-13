@@ -319,7 +319,7 @@ impl CIRModuleBuilder {
 	}
 
 	// For a given pattern match, generate the appropriate bindings
-	fn generate_pattern_bindings(&mut self, pattern: Pattern, value: LValue, value_ty: &Type) {
+	fn generate_pattern_bindings(&mut self, pattern: Pattern, mut value: LValue, value_ty: &Type) {
 		match pattern {
 			Pattern::Binding(Binding {
 				name: Some(name),
@@ -344,14 +344,22 @@ impl CIRModuleBuilder {
 					props,
 				};
 
-				if &ty != value_ty {
+				if value_ty.get_variant_index(&ty).is_some() {
+					value.projection.push(PlaceElem::SumData(ty.clone()));
+
+					self.generate_raw_assign(
+						&ty,
+						store_place,
+						RValue::lvalue_use(ty.clone(), value, props),
+					);
+				} else if &ty != value_ty {
 					self.generate_raw_assign(
 						&ty,
 						store_place,
 						RValue::Cast {
 							to: ty.clone(),
 							from: value_ty.clone(),
-							val: Operand::LValueUse(value, BindingProps::value()),
+							val: Operand::LValueUse(value, props),
 							span: SrcSpan::new(),
 						},
 					);
@@ -359,12 +367,7 @@ impl CIRModuleBuilder {
 					self.generate_raw_assign(
 						&ty,
 						store_place,
-						RValue::Atom(
-							ty.clone(),
-							None,
-							Operand::LValueUse(value, BindingProps::value()),
-							SrcSpan::new(),
-						),
+						RValue::lvalue_use(ty.clone(), value, props),
 					);
 				}
 			}
@@ -522,7 +525,7 @@ impl CIRModuleBuilder {
 				let mut disc_loc = tmp.clone();
 				let mut data_loc = tmp.clone();
 				disc_loc.projection.push(PlaceElem::SumDisc);
-				data_loc.projection.push(PlaceElem::SumData);
+				data_loc.projection.push(PlaceElem::SumData(from.clone()));
 
 				self.write(CIRStmt::Assignment(
 					data_loc, 
@@ -1225,9 +1228,6 @@ impl CIRModuleBuilder {
 						}
 
 						// Generate branches
-						let mut scrutinee_data = scrutinee_lval.clone();
-						scrutinee_data.projection.push(PlaceElem::SumData);
-
 						for (i, (pattern, branch)) in branches.iter().enumerate() {
 							let Expr::Atom(Atom::Block { items, result, .. }, _) = branch else { 
 								panic!("invalid match arm: {branch:?}")
@@ -1239,7 +1239,7 @@ impl CIRModuleBuilder {
 
 							self.generate_pattern_bindings(
 								pattern.clone(),
-								scrutinee_data.clone(),
+								scrutinee_lval.clone(),
 								&scrutinee_ty,
 							);
 
