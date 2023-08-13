@@ -1,0 +1,28 @@
+using core::mem::{forget, null_mut, size_of, write};
+using core::libc::{malloc, free};
+
+struct Box<type T> {
+	T mut* data;
+
+	new(new& self, T t) {
+		self = new Box<T> { 
+			data: malloc(size_of<T>()) as T mut*,
+		};
+		
+		unsafe {
+			write<T>(self.data, t);
+		}
+	}
+
+	drop(mut& self) {
+		free(self.data as void mut*);
+	}
+}
+
+impl<type T> Box<T> {
+	T mut* into_raw(self) {
+		T mut* data = self.data;
+		forget<Box<T>>(self);
+		data
+	}
+}
