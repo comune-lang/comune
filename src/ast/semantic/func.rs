@@ -395,7 +395,7 @@ fn validate_arg_list(
 
 			arg.set_type_hint(param_concrete.clone());
 
-			let arg_type = arg.validate(scope)?.get_concrete_type(generic_args);
+			let arg_type = arg.validate(scope)?;
 
 			if !arg.coercable_to(&param_concrete, scope) {
 				return Err(ComuneError::new(

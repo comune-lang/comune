@@ -9,7 +9,7 @@ struct RcInner<type T> {
 struct Rc<type T> {
 	RcInner<T> mut* inner;
 
-	new from_parts(new& self, T t) {
+	new(new& self, T t) {
 		RcInner<T> inner = new RcInner<T> {
 			count: 1,
 			data: t,

@@ -2,6 +2,7 @@ using core::libc::{malloc, free, printf};
 using core::mem::{bit_cast, size_of};
 using core::option::Option;
 using std::vector::Vector;
+using std::rc::Rc;
 
 using module_test::fib;
 using ascii = u8;
@@ -237,6 +238,10 @@ void ops_test() {
 	} else {
 		c"false"
 	});
+}
+
+void rc_test() {
+	Rc<DropTest> rc = new Rc<DropTest>(new DropTest(0));
 }
 
 //int global_var;

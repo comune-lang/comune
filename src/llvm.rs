@@ -1689,7 +1689,10 @@ fn mangle_type(ty: &Type, f: &mut impl std::fmt::Write) -> std::fmt::Result {
 			Ok(())
 		}
 
-		Type::TypeRef { .. } => write!(f, "S_"),
+		Type::TypeRef { def, .. } => {
+			let name = def.upgrade().unwrap().read().unwrap().name.to_string();
+			write!(f, "{}{name}", name.len())
+		}
 
 		Type::Function(ret, args) => {
 			write!(f, "PF")?;
