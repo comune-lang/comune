@@ -66,7 +66,7 @@ pub enum Token {
 impl Token {
 	pub fn len(&self) -> usize {
 		match self {
-			Token::Name(x) => x.len(),
+			Token::Name(x) => x.as_str().len(),
 
 			Token::NumLiteral(x, suf) => x.len() + suf.len(),
 

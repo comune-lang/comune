@@ -776,7 +776,7 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 		current_path.set_extension("");
 
 		for i in 0..module.path.len() {
-			current_path.push(&*module.path[i]);
+			current_path.push(module.path[i].as_str());
 		}
 
 		let extensions = ["co", "cpp", "c"];
@@ -791,7 +791,7 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 
 		for dir in self.import_paths {
 			let mut current_path = PathBuf::from(dir);
-			current_path.push(&**module.name());
+			current_path.push(module.name().as_str());
 
 			for extension in extensions {
 				current_path.set_extension(extension);
@@ -809,11 +809,11 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 		let mut filename = String::new();
 		let mut iter = module.path.iter();
 
-		filename.push_str(iter.next().unwrap());
+		filename.push_str(iter.next().unwrap().as_str());
 
 		for scope in iter {
 			filename.push('-');
-			filename.push_str(scope);
+			filename.push_str(scope.as_str());
 		}
 
 		result.push(filename);

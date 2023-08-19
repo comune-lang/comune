@@ -296,7 +296,7 @@ impl CIRFunction {
 			self.variables[local]
 				.2
 				.as_ref()
-				.unwrap_or(&format!("(temporary variable _{})", local).into())
+				.unwrap_or(&format!("(temporary variable _{})", local).as_str().into())
 				.clone(),
 			false,
 		)
@@ -361,7 +361,7 @@ impl CIRFunction {
 				return false
 			};
 
-			name == lang_item
+			name.as_str() == lang_item
 		})
 	}
 }

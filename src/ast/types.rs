@@ -75,7 +75,7 @@ impl Generics {
 		self.params
 			.iter()
 			.rev()
-			.find(|(n, _)| <Name as AsRef<str>>::as_ref(n) == name)
+			.find(|(n, _)| n.as_str() == name)
 			.map(|(_, u)| u)
 	}
 
@@ -83,7 +83,7 @@ impl Generics {
 		self.params
 			.iter_mut()
 			.rev()
-			.find(|(n, _)| <Name as AsRef<str>>::as_ref(n) == name)
+			.find(|(n, _)| n.as_str() == name)
 			.map(|(_, u)| u)
 	}
 

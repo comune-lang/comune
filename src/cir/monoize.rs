@@ -388,7 +388,7 @@ impl MonomorphServer {
 
 		instance_name.push_str(">");
 
-		*ty_name.path.last_mut().unwrap() = instance_name.into();
+		*ty_name.path.last_mut().unwrap() = instance_name.as_str().into();
 
 		let instance_name = ty_name.to_string();
 
