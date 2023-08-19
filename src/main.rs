@@ -123,16 +123,28 @@ fn main() -> color_eyre::eyre::Result<()> {
 	{
 		// Launch multithreaded compilation
 		rayon::in_place_scope(|s| {
+			let spawner = JobSpawner::Concurrent(s);
+
 			for input_file in &args.input_files {
 				let input_file = fs::canonicalize(input_file).unwrap();
 				let module_name = Identifier::from_name(get_file_suffix(&input_file).unwrap(), true);
 
-				let _ = compiler.launch_module_compilation(
+				let Ok(parsers) = compiler.launch_module_compilation(
 					input_file,
 					module_name,
 					error_sender.clone(),
-					JobSpawner::Concurrent(s),
-				);
+					spawner.clone(),
+				) else {
+					continue
+				};
+
+				for parser in parsers {
+					let _ = compiler.generate_typed_interface(
+						parser,
+						error_sender.clone(), 
+						spawner.clone()
+					);
+				}
 			}
 		});
 	}

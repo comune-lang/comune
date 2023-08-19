@@ -241,7 +241,15 @@ void ops_test() {
 }
 
 void rc_test() {
+	printf(c"Creating Rc<DropTest>!\n");
 	Rc<DropTest> rc = new Rc<DropTest>(new DropTest(0));
+	
+	for (int mut i = 0; i < 10; i++) {
+		printf(c"Cloning Rc<DropTest>!\n");
+		Rc<DropTest> rc = new Rc<DropTest>(rc);
+		printf(c"Dropping Rc<DropTest>!\n");
+	}
+	printf(c"Dropping last Rc<DropTest>!\n");
 }
 
 //int global_var;
@@ -254,6 +262,7 @@ int main() {
 	ops_test();
 	enum_test();
 	drop_test();
+	rc_test();
 
 	submodule_test::bar();
 	printf(c"fib(10) = %i\n", module_test::fib(10));

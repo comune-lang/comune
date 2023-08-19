@@ -454,11 +454,11 @@ fn collect_impl_candidates_recursive(
 	already_visited: &mut HashSet<Identifier>,
 	collect_imports: bool,
 ) {
-	if already_visited.contains(&interface.path) {
+	if already_visited.contains(&interface.name) {
 		return;
 	}
 
-	already_visited.insert(interface.path.clone());
+	already_visited.insert(interface.name.clone());
 
 	for (ty, im) in &interface.impl_solver.impls {
 		let im = &*im.read().unwrap();

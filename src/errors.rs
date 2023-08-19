@@ -2,7 +2,6 @@ use colored::Colorize;
 use std::io::Write;
 use std::ops::RangeInclusive;
 use std::{
-	ffi::OsString,
 	fmt::Display,
 	io,
 	sync::{
@@ -153,7 +152,7 @@ pub enum ComuneErrCode {
 	AlreadyDefined(Identifier),
 
 	// Resolution errors
-	ModuleNotFound(OsString),
+	ModuleNotFound(Identifier),
 	DependencyError,
 
 	// Code generation errors

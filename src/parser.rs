@@ -1,5 +1,6 @@
 use std::cell::{RefCell, Cell};
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 
 use crate::ast::pattern::{Binding, Pattern};
@@ -36,6 +37,8 @@ pub type ComuneResult<T> = Result<T, ComuneError>;
 pub struct Parser {
 	pub interface: ModuleInterface,
 	pub module_impl: ModuleImpl,
+	pub child_parsers: Vec<Parser>,
+	pub path: PathBuf,
 	pub lexer: RefCell<Lexer>,
 	current_scope: Arc<Identifier>,
 	spec_parse_counter: Cell<usize>,
@@ -47,10 +50,12 @@ enum DeclParseResult {
 }
 
 impl<'ctx> Parser {
-	pub fn new(lexer: Lexer, module_name: Identifier) -> Parser {
+	pub fn new(lexer: Lexer, module_name: Identifier, path: PathBuf) -> Parser {
 		Parser {
 			interface: ModuleInterface::new(module_name),
 			module_impl: ModuleImpl::new(),
+			child_parsers: vec![],
+			path,
 			lexer: RefCell::new(lexer),
 			current_scope: Arc::new(Identifier::new(true)),
 			spec_parse_counter: Cell::new(0),

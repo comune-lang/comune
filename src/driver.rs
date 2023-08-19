@@ -64,8 +64,6 @@ pub struct Compiler<'ctx, T: Backend + ?Sized> {
 pub struct CompileState {
 	parser: Parser,
 	error_sender: Sender<MessageLog>,
-	module_name: Identifier,
-	src_path: PathBuf,
 }
 
 #[derive(Clone)]
@@ -143,9 +141,9 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 		module_name: Identifier,
 		error_sender: Sender<MessageLog>,
 		s: JobSpawner<&RayonScope<'ctx>>,
-	) -> Result<(), ComuneError> {
+	) -> Result<Vec<Parser>, ComuneError> {
 		if self.module_states.read().unwrap().contains_key(&src_path) {
-			return Ok(());
+			return Ok(vec![]);
 		}
 
 		println!(
@@ -153,10 +151,6 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 			"compiling".bold().green(),
 			src_path.file_name().unwrap().to_string_lossy()
 		);
-
-		let out_path = self.get_module_out_path(&module_name);
-
-		self.output_modules.lock().unwrap().push(out_path.clone());
 
 		self.module_states
 			.write()
@@ -166,23 +160,34 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 		let ext = src_path.extension().unwrap();
 
 		if ext == "cpp" {
-			self.compile_cpp_module(src_path, &module_name, error_sender, s)
+			self.compile_cpp_module(src_path, &module_name, error_sender, s)?;
+			
+			Ok(vec![])
 		} else if ext == "co" {
-			self.compile_comune_module(src_path, module_name, error_sender, s)
+			let mut parsers = vec![];
+
+			self.generate_untyped_interface(
+				src_path, 
+				module_name.clone(), 
+				error_sender.clone(), 
+				&mut parsers
+			)?;
+
+			Ok(parsers)
 		} else {
-			todo!()
+			unimplemented!()
 		}
 	}
 
-	pub fn compile_comune_module(
+	pub fn generate_untyped_interface(
 		&'ctx self,
 		src_path: PathBuf,
 		module_name: Identifier,
 		error_sender: Sender<MessageLog>,
-		s: JobSpawner<&RayonScope<'ctx>>,
-	) -> Result<(), ComuneError> {
+		jobs_out: &mut Vec<Parser>,
+	) -> Result<Arc<ModuleInterface>, ComuneError> {
 		let mut parser =
-			match self.parse_interface(&src_path, module_name.clone(), error_sender.clone()) {
+			match self.parse_interface(src_path.clone(), module_name, error_sender.clone()) {
 				Ok(parser) => parser,
 
 				Err(e) => {
@@ -191,17 +196,58 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 					self.module_states
 						.write()
 						.unwrap()
-						.insert(src_path, ModuleState::ParsingFailed);
+						.insert(src_path.clone(), ModuleState::ParsingFailed);
 
 					return Err(e);
 				}
 			};
+		
+		for import in &parser.interface.import_names {
+			if let ModuleImportKind::Child(child) = import {
+				let import_id = import.get_import_identifier(&parser.interface.name);
+				
+				let Some(import_path) = self
+					.get_module_source_path(src_path.clone(), &import_id)
+				else {
+					return Err(ComuneError::new(ComuneErrCode::ModuleNotFound(import_id), SrcSpan::new()));
+				};
+
+				let child_interface = self.generate_untyped_interface(
+					import_path.clone(),
+					import_id,
+					error_sender.clone(), 
+					jobs_out
+				)?;
+				
+				parser.interface.imported.insert(
+					child.clone(), 
+					ModuleImport { 
+						interface: child_interface, 
+						import_kind: import.clone(), 
+						path: import_path
+					}
+				);
+			}
+		}
+	
+		let interface = Arc::new(parser.interface.get_external_interface(false));
 
 		self.module_states.write().unwrap().insert(
 			src_path.clone(),
-			ModuleState::InterfaceUntyped(Arc::new(parser.interface.get_external_interface(false))),
+			ModuleState::InterfaceUntyped(interface.clone()),
 		);
 
+		jobs_out.push(parser);
+
+		Ok(interface)
+	}
+
+	pub fn generate_typed_interface(
+		&'ctx self,
+		mut parser: Parser,
+		error_sender: Sender<MessageLog>,
+		s: JobSpawner<&RayonScope<'ctx>>,
+	) -> Result<(), ComuneError> {
 		// Resolve module imports
 		let modules = parser
 			.interface
@@ -210,8 +256,14 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 			.into_iter()
 			.collect_vec();
 
-		parser.interface.imported =
-			self.await_imports_ready(&src_path, &module_name, modules, error_sender.clone(), s.clone())?;
+		self.await_imports_ready(
+			&parser.path, 
+			&parser.interface.name, 
+			modules, 
+			&mut parser.interface.imported,
+			error_sender.clone(),
+			s.clone()
+		)?;
 
 		match ast::semantic::validate_interface(&mut parser) {
 			Ok(_) => {}
@@ -226,7 +278,7 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 				self.module_states
 					.write()
 					.unwrap()
-					.insert(src_path.clone(), ModuleState::ParsingFailed);
+					.insert(parser.path.clone(), ModuleState::ParsingFailed);
 
 				return Err(e);
 			}
@@ -235,15 +287,14 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 		// Update the module database with the fully-typed version of the interface
 
 		self.module_states.write().unwrap().insert(
-			src_path.clone(),
+			parser.path.clone(),
 			ModuleState::InterfaceComplete(Arc::new(parser.interface.get_external_interface(true))),
 		);
 
 		// The rest of the module's compilation happens later,
 		// either in a worker thread, or when the single-threaded
-		// spawner is done with the rest of the imports
-		self.spawn(s, CompileState { parser, error_sender, module_name, src_path });
-
+		// spawner is done with the rest of the interfaces
+		self.spawn(s, CompileState { parser, error_sender });
 		Ok(())
 	}
 
@@ -251,35 +302,22 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 		let CompileState {
 			mut parser,
 			error_sender,
-			module_name,
-			src_path
 		} = module_state;
 
 		// Wait for all module interfaces to be finalized
-		parser.interface.imported.clear();
-
 		let module_names = parser.interface.import_names.clone();
 
 		let mut imports_left = module_names
 			.into_iter()
 			.map(|m_kind| {
-				let m_kind_clone = m_kind.clone();
-				match m_kind {
-					ModuleImportKind::Child(name) => {
-						(m_kind_clone, Identifier::from_parent(&module_name, name))
-					}
-					ModuleImportKind::Language(name) => {
-						(m_kind_clone, Identifier::from_name(name, true))
-					}
-					ModuleImportKind::Extern(name) => (m_kind_clone, name),
-				}
+				(m_kind.clone(), m_kind.get_import_identifier(&parser.interface.name))
 			})
 			.collect_vec();
 
 		// Loop over remaining pending imports
 		while let Some(import_name) = imports_left.first() {
 			let import_path = self
-				.get_module_source_path(src_path.clone(), &import_name.1)
+				.get_module_source_path(parser.path.clone(), &import_name.1)
 				.unwrap();
 
 			// Get the current import's compilation state
@@ -323,13 +361,13 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 			};
 		}
 
-		let src_name = src_path.file_name().unwrap().to_str().unwrap();
+		let src_name = parser.path.file_name().unwrap().to_str().unwrap().to_string();
 
 		// generate_cir() is a bit of a misleading name; this function takes care of
 		// everything from AST parsing, to type checking, to cIR generation and validation.
 		// should be broken up into discrete functions at some point honestly
 
-		let module_mono = match self.generate_cir(&mut parser, &module_name) {
+		let module_mono = match self.generate_cir(&mut parser) {
 			Ok(res) => res,
 			Err(_) => {
 				ERROR_COUNT.fetch_add(1, Ordering::Relaxed);
@@ -348,13 +386,13 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 		// Time to generate some code baby!!! god this module is messy lmao
 
 		let backend = T::create_instance(self);
-		let out_path = self.get_module_out_path(&module_name);
+		let out_path = self.get_module_out_path(&parser.interface.name);
 
 		let result = match backend.generate_code(
 			&module_mono,
 			self,
-			&module_name.to_string(),
-			src_path.to_str().unwrap(),
+			&parser.interface.name.to_string(),
+			parser.path.to_str().unwrap(),
 		) {
 			Ok(res) => res,
 			Err(_) => {
@@ -370,6 +408,10 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 				return;
 			}
 		};
+
+		let out_path = self.get_module_out_path(&parser.interface.name);
+
+		self.output_modules.lock().unwrap().push(out_path.clone());
 		
 		let custom_emits: Vec<_> = 
 			self
@@ -404,28 +446,28 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 
 	pub fn parse_interface(
 		&self,
-		path: &Path,
+		path: PathBuf,
 		module_name: Identifier,
 		error_sender: Sender<MessageLog>,
 	) -> Result<Parser, ComuneError> {
 		// First phase of module compilation: create Lexer and Parser, and parse the module at the namespace level
-		let lexer = match Lexer::new(path, error_sender) {
+		let lexer = match Lexer::new(path.clone(), error_sender) {
 			Ok(f) => f,
 			Err(e) => {
 				eprintln!(
-					"{} failed to open module '{}' ({})",
+					"{} failed to parse module '{}' ({})",
 					"fatal:".red().bold(),
 					path.file_name().unwrap().to_string_lossy(),
 					e
 				);
 				return Err(ComuneError::new(
-					ComuneErrCode::ModuleNotFound(OsString::from(path.file_name().unwrap())),
+					ComuneErrCode::ModuleNotFound(module_name),
 					SrcSpan::new(),
 				));
 			}
 		};
 
-		let mut parser = Parser::new(lexer, module_name);
+		let mut parser = Parser::new(lexer, module_name, path);
 
 		// TODO: HEY ASH TOMORROW MORNING MAKE IT SO CORE DOESN'T IMPORT STD
 		// TODO: FUCK YOU I'M TIRED AND I HAVE TOO MUCH TO DO. IT WORKS FOR NOW
@@ -452,30 +494,25 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 		&'ctx self,
 		src_path: &PathBuf,
 		module_name: &Identifier,
-		mut modules: Vec<ModuleImportKind>,
+		mut imports_in: Vec<ModuleImportKind>,
+		imports_out: &mut HashMap<Name, ModuleImport>,
 		error_sender: Sender<MessageLog>,
 		s: JobSpawner<&RayonScope<'ctx>>,
-	) -> ComuneResult<HashMap<Name, ModuleImport>> {
-		let mut imports = HashMap::new();
+	) -> ComuneResult<()> {
 
-		while let Some(name) = modules.first().cloned() {
-			let (import_name, fs_name) = match name.clone() {
-				ModuleImportKind::Child(name) => {
-					(name.clone(), Identifier::from_parent(module_name, name))
-				}
-				ModuleImportKind::Language(name) => {
-					(name.clone(), Identifier::from_name(name, true))
-				}
-				ModuleImportKind::Extern(name) => (name.name().clone(), name),
+		while let Some(kind) = imports_in.first().cloned() {
+			let import_id = kind.get_import_identifier(module_name);
+			let import_name = import_id.name();
+			
+			let Some(import_path) = self
+				.get_module_source_path(src_path.clone(), &import_id)
+			else {
+				return Err(ComuneError::new(ComuneErrCode::ModuleNotFound(import_id.clone()), SrcSpan::new()))
 			};
-
-			let import_path = self
-				.get_module_source_path(src_path.clone(), &fs_name)
-				.expect(&format!("could not find module source path: {fs_name}!"));
 
 			let error_sender = error_sender.clone();
 
-			// Query module interface, blocking this thread until it's ready
+			// Query module interface, blocking until it's ready
 			loop {
 				let import_state = self
 					.module_states
@@ -485,13 +522,43 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 					.cloned();
 
 				match import_state {
+
 					None => match self.launch_module_compilation(
 						import_path.clone(),
-						fs_name.clone(),
+						import_id.clone(),
 						error_sender.clone(),
 						s.clone(),
 					) {
-						Ok(()) => {}
+						Ok(parsers) => {
+							for parser in parsers {
+								let Some(ModuleState::InterfaceUntyped(interface)) = 
+									self
+										.module_states
+										.read()
+										.unwrap()
+										.get(&import_path)
+										.cloned() 
+								else {
+									panic!()
+								};
+
+								imports_out.insert(
+									import_name.clone(), 
+									ModuleImport {
+										interface: interface.clone(),
+										import_kind: kind.clone(),
+										path: import_path.clone(),
+									}
+								);
+
+								self.generate_typed_interface(
+									parser, 
+									error_sender.clone(), 
+									s.clone()
+								)?;
+							}
+						}
+
 						Err(e) => {
 							self.module_states
 								.write()
@@ -532,48 +599,44 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 					// If this is a child module, await the fully complete interface.
 					// If not, the untyped interface is fine
 					Some(ModuleState::InterfaceUntyped(interface)) => {
-						if matches!(name, ModuleImportKind::Child(_)) {
-							std::thread::sleep(std::time::Duration::from_millis(1))
-						} else {
-							imports.insert(
-								import_name,
-								ModuleImport {
-									interface: interface.clone(),
-									import_kind: name,
-									path: import_path,
-								},
-							);
+						imports_out.insert(
+							import_name.clone(),
+							ModuleImport {
+								interface: interface.clone(),
+								import_kind: kind.clone(),
+								path: import_path.clone(),
+							},
+						);
 
-							modules.remove(0);
+						if !matches!(kind, ModuleImportKind::Child(_)) {
+							imports_in.remove(0);
 							break;
+						} else {
+							std::thread::sleep(std::time::Duration::from_millis(1))
 						}
 					}
 
 					Some(ModuleState::InterfaceComplete(interface)) => {
-						imports.insert(
-							import_name,
+						imports_out.insert(
+							import_name.clone(),
 							ModuleImport {
 								interface: interface.clone(),
-								import_kind: name,
+								import_kind: kind,
 								path: import_path,
 							},
 						);
 
-						modules.remove(0);
+						imports_in.remove(0);
 						break;
 					}
 				}
 			}
 		}
 
-		Ok(imports)
+		Ok(())
 	}
 
-	pub fn generate_cir(
-		&self,
-		parser: &mut Parser,
-		module_name: &Identifier,
-	) -> Result<CIRModule, ComuneError> {
+	pub fn generate_cir(&self, parser: &mut Parser) -> Result<CIRModule, ComuneError> {
 		// Generate AST
 		if let Err(e) = parser.generate_ast() {
 			parser
@@ -600,7 +663,7 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 		if self.emit_types.contains(&"cir") {
 			// Write cIR to file
 			fs::write(
-				self.get_module_out_path(module_name).with_extension("cir"),
+				self.get_module_out_path(&parser.interface.name).with_extension("cir"),
 				cir_module.to_string(),
 			)
 			.unwrap();
@@ -645,7 +708,7 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 		// Write finalized cIR to file
 		if self.emit_types.contains(&"cirmono") {
 			fs::write(
-				self.get_module_out_path(module_name)
+				self.get_module_out_path(&parser.interface.name)
 					.with_extension("cir_mono"),
 				module_mono.to_string(),
 			)

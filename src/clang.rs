@@ -4,7 +4,7 @@ use std::{
 	io::{self, Read, Write},
 	path::PathBuf,
 	process::Command,
-	sync::{mpsc::Sender, Arc},
+	sync::{mpsc::Sender, Arc}, collections::HashMap,
 };
 
 use crate::{
@@ -50,10 +50,18 @@ where
 			})
 			.collect();
 
-		let interfaces =
-			self.await_imports_ready(&src_path, module_name, modules, error_sender, s)?;
+		let mut imports = HashMap::new();
 
-		for (name, interface) in interfaces {
+		self.await_imports_ready(
+			&src_path, 
+			module_name, 
+			modules,
+			&mut imports,
+			error_sender,
+			s
+		)?;
+
+		for (name, interface) in imports {
 			let header = generate_cpp_header(&interface.interface).unwrap();
 			let mut header_out = File::create(
 				out_path

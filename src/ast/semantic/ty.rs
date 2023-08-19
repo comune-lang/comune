@@ -9,7 +9,7 @@ use crate::{
 		module::{ItemRef, ModuleImpl, ModuleInterface, ModuleItemInterface},
 		traits::{TraitInterface, TraitRef},
 		types::{
-			self, BindingProps, FnPrototype, GenericArg, GenericParam, Generics, Type, TypeDef,
+			self, BindingProps, FnPrototype, GenericArg, GenericParam, Generics, Type, TypeDef, Basic,
 		},
 		FnScope,
 	},
@@ -44,7 +44,26 @@ pub fn resolve_interface_types(parser: &mut Parser) -> ComuneResult<()> {
 
 			ModuleItemInterface::Type(t) => resolve_type_def(t.clone(), interface, module_impl)?,
 
-			ModuleItemInterface::TypeAlias(_) | ModuleItemInterface::Alias(_) => {}
+			// Type aliases are resolved in the prev loop
+			ModuleItemInterface::TypeAlias(_) => {}
+
+			// Regular aliases are resolved on-the-fly, but we 
+			// do check if they actually point to anything here
+			ModuleItemInterface::Alias(alias) => {
+				if alias.is_scoped() || Basic::get_basic_type(alias.name().as_str()).is_none() {
+					let mut alias = alias.clone();
+					
+					alias.absolute = true;
+					
+
+					if !interface.get_item(&alias).is_some() {
+						return Err(ComuneError::new(
+							ComuneErrCode::UndeclaredIdentifier(alias.to_string()),
+							SrcSpan::new()
+						))
+					}
+				}
+			}
 
 			ModuleItemInterface::Trait(tr) => {
 				let TraitInterface { items, .. } = &mut *tr.write().unwrap();

@@ -51,7 +51,7 @@ pub struct ModuleImport {
 // this stage for expression parsing.
 #[derive(Default, Debug)]
 pub struct ModuleInterface {
-	pub path: Identifier,
+	pub name: Identifier,
 	pub children: HashMap<Identifier, ModuleItemInterface>,
 	pub import_names: HashSet<ModuleImportKind>,
 	pub imported: HashMap<Name, ModuleImport>,
@@ -84,10 +84,20 @@ impl ModuleImpl {
 	}
 }
 
+impl ModuleImportKind {
+	pub fn get_import_identifier(&self, parent: &Identifier) -> Identifier {
+		match self {
+			ModuleImportKind::Child(name) => Identifier::from_parent(parent, name.clone()),
+			ModuleImportKind::Language(name) => Identifier::from_name(name.clone(), true),
+			ModuleImportKind::Extern(name) => name.clone(),
+		}
+	}
+}
+
 impl ModuleInterface {
-	pub fn new(path: Identifier) -> Self {
+	pub fn new(name: Identifier) -> Self {
 		ModuleInterface {
-			path,
+			name,
 			children: HashMap::new(),
 			import_names: HashSet::new(),
 			imported: HashMap::new(),
@@ -98,7 +108,7 @@ impl ModuleInterface {
 
 	pub fn get_external_interface(&self, require_typed: bool) -> Self {
 		let result = ModuleInterface {
-			path: self.path.clone(),
+			name: self.name.clone(),
 			children: self.children.clone(),
 			import_names: HashSet::new(),
 
