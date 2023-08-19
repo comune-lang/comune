@@ -418,7 +418,7 @@ impl<'ctx> LLVMBuilder<'ctx> {
 	fn get_mangled_name(&self, id: &FnPrototype, func: &CIRFunction) -> String {
 		// Check if the function has a `no_mangle` or `export_as` attribute, or if it's `main`. If not, mangle the name
 		if get_attribute(&func.attributes, "no_mangle").is_some()
-			|| (&**id.path.name() == "main" && !id.path.is_scoped())
+			|| (id.path.name().as_str() == "main" && !id.path.is_scoped())
 		{
 			id.path.name().to_string()
 		} else if let Some(export_name) = get_attribute(&func.attributes, "export_as") {
@@ -1608,8 +1608,8 @@ fn mangle_name(name: &Identifier, func: &CIRFunction) -> String {
 	assert!(name.absolute);
 
 	if !name.is_qualified() {
-		result.push_str(&name.name().len().to_string());
-		result.push_str(name.name());
+		result.push_str(&name.name().as_str().len().to_string());
+		result.push_str(name.name().as_str());
 	} else {
 		result.push('N');
 
@@ -1622,14 +1622,14 @@ fn mangle_name(name: &Identifier, func: &CIRFunction) -> String {
 			let typename = &def.read().unwrap().name;
 
 			for scope in &typename.path {
-				result.push_str(&scope.len().to_string());
-				result.push_str(scope);
+				result.push_str(&scope.as_str().len().to_string());
+				result.push_str(scope.as_str());
 			}
 		}
 
 		for scope in &name.path {
-			result.push_str(&scope.len().to_string());
-			result.push_str(scope);
+			result.push_str(&scope.as_str().len().to_string());
+			result.push_str(scope.as_str());
 		}
 
 		result.push('E');

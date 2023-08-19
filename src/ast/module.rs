@@ -18,13 +18,59 @@ use super::{
 	types::{Basic, FnPrototype, GenericArgs, Generics, Type, TypeDef},
 };
 
+#[derive(Clone, Hash, PartialEq, Eq, Debug)]
+pub struct RawName<T: Clone + Hash + PartialEq + Eq + Debug + Display> {
+	data: T,
+}
+
+impl<T> RawName<T>
+where
+	T: Clone + Hash + PartialEq + Eq + Debug + Display + AsRef<str>
+{
+	pub fn as_str(&self) -> &str {
+		self.data.as_ref()
+	}
+}
+
+impl<T> Display for RawName<T>
+where
+	T: Clone + Hash + PartialEq + Eq + Debug + Display
+{
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		write!(f, "{}", self.data)
+	}
+}
+
+impl<T> From<&str> for RawName<T>
+where
+	T: Clone + Hash + PartialEq + Eq + Debug + Display + for<'a> From<&'a str>
+{
+	fn from(value: &str) -> Self {
+		Self {
+			data: value.into(),
+		}
+	}
+}
+
+impl<T> From<String> for RawName<T>
+where
+	T: Clone + Hash + PartialEq + Eq + Debug + Display + From<String>
+{
+	fn from(value: String) -> Self {
+		Self {
+			data: value.into()
+		}
+	}
+}
+
 // String plays nicer with debuggers
 #[cfg(debug_assertions)]
-pub type Name = String;
+pub type Name = RawName<String>;
 #[cfg(not(debug_assertions))]
-pub type Name = Arc<str>;
+pub type Name = RawName<Arc<str>>;
 
 pub type TokenIndex = usize;
+
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum ModuleImportKind {
@@ -164,7 +210,7 @@ impl ModuleInterface {
 
 	pub fn resolve_type(&self, id: &Identifier, scope: &Identifier) -> Option<Type> {
 		if !id.is_scoped() {
-			if let Some(basic) = Basic::get_basic_type(id.name()) {
+			if let Some(basic) = Basic::get_basic_type(id.name().as_str()) {
 				return Some(Type::Basic(basic));
 			}
 			if id.name().to_string() == "never" {

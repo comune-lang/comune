@@ -479,7 +479,7 @@ pub fn resolve_type_def(
 		}
 
 		if let Token::Name(layout_name) = &layout.args[0][0] {
-			ty.layout = match &**layout_name {
+			ty.layout = match layout_name.as_str() {
 				"declared" => types::DataLayout::Declared,
 				"optimized" => types::DataLayout::Optimized,
 				"packed" => types::DataLayout::Packed,

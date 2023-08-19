@@ -1423,7 +1423,7 @@ impl<'ctx> Parser {
 				Token::NumLiteral(s, suffix) => {
 					self.get_next()?;
 
-					let mut suffix_b = Basic::get_basic_type(suffix.as_str());
+					let mut suffix_b = Basic::get_basic_type(&suffix);
 
 					if suffix_b.is_none() && !suffix.is_empty() {
 						suffix_b = match suffix.as_str() {
