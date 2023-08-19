@@ -75,11 +75,11 @@ impl CIRModuleBuilder {
 			}
 		}
 
-		for import in module.imported.values() {
-			assert!(import.interface.is_typed);
+		//for import in module.imported.values() {
+		//	assert!(import.interface.is_typed);
 
-			self.register_module(&import.interface);
-		}
+		//	self.register_module(&import.interface);
+		//}
 
 		for (id, item) in &module.children {
 			match item {
@@ -135,14 +135,6 @@ impl CIRModuleBuilder {
 
 			self.generate_function(&func, ast);
 		}
-	}
-
-	pub fn get_prototype(&mut self, func: &FnPrototype) -> Arc<FnPrototype> {
-		let Some((proto, _)) = self.module.functions.get_key_value(func) else {
-			panic!()
-		};
-
-		proto.clone()
 	}
 
 	pub fn generate_prototype(func: &FnPrototype) -> CIRFunction {
@@ -1473,10 +1465,17 @@ impl CIRModuleBuilder {
 					return None;
 				}
 
-				let id = self.get_prototype(&*resolved);
+				if !self.module.functions.contains_key(resolved) {
+					let extern_proto = Self::generate_prototype(resolved);
 
+					self.module.functions.insert(
+						resolved.clone(),
+						extern_proto
+					);
+				}
+				
 				self.write(CIRStmt::Call {
-					id: CIRCallId::Direct(id, span),
+					id: CIRCallId::Direct(resolved.clone(), span),
 					args: cir_args.clone(),
 					generic_args: generic_args.clone(),
 					result: result.clone(),
