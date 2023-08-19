@@ -25,8 +25,9 @@ pub trait Backend {
 	
 	fn link(compiler: &Compiler<Self>, link_type: &str) -> ComuneResult<()>;
 
-	fn supported_emit_types() -> &'static [&'static str];
-	fn supported_link_types() -> &'static [&'static str];
-	fn default_link_types() -> &'static [&'static str];
-	fn required_emit_types(link_type: &str) -> &'static [&'static str];
+	const SUPPORTED_EMIT_TYPES: &'static [&'static str];
+	const SUPPORTED_LINK_TYPES: &'static [&'static str];
+	const DEFAULT_LINK_TYPES: &'static [&'static str];
+
+	fn get_required_emit_types(link_type: &str) -> &'static [&'static str];
 }

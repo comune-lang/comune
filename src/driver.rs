@@ -98,9 +98,9 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 		for ty in emit_types {
 			if BUILTIN_EMIT_TYPES.contains(&ty) {
 				emits.push(*ty);
-			} else if T::supported_emit_types().contains(&ty) {
+			} else if T::SUPPORTED_EMIT_TYPES.contains(&ty) {
 				emits.push(*ty);
-			} else if T::supported_link_types().contains(&ty) {
+			} else if T::SUPPORTED_LINK_TYPES.contains(&ty) {
 				links.push(*ty);
 			} else {
 				panic!("invalid argument to --emit: {ty}");
@@ -108,14 +108,14 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 		}
 
 		for ty in &links {
-			dep_emits.extend(T::required_emit_types(&ty));
+			dep_emits.extend(T::get_required_emit_types(&ty));
 		}
 
 		if emits.is_empty() && dep_emits.is_empty() {
-			links.extend(T::default_link_types());
+			links.extend(T::DEFAULT_LINK_TYPES);
 
 			for ty in &links {
-				dep_emits.extend(T::required_emit_types(&ty));
+				dep_emits.extend(T::get_required_emit_types(&ty));
 			}	
 		}
 
@@ -386,8 +386,6 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 		// Time to generate some code baby!!! god this module is messy lmao
 
 		let backend = T::create_instance(self);
-		let out_path = self.get_module_out_path(&parser.interface.name);
-
 		let result = match backend.generate_code(
 			&module_mono,
 			self,

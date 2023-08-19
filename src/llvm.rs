@@ -67,6 +67,10 @@ pub struct LLVMBuilder<'ctx> {
 impl Backend for LLVMBackend {
 	type Output<'out> = LLVMBuilder<'out>;
 
+	const SUPPORTED_EMIT_TYPES: &'static [&'static str] = &["obj", "ll", "llraw"];
+	const SUPPORTED_LINK_TYPES: &'static [&'static str] = &["bin", "lib", "dylib"];
+	const DEFAULT_LINK_TYPES: &'static [&'static str] = &["bin"];
+	
 	fn create_instance(_: &Compiler<Self>) -> Self {
 		Self {
 			context: Context::create(),
@@ -210,21 +214,11 @@ impl Backend for LLVMBackend {
 		}
 	}
 
-	fn supported_emit_types() -> &'static [&'static str] {
-		&["obj", "ll", "llraw"]
-	}
 
-	fn supported_link_types() -> &'static [&'static str] {
-		&["bin", "lib", "dylib"]
-	}
-
-	fn required_emit_types(_: &str) -> &'static [&'static str] {
+	fn get_required_emit_types(_: &str) -> &'static [&'static str] {
 		&["obj"]
 	}
 
-	fn default_link_types() -> &'static [&'static str] {
-		&["bin"]
-	}
 }
 
 impl<'ctx> LLVMBuilder<'ctx> {
