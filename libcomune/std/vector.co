@@ -111,21 +111,25 @@ impl<type T> Vector<T> {
 	
 	Option<T*> get(&self, usize i) {
 		if i >= self.len {
-			return new Option::None<T*>
+			return new Option::None<T*>;
 		} else {
 			return new Option::Some<T*> {
 				value: (self.data + i) as T*,
-			}
+			};
 		}
 	}
 
 	Option<T mut*> get_mut(mut& self, usize i) {
 		if i >= self.len {
-			return new Option::None<T mut*>
+			return new Option::None<T mut*>;
 		} else {
 			return new Option::Some<T mut*> {
 				value: self.data + i,
-			}
+			};
 		}
+	}
+
+	usize len(&self) {
+		self.len
 	}
 }

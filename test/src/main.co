@@ -162,12 +162,13 @@ void sub_drop_test() {
 	printf(c"\nLeft subscope\n\n");
 
 	printf(c"\nVector<DropTest> test:\n\n");
+
 	{
 		Vector<DropTest> mut drop_vec = new Vector<DropTest>();
 		drop_vec.push(new DropTest(5));
 		drop_vec.push(new DropTest(6));
-		Option<DropTest mut*> elem = drop_vec.get_mut(1);
-		unsafe { *elem.unwrap() } = new DropTest(7);
+		
+		unsafe { *drop_vec.get_mut(1).unwrap() } = new DropTest(7);
 	}
 
 	printf(c"\nLeft Vector<DropTest> scope\n\n");

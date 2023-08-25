@@ -1415,8 +1415,12 @@ impl CIRModuleBuilder {
 	) -> Option<RValue> {
 		match resolved {
 			FnRef::Direct(resolved) => {
-				let (ret_props, ret) = resolved.ret.clone();
+				let (mut ret_props, ret) = resolved.ret.clone();
 				let ret = ret.get_concrete_type(generic_args);
+				
+				if !ret_props.is_ref {
+					ret_props.is_mut = true;
+				}
 
 				let result = if !ret.is_void_or_never() {
 					Some(self.insert_variable(None, ret_props, ret.clone()))

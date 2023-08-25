@@ -109,7 +109,7 @@ pub fn validate_fn_call(
 	let Atom::FnCall { name, args, generic_args, resolved } = call else { panic!() };
 
 	if let FnRef::Direct(resolved) = resolved {
-		return Ok(resolved.ret.1.clone());
+		return Ok(resolved.ret.1.get_concrete_type(generic_args));
 	}
 
 	if let FnRef::Indirect(expr) = resolved {

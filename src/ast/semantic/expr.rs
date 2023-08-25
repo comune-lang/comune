@@ -216,7 +216,6 @@ impl Expr {
 	) -> ComuneResult<Type> {
 		lhs.validate(scope)?;
 
-		// This feels pretty expensive to perform for every member access
 		let Type::TypeRef { def, args } = lhs.get_type() else {
 			return Err(ComuneError::new(ComuneErrCode::InvalidSubscriptLHS { t: lhs.get_type().clone() }, meta.span));
 		};
@@ -244,10 +243,8 @@ impl Expr {
 
 			// Method call
 			// jesse. we have to call METHods
-			Expr::Atom(Atom::FnCall { .. }, _) => {
-				let Expr::Atom(rhs_atom, ..) = rhs else { panic!() };
-				let ret = resolve_method_call(lhs.get_type(), lhs, rhs_atom, scope, meta.span)?;
-
+			Expr::Atom(call @ Atom::FnCall { .. }, meta) => {
+				let ret = resolve_method_call(lhs.get_type(), lhs, call, scope, meta.span)?;
 				rhs.set_type_hint(ret.clone());
 
 				Ok(ret)
@@ -577,7 +574,7 @@ impl Atom {
 					if let Some(result) = result {
 						result.validate(&mut subscope)?;
 					}
-					
+
 					Ok(Type::Never)
 				} else {
 					if let Some(result) = result {
