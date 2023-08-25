@@ -41,7 +41,7 @@ pub fn validate_function_body(
 	if let Some(expr) = result {
 		let expr_ty = expr.get_type();
 
-		if !expr_ty.castable_to(&scope.ret.1) && !scope.ret.1.is_void() {
+		if !expr.coercable_to(&scope.ret.1, &scope) && !scope.ret.1.is_void() {
 			return Err(ComuneError::new(
 				ComuneErrCode::ReturnTypeMismatch {
 					expected: scope.ret.1,
@@ -51,8 +51,10 @@ pub fn validate_function_body(
 			));
 		}
 
-		let expr = *result.take().unwrap();
+		let mut expr = *result.take().unwrap();
 		let expr_meta = expr.get_node_data().clone();
+
+		expr.try_wrap_in_cast(scope.ret.1.clone())?;
 
 		if scope.ret.1.is_void() {
 			items.push(Stmt::Expr(expr));

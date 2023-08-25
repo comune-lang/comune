@@ -36,9 +36,11 @@ pub enum Operator {
 
 	ScopeRes,
 	MemberAccess,
+	DerefAccess,
 	Call,
 	Subscr,
 	Ref,
+	RefMut,
 	Deref,
 
 	Eq,
@@ -86,6 +88,7 @@ impl Operator {
 			| Operator::PostInc
 			| Operator::PostDec
 			| Operator::ScopeRes
+			| Operator::DerefAccess
 			| Operator::MemberAccess => 200,
 
 			Operator::UnaryPlus
@@ -94,6 +97,7 @@ impl Operator {
 			| Operator::PreInc
 			| Operator::PreDec
 			| Operator::Ref
+			| Operator::RefMut
 			| Operator::Deref => 190,
 
 			Operator::Cast => 185,
@@ -195,7 +199,7 @@ impl Operator {
 				")" => None,
 				"[" => Some(Operator::Subscr),
 				"]" => None,
-				"->" => Some(Operator::MemberAccess),
+				"->" => Some(Operator::DerefAccess),
 				"." => Some(Operator::MemberAccess),
 				"::" => Some(Operator::ScopeRes),
 				"<" => Some(Operator::Less),
@@ -247,9 +251,11 @@ impl Display for Operator {
 				Operator::PreDec | Operator::PostDec => "--",
 				Operator::ScopeRes => "::",
 				Operator::MemberAccess => ".",
+				Operator::DerefAccess => "->",
 				Operator::Call => "()",
 				Operator::Subscr => "[]",
 				Operator::Ref => "&",
+				Operator::RefMut => "&mut",
 				Operator::Deref => "*",
 				Operator::Eq => "==",
 				Operator::NotEq => "!=",

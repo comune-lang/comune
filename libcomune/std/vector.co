@@ -1,16 +1,18 @@
 using core::libc::{
 	abort,
-	malloc, 
-	realloc, 
+	malloc,
+	realloc,
 	free,
 	memcpy,
 };
 
 using core::mem::{
 	size_of,
-	bit_cast, 
+	bit_cast,
 	null_mut
 };
+
+using core::option::Option;
 
 struct Vector<type T> {
 	T mut* data;
@@ -35,7 +37,7 @@ struct Vector<type T> {
 		}
 		
 		memcpy(
-			self.data as void mut*, 
+			self.data as void mut*,
 			copied.data as void*,
 			copied.len
 		);
@@ -43,7 +45,7 @@ struct Vector<type T> {
 		self.len = copied.len;
 	}
 	
-	drop(mut& self) {		
+	drop(mut& self) {
 		if self.capacity > 0 {
 			for (usize mut i = 0; i < self.len; i++) {
 				unsafe {
@@ -60,8 +62,8 @@ impl<type T> Vector<T> {
 	void push(mut& self, T elem) {
 		if self.len >= self.capacity {
 			self.realloc(
-				if self.capacity == 0 { 
-					self.capacity + 1 
+				if self.capacity == 0 {
+					self.capacity + 1
 				} else { 
 					self.capacity * 2
 				}
@@ -78,7 +80,21 @@ impl<type T> Vector<T> {
 		self.len += 1;
 	}
 
-	void realloc(mut& self, usize capacity) {		
+	Option<T> pop(mut& self) {
+		if self.len == 0 {
+			return new Option<T>::None
+		} else {
+			self.len -= 1;
+
+			unsafe {
+				return new Option<T>::Some(
+					*(self.data + self.len)
+				)
+			}
+		}
+	}
+
+	void realloc(mut& self, usize capacity) {
 		void mut* tmp = realloc(
 			self.data as void mut*, 
 			capacity * size_of<T>()
@@ -93,17 +109,23 @@ impl<type T> Vector<T> {
 		}
 	}
 	
-	T& get(&self, usize i) {
+	Option<T*> get(&self, usize i) {
 		if i >= self.len {
-			abort();
+			return new Option::None<T*>
+		} else {
+			return new Option::Some<T*> {
+				value: (self.data + i) as T*,
+			}
 		}
-		unsafe { *(self.data + i) }
 	}
 
-	T mut& get_mut(mut& self, usize i) {
+	Option<T mut*> get_mut(mut& self, usize i) {
 		if i >= self.len {
-			abort();
+			return new Option::None<T mut*>
+		} else {
+			return new Option::Some<T mut*> {
+				value: self.data + i,
+			}
 		}
-		unsafe { *(self.data + i) }
 	}
 }

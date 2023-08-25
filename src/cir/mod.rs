@@ -61,8 +61,12 @@ impl LValue {
 #[derive(Clone, Debug)]
 pub enum PlaceElem {
 	Deref,
+	Index {
+		index_ty: Type,
+		index: Operand,
+		op: Operator,
+	},
 	Field(FieldIndex),
-	Index(Type, Operand, Operator),
 	SumDisc, // sum type/enum discriminant field
 	SumData(Type), // sum type/enum data field
 }
@@ -78,7 +82,7 @@ impl PartialEq for PlaceElem {
 					false
 				}
 			}
-			PlaceElem::Index(..) => matches!(other, PlaceElem::Index(..)),
+			PlaceElem::Index { .. } => matches!(other, PlaceElem::Index { .. }),
 			PlaceElem::SumDisc => matches!(other, PlaceElem::SumDisc),
 			PlaceElem::SumData(ty) => {
 				if let PlaceElem::SumData(other) = other {
@@ -98,7 +102,7 @@ impl Hash for PlaceElem {
 		match self {
 			PlaceElem::Deref => "deref".hash(state),
 			PlaceElem::Field(idx) => idx.hash(state),
-			PlaceElem::Index(..) => "index".hash(state),
+			PlaceElem::Index { .. } => "index".hash(state),
 			PlaceElem::SumData(ty) => { "sum_data".hash(state); ty.hash(state) }
 			PlaceElem::SumDisc => "sum_disc".hash(state),
 		};
@@ -311,11 +315,10 @@ impl CIRFunction {
 					let Type::Pointer { pointee, .. } = ty else {
 						panic!()
 					};
-
 					ty = *pointee;
 				}
 
-				PlaceElem::Index(..) => {
+				PlaceElem::Index { .. } => {
 					let (Type::Array(sub, _) | Type::Slice(sub) | Type::Pointer { pointee: sub, .. }) = ty else {
 						panic!()
 					};

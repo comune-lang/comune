@@ -70,7 +70,7 @@ impl Backend for LLVMBackend {
 	const SUPPORTED_EMIT_TYPES: &'static [&'static str] = &["obj", "ll", "llraw"];
 	const SUPPORTED_LINK_TYPES: &'static [&'static str] = &["bin", "lib", "dylib"];
 	const DEFAULT_LINK_TYPES: &'static [&'static str] = &["bin"];
-	
+
 	fn create_instance(_: &Compiler<Self>) -> Self {
 		Self {
 			context: Context::create(),
@@ -752,11 +752,12 @@ impl<'ctx> LLVMBuilder<'ctx> {
 						)
 					}
 
-					Some(Operator::Ref) => {
+					Some(Operator::Ref | Operator::RefMut) => {
 						if let Operand::LValueUse(lval, props) = atom {
 							// Terrible hack
 							let mut props = *props;
 							props.is_ref = true;
+							props.is_mut = matches!(op_opt, Some(Operator::RefMut));
 
 							self.builder
 								.build_store(store, self.generate_lvalue_use(lval, props))
@@ -1216,9 +1217,9 @@ impl<'ctx> LLVMBuilder<'ctx> {
 					.as_basic_value_enum()
 					.into_pointer_value(),
 
-				PlaceElem::Index(index_ty, expr, op) => {
+				PlaceElem::Index { index_ty, index, op } => {
 					let mut idx = self
-						.generate_operand(index_ty, expr)
+						.generate_operand(index_ty, index)
 						.as_basic_value_enum()
 						.into_int_value();
 

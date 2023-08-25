@@ -25,15 +25,19 @@ struct Rc<type T> {
 			inner: other.inner,
 		};
 		
-		unsafe { *self.inner }.count += 1;
+		unsafe { 
+			self.inner->count += 1;
+		}
 	}
 
 	drop(mut& self) {
-		unsafe {*self.inner}.count -= 1;
+		unsafe {
+			self.inner->count -= 1;
 
-		if unsafe {*self.inner}.count == 0 {
-			drop unsafe {*self.inner}.data;
-			free(self.inner as void mut*);
+			if self.inner->count == 0 {
+				drop self.inner->data;
+				free(self.inner as void mut*);
+			}
 		}
 	}
 }

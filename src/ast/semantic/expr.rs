@@ -126,7 +126,8 @@ impl Expr {
 				let expr_ty = expr.validate(scope)?;
 
 				match op {
-					Operator::Ref => Ok(expr_ty.ptr_type(true)),
+					Operator::Ref => Ok(expr_ty.ptr_type(false)),
+					Operator::RefMut => Ok(expr_ty.ptr_type(true)),
 
 					Operator::Deref => match expr_ty {
 						Type::Pointer { pointee, .. } => {
@@ -563,16 +564,29 @@ impl Atom {
 				is_unsafe,
 			} => {
 				let mut subscope = FnScope::from_parent(scope, false, *is_unsafe);
+				let mut is_never = false;
 
 				for item in items {
-					item.validate(&mut subscope)?;
+					let ty = item.validate(&mut subscope)?;
+					if ty.is_never() {
+						is_never = true;
+					}
 				}
 
-				if let Some(result) = result {
-					result.validate(&mut subscope)
+				if is_never {
+					if let Some(result) = result {
+						result.validate(&mut subscope)?;
+					}
+					
+					Ok(Type::Never)
 				} else {
-					Ok(Type::void_type())
+					if let Some(result) = result {
+						result.validate(&mut subscope)
+					} else {
+						Ok(Type::void_type())
+					}
 				}
+				
 			}
 
 			Atom::CtrlFlow(ctrl) => match &mut **ctrl {
@@ -634,25 +648,27 @@ impl Atom {
 					body.validate(&mut subscope)
 				}
 
-				ControlFlow::Return { expr } => {
-					if let Some(expr) = expr {
-						let expr_ty = expr.validate(scope)?;
+				ControlFlow::Return { expr: Some(expr) } => {
+					let expr_ty = expr.validate(scope)?;
 
-						if expr_ty == scope.ret.1 {
-							Ok(Type::Never)
-						} else if expr.coercable_to(&scope.ret.1, scope) {
-							expr.wrap_in_cast(scope.ret.1.clone());
-							Ok(Type::Never)
-						} else {
-							Err(ComuneError::new(
-								ComuneErrCode::ReturnTypeMismatch {
-									expected: scope.ret.1.clone(),
-									got: expr_ty,
-								},
-								meta.span,
-							))
-						}
-					} else if scope.ret.1 == Type::void_type() {
+					if expr_ty == scope.ret.1 {
+						Ok(Type::Never)
+					} else if expr.coercable_to(&scope.ret.1, scope) {
+						expr.wrap_in_cast(scope.ret.1.clone());
+						Ok(Type::Never)
+					} else {
+						Err(ComuneError::new(
+							ComuneErrCode::ReturnTypeMismatch {
+								expected: scope.ret.1.clone(),
+								got: expr_ty,
+							},
+							meta.span,
+						))
+					}
+				}
+
+				ControlFlow::Return { expr: None } => {
+					if scope.ret.1.is_void() {
 						Ok(Type::Never)
 					} else {
 						Err(ComuneError::new(

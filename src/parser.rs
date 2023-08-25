@@ -1150,11 +1150,10 @@ impl<'ctx> Parser {
 
 	// World's most hacked-together pratt parser (tm)
 	fn parse_expression_bp(&self, min_bp: u8, scope: &FnScope<'ctx>) -> ComuneResult<Expr> {
-		let mut current = self.get_current()?;
 		let begin_lhs = self.get_current_start_index();
 
 		// Get initial part of expression, could be an Atom or the operator of a unary Cons
-		let mut lhs = match current {
+		let mut lhs = match self.get_current()? {
 			// Parse atom
 			Token::StringLiteral(_)
 			| Token::CStringLiteral(_)
@@ -1186,33 +1185,36 @@ impl<'ctx> Parser {
 
 			// Handle unary prefix operators
 			Token::Operator(tk) => {
-				let Some(op) = Operator::get_operator(tk, false) else {
+				let Some(mut op) = Operator::get_operator(tk, false) else {
 					return self.err(ComuneErrCode::UnexpectedToken)
 				};
 
-				self.get_next()?;
-
 				if let Operator::Call = op {
 					// Special case; parse sub-expression
+					self.get_next()?;
+
 					let sub = self.parse_expression_bp(0, scope)?;
+								
+					self.consume(&Token::Operator(")"))?;
 
-					current = self.get_current()?;
-
-					if let Token::Operator(")") = current {
-						self.get_next()?;
-						sub
-					} else {
-						return self.err(ComuneErrCode::UnexpectedToken);
-					}
+					sub
 				} else {
+					self.get_next()?;
+					
+					if op == Operator::Ref {
+						if self.get_current()? == Token::Keyword("mut") {
+							op = Operator::RefMut;
+							self.get_next()?;
+						}
+					}
+
 					let rhs = self.parse_expression_bp(op.get_binding_power(), scope)?;
-
 					let end_index = self.get_prev_end_index();
-
 					let span = SrcSpan {
 						start: begin_lhs,
 						len: end_index - begin_lhs,
 					};
+
 					Expr::Unary(Box::new(rhs), op, NodeData { ty: None, span })
 				}
 			}
@@ -1312,6 +1314,60 @@ impl<'ctx> Parser {
 					} else {
 						return self.err(ComuneErrCode::UnexpectedToken);
 					}
+				}
+
+				Operator::DerefAccess => {
+					let end_lhs = self.get_prev_end_index();
+					let lhs_span = SrcSpan {
+						start: begin_lhs,
+						len: end_lhs - begin_lhs,
+					};
+					
+					// now here's a feature i don't get to use often - nested functions!
+					fn wrap_in_deref(lhs: Expr, span: SrcSpan) -> Expr {
+						Expr::Unary(
+							Box::new(lhs), 
+							Operator::Deref,
+							NodeData {
+								span,
+								ty: None
+							}
+						)
+					}
+
+					lhs = wrap_in_deref(lhs, lhs_span);
+
+					loop {
+						match self.get_current()? {
+							Token::Operator(">") => {
+								lhs = wrap_in_deref(lhs, lhs_span);
+								self.get_next()?;
+							}
+							
+							Token::Operator(">>") => {
+								lhs = wrap_in_deref(lhs, lhs_span);
+								lhs = wrap_in_deref(lhs, lhs_span);
+								self.get_next()?;
+							}
+
+							_ => break,
+						}
+					}
+					
+					let rhs = self.parse_expression_bp(rbp, scope)?;
+					let end_rhs = self.get_prev_end_index();
+
+					lhs = Expr::Cons(
+						[Box::new(lhs), Box::new(rhs)],
+						Operator::MemberAccess,
+						NodeData {
+							ty: None,
+							span: SrcSpan {
+								start: begin_lhs,
+								len: end_rhs - begin_lhs,
+							},
+						},
+					);
 				}
 
 				_ => {

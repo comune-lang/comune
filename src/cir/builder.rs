@@ -199,6 +199,7 @@ impl CIRModuleBuilder {
 		let _ = self.generate_expr(fn_block, BindingProps::default());
 
 		let func = self.get_fn_mut();
+		func.is_extern = false;
 
 		// Find block preds & succs
 
@@ -227,7 +228,7 @@ impl CIRModuleBuilder {
 
 				CIRStmt::Unreachable => vec![],
 
-				term => panic!("invalid terminator in cIR: {term:?}"),
+				term => panic!("invalid terminator in cIR: {term}"),
 			};
 
 			for succ in &succs {
@@ -237,7 +238,6 @@ impl CIRModuleBuilder {
 			func.blocks[i].succs = succs;
 		}
 
-		func.is_extern = false;
 
 		self.module
 			.functions
@@ -664,11 +664,11 @@ impl CIRModuleBuilder {
 						let expr_ir = self.generate_expr(expr, BindingProps::default())?;
 
 						let mut tmp_idx = tmp.clone();
-						tmp_idx.projection.push(PlaceElem::Index(
-							Type::isize_type(false),
-							Operand::IntegerLit(i as i128, SrcSpan::new()),
-							Operator::Add,
-						));
+						tmp_idx.projection.push(PlaceElem::Index {
+							index_ty: Type::isize_type(false),
+							index: Operand::IntegerLit(i as i128, SrcSpan::new()),
+							op: Operator::Add,
+						});
 
 						self.generate_raw_assign(expr.get_type(), tmp_idx, expr_ir)
 					}
@@ -915,9 +915,10 @@ impl CIRModuleBuilder {
 								self.write(CIRStmt::Jump(cont_block.unwrap()));
 							}
 
+							self.current_block = start_block;
+							self.generate_branch(cond_op, if_idx, else_idx);
+
 							if let Some(cont_block) = cont_block {
-								self.current_block = start_block;
-								self.generate_branch(cond_op, if_idx, else_idx);
 								self.current_block = cont_block;
 							}
 						} else {
@@ -1644,11 +1645,11 @@ impl CIRModuleBuilder {
 					let index = self.generate_expr(rhs, BindingProps::default())?;
 					let index_ty = rhs.get_type();
 
-					indexed.projection.push(PlaceElem::Index(
-						index_ty.clone(),
-						self.get_as_operand(index_ty, index, rhs.get_span()),
-						Operator::Add,
-					));
+					indexed.projection.push(PlaceElem::Index {
+						index_ty: index_ty.clone(),
+						index: self.get_as_operand(index_ty, index, rhs.get_span()),
+						op: op.clone(),
+					});
 
 					Some(indexed)
 				}
@@ -1661,16 +1662,16 @@ impl CIRModuleBuilder {
 
 			Expr::Unary(val, Operator::Deref, _) => match &**val {
 				// Special case for *(ptr + n)
-				Expr::Cons([lhs, rhs], op @ Operator::Add | op @ Operator::Sub, _) => {
+				Expr::Cons([lhs, rhs], op @ (Operator::Add | Operator::Sub), _) => {
 					let mut indexed = self.generate_lvalue_expr(lhs)?;
 					let index = self.generate_expr(rhs, BindingProps::default())?;
 					let index_ty = rhs.get_type();
 
-					indexed.projection.push(PlaceElem::Index(
-						index_ty.clone(),
-						self.get_as_operand(index_ty, index, rhs.get_span()),
-						op.clone(),
-					));
+					indexed.projection.push(PlaceElem::Index {
+						index_ty: index_ty.clone(),
+						index: self.get_as_operand(index_ty, index, rhs.get_span()),
+						op: op.clone(),
+					});
 
 					Some(indexed)
 				}
@@ -1695,10 +1696,6 @@ impl CIRModuleBuilder {
 
 				let RValue::Atom(_, None, Operand::LValueUse(lval, _), _) = result else {
 					panic!("function result is not an lvalue!")
-				};
-
-				if lval.props != BindingProps::mut_reference() {
-					panic!("function call in lvalue position does not return a mut&")
 				};
 
 				Some(lval)

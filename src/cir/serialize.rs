@@ -194,8 +194,8 @@ impl Display for LValue {
 				PlaceElem::Field(i) => {
 					write!(&mut result, ".{i}")?;
 				}
-				PlaceElem::Index(t, i, _) => {
-					write!(&mut result, "[{t} {i}]")?;
+				PlaceElem::Index { index_ty, index, op } => {
+					write!(&mut result, "[{op}{index_ty} {index}]")?;
 				}
 				PlaceElem::SumData(ty) => {
 					result.insert(0, '(');

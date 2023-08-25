@@ -174,7 +174,8 @@ impl MonomorphServer {
 				}
 
 				match stmt {
-					CIRStmt::Assignment(_, expr) => {
+					CIRStmt::Assignment(lval, expr) => {
+						self.monoize_lvalue(lval, param_map, access);
 						self.monoize_rvalue_types(expr, param_map, access);
 					}
 
@@ -182,14 +183,20 @@ impl MonomorphServer {
 						id: CIRCallId::Direct(func, _),
 						generic_args,
 						args,
+						result,
 						..
 					}
 					| CIRStmt::Call {
 						id: CIRCallId::Direct(func, _),
 						generic_args,
 						args,
+						result,
 						..
 					} => {
+						if let Some(result) = result {
+							self.monoize_lvalue(result, generic_args, access);
+						}
+						
 						for arg in generic_args.iter_mut() {
 							self.monoize_generic_arg(arg, param_map, access);
 						}
@@ -276,7 +283,7 @@ impl MonomorphServer {
 		for proj in lval.projection.iter_mut() {
 			match proj {
 				PlaceElem::SumData(ty) => self.monoize_type(ty, generic_args, access),
-				PlaceElem::Index(ty, ..) => self.monoize_type(ty, generic_args, access),
+				PlaceElem::Index { index_ty, .. } => self.monoize_type(index_ty, generic_args, access),
 				_ => {}
 			}
 		}

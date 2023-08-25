@@ -760,36 +760,43 @@ impl Type {
 		if self == other {
 			true
 		} else {
-			match other {
-				Type::Tuple(TupleKind::Sum, types) => {
-					for ty in types {
-						if self == ty {
-							return true;
+			match self {
+				Type::Never => true,
+				
+				Type::Tuple(TupleKind::Sum, types) => types.iter().all(|ty| ty.is_subtype_of(other)),
+				
+				_ => match other {
+					Type::Tuple(TupleKind::Sum, types) => {
+						for ty in types {
+							if self == ty {
+								return true;
+							}
 						}
+	
+						false
 					}
-
-					false
-				}
-
-				Type::TypeRef { def, args } => {
-					let Type::TypeRef { def: self_def, args: self_args } = self else {
-						return false
-					};
-
-					if args != self_args {
-						return false;
+	
+					Type::TypeRef { def, args } => {
+						let Type::TypeRef { def: self_def, args: self_args } = self else {
+							return false
+						};
+	
+						if args != self_args {
+							return false;
+						}
+	
+						let def = def.upgrade().unwrap();
+						let def = def.read().unwrap();
+	
+						def.variants
+							.iter()
+							.any(|(_, variant)| Arc::ptr_eq(variant, &self_def.upgrade().unwrap()))
 					}
-
-					let def = def.upgrade().unwrap();
-					let def = def.read().unwrap();
-
-					def.variants
-						.iter()
-						.any(|(_, variant)| Arc::ptr_eq(variant, &self_def.upgrade().unwrap()))
+	
+					_ => false,
 				}
-
-				_ => false,
 			}
+			
 		}
 	}
 
