@@ -5,6 +5,8 @@ use std::{
 	sync::{Arc, RwLock, Weak},
 };
 
+use itertools::Itertools;
+
 use crate::ast::{
 	traits::ImplSolver,
 	types::{
@@ -140,6 +142,29 @@ impl MonomorphServer {
 
 			functions_mono.insert(proto, function_monoized);
 		}
+		
+		// Monomorphize non-generic types
+
+		let types = module
+			.types
+			.values()
+			.filter(|ty| ty.read().unwrap().generics.is_empty())
+			.cloned()
+			.collect_vec();
+
+		for ty in types {
+			let mut ty = ty.write().unwrap();
+			
+			self.monoize_typedef_body(
+				&mut ty,
+				&vec![],
+				&mut ModuleAccess {
+					types: &mut module.types,
+					fns_in: &module.functions,
+					fns_out: &mut functions_mono,
+				}
+			);
+		}
 
 		// Remove all generic types from module
 		module
@@ -196,7 +221,7 @@ impl MonomorphServer {
 						if let Some(result) = result {
 							self.monoize_lvalue(result, generic_args, access);
 						}
-						
+
 						for arg in generic_args.iter_mut() {
 							self.monoize_generic_arg(arg, param_map, access);
 						}
@@ -380,6 +405,10 @@ impl MonomorphServer {
 		generic_args: &GenericArgs,
 		access: &mut ModuleAccess,
 	) -> Weak<RwLock<TypeDef>> {
+		if generic_args.is_empty() {
+			return Arc::downgrade(&def)
+		}
+
 		// Generate the monomorphized type name
 		let mut ty_name = def.read().unwrap().name.clone();
 		let mut iter = generic_args.iter();
@@ -457,42 +486,55 @@ impl MonomorphServer {
 
 			access.types.insert(instance_name, instance_arc.clone());
 
-			for (_, member, _) in &mut instance_lock.members {
-				self.monoize_type(member, generic_args, access);
-			}
-
-			for (_, variant) in &mut instance_lock.variants {
-				let variant_instance =
-					self.instantiate_type_def(variant.clone(), generic_args, access);
-				*variant = variant_instance.upgrade().unwrap();
-			}
-
-			instance_lock.generics.params.clear();
-
-			// Register and monoize dtor
-			if let Some(drop) = &mut instance_lock.drop {
-				if let Some(template) = access.fns_in.get(drop) {
-					self.register_fn_template(drop, template);
-				}
-
-				let (drop_fn, drop_body) = self.register_fn_job(drop, generic_args, access);
-
-				access.fns_out.insert(drop_fn.clone(), drop_body);
-			}
-
-			// Register and monoize ctors
-			for init in &mut instance_lock.init {
-				if let Some(template) = access.fns_in.get(init) {
-					self.register_fn_template(init, template);
-				}
-
-				let (init_fn, init_body) = self.register_fn_job(init, generic_args, access);
-
-				access.fns_out.insert(init_fn.clone(), init_body);
-			}
+			self.monoize_typedef_body(
+				&mut instance_lock,
+				generic_args,
+				access
+			);
 
 			Arc::downgrade(&instance_arc)
 		}
+	}
+
+	fn monoize_typedef_body(&self, ty: &mut TypeDef, generic_args: &GenericArgs, access: &mut ModuleAccess) {
+		for (_, member, _) in &mut ty.members {
+			self.monoize_type(member, generic_args, access);
+		}
+
+		for (_, variant) in &mut ty.variants {
+			let variant_instance =
+				self.instantiate_type_def(variant.clone(), generic_args, access);
+			*variant = variant_instance.upgrade().unwrap();
+		}
+
+		if generic_args.is_empty() {
+			return
+		}
+
+		ty.generics.params.clear();
+
+		// Register and monoize dtor
+		if let Some(drop) = &mut ty.drop {
+			if let Some(template) = access.fns_in.get(drop) {
+				self.register_fn_template(drop, template);
+			}
+
+			let (drop_fn, drop_body) = self.register_fn_job(drop, generic_args, access);
+
+			access.fns_out.insert(drop_fn.clone(), drop_body);
+		}
+
+		// Register and monoize ctors
+		for init in &mut ty.init {
+			if let Some(template) = access.fns_in.get(init) {
+				self.register_fn_template(init, template);
+			}
+
+			let (init_fn, init_body) = self.register_fn_job(init, generic_args, access);
+
+			access.fns_out.insert(init_fn.clone(), init_body);
+		}
+
 	}
 
 	// Register a function template if it hasn't been registered already
