@@ -1,3 +1,4 @@
 module box;
 module rc;
+module string;
 module vector;
