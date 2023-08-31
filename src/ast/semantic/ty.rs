@@ -599,21 +599,53 @@ impl Type {
 		Ok(())
 	}
 
-	pub fn resolve_inference_vars(&mut self, hint: Type) -> ComuneResult<()> {
+	pub fn resolve_inference_vars(&mut self, hint: Type, span: SrcSpan) -> ComuneResult<()> {
 		match self {
 			Type::Infer(_) => { *self = hint; Ok(()) }
 
 			Type::TypeRef { args, .. } => {
-				let Type::TypeRef { args: other_args, .. } = hint  else {
-					todo!()
+				let Type::TypeRef { args: other_args, .. } = hint else {
+					return Err(ComuneError::new(
+						ComuneErrCode::AssignTypeMismatch { expr: hint, to: self.clone() },
+						span
+					))
 				};
 
-				for (GenericArg::Type(lhs), GenericArg::Type(rhs)) in args.iter_mut().zip(other_args.iter()) {
-					lhs.resolve_inference_vars(rhs.clone())?;
+				for (GenericArg::Type(lhs), GenericArg::Type(rhs)) in args.iter_mut().zip(other_args.into_iter()) {
+					lhs.resolve_inference_vars(rhs, span)?;
 				}
 
-				Ok(())
-			
+				Ok(())			
+			}
+
+			Type::Pointer { pointee, mutable } => {
+				match hint {
+					Type::Pointer { pointee: other, mutable: other_mut } if *mutable == other_mut => {
+						pointee.resolve_inference_vars(*other, span)
+					}
+
+					_ => Err(ComuneError::new(
+						ComuneErrCode::AssignTypeMismatch { expr: hint, to: self.clone() },
+						span
+					))
+				}
+			}
+
+			Type::Tuple(kind, types) => {
+				match hint {
+					Type::Tuple(other_kind, other_types) if *kind == other_kind => {
+						for (lhs, rhs) in types.iter_mut().zip(other_types.into_iter()) {
+							lhs.resolve_inference_vars(rhs, span)?;
+						}
+						
+						Ok(())
+					}
+
+					_ => Err(ComuneError::new(
+						ComuneErrCode::AssignTypeMismatch { expr: hint, to: self.clone() },
+						span
+					))
+				}
 			}
 			
 			_ => Ok(())

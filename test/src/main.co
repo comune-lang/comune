@@ -60,7 +60,7 @@ void impl_test() {
 }
 
 void ref_test(i32 mut& test) {
-	test++;
+	test += 1;
 }
 
 void fn_pointer_test(void(int) callback) {
@@ -246,11 +246,11 @@ void ops_test() {
 
 void rc_test() {
 	printf(c"Creating Rc<DropTest>!\n");
-	Rc<DropTest> rc = new Rc<DropTest>(new DropTest(0));
+	auto rc = new Rc<DropTest>(new DropTest(0));
 	
-	for (int mut i = 0; i < 10; i++) {
+	for (int mut i = 0; i < 10; i += 1) {
 		printf(c"Cloning Rc<DropTest>!\n");
-		Rc<DropTest> rc = new Rc<DropTest>(rc);
+		Rc<auto> rc = new Rc<DropTest>(rc);
 		printf(c"Dropping Rc<DropTest>!\n");
 	}
 	printf(c"Dropping last Rc<DropTest>!\n");

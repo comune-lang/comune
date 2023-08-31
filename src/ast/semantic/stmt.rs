@@ -21,7 +21,7 @@ impl Stmt {
 
 					let expr_ty = expr.validate(scope)?;
 					
-					binding_ty.resolve_inference_vars(expr_ty.clone())?;
+					binding_ty.resolve_inference_vars(expr_ty.clone(), binding_props.span)?;
 					binding_ty.validate(scope)?;
 
 					if expr_ty != *binding_ty {

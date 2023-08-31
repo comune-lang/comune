@@ -29,11 +29,6 @@ pub enum Operator {
 	UnaryPlus,
 	UnaryMinus,
 
-	PostInc,
-	PostDec,
-	PreInc,
-	PreDec,
-
 	ScopeRes,
 	MemberAccess,
 	DerefAccess,
@@ -85,8 +80,6 @@ impl Operator {
 		match self {
 			Operator::Call
 			| Operator::Subscr
-			| Operator::PostInc
-			| Operator::PostDec
 			| Operator::ScopeRes
 			| Operator::DerefAccess
 			| Operator::MemberAccess => 200,
@@ -94,8 +87,6 @@ impl Operator {
 			Operator::UnaryPlus
 			| Operator::UnaryMinus
 			| Operator::LogicNot
-			| Operator::PreInc
-			| Operator::PreDec
 			| Operator::Ref
 			| Operator::RefMut
 			| Operator::Deref => 190,
@@ -194,8 +185,6 @@ impl Operator {
 				"%=" => Some(Operator::AssMod),
 				"^=" => Some(Operator::AssBitXOR),
 
-				"++" => Some(Operator::PostInc),
-				"--" => Some(Operator::PostDec),
 				"(" => Some(Operator::Call),
 				")" => None,
 				"[" => Some(Operator::Subscr),
@@ -229,8 +218,6 @@ impl Operator {
 				"&" => Some(Operator::Ref),
 				"*" => Some(Operator::Deref),
 				"!" => Some(Operator::LogicNot),
-				"++" => Some(Operator::PreInc),
-				"--" => Some(Operator::PreDec),
 				_ => None,
 			}
 		}
@@ -248,8 +235,6 @@ impl Display for Operator {
 				Operator::Mul => "*",
 				Operator::Div => "/",
 				Operator::Mod => "%",
-				Operator::PreInc | Operator::PostInc => "++",
-				Operator::PreDec | Operator::PostDec => "--",
 				Operator::ScopeRes => "::",
 				Operator::MemberAccess => ".",
 				Operator::DerefAccess => "->",

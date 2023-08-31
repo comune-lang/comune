@@ -47,7 +47,7 @@ struct Vector<type T> {
 	
 	drop(mut& self) {
 		if self.capacity > 0 {
-			for (usize mut i = 0; i < self.len; i++) {
+			for (usize mut i = 0; i < self.len; i += 1) {
 				unsafe {
 					drop *(self.data + i);
 				}

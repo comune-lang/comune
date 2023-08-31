@@ -109,8 +109,6 @@ impl Expr {
 									| Operator::LessEq
 									| Operator::GreaterEq => Ok(Type::bool_type()),
 
-									Operator::PostDec | Operator::PostInc => Ok(first_t),
-
 									Operator::Assign => Ok(Type::void_type()),
 									_ if op.is_compound_assignment() => Ok(Type::void_type()),
 

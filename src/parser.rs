@@ -1266,33 +1266,6 @@ impl<'ctx> Parser {
 					lhs = Expr::create_cast(lhs, goal_t, NodeData { ty: None, span: tk });
 				}
 
-				Operator::PostInc | Operator::PostDec => {
-					let tk = SrcSpan {
-						start: begin_lhs,
-						len: self.get_prev_end_index() - begin_lhs,
-					};
-
-					// Create compound assignment expression
-					lhs = Expr::Cons(
-						[
-							Box::new(lhs),
-							Box::new(Expr::Atom(
-								Atom::IntegerLit(1, None),
-								NodeData {
-									ty: None,
-									span: SrcSpan::new(),
-								},
-							)),
-						],
-						match op {
-							Operator::PostInc => Operator::AssAdd,
-							Operator::PostDec => Operator::AssSub,
-							_ => panic!(),
-						},
-						NodeData { ty: None, span: tk },
-					);
-				}
-
 				Operator::Subscr => {
 					let rhs = self.parse_expression_bp(rbp, scope)?;
 					let end_rhs = self.get_prev_end_index();
