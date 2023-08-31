@@ -230,6 +230,8 @@ void ops_test() {
 	bitwise_test &= 0x0Fu8;
 	bitwise_test <<= 2;
 	bitwise_test >>= 1;
+	bitwise_test |= 0;
+	bitwise_test ^= 1;
 
 	printf(c"value of bitwise_test: %i\n", bitwise_test);
 
@@ -262,10 +264,10 @@ void ptr_access_test() {
 	DerefTest mut a = new DerefTest {
 		a: 0
 	};
-
-	DerefTest* mut b = &a;
-	DerefTest** mut c = &b;
-	DerefTest*** mut d = &c;
+	
+	DerefTest mut* mut b = &mut a;
+	DerefTest mut* mut* mut c = &mut b;
+	DerefTest mut* mut* mut* mut d = &mut c;
 	
 	unsafe {
 		b->a = 1;

@@ -108,13 +108,14 @@ impl Operator {
 
 			Operator::BitShiftL | Operator::BitShiftR => 160,
 
-			Operator::Less | Operator::LessEq | Operator::Greater | Operator::GreaterEq => 150,
+			Operator::BitAND => 150,
+			Operator::BitXOR => 140,
+			Operator::BitOR => 130,
 
-			Operator::Eq | Operator::NotEq => 140,
+			Operator::Less | Operator::LessEq | Operator::Greater | Operator::GreaterEq => 120,
 
-			Operator::BitAND => 130,
-			Operator::BitXOR => 120,
-			Operator::BitOR => 110,
+			Operator::Eq | Operator::NotEq => 110,
+
 			Operator::LogicAnd => 100,
 			Operator::LogicOr => 90,
 
