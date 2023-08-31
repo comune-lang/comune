@@ -1504,7 +1504,7 @@ impl<'ctx> LLVMBuilder<'ctx> {
 
 			Type::TypeParam(_) => panic!("unexpected TypeParam in codegen!"),
 
-			Type::Unresolved { .. } => panic!(),
+			Type::Unresolved { .. } | Type::Infer(_) => panic!(),
 		}
 	}
 

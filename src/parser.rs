@@ -1200,7 +1200,7 @@ impl<'ctx> Parser {
 					sub
 				} else {
 					self.get_next()?;
-					
+
 					if op == Operator::Ref {
 						if self.get_current()? == Token::Keyword("mut") {
 							op = Operator::RefMut;
@@ -1859,16 +1859,18 @@ impl<'ctx> Parser {
 	// Returns true if the current token is the start of a Type.
 	// In ambiguous contexts (i.e. function blocks), `resolve_idents` enables basic name resolution
 	fn is_at_type_token(&self, scope: Option<&FnScope<'ctx>>) -> ComuneResult<bool> {
-		let current = self.get_current()?;
-
 		let current_idx = self.get_current_token_index();
 
-		if current == Token::Operator("(") {
+		while self.get_current()? == Token::Operator("(") {
 			// This might be the start of a tuple OR expression, so we gotta peek ahead whoops
 			self.get_next()?;
 		}
 
-		if self.is_at_identifier_token()? {
+		if self.get_current()? == Token::Keyword("auto") {
+			self.lexer.borrow_mut().seek_token_idx(current_idx);
+
+			Ok(true)
+		} else if self.is_at_identifier_token()? {
 			if let Some(scope) = scope {
 				let typename = self.parse_identifier(Some(scope))?;
 
@@ -2134,13 +2136,26 @@ impl<'ctx> Parser {
 		if !self.is_at_type_token(scope)? {
 			return self.err(ComuneErrCode::ExpectedIdentifier);
 		}
-
+		
 		if self.get_current()? == Token::Operator("(") {
 			let (kind, types) = self.parse_tuple_type(scope)?;
 
 			Ok(Type::Tuple(kind, types))
-		} else if self.is_at_identifier_token()? {
-			result = self.parse_typeref(scope)?;
+		} else if self.is_at_identifier_token()? || self.get_current()? == Token::Keyword("auto") {
+			if self.get_current()? == Token::Keyword("auto") {
+				let start = self.get_current_start_index();
+				
+				self.get_next()?;
+				
+				let end = self.get_prev_end_index();
+				
+				result = Type::Infer(SrcSpan { 
+					start, 
+					len: end - start,
+				})
+			} else {
+				result = self.parse_typeref(scope)?;
+			}
 
 			loop {
 				match self.get_current()? {
@@ -2243,7 +2258,7 @@ impl<'ctx> Parser {
 		loop {
 			let mut typename = self.parse_identifier(scope)?;
 			typename.qualifier.0 = qualifier;
-
+			
 			if let Some(scope) = scope {
 				if let Some(ty) = scope.find_type(&typename) {
 					result = ty;

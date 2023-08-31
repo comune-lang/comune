@@ -261,13 +261,13 @@ struct DerefTest {
 }
 
 void ptr_access_test() {
-	DerefTest mut a = new DerefTest {
+	auto mut a = new DerefTest {
 		a: 0
 	};
 	
-	DerefTest mut* mut b = &mut a;
-	DerefTest mut* mut* mut c = &mut b;
-	DerefTest mut* mut* mut* mut d = &mut c;
+	auto mut b = &mut a;
+	auto mut c = &mut b;
+	auto mut d = &mut c;
 	
 	unsafe {
 		b->a = 1;

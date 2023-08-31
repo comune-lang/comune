@@ -14,22 +14,24 @@ impl Stmt {
 					todo!()
 				}
 
-				let (binding_ty, binding_name, binding_props) = names[0].clone();
-				binding_ty.validate(scope)?;
+				let (binding_ty, binding_name, binding_props) = &mut names[0];
 
 				if let Some(expr) = expr {
 					expr.set_type_hint(binding_ty.clone());
 
 					let expr_ty = expr.validate(scope)?;
+					
+					binding_ty.resolve_inference_vars(expr_ty.clone())?;
+					binding_ty.validate(scope)?;
 
-					if expr_ty != binding_ty {
+					if expr_ty != *binding_ty {
 						if expr_ty.is_subtype_of(&binding_ty) {
 							expr.wrap_in_cast(binding_ty.clone());
 						} else {
 							return Err(ComuneError::new(
 								ComuneErrCode::AssignTypeMismatch {
 									expr: expr_ty,
-									to: binding_ty,
+									to: binding_ty.clone(),
 								},
 								*span,
 							));
@@ -43,7 +45,7 @@ impl Stmt {
 						));
 					}
 
-					scope.add_variable(binding_ty, binding_name, binding_props);
+					scope.add_variable(binding_ty.clone(), binding_name.clone(), *binding_props);
 					Ok(expr_ty)
 				} else {
 					// References must be initialized in their declaration
@@ -56,8 +58,8 @@ impl Stmt {
 						return Err(ComuneError::new(ComuneErrCode::LocalNewReference, *span));
 					}
 
-					scope.add_variable(binding_ty.clone(), binding_name, binding_props);
-					Ok(binding_ty)
+					scope.add_variable(binding_ty.clone(), binding_name.clone(), *binding_props);
+					Ok(binding_ty.clone())
 				}
 			}
 

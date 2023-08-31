@@ -85,6 +85,7 @@ pub enum ComuneErrCode {
 	// Semantic errors
 	UndeclaredIdentifier(String),
 	UnresolvedTypename(String),
+	UnsupportedInference,
 	ExprTypeMismatch(Type, Type, Operator),
 	AssignTypeMismatch {
 		expr: Type,
@@ -216,6 +217,7 @@ impl Display for ComuneErrCode {
 				write!(f, "`{id}` was not found in this scope")
 			}
 			ComuneErrCode::UnresolvedTypename(id) => write!(f, "unresolved typename `{id}`"),
+			ComuneErrCode::UnsupportedInference => write!(f, "`auto` in this position is not supported"),
 			ComuneErrCode::ExprTypeMismatch(a, b, op) => write!(
 				f,
 				"type mismatch; cannot apply operator {op:?} to `{a}` and `{b}`"

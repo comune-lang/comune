@@ -161,10 +161,10 @@ pub enum Type {
 		mutable: bool,
 	},
 
-	Array(Box<Type>, Arc<RwLock<ConstExpr>>), // Aarray with constant expression for size
+	// Array with constant expression for size
+	Array(Box<Type>, Arc<RwLock<ConstExpr>>),
 
 	// View type, dynamically sized
-	// Note: mutability is determined by the binding
 	Slice(Box<Type>),
 
 	TypeRef {
@@ -180,6 +180,9 @@ pub enum Type {
 		generic_args: GenericArgs,
 		span: SrcSpan,
 	},
+
+	// `auto` type inference variable
+	Infer(SrcSpan),
 
 	TypeParam(usize),            // Reference to an in-scope type parameter
 	Tuple(TupleKind, Vec<Type>), // Sum/product tuple
@@ -563,7 +566,7 @@ impl Type {
 					.collect(),
 			),
 
-			Type::Unresolved { .. } => unreachable!(),
+			Type::Unresolved { .. } | Type::Infer(_) => panic!(),
 		}
 	}
 
@@ -984,11 +987,13 @@ impl Hash for Type {
 	fn hash<H: Hasher>(&self, state: &mut H) {
 		match self {
 			Type::Basic(b) => b.hash(state),
+
 			Type::Pointer { pointee, mutable } => {
 				pointee.hash(state);
 				mutable.hash(state);
 				"*".hash(state)
 			}
+
 			Type::Array(t, _s) => {
 				t.hash(state);
 				"+".hash(state)
@@ -1028,6 +1033,8 @@ impl Hash for Type {
 				ret.hash(state);
 				args.hash(state)
 			}
+
+			Type::Infer(_) => "auto".hash(state),
 		}
 	}
 }
@@ -1106,6 +1113,8 @@ impl Display for Type {
 			Type::TypeParam(t) => write!(f, "${t}"),
 
 			Type::Never => write!(f, "never"),
+
+			Type::Infer(_) => write!(f, "auto"),
 
 			Type::Tuple(kind, types) => {
 				if types.is_empty() {

@@ -383,7 +383,7 @@ impl MonomorphServer {
 
 			Type::Never => {}
 
-			Type::Unresolved { .. } => panic!(),
+			Type::Unresolved { .. } | Type::Infer(_) => panic!(),
 		}
 	}
 

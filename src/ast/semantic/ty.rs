@@ -367,6 +367,13 @@ pub fn resolve_type(
 
 		Type::TypeRef { .. } | Type::Basic(_) | Type::TypeParam(_) | Type::Never => Ok(()),
 
+		Type::Infer(span) => return Err(
+			ComuneError::new(
+				ComuneErrCode::UnsupportedInference,
+				*span
+			)
+		),
+
 		Type::Function(ret, args) => {
 			resolve_type(ret, namespace, generics)?;
 
@@ -590,5 +597,26 @@ impl Type {
 		}
 
 		Ok(())
+	}
+
+	pub fn resolve_inference_vars(&mut self, hint: Type) -> ComuneResult<()> {
+		match self {
+			Type::Infer(_) => { *self = hint; Ok(()) }
+
+			Type::TypeRef { args, .. } => {
+				let Type::TypeRef { args: other_args, .. } = hint  else {
+					todo!()
+				};
+
+				for (GenericArg::Type(lhs), GenericArg::Type(rhs)) in args.iter_mut().zip(other_args.iter()) {
+					lhs.resolve_inference_vars(rhs.clone())?;
+				}
+
+				Ok(())
+			
+			}
+			
+			_ => Ok(())
+		}
 	}
 }
