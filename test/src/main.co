@@ -164,7 +164,7 @@ void sub_drop_test() {
 		drop_vec.push(new DropTest(5));
 		drop_vec.push(new DropTest(6));
 		
-		unsafe { *drop_vec.get_mut(1).unwrap() } = new DropTest(7);
+		*drop_vec.get_mut(1).unwrap() = new DropTest(7);
 	}
 
 	printf(c"\nLeft Vector<DropTest> scope\n\n");
@@ -265,11 +265,9 @@ void ptr_access_test() {
 	auto mut c = &mut b;
 	auto mut d = &mut c;
 	
-	unsafe {
-		b->a = 1;
-		c->>a = 2;
-		d->>>a = 3;
-	}
+	b->a = 1;
+	c->>a = 2;
+	d->>>a = 3;
 }
 
 
