@@ -17,8 +17,8 @@ use crate::ast::module::{
 use crate::ast::statement::Stmt;
 use crate::ast::traits::{ImplBlockInterface, TraitInterface, TraitRef};
 use crate::ast::types::{
-	Basic, Qualifiers, DataLayout, FloatSize, FnParamList, FnPrototype, GenericArg, GenericArgs,
-	GenericParam, Generics, TupleKind, Type, TypeDef, Visibility,
+	Basic, BindingProps, DataLayout, FloatSize, FnParamList, FnPrototype, GenericArg, GenericArgs,
+	GenericParam, Generics, TupleKind, Type, TypeDef, Visibility, PtrKind,
 };
 use crate::ast::{Attribute, FnScope};
 
@@ -427,7 +427,7 @@ impl<'ctx> Parser {
 						let func_attributes = self.parse_attributes()?;
 
 						let ret = self.parse_type(None)?;
-						let props = self.parse_qualifiers()?.unwrap_or_default();
+						let props = self.parse_binding_props()?.unwrap_or_default();
 
 						let Token::Name(fn_name) = self.get_current()? else {
 							return self.err(ComuneErrCode::ExpectedIdentifier);
@@ -772,7 +772,7 @@ impl<'ctx> Parser {
 			path,
 			params,
 			generics,
-			ret: (Qualifiers::default(), Type::Basic(Basic::Void)),
+			ret: (BindingProps::default(), Type::Basic(Basic::Void)),
 			attributes: vec![],
 			is_unsafe: false,
 		});
@@ -937,7 +937,7 @@ impl<'ctx> Parser {
 		self_ty: Option<&Type>,
 	) -> ComuneResult<(DeclParseResult, ModuleASTElem)> {
 		let t = self.parse_type(None)?;
-		let props = self.parse_qualifiers()?.unwrap_or_default();
+		let props = self.parse_binding_props()?.unwrap_or_default();
 		let interface;
 		let item;
 
@@ -1002,12 +1002,12 @@ impl<'ctx> Parser {
 		Ok((interface, item))
 	}
 
-	fn parse_qualifiers(&self) -> ComuneResult<Option<Qualifiers>> {
-		let mut props = Qualifiers::default();
+	fn parse_binding_props(&self) -> ComuneResult<Option<BindingProps>> {
+		let mut props = BindingProps::default();
 
 		if !matches!(
 			self.get_current()?,
-			Token::Keyword("new" | "mut" | "raw")
+			Token::Keyword("new" | "mut") | Token::Operator("&")
 		) {
 			return Ok(None);
 		}
@@ -1023,12 +1023,12 @@ impl<'ctx> Parser {
 				self.get_next()?;
 			}
 
-			Token::Keyword("raw") => {
-				props.is_raw = true;
-				self.get_next()?;
-			}
-
 			_ => {}
+		}
+
+		if self.get_current()? == Token::Operator("&") {
+			props.is_ref = true;
+			self.get_next()?;
 		}
 		
 		Ok(Some(props))
@@ -1042,7 +1042,7 @@ impl<'ctx> Parser {
 			// This is a declaration
 
 			let ty = self.parse_type(Some(scope))?;
-			let binding_props = self.parse_qualifiers()?;
+			let binding_props = self.parse_binding_props()?;
 
 			let Token::Name(name) = self.get_current()? else {
 				// Nope, try to parse as an expression after all
@@ -1080,7 +1080,7 @@ impl<'ctx> Parser {
 	fn parse_pattern(&self, scope: &FnScope<'ctx>) -> ComuneResult<Pattern> {
 		if self.is_at_type_token(Some(scope))? {
 			let pattern_ty = self.parse_type(Some(scope))?;
-			let props = self.parse_qualifiers()?.unwrap_or_default();
+			let props = self.parse_binding_props()?.unwrap_or_default();
 
 			match self.get_current()? {
 				Token::Name(id) => {
@@ -1089,7 +1089,7 @@ impl<'ctx> Parser {
 					Ok(Pattern::Binding(Binding {
 						name: Some(id),
 						ty: pattern_ty,
-						qualifs: props,
+						props,
 					}))
 				}
 
@@ -1117,7 +1117,7 @@ impl<'ctx> Parser {
 						patterns.push(Pattern::Binding(Binding {
 							name: Some(name),
 							ty,
-							qualifs: props,
+							props,
 						}));
 
 						match self.get_next()? {
@@ -1201,6 +1201,9 @@ impl<'ctx> Parser {
 					if op == Operator::Ref {
 						if self.get_current()? == Token::Keyword("mut") {
 							op = Operator::RefMut;
+							self.get_next()?;
+						} else if self.get_current()? == Token::Keyword("raw") {
+							op = Operator::RefRaw;
 							self.get_next()?;
 						}
 					}
@@ -2019,34 +2022,22 @@ impl<'ctx> Parser {
 
 		// Special case for self parameter
 		if let Some(self_ty) = self_ty {
+			let props = self.parse_binding_props()?;
 			let self_name = "self".into();
 
-			let qualifs = self.parse_qualifiers()?;
-
-			if self.get_current()? == Token::Operator("*") {
-				self.get_next()?;
-
-				let param_ty = Type::Pointer {
-					pointee: Box::new(self_ty.clone()),
-					qualifs: qualifs.unwrap_or_default(),
-				};
-
-				result.params.push((param_ty, Some(self_name), Qualifiers::value()));
-				self.get_next()?;
-
-			} else if qualifs.is_some()
+			if props.is_some()
 				|| matches!(self.get_current()?, Token::Name(name) if name == self_name)
 			{
-				let qualifs = qualifs.unwrap_or_default();
+				let props = props.unwrap_or_default();
 
-				result.params.push((self_ty.clone(), Some(self_name), qualifs));
-				self.get_next()?;
-			}
+				result
+					.params
+					.push((self_ty.clone(), Some(self_name), props));
 
-			if self.get_current()? == Token::Other(',') {
-				self.get_next()?;
+				if self.get_next()? == Token::Other(',') {
+					self.get_next()?;
+				}
 			}
-		
 		}
 
 		while self.is_at_type_token(scope)? {
@@ -2055,7 +2046,7 @@ impl<'ctx> Parser {
 			let mut param = (
 				self.parse_type(scope)?,
 				None,
-				self.parse_qualifiers()?.unwrap_or_default(),
+				self.parse_binding_props()?.unwrap_or_default(),
 			);
 
 			// Check for param name
@@ -2141,20 +2132,24 @@ impl<'ctx> Parser {
 
 			loop {
 				match self.get_current()? {
-					Token::Operator("*") | Token::Keyword("mut" | "new" | "raw") => {
+					Token::Operator("*") | Token::Keyword("mut" | "raw") => {
 						// Pointer type
 						let start = self.get_current_token_index();
-						let qualifs = self.parse_qualifiers()?.unwrap_or_default();
 						
+						let kind = match self.get_current()? {
+							Token::Keyword("mut") => { self.get_next()?; PtrKind::Unique }
+							Token::Keyword("raw") => { self.get_next()?; PtrKind::Raw }
+							Token::Operator("*") => PtrKind::Shared,
+							_ => unreachable!(),
+						};
+
 						if self.get_current()? == Token::Operator("*") {
 							self.get_next()?;
 						
-							result = Type::Pointer {
-								pointee: Box::new(result),
-								qualifs,
-							};
+							result = Type::Pointer(Box::new(result), kind);
 						} else {
 							self.lexer.borrow_mut().seek_token_idx(start);
+							break
 						}
 					}
 
@@ -2186,7 +2181,7 @@ impl<'ctx> Parser {
 						while self.get_current()? != Token::Operator(")") {
 							let start = self.get_current_start_index();
 							let ty = self.parse_type(scope)?;
-							let mut props = self.parse_qualifiers()?.unwrap_or_default();
+							let mut props = self.parse_binding_props()?.unwrap_or_default();
 							let end = self.get_prev_end_index();
 
 							props.span = SrcSpan {

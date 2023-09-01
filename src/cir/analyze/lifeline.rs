@@ -8,7 +8,7 @@ use super::{
 use crate::{
 	ast::{
 		traits::{ImplSolver, LangTrait},
-		types::{Qualifiers, Generics, TupleKind, GenericArgs, TypeDef},
+		types::{BindingProps, Generics, TupleKind, GenericArgs, TypeDef},
 	},
 	cir::{
 		BlockIndex, CIRBlock, CIRCallId, CIRFunction, CIRStmt, LValue, Operand, PlaceElem, RValue,
@@ -33,7 +33,7 @@ pub struct VarInitCheck;
 pub struct ElaborateDrops;
 
 impl CIRStmt {
-	fn inspect_lvalue_uses(&self, mut f: impl FnMut(&LValue, &Qualifiers)) {
+	fn inspect_lvalue_uses(&self, mut f: impl FnMut(&LValue, &BindingProps)) {
 		match self {
 			CIRStmt::Assignment(_, rval) => self.inspect_rvalue(rval, f),
 
@@ -44,7 +44,7 @@ impl CIRStmt {
 			}
 
 			// FIXME: Store BindingProps in RefInit
-			CIRStmt::RefInit(_, lval) => f(lval, &Qualifiers::reference()),
+			CIRStmt::RefInit(_, lval) => f(lval, &BindingProps::reference()),
 
 			CIRStmt::Switch(op, branches, _) => {
 				if let Operand::LValueUse(lval, props) = op {
@@ -59,13 +59,13 @@ impl CIRStmt {
 			}
 
 			// FIXME: Incorrect for reference bindings
-			CIRStmt::DropShim { var, .. } => f(var, &Qualifiers::value()),
+			CIRStmt::DropShim { var, .. } => f(var, &BindingProps::value()),
 
 			_ => {}
 		}
 	}
 
-	fn inspect_rvalue(&self, rval: &RValue, mut f: impl FnMut(&LValue, &Qualifiers)) {
+	fn inspect_rvalue(&self, rval: &RValue, mut f: impl FnMut(&LValue, &BindingProps)) {
 		match rval {
 			RValue::Atom(.., Operand::LValueUse(lval, props), _) => f(lval, props),
 
@@ -201,7 +201,7 @@ impl LiveVarCheckState {
 		&mut self,
 		lval: &LValue,
 		ty: &Type,
-		props: Qualifiers,
+		props: BindingProps,
 		solver: &ImplSolver,
 		_generics: &Generics, // will be used to query whether a type implements Copy
 	) {
@@ -395,6 +395,34 @@ impl AnalysisResultHandler<DefInitFlow> for VarInitCheck {
 							match liveness {
 								Some(LivenessState::Live) => {}
 
+								_ => {
+									println!("{} {}", lval.local, lval.base);
+									for (l,_) in &state.liveness {
+										println!("\t{} {}", l.local, l.base);
+									}
+									for (i, (var, ..)) in func.variables.iter().enumerate() {
+										println!("\t\t{i}: {var}");
+									}
+									println!("\t\t\t{stmt}");
+									errors.push(ComuneError::new(
+										ComuneErrCode::InvalidUse {
+											variable: func.get_variable_name(lval.local),
+											state: liveness.unwrap_or(LivenessState::Uninit),
+										},
+										lval.qualifs.span,
+									))
+								},
+							}
+						}
+					}
+					
+					CIRStmt::Invoke { args, id, .. } | CIRStmt::Call { args, id, .. } => {
+						if let CIRCallId::Indirect { local: lval, .. } = id {
+							let liveness = state.get_liveness(lval);
+
+							match liveness {
+								Some(LivenessState::Live) => {}
+
 								_ => errors.push(ComuneError::new(
 									ComuneErrCode::InvalidUse {
 										variable: func.get_variable_name(lval.local),
@@ -404,32 +432,7 @@ impl AnalysisResultHandler<DefInitFlow> for VarInitCheck {
 								)),
 							}
 						}
-					}
 
-					CIRStmt::Invoke {
-						id: CIRCallId::Indirect { local: lval, .. },
-						..
-					}
-					| CIRStmt::Call {
-						id: CIRCallId::Indirect { local: lval, .. },
-						..
-					} => {
-						let liveness = state.get_liveness(lval);
-
-						match liveness {
-							Some(LivenessState::Live) => {}
-
-							_ => errors.push(ComuneError::new(
-								ComuneErrCode::InvalidUse {
-									variable: func.get_variable_name(lval.local),
-									state: liveness.unwrap_or(LivenessState::Uninit),
-								},
-								lval.qualifs.span,
-							)),
-						}
-					}
-
-					CIRStmt::Invoke { args, .. } | CIRStmt::Call { args, .. } => {
 						for (lval, _, use_props) in args {
 							let liveness = state.get_liveness(lval);
 
@@ -585,7 +588,7 @@ impl AnalysisResultHandler<DefInitFlow> for ElaborateDrops {
 								LValue {
 									local: *flag,
 									projection: vec![],
-									qualifs: Qualifiers::mut_value(),
+									qualifs: BindingProps::mut_value(),
 									base: Type::bool_type()
 								},
 								if props.is_new {
@@ -613,7 +616,7 @@ impl AnalysisResultHandler<DefInitFlow> for ElaborateDrops {
 									LValue {
 										local: *flag,
 										projection: vec![],
-										qualifs: Qualifiers::mut_value(),
+										qualifs: BindingProps::mut_value(),
 										base: Type::bool_type(),
 									},
 									RValue::const_bool(true),
@@ -657,7 +660,7 @@ impl<'func> DropElaborator<'func> {
 			Some(LivenessState::MaybeUninit) => {
 				self.current_fn.variables.push((
 					Type::bool_type(),
-					Qualifiers::mut_value(),
+					BindingProps::mut_value(),
 					None,
 				));
 
@@ -721,7 +724,7 @@ impl<'func> DropElaborator<'func> {
 
 				self.current_block = start_idx;
 				self.write(CIRStmt::Switch(
-					Operand::LValueUse(flag_lval, Qualifiers::value()),
+					Operand::LValueUse(flag_lval, BindingProps::value()),
 					vec![(
 						Type::bool_type(),
 						Operand::BoolLit(true, SrcSpan::new()),
@@ -789,6 +792,8 @@ impl<'func> DropElaborator<'func> {
 	) {
 		let def_lock = def.read().unwrap();
 
+		assert!(args.is_empty(), "un-monomorphized typedef found during drop elaboration!");
+
 		if let Some(drop) = &def_lock.drop {
 			let drop = drop.clone();
 
@@ -800,7 +805,7 @@ impl<'func> DropElaborator<'func> {
 						def: Arc::downgrade(def),
 						args: args.clone()
 					}, 
-					Qualifiers::mut_reference()
+					BindingProps::mut_reference()
 				)],
 				generic_args: args.clone(),
 				result: None,
@@ -811,7 +816,7 @@ impl<'func> DropElaborator<'func> {
 					LValue {
 						local: *flag,
 						projection: vec![],
-						qualifs: Qualifiers::mut_value(),
+						qualifs: BindingProps::mut_value(),
 						base: Type::bool_type()
 					},
 					RValue::const_bool(false),
@@ -861,7 +866,7 @@ impl<'func> DropElaborator<'func> {
 			// Generate switch to all the variants' destructors
 			self.current_fn.blocks[start_block].items.push(
 				CIRStmt::Switch(
-					Operand::LValueUse(discriminant, Qualifiers::value()), 
+					Operand::LValueUse(discriminant, BindingProps::value()), 
 					branches
 						.iter()
 						.cloned()

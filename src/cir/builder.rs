@@ -10,7 +10,7 @@ use crate::{
 		module::{ModuleASTElem, ModuleImpl, ModuleInterface, ModuleItemInterface, Name},
 		pattern::{Binding, Pattern},
 		statement::Stmt,
-		types::{Basic, Qualifiers, FnPrototype, GenericArgs, TupleKind, Type, TypeDef},
+		types::{Basic, BindingProps, FnPrototype, GenericArgs, TupleKind, Type, TypeDef, PtrKind},
 	},
 	lexer::SrcSpan,
 	parser::Parser,
@@ -196,7 +196,7 @@ impl CIRModuleBuilder {
 		// Generate function body
 		self.append_block();
 
-		let _ = self.generate_expr(fn_block, Qualifiers::default());
+		let _ = self.generate_expr(fn_block, BindingProps::default());
 
 		let func = self.get_fn_mut();
 		func.is_extern = false;
@@ -276,7 +276,7 @@ impl CIRModuleBuilder {
 				// RValues have no side effects, so we can discard the result
 				// of this expression. However, we still propagate whether it
 				// returns normally or not.
-				self.generate_expr(expr, Qualifiers::default())
+				self.generate_expr(expr, BindingProps::default())
 					.map(|_| ())
 			}
 
@@ -316,7 +316,7 @@ impl CIRModuleBuilder {
 			Pattern::Binding(Binding {
 				name: Some(name),
 				ty,
-				qualifs,
+				props: qualifs,
 			}) => {
 				let idx = self.get_fn().variables.len();
 
@@ -388,7 +388,7 @@ impl CIRModuleBuilder {
 			if result.get_type().is_void_or_never() {
 				None
 			} else {
-				Some(self.insert_variable(None, Qualifiers::value(), result.get_type().clone()))
+				Some(self.insert_variable(None, BindingProps::value(), result.get_type().clone()))
 			}
 		} else {
 			None
@@ -454,7 +454,7 @@ impl CIRModuleBuilder {
 			} else {
 				Some(self.insert_variable(
 					None,
-					Qualifiers::mut_reference(),
+					BindingProps::mut_reference(),
 					result.get_type().clone(),
 				))
 			}
@@ -545,7 +545,7 @@ impl CIRModuleBuilder {
 					RValue::lvalue_use(
 						location_ty.clone(),
 						tmp,
-						Qualifiers::value()
+						BindingProps::value()
 					)
 				));
 
@@ -612,7 +612,7 @@ impl CIRModuleBuilder {
 	// generate_expr only returns None if `expr` is a "never expression"
 	// aka an expression that will never evaluate to a value
 	#[must_use]
-	fn generate_expr(&mut self, expr: &Expr, qualifs: Qualifiers) -> Option<RValue> {
+	fn generate_expr(&mut self, expr: &Expr, qualifs: BindingProps) -> Option<RValue> {
 		let expr_ty = expr.get_type();
 		let span = expr.get_span();
 
@@ -645,10 +645,7 @@ impl CIRModuleBuilder {
 				)),
 
 				Atom::CStringLit(s) => Some(RValue::Atom(
-					Type::Pointer {
-						pointee: Box::new(Type::i8_type(false)),
-						qualifs: Qualifiers::value(),
-					},
+					Type::Pointer(Box::new(Type::i8_type(false)), PtrKind::Shared),
 					None,
 					Operand::CStringLit(s.clone(), span),
 					span,
@@ -662,7 +659,7 @@ impl CIRModuleBuilder {
 					);
 
 					for (i, expr) in elems.iter().enumerate() {
-						let expr_ir = self.generate_expr(expr, Qualifiers::default())?;
+						let expr_ir = self.generate_expr(expr, BindingProps::default())?;
 
 						let mut tmp_idx = tmp.clone();
 						tmp_idx.projection.push(PlaceElem::Index {
@@ -677,7 +674,7 @@ impl CIRModuleBuilder {
 					Some(RValue::Atom(
 						expr_ty.clone(),
 						None,
-						Operand::LValueUse(tmp, Qualifiers::value()),
+						Operand::LValueUse(tmp, BindingProps::value()),
 						span,
 					))
 				}
@@ -721,7 +718,7 @@ impl CIRModuleBuilder {
 					let from = expr.get_type().clone();
 					let to = to.clone();
 
-					self.generate_expr(expr, Qualifiers::default())
+					self.generate_expr(expr, BindingProps::default())
 						.map(|castee| RValue::Cast {
 							val: self.get_as_operand(&from, castee, span),
 							from,
@@ -786,7 +783,7 @@ impl CIRModuleBuilder {
 
 							for i in 0..indices.len() {
 								let mem_expr =
-									self.generate_expr(&fields[i].1, Qualifiers::default());
+									self.generate_expr(&fields[i].1, BindingProps::default());
 								let mut mem_lval = location.clone();
 
 								mem_lval.projection.push(PlaceElem::Field(indices[i]));
@@ -867,7 +864,7 @@ impl CIRModuleBuilder {
 						};
 
 						// Generate condition directly in current block, since we don't need to jump back to it
-						let cond_ir = self.generate_expr(cond, Qualifiers::default())?;
+						let cond_ir = self.generate_expr(cond, BindingProps::default())?;
 						let cond_ty = cond.get_type();
 						let cond_op = self.get_as_operand(cond_ty, cond_ir, cond.get_span());
 
@@ -940,7 +937,7 @@ impl CIRModuleBuilder {
 								Some(RValue::Atom(
 									expr_ty.clone(),
 									None,
-									Operand::LValueUse(result, Qualifiers::value()),
+									Operand::LValueUse(result, BindingProps::value()),
 									span,
 								))
 							} else {
@@ -958,7 +955,7 @@ impl CIRModuleBuilder {
 						let start_block = self.current_block;
 						let cond_block = self.append_block();
 
-						let cond_ir = self.generate_expr(cond, Qualifiers::default())?;
+						let cond_ir = self.generate_expr(cond, BindingProps::default())?;
 						let cond_ty = cond.get_type();
 						let cond_op = self.get_as_operand(cond_ty, cond_ir, cond.get_span());
 
@@ -1012,11 +1009,11 @@ impl CIRModuleBuilder {
 						let body_block = self.append_block();
 
 						// Generate body
-						self.generate_expr(body, Qualifiers::default())?;
+						self.generate_expr(body, BindingProps::default())?;
 
 						// Add iter statement to body
 						if let Some(iter) = iter {
-							self.generate_expr(iter, Qualifiers::default())?;
+							self.generate_expr(iter, BindingProps::default())?;
 						}
 
 						let body_write_block = self.current_block;
@@ -1033,7 +1030,7 @@ impl CIRModuleBuilder {
 						self.current_block = loop_block;
 
 						if let Some(cond) = cond {
-							if let Some(cond_ir) = self.generate_expr(cond, Qualifiers::default())
+							if let Some(cond_ir) = self.generate_expr(cond, BindingProps::default())
 							{
 								let cond_ty = cond.get_type();
 								let cond_op =
@@ -1088,7 +1085,7 @@ impl CIRModuleBuilder {
 						scrutinee,
 						branches,
 					} => {
-						let scrutinee_ir = self.generate_expr(scrutinee, Qualifiers::value())?;
+						let scrutinee_ir = self.generate_expr(scrutinee, BindingProps::value())?;
 						let scrutinee_ty = scrutinee.get_type();
 						let scrutinee_lval = self.insert_temporary(
 							scrutinee_ty,
@@ -1196,7 +1193,7 @@ impl CIRModuleBuilder {
 												disc_ty.clone(),
 												Operand::LValueUse(
 													disc_lval.clone(),
-													Qualifiers::value(),
+													BindingProps::value(),
 												),
 											),
 											(disc_ty.clone(), mult_ir.clone()),
@@ -1260,7 +1257,7 @@ impl CIRModuleBuilder {
 
 						self.current_block = start_block;
 						self.write(CIRStmt::Switch(
-							Operand::LValueUse(disc_lval, Qualifiers::value()),
+							Operand::LValueUse(disc_lval, BindingProps::value()),
 							branches_ir,
 							cont_block,
 						));
@@ -1271,7 +1268,7 @@ impl CIRModuleBuilder {
 								Some(RValue::Atom(
 									expr_ty.clone(),
 									None,
-									Operand::LValueUse(result_loc, Qualifiers::value()),
+									Operand::LValueUse(result_loc, BindingProps::value()),
 									span,
 								))
 							} else {
@@ -1290,7 +1287,7 @@ impl CIRModuleBuilder {
 				if op.is_compound_assignment() {
 					let op = op.get_compound_operator();
 					let lval_ir = self.generate_lvalue_expr(lhs)?;
-					let rval_ir = self.generate_expr(rhs, Qualifiers::default())?;
+					let rval_ir = self.generate_expr(rhs, BindingProps::default())?;
 
 					let l_ty = lhs.get_type();
 					let r_ty = rhs.get_type();
@@ -1302,7 +1299,7 @@ impl CIRModuleBuilder {
 						[
 							(
 								l_ty.clone(),
-								Operand::LValueUse(lval_ir.clone(), Qualifiers::value()),
+								Operand::LValueUse(lval_ir.clone(), BindingProps::value()),
 							),
 							(r_ty.clone(), r_tmp),
 						],
@@ -1359,7 +1356,7 @@ impl CIRModuleBuilder {
 
 						Operator::Assign => {
 							let lval_ir = self.generate_lvalue_expr(lhs)?;
-							let rval_ir = self.generate_expr(rhs, Qualifiers::value())?;
+							let rval_ir = self.generate_expr(rhs, BindingProps::value())?;
 							let l_ty = lhs.get_type();
 							let r_ty = rhs.get_type();
 
@@ -1375,8 +1372,8 @@ impl CIRModuleBuilder {
 						}
 
 						_ => {
-							let lhs_ir = self.generate_expr(lhs, Qualifiers::default())?;
-							let rhs_ir = self.generate_expr(rhs, Qualifiers::default())?;
+							let lhs_ir = self.generate_expr(lhs, BindingProps::default())?;
+							let rhs_ir = self.generate_expr(rhs, BindingProps::default())?;
 							let lhs_ty = lhs.get_type().clone();
 							let rhs_ty = rhs.get_type().clone();
 
@@ -1395,7 +1392,7 @@ impl CIRModuleBuilder {
 			}
 
 			Expr::Unary(sub, op, _) => {
-				let sub_expr = self.generate_expr(sub, Qualifiers::default())?;
+				let sub_expr = self.generate_expr(sub, BindingProps::default())?;
 				let temp = self.get_as_operand(sub.get_type(), sub_expr, sub.get_span());
 
 				Some(RValue::Atom(
@@ -1447,7 +1444,7 @@ impl CIRModuleBuilder {
 						let props = if let Some((.., props)) = resolved.params.params.get(i) {
 							*props
 						} else {
-							Qualifiers::value()
+							BindingProps::value()
 						};
 
 						let cir_expr = self.generate_expr(arg, props)?;
@@ -1506,7 +1503,7 @@ impl CIRModuleBuilder {
 			}
 
 			FnRef::Indirect(expr) => {
-				let fn_val_ir = self.generate_expr(expr, Qualifiers::default())?;
+				let fn_val_ir = self.generate_expr(expr, BindingProps::default())?;
 				let fn_val_ty = fn_val_ir.get_type().clone();
 
 				let local = if let RValue::Atom(_, None, Operand::LValueUse(lval, _), _) = fn_val_ir
@@ -1529,7 +1526,7 @@ impl CIRModuleBuilder {
 						let props = if let Some((props, ..)) = params.get(i) {
 							*props
 						} else {
-							Qualifiers::default()
+							BindingProps::default()
 						};
 
 						let cir_expr = self.generate_expr(arg, props)?;
@@ -1545,7 +1542,7 @@ impl CIRModuleBuilder {
 									arg.get_span(),
 								),
 								arg.get_type().clone(),
-								Qualifiers::value(),
+								BindingProps::value(),
 							))
 						}
 					})
@@ -1561,7 +1558,7 @@ impl CIRModuleBuilder {
 					None
 				} else {
 					// TODO: BindingProps for return type
-					Some(self.insert_variable(None, Qualifiers::default(), *ret.clone()))
+					Some(self.insert_variable(None, BindingProps::default(), *ret.clone()))
 				};
 
 				self.write(CIRStmt::Call {
@@ -1583,7 +1580,7 @@ impl CIRModuleBuilder {
 					Some(RValue::Atom(
 						*ret,
 						None,
-						Operand::LValueUse(result, Qualifiers::value()),
+						Operand::LValueUse(result, BindingProps::value()),
 						span,
 					))
 				} else {
@@ -1601,7 +1598,7 @@ impl CIRModuleBuilder {
 				if id.absolute {
 					let global_access = self.insert_variable(
 						None, 
-						Qualifiers::mut_reference(), 
+						BindingProps::mut_reference(), 
 						expr.get_type().clone()
 					);
 					
@@ -1648,7 +1645,7 @@ impl CIRModuleBuilder {
 
 				Operator::Subscr => {
 					let mut indexed = self.generate_lvalue_expr(lhs)?;
-					let index = self.generate_expr(rhs, Qualifiers::default())?;
+					let index = self.generate_expr(rhs, BindingProps::default())?;
 					let index_ty = rhs.get_type();
 
 					indexed.projection.push(PlaceElem::Index {
@@ -1670,7 +1667,7 @@ impl CIRModuleBuilder {
 				// Special case for *(ptr + n)
 				Expr::Cons([lhs, rhs], op @ (Operator::Add | Operator::Sub), _) => {
 					let mut indexed = self.generate_lvalue_expr(lhs)?;
-					let index = self.generate_expr(rhs, Qualifiers::default())?;
+					let index = self.generate_expr(rhs, BindingProps::default())?;
 					let index_ty = rhs.get_type();
 
 					indexed.projection.push(PlaceElem::Index {
@@ -1765,7 +1762,7 @@ impl CIRModuleBuilder {
 										qualifs: value.qualifs,
 										base: disc_type.clone(),
 									},
-									Qualifiers::reference(),
+									BindingProps::reference(),
 								),
 							),
 							(
@@ -1822,7 +1819,7 @@ impl CIRModuleBuilder {
 		}
 	}
 
-	fn insert_variable(&mut self, name: Option<Name>, qualifs: Qualifiers, ty: Type) -> LValue {
+	fn insert_variable(&mut self, name: Option<Name>, qualifs: BindingProps, ty: Type) -> LValue {
 		assert!(!ty.is_void_or_never());
 
 		let idx = self.get_fn().variables.len();
@@ -1849,7 +1846,7 @@ impl CIRModuleBuilder {
 		} else {
 			Operand::LValueUse(
 				self.insert_temporary(ty, rval, span),
-				Qualifiers::value(),
+				BindingProps::value(),
 			)
 		}
 	}
@@ -1857,11 +1854,10 @@ impl CIRModuleBuilder {
 	fn insert_temporary(&mut self, ty: &Type, rval: RValue, span: SrcSpan) -> LValue {
 		assert!(!ty.is_void_or_never());
 
-		let qualifs = Qualifiers {
+		let qualifs = BindingProps {
 			is_mut: true,
 			is_ref: false,
 			is_new: false,
-			is_raw: false,
 			span,
 		};
 

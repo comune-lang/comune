@@ -30,7 +30,7 @@ T raw* null<type T>() {
 
 unsafe void write<type T>(T raw* dest, T src) {
 	memcpy(
-		dest as void raw*,
+		dest as void mut*,
 		&src as void*,
 		size_of<T>()
 	);

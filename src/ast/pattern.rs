@@ -1,13 +1,13 @@
 use super::{
 	module::Name,
-	types::{Qualifiers, Type},
+	types::{BindingProps, Type},
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Binding {
 	pub name: Option<Name>,
 	pub ty: Type,
-	pub qualifs: Qualifiers,
+	pub props: BindingProps,
 }
 
 #[derive(Debug, Clone, PartialEq)]

@@ -207,7 +207,7 @@ impl Display for LValue {
 			};
 		}
 
-		write!(f, "{result}")
+		write!(f, "{} {result}", self.base)
 	}
 }
 

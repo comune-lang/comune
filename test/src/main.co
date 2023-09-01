@@ -23,14 +23,14 @@ enum EnumTest {
 }
 
 impl Test {
-	int sum(Test* self) {
+	int sum(Test& self) {
 		printf(c"This is a method call!\n");
 		self.a + self.b
 	}
 	
 	// the `self` parameter's type can be omitted
-	int product(Test* self) {
-		self->a * self->b
+	int product(Test& self) {
+		self.a * self.b
 	}
 }
 
@@ -43,11 +43,11 @@ impl submodule_test::SubmoduleTrait for Test {
 }
 
 trait Hello {
-	void hello(*self);
+	void hello(&self);
 }
 
 impl Hello for Test {
-	void hello(*self) {
+	void hello(&self) {
 		printf(c"Hello Test!\n");
 	}
 }
@@ -59,8 +59,8 @@ void impl_test() {
 	printf(c"The sum of a and b is %i!\n", test.sum());
 }
 
-void ref_test(i32 mut* test) {
-	*test += 1;
+void ref_test(i32 mut& test) {
+	test += 1;
 }
 
 void fn_pointer_test(void(int) callback) {
@@ -88,7 +88,7 @@ Vector<i32> generic_ret() {
 
 type TestSumType = (i32 | f32);
 
-TestSumType sum_type_test(i32* value) {
+TestSumType sum_type_test(i32 value) {
 	return value;
 }
 
@@ -97,19 +97,19 @@ void slice_test(i32[]* test) { }
 
 struct DropTest {
 	int num;
-	int mut* allocation;
+	int raw* allocation;
 
-	drop(mut* self) {
+	drop(mut& self) {
 		printf(c"DropTest no. %i dropped\n", self.num);
-		free(self->allocation as void mut*)
+		free(self.allocation as void raw*)
 	}
 
-	new(new* self, int num) {
+	new(new& self, int num) {
 		printf(c"DropTest no. %i created!\n", num);
 
-		*self = new DropTest {
+		self = new DropTest {
 			num,
-			allocation: malloc(4) as int mut*,
+			allocation: malloc(4) as int raw*,
 		}
 	}
 }
@@ -120,7 +120,7 @@ impl DropTest {
 	}
 }
 
-void temp_drop_test(DropTest* test) {
+void temp_drop_test(DropTest& test) {
 	printf(c"temp_drop_test(DropTest&) called\n");
 }
 
@@ -178,18 +178,18 @@ void sub_drop_test() {
 	new DropTest(10).consume();
 }
 
-void new_ref_test(Vector<float> new* test) {
-	*test = new Vector<float>();
+void new_ref_test(Vector<float> new& test) {
+	test = new Vector<float>();
 }
 
-void mut_move_test(Vector<float> mut* test) {
+void mut_move_test(Vector<float> mut& test) {
 	// move out of mut* - legal, but...
-	Vector<float> tmp = *test;
+	Vector<float> tmp = test;
 
 	// we have to make sure it's initialized
 	// by the end of the function. commenting 
 	// out this line would raise a compile error 
-	*test = tmp;
+	test = tmp;
 }
 
 type None<type T> = Option<T>::None;

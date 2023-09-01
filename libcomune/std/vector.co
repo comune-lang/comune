@@ -15,11 +15,11 @@ using core::mem::{
 using core::option::Option;
 
 struct Vector<type T> {
-	T mut* data;
+	T raw* data;
 	usize len;
 	usize capacity;
 
-	new(new* self) {
+	new(new& self) {
 		self = new Vector<T> {
 			data: null<T>(),
 			capacity: 0,
@@ -27,7 +27,7 @@ struct Vector<type T> {
 		};
 	}
 
-	new(new* self, Vector<T>* copied) {
+	new(new& self, Vector<T>& copied) {
 		self = new Vector<T>();
 		
 		self.realloc(copied.capacity);
@@ -45,7 +45,7 @@ struct Vector<type T> {
 		self.len = copied.len;
 	}
 	
-	drop(mut* self) {
+	drop(mut& self) {
 		if self.capacity > 0 {
 			for (usize mut i = 0; i < self.len; i += 1) {
 				unsafe {
@@ -53,13 +53,13 @@ struct Vector<type T> {
 				}
 			}
 
-			free(self.data as void mut*);
+			free(self.data as void raw*);
 		}
 	}
 }
 
 impl<type T> Vector<T> {
-	void push(mut* self, T elem) {
+	void push(mut& self, T elem) {
 		if self.len >= self.capacity {
 			self.realloc(
 				if self.capacity == 0 {
@@ -80,7 +80,7 @@ impl<type T> Vector<T> {
 		self.len += 1;
 	}
 
-	Option<T> pop(mut* self) {
+	Option<T> pop(mut& self) {
 		if self.len == 0 {
 			return new Option<T>::None
 		} else {
@@ -94,22 +94,22 @@ impl<type T> Vector<T> {
 		}
 	}
 
-	void realloc(mut* self, usize capacity) {
-		void mut* tmp = realloc(
-			self.data as void mut*, 
+	void realloc(mut& self, usize capacity) {
+		auto tmp = realloc(
+			self.data as void raw*, 
 			capacity * size_of<T>()
 		);
 
 		if tmp {
-			self.data = tmp as T mut*;
+			self.data = tmp as T raw*;
 			self.capacity = capacity;
 		} else {
-			free(self.data as void mut*);
+			free(self.data as void raw*);
 			// TODO: panic here
 		}
 	}
 	
-	Option<T*> get(*self, usize i) {
+	Option<T*> get(&self, usize i) {
 		if i >= self.len {
 			return new Option::None<T*>;
 		} else {
@@ -119,17 +119,17 @@ impl<type T> Vector<T> {
 		}
 	}
 
-	Option<T mut*> get_mut(mut* self, usize i) {
+	Option<T mut*> get_mut(mut& self, usize i) {
 		if i >= self.len {
 			return new Option::None<T mut*>;
 		} else {
 			return new Option::Some<T mut*> {
-				value: self.data + i,
+				value: self.data as T mut* + i,
 			};
 		}
 	}
 
-	usize len(*self) {
+	usize len(&self) {
 		self.len
 	}
 }

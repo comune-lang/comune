@@ -4,8 +4,8 @@ enum Option<type T> {
 	Some { 
 		T value;
 
-		new(new* self, T value) {
-			*self = new Option<T>::Some { value };
+		new(new& self, T value) {
+			self = new Option<T>::Some { value };
 		}
 	},
 

@@ -4,7 +4,7 @@ use crate::lexer::Token;
 
 use self::{
 	module::{Identifier, ModuleInterface, ModuleItemInterface, Name},
-	types::{Qualifiers, Generics},
+	types::{BindingProps, Generics},
 };
 
 pub mod controlflow;
@@ -33,8 +33,8 @@ pub struct FnScope<'ctx> {
 	context: &'ctx ModuleInterface,
 	scope: Identifier,
 	parent: Option<&'ctx FnScope<'ctx>>,
-	ret: (Qualifiers, Type),
-	variables: Vec<(Name, Type, Qualifiers)>,
+	ret: (BindingProps, Type),
+	variables: Vec<(Name, Type, BindingProps)>,
 	is_inside_loop: bool,
 	is_unsafe: bool,
 	generics: &'ctx Generics,
@@ -57,7 +57,7 @@ impl<'ctx> FnScope<'ctx> {
 	pub fn new(
 		context: &'ctx ModuleInterface,
 		scope: Identifier,
-		ret: (Qualifiers, Type),
+		ret: (BindingProps, Type),
 		generics: &'ctx Generics,
 	) -> Self {
 		FnScope {
@@ -148,7 +148,7 @@ impl<'ctx> FnScope<'ctx> {
 		result
 	}
 
-	pub fn add_variable(&mut self, t: Type, n: Name, p: Qualifiers) {
+	pub fn add_variable(&mut self, t: Type, n: Name, p: BindingProps) {
 		self.variables.push((n, t, p));
 	}
 }

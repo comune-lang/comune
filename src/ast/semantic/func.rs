@@ -3,7 +3,7 @@ use std::{cmp::Ordering, collections::HashSet, sync::Arc};
 use crate::{
 	ast::{
 		controlflow::ControlFlow,
-		expression::{Atom, Expr, FnRef, NodeData, Operator},
+		expression::{Atom, Expr, FnRef, NodeData},
 		module::{
 			Identifier, ModuleASTElem, ModuleImportKind, ModuleInterface, ModuleItemInterface, Name,
 		},
@@ -184,7 +184,7 @@ pub fn validate_fn_call(
 	let mut candidates_filtered: Vec<_> = candidates
 		.clone()
 		.into_iter()
-		.filter(|func| is_candidate_viable(args, generic_args, func, false))
+		.filter(|func| is_candidate_viable(args, generic_args, func))
 		.collect();
 
 	let func = try_select_candidate(
@@ -196,7 +196,7 @@ pub fn validate_fn_call(
 		scope,
 	)?;
 
-	validate_arg_list(args, &func.params, generic_args, scope, false)?;
+	validate_arg_list(args, &func.params, generic_args, scope)?;
 
 	if func.is_unsafe && !scope.is_unsafe {
 		return Err(ComuneError::new(
@@ -251,12 +251,12 @@ pub fn resolve_method_call(
 
 	let mut candidates: Vec<_> = candidates
 		.into_iter()
-		.filter(|func| is_candidate_viable(args, generic_args, func, true))
+		.filter(|func| is_candidate_viable(args, generic_args, func))
 		.collect();
 
 	let func = try_select_candidate(name, args, generic_args, &mut candidates, span, scope)?;
 
-	validate_arg_list(args, &func.params, generic_args, scope, true)?;
+	validate_arg_list(args, &func.params, generic_args, scope)?;
 
 	if func.is_unsafe && !scope.is_unsafe {
 		return Err(ComuneError::new(
@@ -312,7 +312,6 @@ pub fn is_candidate_viable(
 	args: &Vec<Expr>,
 	generic_args: &GenericArgs,
 	func: &FnPrototype,
-	coerce_self: bool,
 ) -> bool {
 	let params = &func.params.params;
 
@@ -331,17 +330,7 @@ pub fn is_candidate_viable(
 			let param_concrete = param.get_concrete_type(generic_args);
 
 			if !arg_concrete.castable_to(&param_concrete) {
-				if i == 0 && coerce_self {
-					let Type::Pointer { pointee, .. } = param_concrete else {
-						return false
-					};
-
-					if !arg_concrete.castable_to(&pointee) {
-						return false
-					}
-				} else {
-					return false
-				}
+				return false
 			}
 		}
 	}
@@ -400,7 +389,6 @@ pub fn validate_arg_list(
 	params: &FnParamList,
 	generic_args: &GenericArgs,
 	scope: &mut FnScope,
-	coerce_self: bool,
 ) -> ComuneResult<()> {
 	for (i, arg) in args.iter_mut().enumerate() {
 		// add parameter's type info to argument
@@ -410,21 +398,6 @@ pub fn validate_arg_list(
 			arg.set_type_hint(param_concrete.clone());
 
 			let arg_type = arg.validate(scope)?;
-
-			if i == 0 && coerce_self {
-				if let Type::Pointer { pointee, qualifs } = &param_concrete {
-					if &arg_type == &**pointee {
-						*arg = Expr::Unary(
-							Box::new(arg.clone()), 
-							Operator::RefMut, 
-							NodeData {
-								ty: Some(param_concrete.clone()),
-								span: arg.get_span(),
-							}
-						);
-					}
-				}
-			}
 
 			if !arg.coercable_to(&param_concrete, scope) {
 				return Err(ComuneError::new(

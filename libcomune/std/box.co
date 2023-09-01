@@ -4,18 +4,18 @@ using core::libc::{malloc, free};
 struct Box<type T> {
 	T raw* data;
 
-	new(new* self, T t) {
-		*self = new Box<T> { 
+	new(new& self, T t) {
+		self = new Box<T> { 
 			data: malloc(size_of<T>()) as T raw*,
 		};
 		
 		unsafe {
-			write<T>(self->data, t);
+			write<T>(self.data, t);
 		}
 	}
 
-	drop(mut* self) {
-		free(self->data as void raw*);
+	drop(mut& self) {
+		free(self.data as void raw*);
 	}
 }
 

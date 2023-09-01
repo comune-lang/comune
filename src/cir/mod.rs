@@ -10,7 +10,7 @@ use crate::{
 		expression::Operator,
 		module::{Identifier, Name},
 		traits::ImplSolver,
-		types::{Basic, Qualifiers, FnPrototype, GenericArgs, Generics, Type, TypeDef},
+		types::{Basic, BindingProps, FnPrototype, GenericArgs, Generics, Type, TypeDef, PtrKind},
 		Attribute,
 	},
 	lexer::{SrcSpan, Token},
@@ -36,7 +36,7 @@ type FuncID = Arc<FnPrototype>;
 pub struct LValue {
 	pub local: VarIndex,
 	pub projection: Vec<PlaceElem>,
-	pub qualifs: Qualifiers,
+	pub qualifs: BindingProps,
 	pub base: Type,
 }
 
@@ -45,12 +45,12 @@ impl LValue {
 		LValue {
 			local,
 			projection: vec![],
-			qualifs: Qualifiers::default(),
+			qualifs: BindingProps::default(),
 			base,
 		}
 	}
 	
-	pub fn with_qualifs(self, qualifs: Qualifiers) -> Self {
+	pub fn with_qualifs(self, qualifs: BindingProps) -> Self {
 		LValue {
 			qualifs,
 			..self
@@ -78,21 +78,21 @@ impl LValue {
 
 		for proj in &self.projection {
 			if let PlaceElem::Deref = proj {
-				let Type::Pointer { qualifs, .. } = &ty else {
+				let Type::Pointer(_, kind) = &ty else {
 					panic!()
 				};
 
-				if qualifs.is_raw {
+				if *kind == PtrKind::Raw {
 					mutability = Some(true);
 				} else {
-					*mutability.get_or_insert(true) &= qualifs.is_mut | qualifs.is_new;
+					*mutability.get_or_insert(true) &= *kind != PtrKind::Shared;
 				}
 			}
 
 			ty = proj.projected_type(ty);
 		}
 
-		mutability.unwrap_or(self.qualifs.is_mut)
+		mutability.unwrap_or(self.qualifs.is_mut || self.qualifs.is_new)
 	}
 }
 
@@ -114,14 +114,14 @@ impl PlaceElem {
 	pub fn projected_type(&self, ty: Type) -> Type {
 		match self {
 			PlaceElem::Deref => {
-				let Type::Pointer { pointee, .. } = ty else {
+				let Type::Pointer(pointee, _) = ty else {
 					panic!()
 				};
 				*pointee
 			}
 
 			PlaceElem::Index { .. } => {
-				let (Type::Array(sub, _) | Type::Slice(sub) | Type::Pointer { pointee: sub, .. }) = ty else {
+				let (Type::Array(sub, _) | Type::Slice(sub) | Type::Pointer(sub, _)) = ty else {
 					panic!()
 				};
 
@@ -204,7 +204,7 @@ pub enum Operand {
 	BoolLit(bool, SrcSpan),
 
 	// LValue use
-	LValueUse(LValue, Qualifiers),
+	LValueUse(LValue, BindingProps),
 
 	// Undefined value. Reading from this is UB, must be reassigned first
 	Undef,
@@ -216,7 +216,7 @@ pub enum CIRCallId {
 	Indirect {
 		local: LValue,
 		ret: Type,
-		args: Vec<(Type, Option<Name>, Qualifiers)>,
+		args: Vec<(Type, Option<Name>, BindingProps)>,
 		span: SrcSpan,
 	},
 }
@@ -251,7 +251,7 @@ pub enum CIRStmt {
 	// Non-throwing fn call. Non-terminator.
 	Call {
 		id: CIRCallId,
-		args: Vec<(LValue, Type, Qualifiers)>,
+		args: Vec<(LValue, Type, BindingProps)>,
 		generic_args: GenericArgs,
 		result: Option<LValue>,
 	},
@@ -260,7 +260,7 @@ pub enum CIRStmt {
 	#[allow(dead_code)]
 	Invoke {
 		id: CIRCallId,
-		args: Vec<(LValue, Type, Qualifiers)>,
+		args: Vec<(LValue, Type, BindingProps)>,
 		generic_args: GenericArgs,
 		result: Option<LValue>,
 		next: BlockIndex,
@@ -302,9 +302,9 @@ pub struct CIRBlock {
 pub struct CIRFunction {
 	// In cIR, variables are referenced by an index, not a name.
 	// (They may still have a name for pretty-printing, though.)
-	pub variables: Vec<(Type, Qualifiers, Option<Name>)>,
+	pub variables: Vec<(Type, BindingProps, Option<Name>)>,
 	pub blocks: Vec<CIRBlock>,
-	pub ret: (Qualifiers, Type),
+	pub ret: (BindingProps, Type),
 	pub arg_count: usize,
 	pub generics: Generics,
 	pub attributes: Vec<Attribute>,
@@ -338,7 +338,7 @@ impl RValue {
 		)
 	}
 
-	pub fn lvalue_use(ty: Type, lval: LValue, props: Qualifiers) -> Self {
+	pub fn lvalue_use(ty: Type, lval: LValue, props: BindingProps) -> Self {
 		RValue::Atom(
 			ty,
 			None,

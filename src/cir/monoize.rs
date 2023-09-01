@@ -177,53 +177,58 @@ impl MonomorphServer {
 	fn monoize_function(
 		&self,
 		func: &CIRFunction,
-		param_map: &GenericArgs,
+		generic_args: &GenericArgs,
 		access: &mut ModuleAccess,
 	) -> CIRFunction {
 		let mut func = func.clone();
 
-		for (i, gen_arg) in param_map.iter().enumerate() {
+		for (i, gen_arg) in generic_args.iter().enumerate() {
 			func.generics.params[i].1.fill_with(gen_arg);
 		}
 
 		for (var, ..) in &mut func.variables {
-			self.monoize_type(var, param_map, access);
+			self.monoize_type(var, generic_args, access);
 		}
 
-		self.monoize_type(&mut func.ret.1, param_map, access);
+		self.monoize_type(&mut func.ret.1, generic_args, access);
 
 		for block in &mut func.blocks {
 			for stmt in block.items.iter_mut() {
-				if let CIRStmt::Assignment(_lval, _) = stmt {
-					// TODO: Find RValues in LValue projection
-				}
-
 				match stmt {
 					CIRStmt::Assignment(lval, expr) => {
-						self.monoize_lvalue(lval, param_map, access);
-						self.monoize_rvalue_types(expr, param_map, access);
+						self.monoize_lvalue(lval, generic_args, access);
+						self.monoize_rvalue_types(expr, generic_args, access);
+					}
+
+					CIRStmt::Switch(op, branches, _) => {
+						self.monoize_operand(op, generic_args, access);
+
+						for (ty, op, _) in branches {
+							self.monoize_operand(op, generic_args, access);
+							self.monoize_type(ty, generic_args, access);
+						}
 					}
 
 					CIRStmt::Invoke {
 						id: CIRCallId::Direct(func, _),
-						generic_args,
+						generic_args: call_generic_args,
 						args,
 						result,
 						..
 					}
 					| CIRStmt::Call {
 						id: CIRCallId::Direct(func, _),
-						generic_args,
+						generic_args: call_generic_args,
 						args,
 						result,
 						..
 					} => {
-						if let Some(result) = result {
-							self.monoize_lvalue(result, generic_args, access);
+						for arg in call_generic_args.iter_mut() {
+							self.monoize_generic_arg(arg, generic_args, access);
 						}
 
-						for arg in generic_args.iter_mut() {
-							self.monoize_generic_arg(arg, param_map, access);
+						if let Some(result) = result {
+							self.monoize_lvalue(result, call_generic_args, access);
 						}
 
 						for (arg, ty, _) in args.iter_mut() {
@@ -231,9 +236,9 @@ impl MonomorphServer {
 							self.monoize_type(ty, generic_args, access);
 						}
 
-						self.monoize_call(func, generic_args, access);
+						self.monoize_call(func, call_generic_args, access);
 
-						generic_args.clear();
+						call_generic_args.clear();
 					}
 
 					_ => {}
@@ -312,13 +317,15 @@ impl MonomorphServer {
 				_ => {}
 			}
 		}
+
+		self.monoize_type(&mut lval.base, generic_args, access);
 	}
 
 	fn monoize_type(&self, ty: &mut Type, generic_args: &GenericArgs, access: &mut ModuleAccess) {
 		match ty {
 			Type::Basic(_) => {}
 
-			Type::Pointer { pointee, .. } => self.monoize_type(pointee, generic_args, access),
+			Type::Pointer(pointee, _) => self.monoize_type(pointee, generic_args, access),
 
 			Type::Array(arr_ty, _) => self.monoize_type(arr_ty, generic_args, access),
 
@@ -364,7 +371,9 @@ impl MonomorphServer {
 			}
 
 			Type::TypeParam(idx) => {
-				*ty = generic_args[*idx].get_type_arg().clone();
+				if let Some(arg) = generic_args.get(*idx) {
+					*ty = arg.get_type_arg().clone()
+				}
 			}
 
 			Type::Tuple(_, tuple_types) => {

@@ -32,8 +32,8 @@ use crate::{
 	ast::{
 		expression::Operator,
 		types::{
-			Basic, Qualifiers, DataLayout, FloatSize, FnPrototype, IntSize, TupleKind, Type,
-			TypeDef, GenericParam,
+			Basic, BindingProps, DataLayout, FloatSize, FnPrototype, IntSize, TupleKind, Type,
+			TypeDef, GenericParam, PtrKind,
 		}, get_attribute, module::Identifier,
 	},
 	backend::Backend,
@@ -61,7 +61,7 @@ pub struct LLVMBuilder<'ctx> {
 	type_map: HashMap<String, AnyTypeEnum<'ctx>>,
 	fn_map: HashMap<Arc<FnPrototype>, String>,
 	blocks: Vec<BasicBlock<'ctx>>,
-	variables: Vec<(PointerValue<'ctx>, Qualifiers, Type)>,
+	variables: Vec<(PointerValue<'ctx>, BindingProps, Type)>,
 }
 
 impl Backend for LLVMBackend {
@@ -454,7 +454,7 @@ impl<'ctx> LLVMBuilder<'ctx> {
 			let mut ty_ll = Self::to_basic_type(self.get_llvm_type(ty));
 
 			if self.pass_by_ptr(&ty, props) {
-				ty_ll = Self::to_basic_type(self.get_llvm_type(&ty.ptr_type(*props)));
+				ty_ll = Self::to_basic_type(self.get_llvm_type(&ty.ptr_type(PtrKind::Raw)));
 			}
 
 			self.variables.push((
@@ -499,7 +499,7 @@ impl<'ctx> LLVMBuilder<'ctx> {
 					CIRStmt::Assignment(lval, expr) => {
 						let store = self.generate_lvalue_use(
 							lval, 
-							Qualifiers::mut_reference()
+							BindingProps::mut_reference()
 						).into_pointer_value();
 
 						self.generate_expr(
@@ -587,7 +587,7 @@ impl<'ctx> LLVMBuilder<'ctx> {
 
 							CIRCallId::Indirect { local, .. } => {
 								let ptr = self
-									.generate_lvalue_use(local, Qualifiers::value())
+									.generate_lvalue_use(local, BindingProps::value())
 									.into_pointer_value();
 
 								CallableValue::try_from(ptr).unwrap()
@@ -617,7 +617,7 @@ impl<'ctx> LLVMBuilder<'ctx> {
 							} else {
 								// Function return value is a plain value - use normal assignment
 								self.builder.build_store(
-									self.generate_lvalue_use(result, Qualifiers::mut_reference())
+									self.generate_lvalue_use(result, BindingProps::mut_reference())
 										.into_pointer_value(),
 									callsite.try_as_basic_value().unwrap_left(),
 								);
@@ -648,7 +648,7 @@ impl<'ctx> LLVMBuilder<'ctx> {
 
 							CIRCallId::Indirect { local, .. } => {
 								let ptr = self
-									.generate_lvalue_use(local, Qualifiers::value())
+									.generate_lvalue_use(local, BindingProps::value())
 									.into_pointer_value();
 
 								CallableValue::try_from(ptr).unwrap()
@@ -682,7 +682,7 @@ impl<'ctx> LLVMBuilder<'ctx> {
 							} else {
 								// Function return value is a plain value - use normal assignment
 								self.builder.build_store(
-									self.generate_lvalue_use(result, Qualifiers::mut_reference())
+									self.generate_lvalue_use(result, BindingProps::mut_reference())
 										.into_pointer_value(),
 									callsite.try_as_basic_value().unwrap_left(),
 								);
@@ -1193,7 +1193,7 @@ impl<'ctx> LLVMBuilder<'ctx> {
 		}
 	}
 
-	fn generate_lvalue_use(&self, expr: &LValue, props: Qualifiers) -> BasicValueEnum<'ctx> {
+	fn generate_lvalue_use(&self, expr: &LValue, props: BindingProps) -> BasicValueEnum<'ctx> {
 		// Get the variable pointer from the function
 		let (mut local, lprops, ty) = &self.variables[expr.local];
 
@@ -1272,7 +1272,7 @@ impl<'ctx> LLVMBuilder<'ctx> {
 			.iter()
 			.map(|(ty, props, _)| {
 				if self.pass_by_ptr(ty, props) {
-					Self::to_basic_metadata_type(self.get_llvm_type(&ty.ptr_type(*props)))
+					Self::to_basic_metadata_type(self.get_llvm_type(&ty.ptr_type(PtrKind::Raw)))
 				} else {
 					Self::to_basic_metadata_type(self.get_llvm_type(ty))
 				}
@@ -1280,7 +1280,7 @@ impl<'ctx> LLVMBuilder<'ctx> {
 			.collect();
 
 		let ret = if self.pass_by_ptr(&t.ret.1, &t.ret.0) {
-			self.get_llvm_type(&t.ret.1.ptr_type(t.ret.0))
+			self.get_llvm_type(&t.ret.1.ptr_type(PtrKind::Raw))
 		} else {
 			self.get_llvm_type(&t.ret.1)
 		};
@@ -1408,7 +1408,7 @@ impl<'ctx> LLVMBuilder<'ctx> {
 				.ptr_type(AddressSpace::Generic)
 				.as_any_type_enum(),
 
-			Type::Pointer { pointee, .. } => {
+			Type::Pointer(pointee, _) => {
 				match &**pointee {
 					Type::Slice(slicee) => self
 						.slice_type(&Self::to_basic_type(self.get_llvm_type(slicee)))
@@ -1573,7 +1573,7 @@ impl<'ctx> LLVMBuilder<'ctx> {
 			.create_enum_attribute(Attribute::get_named_enum_kind_id(name), 0)
 	}
 
-	fn pass_by_ptr(&self, _ty: &Type, props: &Qualifiers) -> bool {
+	fn pass_by_ptr(&self, _ty: &Type, props: &BindingProps) -> bool {
 		/*
 		// don't pass by pointer if binding is not a reference, or if it's unsafe
 		if !props.is_ref || props.is_unsafe {
@@ -1643,7 +1643,7 @@ fn mangle_name(name: &Identifier, func: &CIRFunction) -> String {
 			let (ty, props, _) = &func.variables[i];
 
 			if props.is_ref {
-				mangle_type(&ty.ptr_type(*props), &mut result).unwrap();
+				mangle_type(&ty.ptr_type(PtrKind::Raw), &mut result).unwrap();
 			} else {
 				mangle_type(&ty, &mut result).unwrap();
 			}
@@ -1671,7 +1671,7 @@ fn mangle_type(ty: &Type, f: &mut impl std::fmt::Write) -> std::fmt::Result {
 	match ty {
 		Type::Basic(b) => write!(f, "{}", mangle_basic(b)),
 
-		Type::Pointer { pointee, .. } => {
+		Type::Pointer(pointee, _) => {
 			if let Type::Slice(slicee) = &**pointee {
 				write!(f, "P")?;
 				mangle_type(slicee, f)?;

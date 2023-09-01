@@ -151,15 +151,19 @@ impl GenericArg {
 	}
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub enum PtrKind {
+	Unique,
+	Shared,
+	Raw,
+}
+
 #[derive(Debug, Clone)]
 pub enum Type {
 	Basic(Basic),
 
-	Pointer {
-		// Raw pointer type
-		pointee: Box<Type>,
-		qualifs: Qualifiers,
-	},
+	// Raw pointer type
+	Pointer(Box<Type>, PtrKind),
 
 	// Array with constant expression for size
 	Array(Box<Type>, Arc<RwLock<ConstExpr>>),
@@ -186,7 +190,7 @@ pub enum Type {
 
 	TypeParam(usize),            // Reference to an in-scope type parameter
 	Tuple(TupleKind, Vec<Type>), // Sum/product tuple
-	Function(Box<Type>, Vec<(Qualifiers, Type)>), // Type of a function signature
+	Function(Box<Type>, Vec<(BindingProps, Type)>), // Type of a function signature
 	Never,                       // The type of expressions that diverge, coerces to anything
 }
 
@@ -228,24 +232,23 @@ pub struct TypeDef {
 }
 
 #[derive(Default, Debug, Clone, Copy)]
-pub struct Qualifiers {
+pub struct BindingProps {
 	pub is_ref: bool,
 	pub is_mut: bool,
 	pub is_new: bool,
-	pub is_raw: bool,
 	pub span: SrcSpan,
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct FnParamList {
-	pub params: Vec<(Type, Option<Name>, Qualifiers)>,
+	pub params: Vec<(Type, Option<Name>, BindingProps)>,
 	pub variadic: bool,
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct FnPrototype {
 	pub path: Identifier,
-	pub ret: (Qualifiers, Type),
+	pub ret: (BindingProps, Type),
 	pub params: FnParamList,
 	pub generics: Generics,
 	pub attributes: Vec<Attribute>,
@@ -340,43 +343,39 @@ impl TypeDef {
 	}
 }
 
-impl Qualifiers {
+impl BindingProps {
 	pub fn value() -> Self {
-		Qualifiers {
+		BindingProps {
 			is_ref: false,
 			is_mut: false,
 			is_new: false,
-			is_raw: false,
 			span: SrcSpan::new(),
 		}
 	}
 
 	pub fn reference() -> Self {
-		Qualifiers {
+		BindingProps {
 			is_ref: true,
 			is_mut: false,
 			is_new: false,
-			is_raw: false,
 			span: SrcSpan::new(),
 		}
 	}
 
 	pub fn mut_value() -> Self {
-		Qualifiers {
+		BindingProps {
 			is_ref: false,
 			is_mut: true,
 			is_new: false,
-			is_raw: false,
 			span: SrcSpan::new(),
 		}
 	}
 
 	pub fn mut_reference() -> Self {
-		Qualifiers {
+		BindingProps {
 			is_ref: true,
 			is_mut: true,
 			is_new: false,
-			is_raw: false,
 			span: SrcSpan::new(),
 		}
 	}
@@ -528,10 +527,10 @@ impl Type {
 		match self {
 			Type::Basic(b) => Type::Basic(*b),
 
-			Type::Pointer { pointee, qualifs } => Type::Pointer {
-				pointee: Box::new(pointee.get_concrete_type(args)),
-				qualifs: *qualifs,
-			},
+			Type::Pointer(pointee, kind) => Type::Pointer(
+				Box::new(pointee.get_concrete_type(args)),
+				*kind,
+			),
 
 			Type::Array(arr_ty, size) => {
 				Type::Array(Box::new(arr_ty.get_concrete_type(args)), size.clone())
@@ -603,13 +602,13 @@ impl Type {
 					true
 				}
 
-				Type::Pointer { pointee, qualifs } => {
-					if let Type::Pointer {
-						pointee: gen_pointee,
-						qualifs: gen_qualifs,
-					} = generic_ty
+				Type::Pointer(pointee, kind) => {
+					if let Type::Pointer(
+						gen_pointee,
+						gen_kind,
+					) = generic_ty
 					{
-						qualifs == gen_qualifs && pointee.fits_generic(gen_pointee)
+						kind == gen_kind && pointee.fits_generic(gen_pointee)
 					} else {
 						false
 					}
@@ -680,11 +679,11 @@ impl Type {
 		def.members[field].1.get_concrete_type(args)
 	}
 
-	pub fn ptr_type(&self, qualifs: Qualifiers) -> Self {
-		Type::Pointer {
-			pointee: Box::new(self.clone()),
-			qualifs,
-		}
+	pub fn ptr_type(&self, kind: PtrKind) -> Self {
+		Type::Pointer(
+			Box::new(self.clone()),
+			kind
+		)
 	}
 
 	pub fn castable_to(&self, target: &Type) -> bool {
@@ -693,16 +692,16 @@ impl Type {
 		} else if self.is_numeric() {
 			target.is_numeric() || target.is_boolean()
 		} else if let (
-			Type::Pointer { qualifs, .. },
-			Type::Pointer {
-				qualifs: target_qualifs,
-				..
-			},
+			Type::Pointer(_, kind),
+			Type::Pointer(_, target_kind)
 		) = (self, target)
 		{
 			// If self is a `T mut*`, it can be cast to a `T*`
 			// but if self is a `T*`, it can't be cast to a `T mut*`
-			qualifs.is_mut || !target_qualifs.is_mut
+			*kind == PtrKind::Raw 
+			|| *target_kind == PtrKind::Raw 
+			|| *kind == PtrKind::Unique 
+			|| *target_kind != PtrKind::Unique
 		} else if matches!(self, Type::Pointer { .. }) && target.is_boolean() {
 			true
 		} else {
@@ -938,16 +937,7 @@ impl PartialEq for Type {
 	fn eq(&self, other: &Self) -> bool {
 		match (self, other) {
 			(Self::Basic(l0), Self::Basic(r0)) => l0 == r0,
-			(
-				Self::Pointer {
-					pointee: l0,
-					qualifs: l1,
-				},
-				Self::Pointer {
-					pointee: r0,
-					qualifs: r1,
-				},
-			) => l0 == r0 && l1 == r1,
+			(Self::Pointer(l0, l1), Self::Pointer(r0, r1)) => l0 == r0 && l1 == r1,
 			(Self::TypeParam(l0), Self::TypeParam(r0)) => l0 == r0,
 			(Self::Array(l0, _l1), Self::Array(r0, _r1)) => l0 == r0,
 			(Self::Tuple(l0, l1), Self::Tuple(r0, r1)) => l0 == r0 && l1 == r1,
@@ -993,9 +983,9 @@ impl Hash for Type {
 		match self {
 			Type::Basic(b) => b.hash(state),
 
-			Type::Pointer { pointee, qualifs } => {
+			Type::Pointer(pointee, kind) => {
 				pointee.hash(state);
-				qualifs.hash(state);
+				kind.hash(state);
 				"*".hash(state)
 			}
 
@@ -1046,19 +1036,29 @@ impl Hash for Type {
 
 // SrcSpan equality is not a requirement for BindingProps equality,
 // it's just metadata for error lints
-impl PartialEq for Qualifiers {
+impl PartialEq for BindingProps {
 	fn eq(&self, other: &Self) -> bool {
 		(self.is_mut, self.is_ref, self.is_new) == (other.is_mut, other.is_ref, other.is_new)
 	}
 }
 
-impl Eq for Qualifiers {}
+impl Eq for BindingProps {}
 
-impl Hash for Qualifiers {
+impl Hash for BindingProps {
 	fn hash<H: Hasher>(&self, state: &mut H) {
 		self.is_mut.hash(state);
 		self.is_ref.hash(state);
 		self.is_new.hash(state);
+	}
+}
+
+impl Display for PtrKind {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		match self {
+			PtrKind::Unique => write!(f, " mut"),
+			PtrKind::Raw => write!(f, " raw"),
+			PtrKind::Shared => Ok(()),
+		}
 	}
 }
 
@@ -1081,8 +1081,8 @@ impl Display for Type {
 		match self {
 			Type::Basic(t) => write!(f, "{t}"),
 
-			Type::Pointer { pointee, qualifs } => {
-				write!(f, "{pointee}{qualifs}*")
+			Type::Pointer(pointee, kind) => {
+				write!(f, "{pointee}{kind}*")
 			}
 
 			Type::Array(t, _) => write!(f, "{t}[]"), // TODO: ConstExpr serialization
@@ -1265,7 +1265,7 @@ impl Display for Visibility {
 	}
 }
 
-impl Display for Qualifiers {
+impl Display for BindingProps {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		if self.is_new {
 			write!(f, " new")?;

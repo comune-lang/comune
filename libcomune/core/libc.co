@@ -11,7 +11,7 @@ void raw* realloc(void raw* ptr, usize capacity);
 void free(void raw* ptr);
 
 @no_mangle
-void raw* memcpy(void raw* dest, void raw* src, usize count);
+void raw* memcpy(void mut* dest, void* src, usize count);
 
 @no_mangle
 int printf(u8* fmt, ...);

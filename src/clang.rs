@@ -11,7 +11,7 @@ use crate::{
 	ast::{
 		get_attribute,
 		module::{Identifier, ModuleImportKind, ModuleInterface, ModuleItemInterface},
-		types::{Basic, FloatSize, IntSize, TupleKind, Type, TypeDef},
+		types::{Basic, FloatSize, IntSize, TupleKind, Type, TypeDef, PtrKind},
 	},
 	backend::Backend,
 	driver::{get_file_suffix, Compiler, ModuleState, JobSpawner, RayonScope},
@@ -330,13 +330,12 @@ impl Type {
 				Ok(())
 			}
 
-			Type::Pointer { pointee, qualifs } => {
+			Type::Pointer(pointee, kind) => {
 				pointee.cpp_format(f)?;
 
-				if qualifs.is_mut {
-					write!(f, "*")
-				} else {
-					write!(f, " const*")
+				match kind {
+					PtrKind::Shared => write!(f, " const*"),
+					_ => write!(f, "*"),
 				}
 			}
 

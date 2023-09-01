@@ -8,7 +8,7 @@ use crate::{
 		module::{Identifier, Name},
 		pattern::Binding,
 		statement::Stmt,
-		types::{Basic, Qualifiers, FloatSize, IntSize, TupleKind},
+		types::{Basic, BindingProps, FloatSize, IntSize, TupleKind, PtrKind},
 		FnScope,
 	},
 	constexpr::{ConstExpr, ConstValue},
@@ -124,12 +124,12 @@ impl Expr {
 				let expr_ty = expr.validate(scope)?;
 
 				match op {
-					Operator::Ref => Ok(expr_ty.ptr_type(Qualifiers::value())),
-					Operator::RefMut => Ok(expr_ty.ptr_type(Qualifiers::mut_value())),
+					Operator::Ref => Ok(expr_ty.ptr_type(PtrKind::Shared)),
+					Operator::RefMut => Ok(expr_ty.ptr_type(PtrKind::Unique)),
 
 					Operator::Deref => match expr_ty {
-						Type::Pointer { pointee, qualifs } => {
-							if qualifs.is_raw && !scope.is_unsafe {
+						Type::Pointer(pointee, kind) => {
+							if kind == PtrKind::Raw && !scope.is_unsafe {
 								return Err(ComuneError::new(
 									ComuneErrCode::UnsafeOperation,
 									meta.span,
@@ -185,11 +185,7 @@ impl Expr {
 					Atom::BoolLit(_) => target.is_boolean(),
 
 					Atom::CStringLit(_) => {
-						if let Type::Pointer {
-							pointee: other_p,
-							qualifs: Qualifiers { is_mut: false, .. },
-						} = &target
-						{
+						if let Type::Pointer(other_p, PtrKind::Shared) = &target {
 							if **other_p == Type::i8_type(false) {
 								return true;
 							}
@@ -287,10 +283,10 @@ impl Atom {
 
 			Atom::StringLit(_) => Ok(Type::Slice(Box::new(Type::i8_type(false)))),
 
-			Atom::CStringLit(_) => Ok(Type::Pointer {
-				pointee: Box::new(Type::i8_type(false)),
-				qualifs: Qualifiers::value(),
-			}),
+			Atom::CStringLit(_) => Ok(Type::Pointer(
+				Box::new(Type::i8_type(false)),
+				PtrKind::Shared,
+			)),
 
 			Atom::Identifier(name) => {
 				if let Some((id, ty)) = scope.find_symbol(name, true) {
@@ -461,7 +457,7 @@ impl Atom {
 							let mut candidates: Vec<_> = def
 								.init
 								.iter()
-								.filter(|init| func::is_candidate_viable(args, &generic_args, init, true))
+								.filter(|init| func::is_candidate_viable(args, &generic_args, init))
 								.cloned()
 								.collect();
 
@@ -474,7 +470,7 @@ impl Atom {
 								scope,
 							)?;
 
-							validate_arg_list(args, &func.params, generic_args, scope, true)?;
+							validate_arg_list(args, &func.params, generic_args, scope)?;
 
 							*resolved = FnRef::Direct(func);
 						} else {
@@ -489,7 +485,7 @@ impl Atom {
 										vec![(
 											ty.clone(),
 											tmp_id.clone(),
-											Qualifiers::mut_value(),
+											BindingProps::mut_value(),
 										)],
 										None,
 										SrcSpan::new(),
@@ -711,7 +707,7 @@ impl Atom {
 							if let Binding {
 								name: Some(name),
 								ty,
-								qualifs: props,
+								props,
 							} = binding
 							{
 								subscope.add_variable(ty.clone(), name.clone(), *props);

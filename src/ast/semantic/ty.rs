@@ -9,7 +9,7 @@ use crate::{
 		module::{ItemRef, ModuleImpl, ModuleInterface, ModuleItemInterface},
 		traits::{TraitInterface, TraitRef},
 		types::{
-			self, Qualifiers, FnPrototype, GenericArg, GenericParam, Generics, Type, TypeDef, Basic,
+			self, BindingProps, FnPrototype, GenericArg, GenericParam, Generics, Type, TypeDef, Basic,
 		},
 		FnScope,
 	},
@@ -30,7 +30,7 @@ pub fn resolve_interface_types(parser: &mut Parser) -> ComuneResult<()> {
 			let (ty, generics) = &mut *ty.write().unwrap();
 
 			resolve_type(ty, interface, generics)?;
-			check_dst_indirection(ty, &Qualifiers::default())?;
+			check_dst_indirection(ty, &BindingProps::default())?;
 		}
 	}
 
@@ -83,11 +83,11 @@ pub fn resolve_interface_types(parser: &mut Parser) -> ComuneResult<()> {
 						generics.insert_self_type();
 
 						resolve_type(&mut ret.1, interface, generics)?;
-						check_dst_indirection(&ret.1, &Qualifiers::default())?;
+						check_dst_indirection(&ret.1, &BindingProps::default())?;
 
 						for param in &mut params.params {
 							resolve_type(&mut param.0, interface, generics)?;
-							check_dst_indirection(&param.0, &Qualifiers::default())?;
+							check_dst_indirection(&param.0, &BindingProps::default())?;
 						}
 
 						// Update the module impl's version of the prototype
@@ -175,7 +175,7 @@ pub fn resolve_interface_types(parser: &mut Parser) -> ComuneResult<()> {
 				fn_generics.add_base_generics(generics.clone());
 
 				resolve_type(&mut ret.1, interface, &fn_generics)?;
-				check_dst_indirection(&ret.1, &Qualifiers::default())?;
+				check_dst_indirection(&ret.1, &BindingProps::default())?;
 
 				for (param, _, props) in &mut params.params {
 					resolve_type(param, interface, &fn_generics)?;
@@ -267,7 +267,7 @@ pub fn resolve_interface_types(parser: &mut Parser) -> ComuneResult<()> {
 	Ok(())
 }
 
-pub fn check_dst_indirection(ty: &Type, props: &Qualifiers) -> ComuneResult<()> {
+pub fn check_dst_indirection(ty: &Type, props: &BindingProps) -> ComuneResult<()> {
 	match ty {
 		Type::Slice(slicee) => {
 			if !props.is_ref {
@@ -277,12 +277,12 @@ pub fn check_dst_indirection(ty: &Type, props: &Qualifiers) -> ComuneResult<()> 
 				));
 			}
 
-			check_dst_indirection(&slicee, &Qualifiers::default())
+			check_dst_indirection(&slicee, &BindingProps::default())
 		}
 
 		Type::Tuple(_, types) => {
 			for ty in types {
-				check_dst_indirection(ty, &Qualifiers::default())?;
+				check_dst_indirection(ty, &BindingProps::default())?;
 			}
 
 			Ok(())
@@ -308,7 +308,7 @@ pub fn resolve_type(
 	generics: &Generics,
 ) -> ComuneResult<()> {
 	match ty {
-		Type::Pointer { pointee, .. } => resolve_type(pointee, namespace, generics),
+		Type::Pointer(pointee, _) => resolve_type(pointee, namespace, generics),
 
 		Type::Array(pointee, _size) => resolve_type(pointee, namespace, generics),
 
@@ -430,17 +430,18 @@ pub fn resolve_type_def(
 		resolve_function_prototype(drop, interface, module_impl)?;
 
 		// Check whether the first parameter exists and is `mut& self`
-		
-		let Some((Type::Pointer { pointee, qualifs }, ..)) = drop.params.params.get(0) else {
-			return Err(ComuneError::new(ComuneErrCode::DtorSelfParam(ty.name.clone()), SrcSpan::new()))
+		let Some((Type::TypeRef { def, .. }, _, props)) = drop.params.params.get(0) else {
+			return Err(ComuneError::new(
+				ComuneErrCode::DtorSelfParam(ty.name.clone()),
+				SrcSpan::new(),
+			))
 		};
 
-		let Type::TypeRef { def, .. } = &**pointee else {
-			return Err(ComuneError::new(ComuneErrCode::DtorSelfParam(ty.name.clone()), SrcSpan::new()))
-		};
-
-		if !Arc::ptr_eq(&ty_lock, &def.upgrade().unwrap()) || !qualifs.is_mut {
-			return Err(ComuneError::new(ComuneErrCode::DtorSelfParam(ty.name.clone()), SrcSpan::new()))
+		if !Arc::ptr_eq(&ty_lock, &def.upgrade().unwrap()) || !props.is_mut || !props.is_ref {
+			return Err(ComuneError::new(
+				ComuneErrCode::DtorSelfParam(ty.name.clone()),
+				SrcSpan::new(),
+			));
 		}
 	}
 
@@ -448,16 +449,18 @@ pub fn resolve_type_def(
 		resolve_function_prototype(init, interface, module_impl)?;
 
 		// Check whether the first parameter exists and is `new& self`
-		let Some((Type::Pointer { pointee, qualifs }, ..)) = init.params.params.get(0) else {
-			return Err(ComuneError::new(ComuneErrCode::CtorSelfParam(ty.name.clone()), SrcSpan::new()))
+		let Some((Type::TypeRef { def, .. }, _, props)) = init.params.params.get(0) else {
+			return Err(ComuneError::new(
+				ComuneErrCode::CtorSelfParam(ty.name.clone()),
+				SrcSpan::new(),
+			))
 		};
 
-		let Type::TypeRef { def, .. } = &**pointee else {
-			return Err(ComuneError::new(ComuneErrCode::CtorSelfParam(ty.name.clone()), SrcSpan::new()))
-		};
-
-		if !Arc::ptr_eq(&ty_lock, &def.upgrade().unwrap()) || !qualifs.is_new {
-			return Err(ComuneError::new(ComuneErrCode::CtorSelfParam(ty.name.clone()), SrcSpan::new()))
+		if !Arc::ptr_eq(&ty_lock, &def.upgrade().unwrap()) || !props.is_new {
+			return Err(ComuneError::new(
+				ComuneErrCode::CtorSelfParam(ty.name.clone()),
+				SrcSpan::new(),
+			));
 		}
 	}
 
@@ -516,7 +519,7 @@ pub fn resolve_function_prototype(
 	} = func;
 
 	resolve_type(&mut ret.1, interface, generics)?;
-	check_dst_indirection(&ret.1, &Qualifiers::default())?;
+	check_dst_indirection(&ret.1, &BindingProps::default())?;
 
 	for (param, _, props) in &mut params.params {
 		resolve_type(param, interface, generics)?;
@@ -615,9 +618,9 @@ impl Type {
 				Ok(())			
 			}
 
-			Type::Pointer { pointee, qualifs } => {
+			Type::Pointer(pointee, kind) => {
 				match hint {
-					Type::Pointer { pointee: other, qualifs: other_qualifs } if *qualifs == other_qualifs => {
+					Type::Pointer(other, other_kind) if *kind == other_kind => {
 						pointee.resolve_inference_vars(*other, span)
 					}
 

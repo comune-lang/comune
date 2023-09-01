@@ -3,15 +3,15 @@ using std::vector::Vector;
 struct String {
 	Vector<u8> vec;
 
-	new(new* self) {
-		*self = new String {
+	new(new& self) {
+		self = new String {
 			vec: new Vector<u8>(),
 		};
 	}
 
-	new(new* self, String* copied) {
-		*self = new String {
-			vec: new Vector<u8>(&copied->vec),
+	new(new& self, String& copied) {
+		self = new String {
+			vec: new Vector<u8>(copied.vec),
 		};
 	}
 }

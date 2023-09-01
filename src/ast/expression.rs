@@ -36,6 +36,7 @@ pub enum Operator {
 	Subscr,
 	Ref,
 	RefMut,
+	RefRaw,
 	Deref,
 
 	Eq,
@@ -89,6 +90,7 @@ impl Operator {
 			| Operator::LogicNot
 			| Operator::Ref
 			| Operator::RefMut
+			| Operator::RefRaw
 			| Operator::Deref => 190,
 
 			Operator::Cast => 185,
@@ -242,6 +244,7 @@ impl Display for Operator {
 				Operator::Subscr => "[]",
 				Operator::Ref => "&",
 				Operator::RefMut => "&mut",
+				Operator::RefRaw => "&raw",
 				Operator::Deref => "*",
 				Operator::Eq => "==",
 				Operator::NotEq => "!=",
