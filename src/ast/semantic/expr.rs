@@ -8,7 +8,7 @@ use crate::{
 		module::{Identifier, Name},
 		pattern::Binding,
 		statement::Stmt,
-		types::{Basic, BindingProps, FloatSize, IntSize, TupleKind},
+		types::{Basic, Qualifiers, FloatSize, IntSize, TupleKind},
 		FnScope,
 	},
 	constexpr::{ConstExpr, ConstValue},
@@ -17,7 +17,7 @@ use crate::{
 	parser::ComuneResult,
 };
 
-use super::func::{self, resolve_method_call, validate_fn_call};
+use super::func::{self, resolve_method_call, validate_fn_call, validate_arg_list};
 
 impl Expr {
 	pub fn create_cast(expr: Expr, to: Type, meta: NodeData) -> Expr {
@@ -124,12 +124,12 @@ impl Expr {
 				let expr_ty = expr.validate(scope)?;
 
 				match op {
-					Operator::Ref => Ok(expr_ty.ptr_type(false)),
-					Operator::RefMut => Ok(expr_ty.ptr_type(true)),
+					Operator::Ref => Ok(expr_ty.ptr_type(Qualifiers::value())),
+					Operator::RefMut => Ok(expr_ty.ptr_type(Qualifiers::mut_value())),
 
 					Operator::Deref => match expr_ty {
-						Type::Pointer { pointee, .. } => {
-							if !scope.is_unsafe {
+						Type::Pointer { pointee, qualifs } => {
+							if qualifs.is_raw && !scope.is_unsafe {
 								return Err(ComuneError::new(
 									ComuneErrCode::UnsafeOperation,
 									meta.span,
@@ -187,7 +187,7 @@ impl Expr {
 					Atom::CStringLit(_) => {
 						if let Type::Pointer {
 							pointee: other_p,
-							mutable: false,
+							qualifs: Qualifiers { is_mut: false, .. },
 						} = &target
 						{
 							if **other_p == Type::i8_type(false) {
@@ -289,7 +289,7 @@ impl Atom {
 
 			Atom::CStringLit(_) => Ok(Type::Pointer {
 				pointee: Box::new(Type::i8_type(false)),
-				mutable: false,
+				qualifs: Qualifiers::value(),
 			}),
 
 			Atom::Identifier(name) => {
@@ -461,7 +461,7 @@ impl Atom {
 							let mut candidates: Vec<_> = def
 								.init
 								.iter()
-								.filter(|init| func::is_candidate_viable(args, &generic_args, init))
+								.filter(|init| func::is_candidate_viable(args, &generic_args, init, true))
 								.cloned()
 								.collect();
 
@@ -473,6 +473,8 @@ impl Atom {
 								meta.span,
 								scope,
 							)?;
+
+							validate_arg_list(args, &func.params, generic_args, scope, true)?;
 
 							*resolved = FnRef::Direct(func);
 						} else {
@@ -487,7 +489,7 @@ impl Atom {
 										vec![(
 											ty.clone(),
 											tmp_id.clone(),
-											BindingProps::mut_value(),
+											Qualifiers::mut_value(),
 										)],
 										None,
 										SrcSpan::new(),
@@ -709,7 +711,7 @@ impl Atom {
 							if let Binding {
 								name: Some(name),
 								ty,
-								props,
+								qualifs: props,
 							} = binding
 							{
 								subscope.add_variable(ty.clone(), name.clone(), *props);

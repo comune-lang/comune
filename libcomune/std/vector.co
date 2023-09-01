@@ -9,7 +9,7 @@ using core::libc::{
 using core::mem::{
 	size_of,
 	bit_cast,
-	null_mut
+	null
 };
 
 using core::option::Option;
@@ -19,15 +19,15 @@ struct Vector<type T> {
 	usize len;
 	usize capacity;
 
-	new(new& self) {
+	new(new* self) {
 		self = new Vector<T> {
-			data: null_mut<T>(),
+			data: null<T>(),
 			capacity: 0,
 			len: 0,
 		};
 	}
 
-	new(new& self, Vector<T>& copied) {
+	new(new* self, Vector<T>* copied) {
 		self = new Vector<T>();
 		
 		self.realloc(copied.capacity);
@@ -45,7 +45,7 @@ struct Vector<type T> {
 		self.len = copied.len;
 	}
 	
-	drop(mut& self) {
+	drop(mut* self) {
 		if self.capacity > 0 {
 			for (usize mut i = 0; i < self.len; i += 1) {
 				unsafe {
@@ -59,7 +59,7 @@ struct Vector<type T> {
 }
 
 impl<type T> Vector<T> {
-	void push(mut& self, T elem) {
+	void push(mut* self, T elem) {
 		if self.len >= self.capacity {
 			self.realloc(
 				if self.capacity == 0 {
@@ -80,7 +80,7 @@ impl<type T> Vector<T> {
 		self.len += 1;
 	}
 
-	Option<T> pop(mut& self) {
+	Option<T> pop(mut* self) {
 		if self.len == 0 {
 			return new Option<T>::None
 		} else {
@@ -94,7 +94,7 @@ impl<type T> Vector<T> {
 		}
 	}
 
-	void realloc(mut& self, usize capacity) {
+	void realloc(mut* self, usize capacity) {
 		void mut* tmp = realloc(
 			self.data as void mut*, 
 			capacity * size_of<T>()
@@ -109,7 +109,7 @@ impl<type T> Vector<T> {
 		}
 	}
 	
-	Option<T*> get(&self, usize i) {
+	Option<T*> get(*self, usize i) {
 		if i >= self.len {
 			return new Option::None<T*>;
 		} else {
@@ -119,7 +119,7 @@ impl<type T> Vector<T> {
 		}
 	}
 
-	Option<T mut*> get_mut(mut& self, usize i) {
+	Option<T mut*> get_mut(mut* self, usize i) {
 		if i >= self.len {
 			return new Option::None<T mut*>;
 		} else {
@@ -129,7 +129,7 @@ impl<type T> Vector<T> {
 		}
 	}
 
-	usize len(&self) {
+	usize len(*self) {
 		self.len
 	}
 }

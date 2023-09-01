@@ -2,12 +2,12 @@ using core::libc::{printf, abort, malloc, memcpy};
 
 // TODO: Replace this with an intrinsic lol
 usize size_of<type T>() {
-	T* ptr1 = malloc(0) as T*;
-	T* ptr2 = ptr1 + 1;
+	T raw* ptr1 = malloc(0) as T raw*;
+	T raw* ptr2 = ptr1 + 1;
 
 	unsafe {
-		usize addr1 = *(&ptr1 as usize*);
-		usize addr2 = *(&ptr2 as usize*);
+		usize addr1 = *(&ptr1 as usize raw*);
+		usize addr2 = *(&ptr2 as usize raw*);
 		addr2-addr1
 	}
 }
@@ -22,21 +22,15 @@ unsafe U bit_cast<type T, type U>(T t) {
 	unsafe { *(&t as U*) }
 }
 
-T* null<type T>() {
+T raw* null<type T>() {
 	unsafe {
-		bit_cast<usize, T*>(0)
+		bit_cast<usize, T raw*>(0)
 	}
 }
 
-T mut* null_mut<type T>() {
-	unsafe {
-		bit_cast<usize, T mut*>(0)
-	}
-}
-
-unsafe void write<type T>(T mut* dest, T src) {
+unsafe void write<type T>(T raw* dest, T src) {
 	memcpy(
-		dest as void mut*,
+		dest as void raw*,
 		&src as void*,
 		size_of<T>()
 	);

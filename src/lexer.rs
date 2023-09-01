@@ -12,7 +12,6 @@ use crate::ast::module::Name;
 static KEYWORDS: [&str; 32] = [
 	"if",
 	"else",
-	"virtual",
 	"auto",
 	"class",
 	"struct",
@@ -23,6 +22,7 @@ static KEYWORDS: [&str; 32] = [
 	"static",
 	"const",
 	"mut",
+	"raw",
 	"for",
 	"while",
 	"using",

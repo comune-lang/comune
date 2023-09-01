@@ -10,7 +10,7 @@ use crate::{
 		expression::Operator,
 		module::{Identifier, Name},
 		traits::ImplSolver,
-		types::{Basic, BindingProps, FnPrototype, GenericArgs, Generics, Type, TypeDef},
+		types::{Basic, Qualifiers, FnPrototype, GenericArgs, Generics, Type, TypeDef},
 		Attribute,
 	},
 	lexer::{SrcSpan, Token},
@@ -36,24 +36,63 @@ type FuncID = Arc<FnPrototype>;
 pub struct LValue {
 	pub local: VarIndex,
 	pub projection: Vec<PlaceElem>,
-	pub props: BindingProps,
+	pub qualifs: Qualifiers,
+	pub base: Type,
 }
 
 impl LValue {
-	pub fn new(local: VarIndex) -> Self {
+	pub fn new(local: VarIndex, base: Type) -> Self {
 		LValue {
 			local,
 			projection: vec![],
-			props: BindingProps::default(),
+			qualifs: Qualifiers::default(),
+			base,
 		}
 	}
 	
-	pub fn with_props(local: VarIndex, props: BindingProps) -> Self {
+	pub fn with_qualifs(self, qualifs: Qualifiers) -> Self {
 		LValue {
-			local,
-			projection: vec![],
-			props
+			qualifs,
+			..self
 		}
+	}
+
+	pub fn projected(mut self, mut projection: Vec<PlaceElem>) -> Self {
+		self.projection.append(&mut projection);
+		self
+	}
+
+	pub fn get_projected_type(&self) -> Type {
+		let mut ty = self.base.clone();
+
+		for proj in &self.projection {
+			ty = proj.projected_type(ty);
+		}
+
+		ty
+	}
+
+	pub fn is_access_mutable(&self) -> bool {
+		let mut mutability = None;
+		let mut ty = self.base.clone();
+
+		for proj in &self.projection {
+			if let PlaceElem::Deref = proj {
+				let Type::Pointer { qualifs, .. } = &ty else {
+					panic!()
+				};
+
+				if qualifs.is_raw {
+					mutability = Some(true);
+				} else {
+					*mutability.get_or_insert(true) &= qualifs.is_mut | qualifs.is_new;
+				}
+			}
+
+			ty = proj.projected_type(ty);
+		}
+
+		mutability.unwrap_or(self.qualifs.is_mut)
 	}
 }
 
@@ -69,6 +108,34 @@ pub enum PlaceElem {
 	Field(FieldIndex),
 	SumDisc, // sum type/enum discriminant field
 	SumData(Type), // sum type/enum data field
+}
+
+impl PlaceElem {
+	pub fn projected_type(&self, ty: Type) -> Type {
+		match self {
+			PlaceElem::Deref => {
+				let Type::Pointer { pointee, .. } = ty else {
+					panic!()
+				};
+				*pointee
+			}
+
+			PlaceElem::Index { .. } => {
+				let (Type::Array(sub, _) | Type::Slice(sub) | Type::Pointer { pointee: sub, .. }) = ty else {
+					panic!()
+				};
+
+				*sub
+			}
+
+			PlaceElem::Field(field) => {
+				ty.get_field_type(*field)
+			}
+
+			PlaceElem::SumData(variant) => variant.clone(),
+			PlaceElem::SumDisc => Type::i32_type(true),
+		}
+	}
 }
 
 impl PartialEq for PlaceElem {
@@ -137,7 +204,7 @@ pub enum Operand {
 	BoolLit(bool, SrcSpan),
 
 	// LValue use
-	LValueUse(LValue, BindingProps),
+	LValueUse(LValue, Qualifiers),
 
 	// Undefined value. Reading from this is UB, must be reassigned first
 	Undef,
@@ -149,7 +216,7 @@ pub enum CIRCallId {
 	Indirect {
 		local: LValue,
 		ret: Type,
-		args: Vec<(Type, Option<Name>, BindingProps)>,
+		args: Vec<(Type, Option<Name>, Qualifiers)>,
 		span: SrcSpan,
 	},
 }
@@ -184,7 +251,7 @@ pub enum CIRStmt {
 	// Non-throwing fn call. Non-terminator.
 	Call {
 		id: CIRCallId,
-		args: Vec<(LValue, Type, BindingProps)>,
+		args: Vec<(LValue, Type, Qualifiers)>,
 		generic_args: GenericArgs,
 		result: Option<LValue>,
 	},
@@ -193,7 +260,7 @@ pub enum CIRStmt {
 	#[allow(dead_code)]
 	Invoke {
 		id: CIRCallId,
-		args: Vec<(LValue, Type, BindingProps)>,
+		args: Vec<(LValue, Type, Qualifiers)>,
 		generic_args: GenericArgs,
 		result: Option<LValue>,
 		next: BlockIndex,
@@ -235,9 +302,9 @@ pub struct CIRBlock {
 pub struct CIRFunction {
 	// In cIR, variables are referenced by an index, not a name.
 	// (They may still have a name for pretty-printing, though.)
-	pub variables: Vec<(Type, BindingProps, Option<Name>)>,
+	pub variables: Vec<(Type, Qualifiers, Option<Name>)>,
 	pub blocks: Vec<CIRBlock>,
-	pub ret: (BindingProps, Type),
+	pub ret: (Qualifiers, Type),
 	pub arg_count: usize,
 	pub generics: Generics,
 	pub attributes: Vec<Attribute>,
@@ -271,7 +338,7 @@ impl RValue {
 		)
 	}
 
-	pub fn lvalue_use(ty: Type, lval: LValue, props: BindingProps) -> Self {
+	pub fn lvalue_use(ty: Type, lval: LValue, props: Qualifiers) -> Self {
 		RValue::Atom(
 			ty,
 			None,
@@ -306,38 +373,6 @@ impl CIRFunction {
 		)
 	}
 
-	pub fn get_lvalue_type(&self, lval: &LValue) -> Type {
-		let mut ty = self.variables[lval.local].0.clone();
-
-		for proj in &lval.projection {
-			match proj {
-				PlaceElem::Deref => {
-					let Type::Pointer { pointee, .. } = ty else {
-						panic!()
-					};
-					ty = *pointee;
-				}
-
-				PlaceElem::Index { .. } => {
-					let (Type::Array(sub, _) | Type::Slice(sub) | Type::Pointer { pointee: sub, .. }) = ty else {
-						panic!()
-					};
-
-					ty = *sub;
-				}
-
-				PlaceElem::Field(field) => {
-					ty = ty.get_field_type(*field);
-				}
-
-				PlaceElem::SumData(variant) => ty = variant.clone(),
-				PlaceElem::SumDisc => ty = Type::i32_type(true),
-			}
-		}
-
-		ty
-	}
-
 	pub fn get_return_lvalue(&self) -> Option<LValue> {
 		if self.ret.1.is_void() {
 			None
@@ -345,7 +380,8 @@ impl CIRFunction {
 			Some(LValue {
 				local: self.arg_count,
 				projection: vec![],
-				props: self.ret.0,
+				qualifs: self.ret.0,
+				base: self.ret.1.clone(),
 			})
 		}
 	}

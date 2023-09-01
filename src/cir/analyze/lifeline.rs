@@ -8,7 +8,7 @@ use super::{
 use crate::{
 	ast::{
 		traits::{ImplSolver, LangTrait},
-		types::{BindingProps, Generics, TupleKind, GenericArgs, TypeDef},
+		types::{Qualifiers, Generics, TupleKind, GenericArgs, TypeDef},
 	},
 	cir::{
 		BlockIndex, CIRBlock, CIRCallId, CIRFunction, CIRStmt, LValue, Operand, PlaceElem, RValue,
@@ -33,7 +33,7 @@ pub struct VarInitCheck;
 pub struct ElaborateDrops;
 
 impl CIRStmt {
-	fn inspect_lvalue_uses(&self, mut f: impl FnMut(&LValue, &BindingProps)) {
+	fn inspect_lvalue_uses(&self, mut f: impl FnMut(&LValue, &Qualifiers)) {
 		match self {
 			CIRStmt::Assignment(_, rval) => self.inspect_rvalue(rval, f),
 
@@ -44,7 +44,7 @@ impl CIRStmt {
 			}
 
 			// FIXME: Store BindingProps in RefInit
-			CIRStmt::RefInit(_, lval) => f(lval, &BindingProps::reference()),
+			CIRStmt::RefInit(_, lval) => f(lval, &Qualifiers::reference()),
 
 			CIRStmt::Switch(op, branches, _) => {
 				if let Operand::LValueUse(lval, props) = op {
@@ -59,13 +59,13 @@ impl CIRStmt {
 			}
 
 			// FIXME: Incorrect for reference bindings
-			CIRStmt::DropShim { var, .. } => f(var, &BindingProps::value()),
+			CIRStmt::DropShim { var, .. } => f(var, &Qualifiers::value()),
 
 			_ => {}
 		}
 	}
 
-	fn inspect_rvalue(&self, rval: &RValue, mut f: impl FnMut(&LValue, &BindingProps)) {
+	fn inspect_rvalue(&self, rval: &RValue, mut f: impl FnMut(&LValue, &Qualifiers)) {
 		match rval {
 			RValue::Atom(.., Operand::LValueUse(lval, props), _) => f(lval, props),
 
@@ -201,7 +201,7 @@ impl LiveVarCheckState {
 		&mut self,
 		lval: &LValue,
 		ty: &Type,
-		props: BindingProps,
+		props: Qualifiers,
 		solver: &ImplSolver,
 		_generics: &Generics, // will be used to query whether a type implements Copy
 	) {
@@ -288,7 +288,8 @@ impl AnalysisDomain for DefInitFlow {
 					LValue {
 						local: var,
 						projection: vec![],
-						props: func.variables[var].1,
+						qualifs: func.variables[var].1,
+						base: func.variables[var].0.clone(),
 					},
 					LivenessState::Uninit,
 				);
@@ -297,7 +298,8 @@ impl AnalysisDomain for DefInitFlow {
 					LValue {
 						local: var,
 						projection: vec![],
-						props: func.variables[var].1,
+						qualifs: func.variables[var].1,
+						base: func.variables[var].0.clone(),
 					},
 					LivenessState::Live,
 				);
@@ -325,7 +327,8 @@ impl Analysis for DefInitFlow {
 				let lval = LValue {
 					local: *var,
 					projection: vec![],
-					props: func.variables[*var].1,
+					qualifs: func.variables[*var].1,
+					base: func.variables[*var].0.clone(),
 				};
 
 				state.set_liveness(&lval, LivenessState::Live);
@@ -342,7 +345,7 @@ impl Analysis for DefInitFlow {
 			}
 
 			CIRStmt::StorageLive(local) => {
-				state.set_liveness(&LValue::new(*local), LivenessState::Uninit);
+				state.set_liveness(&LValue::new(*local, func.variables[*local].0.clone()), LivenessState::Uninit);
 			}
 
 			CIRStmt::DropShim { var, .. } => {
@@ -397,7 +400,7 @@ impl AnalysisResultHandler<DefInitFlow> for VarInitCheck {
 										variable: func.get_variable_name(lval.local),
 										state: liveness.unwrap_or(LivenessState::Uninit),
 									},
-									lval.props.span,
+									lval.qualifs.span,
 								)),
 							}
 						}
@@ -421,7 +424,7 @@ impl AnalysisResultHandler<DefInitFlow> for VarInitCheck {
 									variable: func.get_variable_name(lval.local),
 									state: liveness.unwrap_or(LivenessState::Uninit),
 								},
-								lval.props.span,
+								lval.qualifs.span,
 							)),
 						}
 					}
@@ -443,7 +446,7 @@ impl AnalysisResultHandler<DefInitFlow> for VarInitCheck {
 										ComuneErrCode::InvalidNewReference {
 											variable: func.get_variable_name(lval.local),
 										},
-										lval.props.span,
+										lval.qualifs.span,
 									)),
 								}
 							} else {
@@ -455,7 +458,7 @@ impl AnalysisResultHandler<DefInitFlow> for VarInitCheck {
 											variable: func.get_variable_name(lval.local),
 											state: liveness.unwrap_or(LivenessState::Uninit),
 										},
-										lval.props.span,
+										lval.qualifs.span,
 									)),
 								}
 							}
@@ -464,27 +467,28 @@ impl AnalysisResultHandler<DefInitFlow> for VarInitCheck {
 
 					// Check for uninitialized `new&` and `mut&` bindings
 					CIRStmt::Return => {
-						for (i, (_, props, _)) in func.variables.iter().enumerate() {
-							if !props.is_ref {
+						for (i, (ty, qualifs, _)) in func.variables.iter().enumerate() {
+							if !qualifs.is_ref {
 								continue;
 							}
 
 							let lval = LValue {
 								local: i,
 								projection: vec![],
-								props: *props,
+								qualifs: *qualifs,
+								base: ty.clone(),
 							};
 
 							match state.get_liveness(&lval) {
 								Some(LivenessState::Live) => {}
 
 								_ => errors.push(ComuneError::new(
-									if props.is_new {
+									if qualifs.is_new {
 										ComuneErrCode::UninitNewReference
 									} else {
 										ComuneErrCode::UninitMutReference
 									},
-									props.span,
+									qualifs.span,
 								)),
 							}
 						}
@@ -498,12 +502,12 @@ impl AnalysisResultHandler<DefInitFlow> for VarInitCheck {
 					let is_var_init =
 						!matches!(state.get_liveness(lval), None | Some(LivenessState::Uninit));
 
-					if is_var_init && !lval.props.is_mut && !lval.props.is_new {
+					if is_var_init && !lval.is_access_mutable() {
 						errors.push(ComuneError::new(
 							ComuneErrCode::ImmutVarMutation {
 								variable: func.get_variable_name(lval.local),
 							},
-							lval.props.span,
+							lval.qualifs.span,
 						))
 					}
 				}
@@ -558,7 +562,7 @@ impl AnalysisResultHandler<DefInitFlow> for ElaborateDrops {
 					state: &state,
 				};
 
-				elaborator.elaborate_drop(&var, &func.get_lvalue_type(var), *next, &drop_flags);
+				elaborator.elaborate_drop(&var, &var.base, *next, &drop_flags);
 				elaborator.write(CIRStmt::Jump(*next));
 			}
 		}
@@ -581,7 +585,8 @@ impl AnalysisResultHandler<DefInitFlow> for ElaborateDrops {
 								LValue {
 									local: *flag,
 									projection: vec![],
-									props: BindingProps::mut_value(),
+									qualifs: Qualifiers::mut_value(),
+									base: Type::bool_type()
 								},
 								if props.is_new {
 									RValue::const_bool(true)
@@ -608,7 +613,8 @@ impl AnalysisResultHandler<DefInitFlow> for ElaborateDrops {
 									LValue {
 										local: *flag,
 										projection: vec![],
-										props: BindingProps::mut_value(),
+										qualifs: Qualifiers::mut_value(),
+										base: Type::bool_type(),
 									},
 									RValue::const_bool(true),
 								),
@@ -651,7 +657,7 @@ impl<'func> DropElaborator<'func> {
 			Some(LivenessState::MaybeUninit) => {
 				self.current_fn.variables.push((
 					Type::bool_type(),
-					BindingProps::mut_value(),
+					Qualifiers::mut_value(),
 					None,
 				));
 
@@ -661,7 +667,7 @@ impl<'func> DropElaborator<'func> {
 				self.current_fn.blocks[0].items.insert(
 					0,
 					CIRStmt::Assignment(
-						LValue::new(flag),
+						LValue::new(flag, Type::bool_type()),
 						RValue::Atom(
 							Type::bool_type(),
 							None,
@@ -706,7 +712,7 @@ impl<'func> DropElaborator<'func> {
 					succs: vec![next],
 				};
 
-				let flag_lval = LValue::new(flag);
+				let flag_lval = LValue::new(flag, Type::bool_type());
 
 				self.current_fn.blocks.push(drop_block);
 				self.current_block = drop_idx;
@@ -715,7 +721,7 @@ impl<'func> DropElaborator<'func> {
 
 				self.current_block = start_idx;
 				self.write(CIRStmt::Switch(
-					Operand::LValueUse(flag_lval, BindingProps::value()),
+					Operand::LValueUse(flag_lval, Qualifiers::value()),
 					vec![(
 						Type::bool_type(),
 						Operand::BoolLit(true, SrcSpan::new()),
@@ -794,7 +800,7 @@ impl<'func> DropElaborator<'func> {
 						def: Arc::downgrade(def),
 						args: args.clone()
 					}, 
-					BindingProps::mut_reference()
+					Qualifiers::mut_reference()
 				)],
 				generic_args: args.clone(),
 				result: None,
@@ -805,7 +811,8 @@ impl<'func> DropElaborator<'func> {
 					LValue {
 						local: *flag,
 						projection: vec![],
-						props: BindingProps::mut_value(),
+						qualifs: Qualifiers::mut_value(),
+						base: Type::bool_type()
 					},
 					RValue::const_bool(false),
 				));
@@ -854,7 +861,7 @@ impl<'func> DropElaborator<'func> {
 			// Generate switch to all the variants' destructors
 			self.current_fn.blocks[start_block].items.push(
 				CIRStmt::Switch(
-					Operand::LValueUse(discriminant, BindingProps::value()), 
+					Operand::LValueUse(discriminant, Qualifiers::value()), 
 					branches
 						.iter()
 						.cloned()

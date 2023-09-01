@@ -330,10 +330,10 @@ impl Type {
 				Ok(())
 			}
 
-			Type::Pointer { pointee, mutable } => {
+			Type::Pointer { pointee, qualifs } => {
 				pointee.cpp_format(f)?;
 
-				if *mutable {
+				if qualifs.is_mut {
 					write!(f, "*")
 				} else {
 					write!(f, " const*")

@@ -2,16 +2,16 @@
 // after basic C++ integration is implemented, this should become obsolete, as we can just import the C standard library directly on applicable platforms.
 
 @no_mangle
-void mut* malloc(usize size);
+void raw* malloc(usize size);
 
 @no_mangle
-void mut* realloc(void mut* ptr, usize capacity);
+void raw* realloc(void raw* ptr, usize capacity);
 
 @no_mangle
-void free(void mut* ptr);
+void free(void raw* ptr);
 
 @no_mangle
-void mut* memcpy(void mut* dest, void* src, usize count);
+void raw* memcpy(void raw* dest, void raw* src, usize count);
 
 @no_mangle
 int printf(u8* fmt, ...);

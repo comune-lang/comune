@@ -5,12 +5,12 @@ use crate::lexer::SrcSpan;
 use super::{
 	expression::Expr,
 	module::Name,
-	types::{BindingProps, Type},
+	types::{Qualifiers, Type},
 };
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Stmt {
-	Decl(Vec<(Type, Name, BindingProps)>, Option<Expr>, SrcSpan),
+	Decl(Vec<(Type, Name, Qualifiers)>, Option<Expr>, SrcSpan),
 	Expr(Expr),
 }
 

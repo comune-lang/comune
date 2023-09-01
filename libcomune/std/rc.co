@@ -7,36 +7,36 @@ struct RcInner<type T> {
 }
 
 struct Rc<type T> {
-	RcInner<T> mut* inner;
+	RcInner<T> raw* inner;
 
-	new(new& self, T t) {
+	new(new* self, T t) {
 		RcInner<T> inner = new RcInner<T> {
 			count: 1,
 			data: t,
 		};
 
-		self = new Rc<T> {
+		*self = new Rc<T> {
 			inner: new Box<RcInner<T>>(inner).into_raw(),
 		}
 	}
 
-	new(new& self, Rc<T>& other) {
-		self = new Rc<T> {
-			inner: other.inner,
+	new(new* self, Rc<T>* other) {
+		*self = new Rc<T> {
+			inner: other->inner,
 		};
 		
 		unsafe { 
-			self.inner->count += 1;
+			self->inner->count += 1;
 		}
 	}
 
-	drop(mut& self) {
+	drop(mut* self) {
 		unsafe {
-			self.inner->count -= 1;
+			self->inner->count -= 1;
 
-			if self.inner->count == 0 {
-				drop self.inner->data;
-				free(self.inner as void mut*);
+			if self->inner->count == 0 {
+				drop self->inner->data;
+				free(self->inner as void raw*);
 			}
 		}
 	}
