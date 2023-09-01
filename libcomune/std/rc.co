@@ -9,21 +9,17 @@ struct RcInner<type T> {
 struct Rc<type T> {
 	RcInner<T> raw* inner;
 
-	new(new& self, T t) {
+	new(new& self, T data) {
 		RcInner<T> inner = new RcInner<T> {
 			count: 1,
-			data: t,
+			data,
 		};
 
-		self = new Rc<T> {
-			inner: new Box<RcInner<T>>(inner).into_raw(),
-		}
+		self.inner = new Box<RcInner<T>>(inner).into_raw();
 	}
 
 	new(new& self, Rc<T>& other) {
-		self = new Rc<T> {
-			inner: other.inner,
-		};
+		self.inner = other.inner;
 		
 		unsafe { 
 			self.inner->count += 1;
