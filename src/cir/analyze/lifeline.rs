@@ -288,8 +288,7 @@ impl AnalysisDomain for DefInitFlow {
 					LValue {
 						local: var,
 						projection: vec![],
-						qualifs: func.variables[var].1,
-						base: func.variables[var].0.clone(),
+						props: func.variables[var].1,
 					},
 					LivenessState::Uninit,
 				);
@@ -298,8 +297,7 @@ impl AnalysisDomain for DefInitFlow {
 					LValue {
 						local: var,
 						projection: vec![],
-						qualifs: func.variables[var].1,
-						base: func.variables[var].0.clone(),
+						props: func.variables[var].1,
 					},
 					LivenessState::Live,
 				);
@@ -327,8 +325,7 @@ impl Analysis for DefInitFlow {
 				let lval = LValue {
 					local: *var,
 					projection: vec![],
-					qualifs: func.variables[*var].1,
-					base: func.variables[*var].0.clone(),
+					props: func.variables[*var].1,
 				};
 
 				state.set_liveness(&lval, LivenessState::Live);
@@ -345,7 +342,7 @@ impl Analysis for DefInitFlow {
 			}
 
 			CIRStmt::StorageLive(local) => {
-				state.set_liveness(&LValue::new(*local, func.variables[*local].0.clone()), LivenessState::Uninit);
+				state.set_liveness(&LValue::new(*local), LivenessState::Uninit);
 			}
 
 			CIRStmt::DropShim { var, .. } => {
@@ -395,23 +392,14 @@ impl AnalysisResultHandler<DefInitFlow> for VarInitCheck {
 							match liveness {
 								Some(LivenessState::Live) => {}
 
-								_ => {
-									println!("{} {}", lval.local, lval.base);
-									for (l,_) in &state.liveness {
-										println!("\t{} {}", l.local, l.base);
-									}
-									for (i, (var, ..)) in func.variables.iter().enumerate() {
-										println!("\t\t{i}: {var}");
-									}
-									println!("\t\t\t{stmt}");
-									errors.push(ComuneError::new(
+								_ => errors.push(ComuneError::new(
 										ComuneErrCode::InvalidUse {
 											variable: func.get_variable_name(lval.local),
 											state: liveness.unwrap_or(LivenessState::Uninit),
 										},
-										lval.qualifs.span,
+										lval.props.span,
 									))
-								},
+								,
 							}
 						}
 					}
@@ -428,7 +416,7 @@ impl AnalysisResultHandler<DefInitFlow> for VarInitCheck {
 										variable: func.get_variable_name(lval.local),
 										state: liveness.unwrap_or(LivenessState::Uninit),
 									},
-									lval.qualifs.span,
+									lval.props.span,
 								)),
 							}
 						}
@@ -449,7 +437,7 @@ impl AnalysisResultHandler<DefInitFlow> for VarInitCheck {
 										ComuneErrCode::InvalidNewReference {
 											variable: func.get_variable_name(lval.local),
 										},
-										lval.qualifs.span,
+										lval.props.span,
 									)),
 								}
 							} else {
@@ -461,7 +449,7 @@ impl AnalysisResultHandler<DefInitFlow> for VarInitCheck {
 											variable: func.get_variable_name(lval.local),
 											state: liveness.unwrap_or(LivenessState::Uninit),
 										},
-										lval.qualifs.span,
+										lval.props.span,
 									)),
 								}
 							}
@@ -470,28 +458,27 @@ impl AnalysisResultHandler<DefInitFlow> for VarInitCheck {
 
 					// Check for uninitialized `new&` and `mut&` bindings
 					CIRStmt::Return => {
-						for (i, (ty, qualifs, _)) in func.variables.iter().enumerate() {
-							if !qualifs.is_ref {
+						for (i, (_, props, _)) in func.variables.iter().enumerate() {
+							if !props.is_ref {
 								continue;
 							}
 
 							let lval = LValue {
 								local: i,
 								projection: vec![],
-								qualifs: *qualifs,
-								base: ty.clone(),
+								props: *props,
 							};
 
 							match state.get_liveness(&lval) {
 								Some(LivenessState::Live) => {}
 
 								_ => errors.push(ComuneError::new(
-									if qualifs.is_new {
+									if props.is_new {
 										ComuneErrCode::UninitNewReference
 									} else {
 										ComuneErrCode::UninitMutReference
 									},
-									qualifs.span,
+									props.span,
 								)),
 							}
 						}
@@ -505,12 +492,12 @@ impl AnalysisResultHandler<DefInitFlow> for VarInitCheck {
 					let is_var_init =
 						!matches!(state.get_liveness(lval), None | Some(LivenessState::Uninit));
 
-					if is_var_init && !lval.is_access_mutable() {
+					if is_var_init && !lval.is_access_mutable(func.variables[lval.local].0.clone()) {
 						errors.push(ComuneError::new(
 							ComuneErrCode::ImmutVarMutation {
 								variable: func.get_variable_name(lval.local),
 							},
-							lval.qualifs.span,
+							lval.props.span,
 						))
 					}
 				}
@@ -556,6 +543,7 @@ impl AnalysisResultHandler<DefInitFlow> for ElaborateDrops {
 		for (i, block) in func.blocks.iter().enumerate() {
 			if let CIRStmt::DropShim { var, next } = block.items.last().unwrap() {
 				let state = result.get_state_before(i, block.items.len() - 1);
+				let ty = var.get_projected_type(func.variables[var.local].0.clone());
 
 				func_out.blocks[i].items.pop();
 
@@ -565,7 +553,7 @@ impl AnalysisResultHandler<DefInitFlow> for ElaborateDrops {
 					state: &state,
 				};
 
-				elaborator.elaborate_drop(&var, &var.base, *next, &drop_flags);
+				elaborator.elaborate_drop(&var, &ty, *next, &drop_flags);
 				elaborator.write(CIRStmt::Jump(*next));
 			}
 		}
@@ -588,8 +576,7 @@ impl AnalysisResultHandler<DefInitFlow> for ElaborateDrops {
 								LValue {
 									local: *flag,
 									projection: vec![],
-									qualifs: BindingProps::mut_value(),
-									base: Type::bool_type()
+									props: BindingProps::mut_value(),
 								},
 								if props.is_new {
 									RValue::const_bool(true)
@@ -616,8 +603,7 @@ impl AnalysisResultHandler<DefInitFlow> for ElaborateDrops {
 									LValue {
 										local: *flag,
 										projection: vec![],
-										qualifs: BindingProps::mut_value(),
-										base: Type::bool_type(),
+										props: BindingProps::mut_value(),
 									},
 									RValue::const_bool(true),
 								),
@@ -670,7 +656,7 @@ impl<'func> DropElaborator<'func> {
 				self.current_fn.blocks[0].items.insert(
 					0,
 					CIRStmt::Assignment(
-						LValue::new(flag, Type::bool_type()),
+						LValue::new(flag),
 						RValue::Atom(
 							Type::bool_type(),
 							None,
@@ -715,7 +701,7 @@ impl<'func> DropElaborator<'func> {
 					succs: vec![next],
 				};
 
-				let flag_lval = LValue::new(flag, Type::bool_type());
+				let flag_lval = LValue::new(flag);
 
 				self.current_fn.blocks.push(drop_block);
 				self.current_block = drop_idx;
@@ -816,8 +802,7 @@ impl<'func> DropElaborator<'func> {
 					LValue {
 						local: *flag,
 						projection: vec![],
-						qualifs: BindingProps::mut_value(),
-						base: Type::bool_type()
+						props: BindingProps::mut_value(),
 					},
 					RValue::const_bool(false),
 				));

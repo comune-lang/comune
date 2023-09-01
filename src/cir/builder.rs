@@ -316,13 +316,13 @@ impl CIRModuleBuilder {
 			Pattern::Binding(Binding {
 				name: Some(name),
 				ty,
-				props: qualifs,
+				props,
 			}) => {
 				let idx = self.get_fn().variables.len();
 
 				self.get_fn_mut()
 					.variables
-					.push((ty.clone(), qualifs, Some(name.clone())));
+					.push((ty.clone(), props, Some(name.clone())));
 
 				self.scope_stack
 					.last_mut()
@@ -333,8 +333,7 @@ impl CIRModuleBuilder {
 				let store_place = LValue {
 					local: self.get_fn().variables.len() - 1,
 					projection: vec![],
-					qualifs,
-					base: ty.clone(),
+					props,
 				};
 
 				if value_ty.get_variant_index(&ty).is_some() {
@@ -343,7 +342,7 @@ impl CIRModuleBuilder {
 					self.generate_raw_assign(
 						&ty,
 						store_place,
-						RValue::lvalue_use(ty.clone(), value, qualifs),
+						RValue::lvalue_use(ty.clone(), value, props),
 					);
 				} else if &ty != value_ty {
 					self.generate_raw_assign(
@@ -352,7 +351,7 @@ impl CIRModuleBuilder {
 						RValue::Cast {
 							to: ty.clone(),
 							from: value_ty.clone(),
-							val: Operand::LValueUse(value, qualifs),
+							val: Operand::LValueUse(value, props),
 							span: SrcSpan::new(),
 						},
 					);
@@ -360,7 +359,7 @@ impl CIRModuleBuilder {
 					self.generate_raw_assign(
 						&ty,
 						store_place,
-						RValue::lvalue_use(ty.clone(), value, qualifs),
+						RValue::lvalue_use(ty.clone(), value, props),
 					);
 				}
 			}
@@ -421,7 +420,7 @@ impl CIRModuleBuilder {
 					Some(RValue::Atom(
 						result.get_type().clone(),
 						None,
-						Operand::LValueUse(result_location.clone(), result_location.qualifs),
+						Operand::LValueUse(result_location.clone(), result_location.props),
 						result.get_span(),
 					)),
 				)
@@ -692,10 +691,10 @@ impl CIRModuleBuilder {
 								)
 							});
 
-						let (lval_ty, idqualifs, _) = &self.get_fn().variables[idx];
+						let (lval_ty, idprops, _) = &self.get_fn().variables[idx];
 
-						let mut idqualifs = *idqualifs;
-						idqualifs.span = span;
+						let mut idprops = *idprops;
+						idprops.span = span;
 
 						Some(RValue::Atom(
 							lval_ty.clone(),
@@ -704,8 +703,7 @@ impl CIRModuleBuilder {
 								LValue {
 									local: idx,
 									projection: vec![],
-									qualifs: idqualifs,
-									base: lval_ty.clone(),
+									props: idprops,
 								},
 								qualifs,
 							),
@@ -787,7 +785,7 @@ impl CIRModuleBuilder {
 								let mut mem_lval = location.clone();
 
 								mem_lval.projection.push(PlaceElem::Field(indices[i]));
-								mem_lval.qualifs.span = fields[i].1.get_span();
+								mem_lval.props.span = fields[i].1.get_span();
 
 								if let Some(mem_expr) = mem_expr {
 									self.generate_raw_assign(fields[i].1.get_type(), mem_lval, mem_expr)
@@ -1612,7 +1610,7 @@ impl CIRModuleBuilder {
 					let local = self.get_var_index(id.expect_scopeless().unwrap()).unwrap();
 
 					let mut lval = self.get_local_lvalue(local);
-					lval.qualifs.span = meta.span;
+					lval.props.span = meta.span;
 
 					Some(lval)
 				}
@@ -1759,8 +1757,7 @@ impl CIRModuleBuilder {
 									LValue {
 										local: value.local,
 										projection: vec![PlaceElem::SumDisc],
-										qualifs: value.qualifs,
-										base: disc_type.clone(),
+										props: value.props,
 									},
 									BindingProps::reference(),
 								),
@@ -1814,12 +1811,11 @@ impl CIRModuleBuilder {
 		LValue {
 			local,
 			projection: vec![],
-			qualifs: self.get_fn().variables[local].1,
-			base: self.get_fn().variables[local].0.clone(),
+			props: self.get_fn().variables[local].1,
 		}
 	}
 
-	fn insert_variable(&mut self, name: Option<Name>, qualifs: BindingProps, ty: Type) -> LValue {
+	fn insert_variable(&mut self, name: Option<Name>, props: BindingProps, ty: Type) -> LValue {
 		assert!(!ty.is_void_or_never());
 
 		let idx = self.get_fn().variables.len();
@@ -1830,13 +1826,12 @@ impl CIRModuleBuilder {
 			.variables
 			.push((name.clone(), idx));
 
-		self.get_fn_mut().variables.push((ty.clone(), qualifs, name));
+		self.get_fn_mut().variables.push((ty, props, name));
 
 		LValue {
 			local: idx,
 			projection: vec![],
-			qualifs,
-			base: ty
+			props,
 		}
 	}
 
@@ -1854,7 +1849,7 @@ impl CIRModuleBuilder {
 	fn insert_temporary(&mut self, ty: &Type, rval: RValue, span: SrcSpan) -> LValue {
 		assert!(!ty.is_void_or_never());
 
-		let qualifs = BindingProps {
+		let props = BindingProps {
 			is_mut: true,
 			is_ref: false,
 			is_new: false,
@@ -1863,7 +1858,7 @@ impl CIRModuleBuilder {
 
 		let local = self.get_fn().variables.len();
 
-		self.get_fn_mut().variables.push((ty.clone(), qualifs, None));
+		self.get_fn_mut().variables.push((ty.clone(), props, None));
 		self.scope_stack
 			.last_mut()
 			.unwrap()
@@ -1873,8 +1868,7 @@ impl CIRModuleBuilder {
 		let lval = LValue {
 			local,
 			projection: vec![],
-			qualifs,
-			base: ty.clone(),
+			props,
 		};
 
 		self.generate_raw_assign(ty, lval.clone(), rval);

@@ -243,8 +243,7 @@ where
 	fn on_module(&self, module: &mut CIRModule) -> Vec<ComuneError> {
 		let mut errors = vec![];
 
-		for (proto, func) in &mut module.functions {
-			println!("{proto}");
+		for (_, func) in &mut module.functions {
 			if func.is_extern {
 				continue;
 			}

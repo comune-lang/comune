@@ -606,7 +606,7 @@ impl<'ctx> LLVMBuilder<'ctx> {
 						let callsite = self.builder.build_call(fn_v, &args_mapped, "");
 
 						if let Some(result) = result {
-							if result.qualifs.is_ref {
+							if result.props.is_ref {
 								// Function return value is a reference - perform reference initialization
 								assert!(result.projection.is_empty());
 
@@ -671,7 +671,7 @@ impl<'ctx> LLVMBuilder<'ctx> {
 						if let Some(result) = result {
 							self.builder.position_at_end(self.blocks[*next]);
 
-							if result.qualifs.is_ref {
+							if result.props.is_ref {
 								// Function return value is a reference - perform reference initialization
 								assert!(result.projection.is_empty());
 

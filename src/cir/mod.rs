@@ -36,23 +36,21 @@ type FuncID = Arc<FnPrototype>;
 pub struct LValue {
 	pub local: VarIndex,
 	pub projection: Vec<PlaceElem>,
-	pub qualifs: BindingProps,
-	pub base: Type,
+	pub props: BindingProps,
 }
 
 impl LValue {
-	pub fn new(local: VarIndex, base: Type) -> Self {
+	pub fn new(local: VarIndex) -> Self {
 		LValue {
 			local,
 			projection: vec![],
-			qualifs: BindingProps::default(),
-			base,
+			props: BindingProps::default(),
 		}
 	}
 	
-	pub fn with_qualifs(self, qualifs: BindingProps) -> Self {
+	pub fn with_props(self, props: BindingProps) -> Self {
 		LValue {
-			qualifs,
+			props,
 			..self
 		}
 	}
@@ -62,8 +60,8 @@ impl LValue {
 		self
 	}
 
-	pub fn get_projected_type(&self) -> Type {
-		let mut ty = self.base.clone();
+	pub fn get_projected_type(&self, base: Type) -> Type {
+		let mut ty = base;
 
 		for proj in &self.projection {
 			ty = proj.projected_type(ty);
@@ -72,9 +70,9 @@ impl LValue {
 		ty
 	}
 
-	pub fn is_access_mutable(&self) -> bool {
+	pub fn is_access_mutable(&self, base: Type) -> bool {
 		let mut mutability = None;
-		let mut ty = self.base.clone();
+		let mut ty = base;
 
 		for proj in &self.projection {
 			if let PlaceElem::Deref = proj {
@@ -92,7 +90,7 @@ impl LValue {
 			ty = proj.projected_type(ty);
 		}
 
-		mutability.unwrap_or(self.qualifs.is_mut || self.qualifs.is_new)
+		mutability.unwrap_or(self.props.is_mut || self.props.is_new)
 	}
 }
 
@@ -380,8 +378,7 @@ impl CIRFunction {
 			Some(LValue {
 				local: self.arg_count,
 				projection: vec![],
-				qualifs: self.ret.0,
-				base: self.ret.1.clone(),
+				props: self.ret.0,
 			})
 		}
 	}

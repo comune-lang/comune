@@ -317,8 +317,6 @@ impl MonomorphServer {
 				_ => {}
 			}
 		}
-
-		self.monoize_type(&mut lval.base, generic_args, access);
 	}
 
 	fn monoize_type(&self, ty: &mut Type, generic_args: &GenericArgs, access: &mut ModuleAccess) {
