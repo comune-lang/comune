@@ -29,7 +29,7 @@ impl Test {
 	}
 	
 	// the `self` parameter's type can be omitted
-	int product(Test& self) {
+	int product(&self) {
 		self.a * self.b
 	}
 }
@@ -92,7 +92,7 @@ TestSumType sum_type_test(i32 value) {
 	return value;
 }
 
-void slice_test(i32[]* test) { }
+void slice_test(i32[]& test) { }
 
 
 struct DropTest {
@@ -128,6 +128,11 @@ void drop_test() {
 	printf(c"\nEntering drop_test\n\n");
 	sub_drop_test();
 	printf(c"Left drop_test\n\n");
+}
+
+void memberwise_init_test(DropTest new& test) {
+	test.num = -1;
+	test.allocation = malloc(4) as int raw*;
 }
 
 void sub_drop_test() {

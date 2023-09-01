@@ -60,6 +60,9 @@ impl LValue {
 		self
 	}
 
+	// Get the projected type of `base`
+	// TODO: This could probably be cached
+	// to avoid a lot of redundant work
 	pub fn get_projected_type(&self, base: Type) -> Type {
 		let mut ty = base;
 

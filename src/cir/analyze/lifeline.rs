@@ -8,7 +8,7 @@ use super::{
 use crate::{
 	ast::{
 		traits::{ImplSolver, LangTrait},
-		types::{BindingProps, Generics, TupleKind, GenericArgs, TypeDef},
+		types::{BindingProps, TupleKind, GenericArgs, TypeDef},
 	},
 	cir::{
 		BlockIndex, CIRBlock, CIRCallId, CIRFunction, CIRStmt, LValue, Operand, PlaceElem, RValue,
@@ -88,7 +88,7 @@ impl CIRStmt {
 	}
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct LiveVarCheckState {
 	liveness: HashMap<LValue, LivenessState>,
 }
@@ -103,7 +103,7 @@ impl Display for LiveVarCheckState {
 }
 
 impl LiveVarCheckState {
-	pub fn set_liveness(&mut self, lval: &LValue, state: LivenessState) {
+	pub fn set_liveness(&mut self, lval: &LValue, state: LivenessState, func: &CIRFunction) {
 		// Clear liveness state for all sublocations
 
 		let keys: Vec<_> = self
@@ -118,6 +118,29 @@ impl LiveVarCheckState {
 		}
 
 		self.liveness.insert(lval.clone(), state);
+
+		// Find any superlocations that might also get initialized
+		let mut superloc = lval.clone();
+		
+		while !superloc.projection.is_empty() {
+			superloc.projection.pop();
+			
+			let ty = superloc.get_projected_type(func.variables[superloc.local].0.clone());
+			let projections = ty.get_cir_projections();
+			
+			if projections.is_empty() {
+				continue
+			}
+
+			if projections.into_iter().all(|proj| {
+				matches!(
+					self.get_liveness(&superloc.clone().projected(vec![proj])),
+					Some(LivenessState::Live)
+				)
+			}) {
+				self.set_liveness(&superloc, LivenessState::Live, func);
+			}
+		}
 	}
 
 	pub fn get_liveness(&self, lval: &LValue) -> Option<LivenessState> {
@@ -174,23 +197,23 @@ impl LiveVarCheckState {
 		})
 	}
 
-	fn eval_rvalue(&mut self, rval: &RValue, solver: &ImplSolver, generics: &Generics) {
+	fn eval_rvalue(&mut self, rval: &RValue, solver: &ImplSolver, func: &CIRFunction) {
 		match rval {
-			RValue::Atom(ty, _, op, _) => self.eval_operand(op, ty, solver, generics),
+			RValue::Atom(ty, _, op, _) => self.eval_operand(op, ty, solver, func),
 
 			RValue::Cons(_, [(lty, lhs), (rty, rhs)], ..) => {
-				self.eval_operand(lhs, lty, solver, generics);
-				self.eval_operand(rhs, rty, solver, generics);
+				self.eval_operand(lhs, lty, solver, func);
+				self.eval_operand(rhs, rty, solver, func);
 			}
 
-			RValue::Cast { val, from, .. } => self.eval_operand(val, from, solver, generics),
+			RValue::Cast { val, from, .. } => self.eval_operand(val, from, solver, func),
 		}
 	}
 
-	fn eval_operand(&mut self, op: &Operand, ty: &Type, solver: &ImplSolver, generics: &Generics) {
+	fn eval_operand(&mut self, op: &Operand, ty: &Type, solver: &ImplSolver, func: &CIRFunction) {
 		match op {
 			Operand::LValueUse(lval, kind) => {
-				self.eval_lvalue_use(lval, ty, *kind, solver, generics)
+				self.eval_lvalue_use(lval, ty, *kind, solver, func)
 			}
 
 			_ => {}
@@ -202,8 +225,8 @@ impl LiveVarCheckState {
 		lval: &LValue,
 		ty: &Type,
 		props: BindingProps,
-		solver: &ImplSolver,
-		_generics: &Generics, // will be used to query whether a type implements Copy
+		solver: &ImplSolver, // will be used to query whether a type implements Copy
+		func: &CIRFunction, 
 	) {
 		let _copy_trait = solver.get_lang_trait(LangTrait::Copy);
 
@@ -211,13 +234,13 @@ impl LiveVarCheckState {
 		let is_copy = matches!(ty, Type::Basic(_) | Type::Pointer { .. } | Type::Slice(_));
 
 		if !props.is_ref && !is_copy {
-			self.set_liveness(lval, LivenessState::Moved);
+			self.set_liveness(lval, LivenessState::Moved, func);
 		}
 
 		// if the lvalue is borrowed as a `new&`,
 		// it'll be initialized after this use.
 		if props.is_new {
-			self.set_liveness(lval, LivenessState::Live);
+			self.set_liveness(lval, LivenessState::Live, func);
 		}
 	}
 }
@@ -317,8 +340,8 @@ impl Analysis for DefInitFlow {
 	) {
 		match stmt {
 			CIRStmt::Assignment(lval, rval) => {
-				state.eval_rvalue(rval, solver, &func.generics);
-				state.set_liveness(lval, LivenessState::Live);
+				state.eval_rvalue(rval, solver, func);
+				state.set_liveness(lval, LivenessState::Live, func);
 			}
 
 			CIRStmt::RefInit(var, _) => {
@@ -328,28 +351,28 @@ impl Analysis for DefInitFlow {
 					props: func.variables[*var].1,
 				};
 
-				state.set_liveness(&lval, LivenessState::Live);
+				state.set_liveness(&lval, LivenessState::Live, func);
 			}
 
 			CIRStmt::Invoke { result, args, .. } | CIRStmt::Call { result, args, .. } => {
 				for (arg, ty, props) in args {
-					state.eval_lvalue_use(arg, ty, *props, solver, &func.generics);
+					state.eval_lvalue_use(arg, ty, *props, solver, func);
 				}
 
 				if let Some(result) = result {
-					state.set_liveness(result, LivenessState::Live);
+					state.set_liveness(result, LivenessState::Live, func);
 				}
 			}
 
 			CIRStmt::StorageLive(local) => {
-				state.set_liveness(&LValue::new(*local), LivenessState::Uninit);
+				state.set_liveness(&LValue::new(*local), LivenessState::Uninit, func);
 			}
 
 			CIRStmt::DropShim { var, .. } => {
 				// `drop` is a no-op for uninitialized variables, so only update the
 				// liveness state if the variable is (potentially) initialized
 				if !matches!(state.get_liveness(var), None | Some(LivenessState::Uninit)) {
-					state.set_liveness(var, LivenessState::Dropped);
+					state.set_liveness(var, LivenessState::Dropped, func);
 				}
 			}
 

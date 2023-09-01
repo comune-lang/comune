@@ -8,6 +8,7 @@ use itertools::Itertools;
 use super::module::{Identifier, ItemRef, Name};
 use super::traits::TraitRef;
 use super::{write_arg_list, Attribute};
+use crate::cir::PlaceElem;
 use crate::constexpr::ConstExpr;
 use crate::lexer::SrcSpan;
 
@@ -727,6 +728,31 @@ impl Type {
 			Type::Tuple(TupleKind::Sum, types) => types.iter().position(|ty| ty == variant),
 
 			_ => None,
+		}
+	}
+
+	pub fn get_cir_projections(&self) -> Vec<PlaceElem> {
+		match self {
+			Type::TypeRef { def, .. } => {
+				let def = def.upgrade().unwrap();
+				let def = def.read().unwrap();
+				
+				if !def.variants.is_empty() {
+					return vec![]
+				}
+
+				(0..def.members.len())
+					.map(|i| PlaceElem::Field(i))
+					.collect_vec()
+			}
+
+			Type::Tuple(TupleKind::Product, types) => {
+				(0..types.len())
+					.map(|i| PlaceElem::Field(i))
+					.collect_vec()
+			}
+
+			_ => vec![]
 		}
 	}
 
