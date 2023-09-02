@@ -299,11 +299,13 @@ impl<'ctx> LLVMBuilder<'ctx> {
 		}
 
 		for (name, (ty, _)) in &module.globals {
+			let ty_ll = Self::to_basic_type(self.get_llvm_type(ty));
+
 			self.module.add_global(
-				Self::to_basic_type(self.get_llvm_type(ty)), 
+				ty_ll, 
 				None, 
 				&name.to_string()
-			);
+			).set_initializer(&ty_ll.const_zero());
 		}
 
 		// Register functions

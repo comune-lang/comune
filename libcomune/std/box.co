@@ -5,9 +5,7 @@ struct Box<type T> {
 	T raw* data;
 
 	new(new& self, T t) {
-		self = new Box<T> { 
-			data: malloc(size_of<T>()) as T raw*,
-		};
+		self.data = malloc(size_of<T>()) as T raw*;
 		
 		unsafe {
 			write<T>(self.data, t);

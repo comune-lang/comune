@@ -126,6 +126,7 @@ impl Expr {
 				match op {
 					Operator::Ref => Ok(expr_ty.ptr_type(PtrKind::Shared)),
 					Operator::RefMut => Ok(expr_ty.ptr_type(PtrKind::Unique)),
+					Operator::RefRaw => Ok(expr_ty.ptr_type(PtrKind::Raw)),
 
 					Operator::Deref => match expr_ty {
 						Type::Pointer(pointee, kind) => {
