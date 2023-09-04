@@ -11,7 +11,7 @@ use crate::{
 		types::{
 			self, BindingProps, FnPrototype, GenericArg, GenericParam, Generics, Type, TypeDef, Basic,
 		},
-		FnScope,
+		FnScope, Attribute,
 	},
 	constexpr::{ConstEval, ConstExpr},
 	errors::{ComuneErrCode, ComuneError},
@@ -508,23 +508,28 @@ pub fn resolve_function_prototype(
 	interface: &ModuleInterface,
 	module_impl: &mut ModuleImpl,
 ) -> ComuneResult<()> {
-	let mut func_arc = Arc::new(func_og.as_ref().clone());
-	let func = Arc::get_mut(&mut func_arc).unwrap();
+	let mut func = func_og.as_ref().clone();
 
-	let FnPrototype {
-		ret,
-		params,
-		generics,
-		..
-	} = func;
+	resolve_type(&mut func.ret.1, interface, &func.generics)?;
+	check_dst_indirection(&func.ret.1, &BindingProps::default())?;
 
-	resolve_type(&mut ret.1, interface, generics)?;
-	check_dst_indirection(&ret.1, &BindingProps::default())?;
-
-	for (param, _, props) in &mut params.params {
-		resolve_type(param, interface, generics)?;
+	for (param, _, props) in &mut func.params.params {
+		resolve_type(param, interface, &func.generics)?;
 		check_dst_indirection(param, props)?;
 	}
+
+	let mut og_path = func.path.path;
+	func.path.path = interface.name.path.clone();
+	func.path.path.append(&mut og_path);
+
+	if func.path.path.len() == 2 && func.path.name().as_str() == "main" {
+		func.attributes.push(Attribute {
+			name: "no_mangle".to_string(),
+			args: vec![],
+		});
+	}
+
+	let func_arc = Arc::new(func);
 
 	// Update the module impl's version of the prototype
 	let fn_body = module_impl.fn_impls.remove(func_og).unwrap();

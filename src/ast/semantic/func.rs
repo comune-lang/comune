@@ -1,5 +1,7 @@
 use std::{cmp::Ordering, collections::HashSet, sync::Arc};
 
+use itertools::Itertools;
+
 use crate::{
 	ast::{
 		controlflow::ControlFlow,
@@ -142,15 +144,13 @@ pub fn validate_fn_call(
 
 	// Collect function candidates
 	if !name.absolute {
-		let mut name_unwrap = name.clone();
+		let mut name_unwrap = scope.scope.clone();
 
 		name_unwrap.absolute = true;
 
 		let mut scope_len = scope.scope.path.len();
 
-		for (i, elem) in scope.scope.path.iter().enumerate() {
-			name_unwrap.path.insert(i, elem.clone());
-		}
+		name_unwrap.path.append(&mut name.path.clone());
 
 		loop {
 			if let Some((_, ModuleItemInterface::Functions(fns))) =
@@ -184,6 +184,7 @@ pub fn validate_fn_call(
 	let mut candidates_filtered: Vec<_> = candidates
 		.clone()
 		.into_iter()
+		.unique()
 		.filter(|func| is_candidate_viable(args, generic_args, func))
 		.collect();
 

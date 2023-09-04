@@ -223,6 +223,12 @@ pub enum CIRCallId {
 }
 
 #[derive(Debug, Clone)]
+pub enum CIRGlobalRef {
+	Variable(Identifier),
+	Function(FuncID),
+}
+
+#[derive(Debug, Clone)]
 pub enum CIRStmt {
 	// Assignment to a variable. Non-terminator.
 	Assignment(LValue, RValue),

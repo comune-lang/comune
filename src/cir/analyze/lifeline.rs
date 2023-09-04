@@ -231,7 +231,7 @@ impl LiveVarCheckState {
 		let _copy_trait = solver.get_lang_trait(LangTrait::Copy);
 
 		// temp hack
-		let is_copy = matches!(ty, Type::Basic(_) | Type::Pointer { .. } | Type::Slice(_));
+		let is_copy = matches!(ty, Type::Basic(_) | Type::Pointer { .. } | Type::Slice(_) | Type::Function(_, _));
 
 		if !props.is_ref && !is_copy {
 			self.set_liveness(lval, LivenessState::Moved, func);
@@ -344,7 +344,7 @@ impl Analysis for DefInitFlow {
 				state.set_liveness(lval, LivenessState::Live, func);
 			}
 
-			CIRStmt::RefInit(var, _) => {
+			CIRStmt::RefInit(var, _) | CIRStmt::GlobalAccess { local: var, .. } => {
 				let lval = LValue {
 					local: *var,
 					projection: vec![],

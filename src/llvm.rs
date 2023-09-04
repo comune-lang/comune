@@ -419,9 +419,7 @@ impl<'ctx> LLVMBuilder<'ctx> {
 
 	fn get_mangled_name(&self, id: &FnPrototype, func: &CIRFunction) -> String {
 		// Check if the function has a `no_mangle` or `export_as` attribute, or if it's `main`. If not, mangle the name
-		if get_attribute(&func.attributes, "no_mangle").is_some()
-			|| (id.path.name().as_str() == "main" && !id.path.is_scoped())
-		{
+		if get_attribute(&func.attributes, "no_mangle").is_some() {
 			id.path.name().to_string()
 		} else if let Some(export_name) = get_attribute(&func.attributes, "export_as") {
 			// Export with custom symbol name
