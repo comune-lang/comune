@@ -1,5 +1,3 @@
-use std::sync::{Arc, RwLock};
-
 use crate::{
 	ast::types::Type,
 	ast::{
@@ -25,7 +23,7 @@ impl Expr {
 	}
 
 	pub fn validate<'ctx>(&mut self, scope: &mut FnScope<'ctx>) -> ComuneResult<Type> {
-		let result = match self {
+		let mut result = match self {
 			Expr::Atom(a, meta) => a.validate(scope, meta),
 
 			Expr::Cons([lhs, rhs], op, meta) => {
@@ -321,13 +319,13 @@ impl Atom {
 			Atom::FnCall { .. } => validate_fn_call(self, scope, meta),
 
 			Atom::ArrayLit(elems) => {
-				let array_len = Arc::new(RwLock::new(ConstExpr::Result(ConstValue::Integral(
+				let array_len = Box::new(ConstExpr::Result(ConstValue::Integral(
 					elems.len() as i128,
 					Some(Basic::Integral {
 						signed: false,
 						size: IntSize::IAddr,
 					}),
-				))));
+				)));
 
 				match &meta.ty {
 					Some(Type::Array(ty, _)) => {

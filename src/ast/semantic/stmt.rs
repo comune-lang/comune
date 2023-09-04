@@ -57,6 +57,8 @@ impl Stmt {
 					if binding_props.is_new {
 						return Err(ComuneError::new(ComuneErrCode::LocalNewReference, *span));
 					}
+					
+					binding_ty.validate(scope)?;
 
 					scope.add_variable(binding_ty.clone(), binding_name.clone(), *binding_props);
 					Ok(binding_ty.clone())

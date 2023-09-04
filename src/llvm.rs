@@ -1395,7 +1395,7 @@ impl<'ctx> LLVMBuilder<'ctx> {
 
 			Type::Array(arr_ty, size) => Self::to_basic_type(self.get_llvm_type(arr_ty))
 				.array_type(
-					if let ConstExpr::Result(ConstValue::Integral(e, _)) = &*size.read().unwrap() {
+					if let ConstExpr::Result(ConstValue::Integral(e, _)) = &**size {
 						*e as u32
 					} else {
 						panic!()

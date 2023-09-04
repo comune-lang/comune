@@ -167,7 +167,7 @@ pub enum Type {
 	Pointer(Box<Type>, PtrKind),
 
 	// Array with constant expression for size
-	Array(Box<Type>, Arc<RwLock<ConstExpr>>),
+	Array(Box<Type>, Box<ConstExpr>),
 
 	// View type, dynamically sized
 	Slice(Box<Type>),

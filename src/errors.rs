@@ -151,6 +151,7 @@ pub enum ComuneErrCode {
 	DtorSelfParam(Identifier),
 	DtorDefOverlap,
 	AlreadyDefined(Identifier),
+	UnsupportedConstExpr,
 
 	// Resolution errors
 	ModuleNotFound(Identifier),
@@ -291,6 +292,8 @@ impl Display for ComuneErrCode {
 
 				Ok(())
 			}
+
+			ComuneErrCode::UnsupportedConstExpr => write!(f, "unsupported constant expression"),
 
 			ComuneErrCode::CtorSelfParam(id) => {
 				write!(f, "constructor of `{id}` must take a `new& self` parameter")

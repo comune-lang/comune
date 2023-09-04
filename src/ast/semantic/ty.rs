@@ -13,7 +13,7 @@ use crate::{
 		},
 		FnScope, Attribute,
 	},
-	constexpr::{ConstEval, ConstExpr},
+	constexpr::ConstExpr,
 	errors::{ComuneErrCode, ComuneError},
 	lexer::{SrcSpan, Token},
 	parser::{ComuneResult, Parser},
@@ -580,21 +580,33 @@ pub fn check_module_cyclical_deps(module: &ModuleInterface) -> ComuneResult<()> 
 }
 
 impl Type {
-	pub fn validate<'ctx>(&self, scope: &'ctx FnScope<'ctx>) -> ComuneResult<()> {
+	pub fn validate<'ctx>(&mut self, scope: &'ctx FnScope<'ctx>) -> ComuneResult<()> {
 		match self {
-			Type::Array(_, n) => {
-				let result = if let ConstExpr::Expr(e) = &*n.read().unwrap() {
+			Type::Array(ty, n) => {
+				ty.validate(scope)?;
+
+				let result = if let ConstExpr::Expr(e) = &**n {
 					ConstExpr::Result(e.eval_const(scope)?)
 				} else {
-					panic!()
+					return Ok(())
 				};
 
-				*n.write().unwrap() = result;
+				**n = result;
 			}
 
 			Type::Tuple(_, types) => {
 				for ty in types {
 					ty.validate(scope)?;
+				}
+			}
+
+			Type::Pointer(pointee, _) | Type::Slice(pointee) => pointee.validate(scope)?,
+
+			Type::Function(ret, args) => {
+				ret.validate(scope)?;
+
+				for (_, arg) in args {
+					arg.validate(scope)?;
 				}
 			}
 

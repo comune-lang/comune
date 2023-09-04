@@ -1,10 +1,10 @@
 use crate::{
 	ast::{
-		expression::{Atom, Expr, Operator},
+		expression::{Atom, Expr, Operator, NodeData},
 		types::Basic,
 		FnScope,
 	},
-	parser::ComuneResult,
+	parser::ComuneResult, errors::{ComuneError, ComuneErrCode},
 };
 
 // Constant expression evaluation module. For stuff like array lengths, generics, you get the idea
@@ -24,14 +24,10 @@ pub enum ConstValue {
 	Bool(bool),
 }
 
-pub trait ConstEval {
-	fn eval_const(&self, scope: &FnScope) -> ComuneResult<ConstValue>;
-}
-
-impl ConstEval for Expr {
-	fn eval_const(&self, scope: &FnScope) -> ComuneResult<ConstValue> {
+impl Expr {
+	pub fn eval_const(&self, scope: &FnScope) -> ComuneResult<ConstValue> {
 		match self {
-			Expr::Atom(a, _) => a.eval_const(scope),
+			Expr::Atom(a, _) => a.eval_const(scope, self.get_node_data()),
 
 			Expr::Unary(a, op, _) => {
 				match a.eval_const(scope)? {
@@ -39,20 +35,31 @@ impl ConstEval for Expr {
 					ConstValue::Integral(i, b) => match op {
 						Operator::UnaryMinus => Ok(ConstValue::Integral(-i, b)),
 						Operator::UnaryPlus => Ok(ConstValue::Integral(i, b)),
-						_ => todo!(),
+						_ => Err(ComuneError::new(
+							ComuneErrCode::UnsupportedConstExpr,
+							self.get_span()
+						)),
 					},
 
 					ConstValue::Float(f, b) => match op {
 						Operator::UnaryMinus => Ok(ConstValue::Float(-f, b)),
 						Operator::UnaryPlus => Ok(ConstValue::Float(f, b)),
-						_ => todo!(),
+						_ => Err(ComuneError::new(
+							ComuneErrCode::UnsupportedConstExpr,
+							self.get_span()
+						)),
 					},
 
 					ConstValue::Bool(b) => {
 						if *op == Operator::LogicNot {
-							return Ok(ConstValue::Bool(!b));
+							Ok(ConstValue::Bool(!b))
+						} else {
+							Err(ComuneError::new(
+								ComuneErrCode::UnsupportedConstExpr,
+								self.get_span()
+							))
 						}
-						todo!();
+						
 					}
 				}
 			}
@@ -89,7 +96,10 @@ impl ConstEval for Expr {
 								Operator::Eq => ConstValue::Bool(i_lhs == i_rhs),
 								Operator::NotEq => ConstValue::Bool(i_lhs != i_rhs),
 
-								_ => panic!(),
+								_ => return Err(ComuneError::new(
+									ComuneErrCode::UnsupportedConstExpr,
+									self.get_span()
+								)),
 							})
 						} else {
 							panic!()
@@ -113,7 +123,10 @@ impl ConstEval for Expr {
 								Operator::Eq => ConstValue::Bool(f_lhs == f_rhs),
 								Operator::NotEq => ConstValue::Bool(f_lhs != f_rhs),
 
-								_ => panic!(),
+								_ => return Err(ComuneError::new(
+									ComuneErrCode::UnsupportedConstExpr,
+									self.get_span()
+								)),
 							})
 						} else {
 							panic!()
@@ -138,14 +151,17 @@ impl ConstEval for Expr {
 	}
 }
 
-impl ConstEval for Atom {
-	fn eval_const(&self, _scope: &FnScope) -> ComuneResult<ConstValue> {
+impl Atom {
+	pub fn eval_const(&self, _scope: &FnScope, meta: &NodeData) -> ComuneResult<ConstValue> {
 		match self {
 			Atom::IntegerLit(i, b) => Ok(ConstValue::Integral(*i, *b)),
 			Atom::FloatLit(f, b) => Ok(ConstValue::Float(*f, *b)),
 			Atom::BoolLit(b) => Ok(ConstValue::Bool(*b)),
 
-			_ => todo!(),
+			_ => Err(ComuneError::new(
+				ComuneErrCode::UnsupportedConstExpr,
+				meta.span
+			)),
 		}
 	}
 }

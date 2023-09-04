@@ -2163,7 +2163,7 @@ impl<'ctx> Parser {
 
 							result = Type::Array(
 								Box::new(result),
-								Arc::new(RwLock::new(ConstExpr::Expr(const_expr))),
+								Box::new(ConstExpr::Expr(const_expr)),
 							);
 						}
 
