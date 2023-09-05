@@ -20,7 +20,7 @@ impl Stmt {
 					expr.set_type_hint(binding_ty.clone());
 
 					let expr_ty = expr.validate(scope)?;
-					
+
 					binding_ty.resolve_inference_vars(expr_ty.clone(), binding_props.span)?;
 					binding_ty.validate(scope)?;
 
@@ -45,7 +45,11 @@ impl Stmt {
 						));
 					}
 
-					scope.add_variable(binding_ty.clone(), binding_name.clone(), *binding_props);
+					scope.add_variable(
+						binding_ty.clone(),
+						binding_name.clone(),
+						binding_props.clone(),
+					);
 					Ok(expr_ty)
 				} else {
 					// References must be initialized in their declaration
@@ -57,10 +61,14 @@ impl Stmt {
 					if binding_props.is_new {
 						return Err(ComuneError::new(ComuneErrCode::LocalNewReference, *span));
 					}
-					
+
 					binding_ty.validate(scope)?;
 
-					scope.add_variable(binding_ty.clone(), binding_name.clone(), *binding_props);
+					scope.add_variable(
+						binding_ty.clone(),
+						binding_name.clone(),
+						binding_props.clone(),
+					);
 					Ok(binding_ty.clone())
 				}
 			}

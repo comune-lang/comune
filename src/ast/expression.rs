@@ -374,7 +374,7 @@ impl Expr {
 
 		if !self.get_type().castable_to(&to) {
 			return Err(ComuneError::new(
-				ComuneErrCode::CastTypeMismatch {
+				ComuneErrCode::InvalidCast {
 					from: self.get_type().clone(),
 					to,
 				},

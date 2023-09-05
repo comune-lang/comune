@@ -9,14 +9,12 @@ use itertools::Itertools;
 
 use crate::ast::{
 	traits::ImplSolver,
-	types::{
-		FnPrototype, GenericArg, GenericArgs, TypeDef,
-	},
+	types::{FnPrototype, GenericArg, GenericArgs, TypeDef},
 };
 
 use super::{
 	builder::CIRModuleBuilder, CIRCallId, CIRFnMap, CIRFunction, CIRModule, CIRStmt, CIRTyMap,
-	RValue, Type, LValue, PlaceElem, Operand,
+	LValue, Operand, PlaceElem, RValue, Type,
 };
 
 // The monomorphization server (MonomorphServer) stores the bodies of generic
@@ -142,7 +140,7 @@ impl MonomorphServer {
 
 			functions_mono.insert(proto, function_monoized);
 		}
-		
+
 		// Monomorphize non-generic types
 
 		let types = module
@@ -154,7 +152,7 @@ impl MonomorphServer {
 
 		for ty in types {
 			let mut ty = ty.write().unwrap();
-			
+
 			self.monoize_typedef_body(
 				&mut ty,
 				&vec![],
@@ -162,7 +160,7 @@ impl MonomorphServer {
 					types: &mut module.types,
 					fns_in: &module.functions,
 					fns_out: &mut functions_mono,
-				}
+				},
 			);
 		}
 
@@ -302,18 +300,30 @@ impl MonomorphServer {
 		}
 	}
 
-	fn monoize_operand(&self, op: &mut Operand, generic_args: &GenericArgs, access: &mut ModuleAccess) {
+	fn monoize_operand(
+		&self,
+		op: &mut Operand,
+		generic_args: &GenericArgs,
+		access: &mut ModuleAccess,
+	) {
 		match op {
 			Operand::LValueUse(lval, _) => self.monoize_lvalue(lval, generic_args, access),
 			_ => {}
 		}
 	}
 
-	fn monoize_lvalue(&self, lval: &mut LValue, generic_args: &GenericArgs, access: &mut ModuleAccess) {
+	fn monoize_lvalue(
+		&self,
+		lval: &mut LValue,
+		generic_args: &GenericArgs,
+		access: &mut ModuleAccess,
+	) {
 		for proj in lval.projection.iter_mut() {
 			match proj {
 				PlaceElem::SumData(ty) => self.monoize_type(ty, generic_args, access),
-				PlaceElem::Index { index_ty, .. } => self.monoize_type(index_ty, generic_args, access),
+				PlaceElem::Index { index_ty, .. } => {
+					self.monoize_type(index_ty, generic_args, access)
+				}
 				_ => {}
 			}
 		}
@@ -413,7 +423,7 @@ impl MonomorphServer {
 		access: &mut ModuleAccess,
 	) -> Weak<RwLock<TypeDef>> {
 		if generic_args.is_empty() {
-			return Arc::downgrade(&def)
+			return Arc::downgrade(&def);
 		}
 
 		// Generate the monomorphized type name
@@ -493,29 +503,29 @@ impl MonomorphServer {
 
 			access.types.insert(instance_name, instance_arc.clone());
 
-			self.monoize_typedef_body(
-				&mut instance_lock,
-				generic_args,
-				access
-			);
+			self.monoize_typedef_body(&mut instance_lock, generic_args, access);
 
 			Arc::downgrade(&instance_arc)
 		}
 	}
 
-	fn monoize_typedef_body(&self, ty: &mut TypeDef, generic_args: &GenericArgs, access: &mut ModuleAccess) {
+	fn monoize_typedef_body(
+		&self,
+		ty: &mut TypeDef,
+		generic_args: &GenericArgs,
+		access: &mut ModuleAccess,
+	) {
 		for (_, member, _) in &mut ty.members {
 			self.monoize_type(member, generic_args, access);
 		}
 
 		for (_, variant) in &mut ty.variants {
-			let variant_instance =
-				self.instantiate_type_def(variant.clone(), generic_args, access);
+			let variant_instance = self.instantiate_type_def(variant.clone(), generic_args, access);
 			*variant = variant_instance.upgrade().unwrap();
 		}
 
 		if generic_args.is_empty() {
-			return
+			return;
 		}
 
 		ty.generics.params.clear();
@@ -541,7 +551,6 @@ impl MonomorphServer {
 
 			access.fns_out.insert(init_fn.clone(), init_body);
 		}
-
 	}
 
 	// Register a function template if it hasn't been registered already

@@ -6,7 +6,7 @@ use crate::{
 		module::{Identifier, Name},
 		pattern::Binding,
 		statement::Stmt,
-		types::{Basic, BindingProps, FloatSize, IntSize, TupleKind, PtrKind},
+		types::{Basic, BindingProps, FloatSize, IntSize, PtrKind, TupleKind},
 		FnScope,
 	},
 	constexpr::{ConstExpr, ConstValue},
@@ -15,7 +15,7 @@ use crate::{
 	parser::ComuneResult,
 };
 
-use super::func::{self, resolve_method_call, validate_fn_call, validate_arg_list};
+use super::func::{self, resolve_method_call, validate_arg_list, validate_fn_call};
 
 impl Expr {
 	pub fn create_cast(expr: Expr, to: Type, meta: NodeData) -> Expr {
@@ -307,7 +307,7 @@ impl Atom {
 					Ok(to.clone())
 				} else {
 					Err(ComuneError::new(
-						ComuneErrCode::CastTypeMismatch {
+						ComuneErrCode::InvalidCast {
 							from: expr_t,
 							to: to.clone(),
 						},
@@ -578,7 +578,6 @@ impl Atom {
 						Ok(Type::void_type())
 					}
 				}
-				
 			}
 
 			Atom::CtrlFlow(ctrl) => match &mut **ctrl {
@@ -709,7 +708,7 @@ impl Atom {
 								props,
 							} = binding
 							{
-								subscope.add_variable(ty.clone(), name.clone(), *props);
+								subscope.add_variable(ty.clone(), name.clone(), props.clone());
 							}
 						}
 

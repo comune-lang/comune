@@ -25,7 +25,7 @@ pub struct RawName<T: Clone + Hash + PartialEq + Eq + Debug + Display> {
 
 impl<T> RawName<T>
 where
-	T: Clone + Hash + PartialEq + Eq + Debug + Display + AsRef<str>
+	T: Clone + Hash + PartialEq + Eq + Debug + Display + AsRef<str>,
 {
 	pub fn as_str(&self) -> &str {
 		self.data.as_ref()
@@ -34,7 +34,7 @@ where
 
 impl<T> Display for RawName<T>
 where
-	T: Clone + Hash + PartialEq + Eq + Debug + Display
+	T: Clone + Hash + PartialEq + Eq + Debug + Display,
 {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		write!(f, "{}", self.data)
@@ -43,23 +43,19 @@ where
 
 impl<T> From<&str> for RawName<T>
 where
-	T: Clone + Hash + PartialEq + Eq + Debug + Display + for<'a> From<&'a str>
+	T: Clone + Hash + PartialEq + Eq + Debug + Display + for<'a> From<&'a str>,
 {
 	fn from(value: &str) -> Self {
-		Self {
-			data: value.into(),
-		}
+		Self { data: value.into() }
 	}
 }
 
 impl<T> From<String> for RawName<T>
 where
-	T: Clone + Hash + PartialEq + Eq + Debug + Display + From<String>
+	T: Clone + Hash + PartialEq + Eq + Debug + Display + From<String>,
 {
 	fn from(value: String) -> Self {
-		Self {
-			data: value.into()
-		}
+		Self { data: value.into() }
 	}
 }
 
@@ -70,7 +66,6 @@ pub type Name = RawName<String>;
 pub type Name = RawName<Arc<str>>;
 
 pub type TokenIndex = usize;
-
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum ModuleImportKind {

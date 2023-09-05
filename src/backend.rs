@@ -22,7 +22,7 @@ pub trait Backend {
 		emit_types: &[&str],
 		out_path: &Path,
 	);
-	
+
 	fn link(compiler: &Compiler<Self>, link_type: &str) -> ComuneResult<()>;
 
 	const SUPPORTED_EMIT_TYPES: &'static [&'static str];

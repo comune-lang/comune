@@ -1,6 +1,10 @@
 // lifeline - the comune liveness & borrow checker
 
-use std::{collections::HashMap, fmt::Display, sync::{RwLock, Arc}};
+use std::{
+	collections::HashMap,
+	fmt::Display,
+	sync::{Arc, RwLock},
+};
 
 use super::{
 	Analysis, AnalysisDomain, AnalysisResultHandler, Forward, JoinSemiLattice, ResultVisitor,
@@ -8,7 +12,7 @@ use super::{
 use crate::{
 	ast::{
 		traits::{ImplSolver, LangTrait},
-		types::{BindingProps, TupleKind, GenericArgs, TypeDef},
+		types::{BindingProps, GenericArgs, TupleKind, TypeDef},
 	},
 	cir::{
 		BlockIndex, CIRBlock, CIRCallId, CIRFunction, CIRStmt, LValue, Operand, PlaceElem, RValue,
@@ -121,15 +125,15 @@ impl LiveVarCheckState {
 
 		// Find any superlocations that might also get initialized
 		let mut superloc = lval.clone();
-		
+
 		while !superloc.projection.is_empty() {
 			superloc.projection.pop();
-			
+
 			let ty = superloc.get_projected_type(func.variables[superloc.local].0.clone());
 			let projections = ty.get_cir_projections();
-			
+
 			if projections.is_empty() {
-				continue
+				continue;
 			}
 
 			if projections.into_iter().all(|proj| {
@@ -212,9 +216,7 @@ impl LiveVarCheckState {
 
 	fn eval_operand(&mut self, op: &Operand, ty: &Type, solver: &ImplSolver, func: &CIRFunction) {
 		match op {
-			Operand::LValueUse(lval, kind) => {
-				self.eval_lvalue_use(lval, ty, *kind, solver, func)
-			}
+			Operand::LValueUse(lval, kind) => self.eval_lvalue_use(lval, ty, kind, solver, func),
 
 			_ => {}
 		}
@@ -224,14 +226,17 @@ impl LiveVarCheckState {
 		&mut self,
 		lval: &LValue,
 		ty: &Type,
-		props: BindingProps,
+		props: &BindingProps,
 		solver: &ImplSolver, // will be used to query whether a type implements Copy
-		func: &CIRFunction, 
+		func: &CIRFunction,
 	) {
 		let _copy_trait = solver.get_lang_trait(LangTrait::Copy);
 
 		// temp hack
-		let is_copy = matches!(ty, Type::Basic(_) | Type::Pointer { .. } | Type::Slice(_) | Type::Function(_, _));
+		let is_copy = matches!(
+			ty,
+			Type::Basic(_) | Type::Pointer { .. } | Type::Slice(_) | Type::Function(_, _)
+		);
 
 		if !props.is_ref && !is_copy {
 			self.set_liveness(lval, LivenessState::Moved, func);
@@ -311,7 +316,7 @@ impl AnalysisDomain for DefInitFlow {
 					LValue {
 						local: var,
 						projection: vec![],
-						props: func.variables[var].1,
+						props: func.variables[var].1.clone(),
 					},
 					LivenessState::Uninit,
 				);
@@ -320,7 +325,7 @@ impl AnalysisDomain for DefInitFlow {
 					LValue {
 						local: var,
 						projection: vec![],
-						props: func.variables[var].1,
+						props: func.variables[var].1.clone(),
 					},
 					LivenessState::Live,
 				);
@@ -348,7 +353,7 @@ impl Analysis for DefInitFlow {
 				let lval = LValue {
 					local: *var,
 					projection: vec![],
-					props: func.variables[*var].1,
+					props: func.variables[*var].1.clone(),
 				};
 
 				state.set_liveness(&lval, LivenessState::Live, func);
@@ -356,7 +361,7 @@ impl Analysis for DefInitFlow {
 
 			CIRStmt::Invoke { result, args, .. } | CIRStmt::Call { result, args, .. } => {
 				for (arg, ty, props) in args {
-					state.eval_lvalue_use(arg, ty, *props, solver, func);
+					state.eval_lvalue_use(arg, ty, props, solver, func);
 				}
 
 				if let Some(result) = result {
@@ -416,17 +421,16 @@ impl AnalysisResultHandler<DefInitFlow> for VarInitCheck {
 								Some(LivenessState::Live) => {}
 
 								_ => errors.push(ComuneError::new(
-										ComuneErrCode::InvalidUse {
-											variable: func.get_variable_name(lval.local),
-											state: liveness.unwrap_or(LivenessState::Uninit),
-										},
-										lval.props.span,
-									))
-								,
+									ComuneErrCode::InvalidUse {
+										variable: func.get_variable_name(lval.local),
+										state: liveness.unwrap_or(LivenessState::Uninit),
+									},
+									lval.props.span,
+								)),
 							}
 						}
 					}
-					
+
 					CIRStmt::Invoke { args, id, .. } | CIRStmt::Call { args, id, .. } => {
 						if let CIRCallId::Indirect { local: lval, .. } = id {
 							let liveness = state.get_liveness(lval);
@@ -489,7 +493,7 @@ impl AnalysisResultHandler<DefInitFlow> for VarInitCheck {
 							let lval = LValue {
 								local: i,
 								projection: vec![],
-								props: *props,
+								props: props.clone(),
 							};
 
 							match state.get_liveness(&lval) {
@@ -515,7 +519,8 @@ impl AnalysisResultHandler<DefInitFlow> for VarInitCheck {
 					let is_var_init =
 						!matches!(state.get_liveness(lval), None | Some(LivenessState::Uninit));
 
-					if is_var_init && !lval.is_access_mutable(func.variables[lval.local].0.clone()) {
+					if is_var_init && !lval.is_access_mutable(func.variables[lval.local].0.clone())
+					{
 						errors.push(ComuneError::new(
 							ComuneErrCode::ImmutVarMutation {
 								variable: func.get_variable_name(lval.local),
@@ -702,7 +707,7 @@ impl<'func> DropElaborator<'func> {
 		ty: &Type,
 		next: BlockIndex,
 		drop_flags: &HashMap<LValue, VarIndex>,
-	) {	
+	) {
 		match self.state.get_liveness(lval) {
 			Some(LivenessState::Live) => {
 				self.build_destructor(lval, ty, next, drop_flags);
@@ -711,7 +716,7 @@ impl<'func> DropElaborator<'func> {
 			Some(LivenessState::MaybeUninit) => {
 				if !drop_flags.contains_key(lval) {
 					eprintln!("COMPILER BUG: no drop flag for MaybeUninit lvalue {lval}, omitting destructor\n");
-					return
+					return;
 				}
 
 				let flag = drop_flags[&lval];
@@ -760,13 +765,9 @@ impl<'func> DropElaborator<'func> {
 		drop_flags: &HashMap<LValue, VarIndex>,
 	) {
 		match ty {
-			Type::TypeRef { def, args } => self.build_typedef_destructor(
-				lval, 
-				&def.upgrade().unwrap(), 
-				args, 
-				next, 
-				drop_flags
-			),
+			Type::TypeRef { def, args } => {
+				self.build_typedef_destructor(lval, &def.upgrade().unwrap(), args, next, drop_flags)
+			}
 
 			Type::Tuple(TupleKind::Sum, _) => {}
 
@@ -801,7 +802,10 @@ impl<'func> DropElaborator<'func> {
 	) {
 		let def_lock = def.read().unwrap();
 
-		assert!(args.is_empty(), "un-monomorphized typedef found during drop elaboration!");
+		assert!(
+			args.is_empty(),
+			"un-monomorphized typedef found during drop elaboration!"
+		);
 
 		if let Some(drop) = &def_lock.drop {
 			let drop = drop.clone();
@@ -809,12 +813,12 @@ impl<'func> DropElaborator<'func> {
 			self.write(CIRStmt::Call {
 				id: CIRCallId::Direct(drop, SrcSpan::new()),
 				args: vec![(
-					lval.clone(), 
-					Type::TypeRef { 
+					lval.clone(),
+					Type::TypeRef {
 						def: Arc::downgrade(def),
-						args: args.clone()
-					}, 
-					BindingProps::mut_reference()
+						args: args.clone(),
+					},
+					BindingProps::mut_reference(),
 				)],
 				generic_args: args.clone(),
 				result: None,
@@ -831,59 +835,61 @@ impl<'func> DropElaborator<'func> {
 				));
 			}
 		}
-		
+
 		if !def_lock.variants.is_empty() {
 			let start_block = self.current_block;
 			let cont_block = self.current_fn.blocks.len();
 
 			// add cont block
 			self.current_fn.blocks.push(CIRBlock::new());
-			
+
 			let mut branches = vec![];
 
 			for (_, variant) in def_lock.variants.iter() {
 				self.current_block = self.current_fn.blocks.len();
 				self.current_fn.blocks.push(CIRBlock::new());
-				
-				branches.push(self.current_block);
-				
-				let mut variant_lval = lval.clone();
-				variant_lval.projection.push(PlaceElem::SumData(
-					Type::TypeRef { 
-						def: Arc::downgrade(variant), 
-						args: args.clone()
-					}
-				));
 
-				self.build_typedef_destructor(
-					&variant_lval,
-					variant,
-					args,
-					next,
-					drop_flags
-				);
+				branches.push(self.current_block);
+
+				let mut variant_lval = lval.clone();
+				variant_lval
+					.projection
+					.push(PlaceElem::SumData(Type::TypeRef {
+						def: Arc::downgrade(variant),
+						args: args.clone(),
+					}));
+
+				self.build_typedef_destructor(&variant_lval, variant, args, next, drop_flags);
 
 				self.write(CIRStmt::Jump(cont_block));
-				self.current_fn.blocks[cont_block].preds.push(self.current_block);
+				self.current_fn.blocks[cont_block]
+					.preds
+					.push(self.current_block);
 			}
 
 			let mut discriminant = lval.clone();
-			
+
 			discriminant.projection.push(PlaceElem::SumDisc);
 
 			// Generate switch to all the variants' destructors
-			self.current_fn.blocks[start_block].items.push(
-				CIRStmt::Switch(
-					Operand::LValueUse(discriminant, BindingProps::value()), 
+			self.current_fn.blocks[start_block]
+				.items
+				.push(CIRStmt::Switch(
+					Operand::LValueUse(discriminant, BindingProps::value()),
 					branches
 						.iter()
 						.cloned()
 						.enumerate()
-						.map(|(i, idx)| (Type::i32_type(true), Operand::IntegerLit(i as i128, SrcSpan::new()), idx))
+						.map(|(i, idx)| {
+							(
+								Type::i32_type(true),
+								Operand::IntegerLit(i as i128, SrcSpan::new()),
+								idx,
+							)
+						})
 						.collect(),
-					cont_block
-				)
-		 	);
+					cont_block,
+				));
 
 			self.current_block = cont_block;
 			self.current_fn.blocks[start_block].succs = branches;

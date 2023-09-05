@@ -45,9 +45,9 @@ static KEYWORDS: [&str; 32] = [
 ];
 
 static OPERATORS: [&str; 41] = [
-	"+", "-", "/", "*", "%", "^", "!", "|", "||", "&", "&&", "=", "==", "/=", "*=", "+=", "-=", "%=",
-	"&=", "|=", "^=", "->", "(", ")", "[", "]", ".", "::", "<", ">", "<=", ">=", "!=",
-	"<<", ">>", ">>=", "<<=", "..", "...", "=>", "as",
+	"+", "-", "/", "*", "%", "^", "!", "|", "||", "&", "&&", "=", "==", "/=", "*=", "+=", "-=",
+	"%=", "&=", "|=", "^=", "->", "(", ")", "[", "]", ".", "::", "<", ">", "<=", ">=", "!=", "<<",
+	">>", ">>=", "<<=", "..", "...", "=>", "as",
 ];
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
@@ -400,7 +400,7 @@ impl Lexer {
 					'x' | 'X' => {
 						result.push(next);
 						next = self.get_next_char()?;
-						
+
 						while matches!(next, '0'..='9' | 'a'..='f' | 'A'..='F') {
 							result.push(next);
 							next = self.get_next_char()?;
@@ -422,7 +422,7 @@ impl Lexer {
 							result.push(next);
 							next = self.get_next_char()?;
 						}
-		
+
 						// Parse decimal stuff
 						if next == '.' {
 							result.push(next);
@@ -434,7 +434,7 @@ impl Lexer {
 						}
 					}
 				}
-				
+
 				// Parse suffix
 				while next.is_alphanumeric() {
 					suffix.push(next);

@@ -10,7 +10,7 @@ use crate::{
 			Identifier, ModuleASTElem, ModuleImportKind, ModuleInterface, ModuleItemInterface, Name,
 		},
 		statement::Stmt,
-		types::{Basic, FnPrototype, GenericArg, GenericArgs, Type, FnParamList},
+		types::{Basic, FnParamList, FnPrototype, GenericArg, GenericArgs, Type},
 		FnScope,
 	},
 	errors::{ComuneErrCode, ComuneError},
@@ -27,7 +27,7 @@ pub fn validate_function_body(
 	let mut scope = FnScope::new(namespace, scope, func.ret.clone(), &func.generics);
 
 	for (param, name, props) in &func.params.params {
-		scope.add_variable(param.clone(), name.clone().unwrap(), *props)
+		scope.add_variable(param.clone(), name.clone().unwrap(), props.clone())
 	}
 
 	let ModuleASTElem::Parsed(elem) = elem else {
@@ -331,7 +331,7 @@ pub fn is_candidate_viable(
 			let param_concrete = param.get_concrete_type(generic_args);
 
 			if !arg_concrete.castable_to(&param_concrete) {
-				return false
+				return false;
 			}
 		}
 	}

@@ -1,10 +1,11 @@
 use crate::{
 	ast::{
-		expression::{Atom, Expr, Operator, NodeData},
+		expression::{Atom, Expr, NodeData, Operator},
 		types::Basic,
 		FnScope,
 	},
-	parser::ComuneResult, errors::{ComuneError, ComuneErrCode},
+	errors::{ComuneErrCode, ComuneError},
+	parser::ComuneResult,
 };
 
 // Constant expression evaluation module. For stuff like array lengths, generics, you get the idea
@@ -37,7 +38,7 @@ impl Expr {
 						Operator::UnaryPlus => Ok(ConstValue::Integral(i, b)),
 						_ => Err(ComuneError::new(
 							ComuneErrCode::UnsupportedConstExpr,
-							self.get_span()
+							self.get_span(),
 						)),
 					},
 
@@ -46,7 +47,7 @@ impl Expr {
 						Operator::UnaryPlus => Ok(ConstValue::Float(f, b)),
 						_ => Err(ComuneError::new(
 							ComuneErrCode::UnsupportedConstExpr,
-							self.get_span()
+							self.get_span(),
 						)),
 					},
 
@@ -56,10 +57,9 @@ impl Expr {
 						} else {
 							Err(ComuneError::new(
 								ComuneErrCode::UnsupportedConstExpr,
-								self.get_span()
+								self.get_span(),
 							))
 						}
-						
 					}
 				}
 			}
@@ -96,10 +96,12 @@ impl Expr {
 								Operator::Eq => ConstValue::Bool(i_lhs == i_rhs),
 								Operator::NotEq => ConstValue::Bool(i_lhs != i_rhs),
 
-								_ => return Err(ComuneError::new(
-									ComuneErrCode::UnsupportedConstExpr,
-									self.get_span()
-								)),
+								_ => {
+									return Err(ComuneError::new(
+										ComuneErrCode::UnsupportedConstExpr,
+										self.get_span(),
+									))
+								}
 							})
 						} else {
 							panic!()
@@ -123,10 +125,12 @@ impl Expr {
 								Operator::Eq => ConstValue::Bool(f_lhs == f_rhs),
 								Operator::NotEq => ConstValue::Bool(f_lhs != f_rhs),
 
-								_ => return Err(ComuneError::new(
-									ComuneErrCode::UnsupportedConstExpr,
-									self.get_span()
-								)),
+								_ => {
+									return Err(ComuneError::new(
+										ComuneErrCode::UnsupportedConstExpr,
+										self.get_span(),
+									))
+								}
 							})
 						} else {
 							panic!()
@@ -160,7 +164,7 @@ impl Atom {
 
 			_ => Err(ComuneError::new(
 				ComuneErrCode::UnsupportedConstExpr,
-				meta.span
+				meta.span,
 			)),
 		}
 	}

@@ -86,16 +86,12 @@ impl CIRPassManager {
 			match pass {
 				Pass::Shared(shared) => {
 					#[cfg(feature = "concurrent")]
-					let results = shared
-						.par_iter();
+					let results = shared.par_iter();
 
 					#[cfg(not(feature = "concurrent"))]
-					let results = shared
-						.iter();
-						
-					let results = results
-						.map(|p| p.on_module(module))
-						.collect::<Vec<_>>();
+					let results = shared.iter();
+
+					let results = results.map(|p| p.on_module(module)).collect::<Vec<_>>();
 
 					for mut result in results {
 						errors.append(&mut result);
@@ -117,19 +113,14 @@ impl CIRPassManager {
 		for pass in &self.passes {
 			match pass {
 				Pass::Shared(shared) => {
-					
 					#[cfg(feature = "concurrent")]
-					let results = shared
-						.par_iter();
+					let results = shared.par_iter();
 
 					#[cfg(not(feature = "concurrent"))]
-					let results = shared
-						.iter();
+					let results = shared.iter();
 
-					let results = results
-						.map(|p| p.on_function(func))
-						.collect::<Vec<_>>();
-					
+					let results = results.map(|p| p.on_function(func)).collect::<Vec<_>>();
+
 					for mut result in results {
 						errors.append(&mut result);
 					}

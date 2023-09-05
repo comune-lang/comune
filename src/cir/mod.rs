@@ -10,7 +10,7 @@ use crate::{
 		expression::Operator,
 		module::{Identifier, Name},
 		traits::ImplSolver,
-		types::{Basic, BindingProps, FnPrototype, GenericArgs, Generics, Type, TypeDef, PtrKind},
+		types::{Basic, BindingProps, FnPrototype, GenericArgs, Generics, PtrKind, Type, TypeDef},
 		Attribute,
 	},
 	lexer::{SrcSpan, Token},
@@ -47,12 +47,9 @@ impl LValue {
 			props: BindingProps::default(),
 		}
 	}
-	
+
 	pub fn with_props(self, props: BindingProps) -> Self {
-		LValue {
-			props,
-			..self
-		}
+		LValue { props, ..self }
 	}
 
 	pub fn projected(mut self, mut projection: Vec<PlaceElem>) -> Self {
@@ -107,7 +104,7 @@ pub enum PlaceElem {
 		op: Operator,
 	},
 	Field(FieldIndex),
-	SumDisc, // sum type/enum discriminant field
+	SumDisc,       // sum type/enum discriminant field
 	SumData(Type), // sum type/enum data field
 }
 
@@ -129,9 +126,7 @@ impl PlaceElem {
 				*sub
 			}
 
-			PlaceElem::Field(field) => {
-				ty.get_field_type(*field)
-			}
+			PlaceElem::Field(field) => ty.get_field_type(*field),
 
 			PlaceElem::SumData(variant) => variant.clone(),
 			PlaceElem::SumDisc => Type::i32_type(true),
@@ -171,7 +166,10 @@ impl Hash for PlaceElem {
 			PlaceElem::Deref => "deref".hash(state),
 			PlaceElem::Field(idx) => idx.hash(state),
 			PlaceElem::Index { .. } => "index".hash(state),
-			PlaceElem::SumData(ty) => { "sum_data".hash(state); ty.hash(state) }
+			PlaceElem::SumData(ty) => {
+				"sum_data".hash(state);
+				ty.hash(state)
+			}
 			PlaceElem::SumDisc => "sum_disc".hash(state),
 		};
 
@@ -235,11 +233,11 @@ pub enum CIRStmt {
 
 	// Reference initialization. Non-terminator.
 	RefInit(VarIndex, LValue),
-	
+
 	// Initialize a reference to a global variable or function.
 	GlobalAccess {
 		local: VarIndex,
-		symbol: Identifier
+		symbol: Identifier,
 	},
 
 	// Unconditional jump to the block at BlockIndex. Terminator.
@@ -337,21 +335,11 @@ impl RValue {
 	}
 
 	pub fn undef(ty: Type) -> Self {
-		RValue::Atom(
-			ty,
-			None,
-			Operand::Undef,
-			SrcSpan::new()
-		)
+		RValue::Atom(ty, None, Operand::Undef, SrcSpan::new())
 	}
 
 	pub fn lvalue_use(ty: Type, lval: LValue, props: BindingProps) -> Self {
-		RValue::Atom(
-			ty,
-			None,
-			Operand::LValueUse(lval, props),
-			SrcSpan::new()
-		)
+		RValue::Atom(ty, None, Operand::LValueUse(lval, props), SrcSpan::new())
 	}
 
 	pub fn get_type(&self) -> &Type {
@@ -364,7 +352,11 @@ impl RValue {
 
 impl CIRBlock {
 	fn new() -> Self {
-		CIRBlock { items: vec![], preds: vec![], succs: vec![] }
+		CIRBlock {
+			items: vec![],
+			preds: vec![],
+			succs: vec![],
+		}
 	}
 }
 
@@ -387,17 +379,17 @@ impl CIRFunction {
 			Some(LValue {
 				local: self.arg_count,
 				projection: vec![],
-				props: self.ret.0,
+				props: self.ret.0.clone(),
 			})
 		}
 	}
 
 	pub fn is_lang_function(&self, lang_item: &str) -> bool {
 		self.attributes.iter().any(|attr| {
-			if &attr.name != "lang" { 
-				return false 
+			if &attr.name != "lang" {
+				return false;
 			}
-			
+
 			let [arg0] = attr.args.as_slice() else {
 				return false
 			};

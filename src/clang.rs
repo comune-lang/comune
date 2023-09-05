@@ -1,20 +1,21 @@
 use std::{
+	collections::HashMap,
 	fmt::Write as _,
 	fs::{self, File},
 	io::{self, Read, Write},
 	path::PathBuf,
 	process::Command,
-	sync::{mpsc::Sender, Arc}, collections::HashMap,
+	sync::{mpsc::Sender, Arc},
 };
 
 use crate::{
 	ast::{
 		get_attribute,
 		module::{Identifier, ModuleImportKind, ModuleInterface, ModuleItemInterface},
-		types::{Basic, FloatSize, IntSize, TupleKind, Type, TypeDef, PtrKind},
+		types::{Basic, FloatSize, IntSize, PtrKind, TupleKind, Type, TypeDef},
 	},
 	backend::Backend,
-	driver::{get_file_suffix, Compiler, ModuleState, JobSpawner, RayonScope},
+	driver::{get_file_suffix, Compiler, JobSpawner, ModuleState, RayonScope},
 	errors::{ComuneError, MessageLog},
 };
 
@@ -53,12 +54,12 @@ where
 		let mut imports = HashMap::new();
 
 		self.await_imports_ready(
-			&src_path, 
-			module_name, 
+			&src_path,
+			module_name,
 			modules,
 			&mut imports,
 			error_sender,
-			s
+			s,
 		)?;
 
 		for (name, interface) in imports {

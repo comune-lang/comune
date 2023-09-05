@@ -9,9 +9,10 @@ use crate::{
 		module::{ItemRef, ModuleImpl, ModuleInterface, ModuleItemInterface},
 		traits::{TraitInterface, TraitRef},
 		types::{
-			self, BindingProps, FnPrototype, GenericArg, GenericParam, Generics, Type, TypeDef, Basic,
+			self, Basic, BindingProps, FnPrototype, GenericArg, GenericParam, Generics, Type,
+			TypeDef,
 		},
-		FnScope, Attribute,
+		Attribute, FnScope,
 	},
 	constexpr::ConstExpr,
 	errors::{ComuneErrCode, ComuneError},
@@ -47,20 +48,19 @@ pub fn resolve_interface_types(parser: &mut Parser) -> ComuneResult<()> {
 			// Type aliases are resolved in the prev loop
 			ModuleItemInterface::TypeAlias(_) => {}
 
-			// Regular aliases are resolved on-the-fly, but we 
+			// Regular aliases are resolved on-the-fly, but we
 			// do check if they actually point to anything here
 			ModuleItemInterface::Alias(alias) => {
 				if alias.is_scoped() || Basic::get_basic_type(alias.name().as_str()).is_none() {
 					let mut alias = alias.clone();
-					
+
 					alias.absolute = true;
-					
 
 					if !interface.get_item(&alias).is_some() {
 						return Err(ComuneError::new(
 							ComuneErrCode::UndeclaredIdentifier(alias.to_string()),
-							SrcSpan::new()
-						))
+							SrcSpan::new(),
+						));
 					}
 				}
 			}
@@ -367,12 +367,9 @@ pub fn resolve_type(
 
 		Type::TypeRef { .. } | Type::Basic(_) | Type::TypeParam(_) | Type::Never => Ok(()),
 
-		Type::Infer(span) => return Err(
-			ComuneError::new(
-				ComuneErrCode::UnsupportedInference,
-				*span
-			)
-		),
+		Type::Infer(span) => {
+			return Err(ComuneError::new(ComuneErrCode::UnsupportedInference, *span))
+		}
 
 		Type::Function(ret, args) => {
 			resolve_type(ret, namespace, generics)?;
@@ -588,7 +585,7 @@ impl Type {
 				let result = if let ConstExpr::Expr(e) = &**n {
 					ConstExpr::Result(e.eval_const(scope)?)
 				} else {
-					return Ok(())
+					return Ok(());
 				};
 
 				**n = result;
@@ -618,7 +615,10 @@ impl Type {
 
 	pub fn resolve_inference_vars(&mut self, hint: Type, span: SrcSpan) -> ComuneResult<()> {
 		match self {
-			Type::Infer(_) => { *self = hint; Ok(()) }
+			Type::Infer(_) => {
+				*self = hint;
+				Ok(())
+			}
 
 			Type::TypeRef { args, .. } => {
 				let Type::TypeRef { args: other_args, .. } = hint else {
@@ -628,44 +628,48 @@ impl Type {
 					))
 				};
 
-				for (GenericArg::Type(lhs), GenericArg::Type(rhs)) in args.iter_mut().zip(other_args.into_iter()) {
+				for (GenericArg::Type(lhs), GenericArg::Type(rhs)) in
+					args.iter_mut().zip(other_args.into_iter())
+				{
 					lhs.resolve_inference_vars(rhs, span)?;
 				}
 
-				Ok(())			
+				Ok(())
 			}
 
-			Type::Pointer(pointee, kind) => {
-				match hint {
-					Type::Pointer(other, other_kind) if *kind == other_kind => {
-						pointee.resolve_inference_vars(*other, span)
+			Type::Pointer(pointee, kind) => match hint {
+				Type::Pointer(other, other_kind) if *kind == other_kind => {
+					pointee.resolve_inference_vars(*other, span)
+				}
+
+				_ => Err(ComuneError::new(
+					ComuneErrCode::AssignTypeMismatch {
+						expr: hint,
+						to: self.clone(),
+					},
+					span,
+				)),
+			},
+
+			Type::Tuple(kind, types) => match hint {
+				Type::Tuple(other_kind, other_types) if *kind == other_kind => {
+					for (lhs, rhs) in types.iter_mut().zip(other_types.into_iter()) {
+						lhs.resolve_inference_vars(rhs, span)?;
 					}
 
-					_ => Err(ComuneError::new(
-						ComuneErrCode::AssignTypeMismatch { expr: hint, to: self.clone() },
-						span
-					))
+					Ok(())
 				}
-			}
 
-			Type::Tuple(kind, types) => {
-				match hint {
-					Type::Tuple(other_kind, other_types) if *kind == other_kind => {
-						for (lhs, rhs) in types.iter_mut().zip(other_types.into_iter()) {
-							lhs.resolve_inference_vars(rhs, span)?;
-						}
-						
-						Ok(())
-					}
+				_ => Err(ComuneError::new(
+					ComuneErrCode::AssignTypeMismatch {
+						expr: hint,
+						to: self.clone(),
+					},
+					span,
+				)),
+			},
 
-					_ => Err(ComuneError::new(
-						ComuneErrCode::AssignTypeMismatch { expr: hint, to: self.clone() },
-						span
-					))
-				}
-			}
-			
-			_ => Ok(())
+			_ => Ok(()),
 		}
 	}
 }

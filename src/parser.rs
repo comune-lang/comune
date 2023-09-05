@@ -1,4 +1,4 @@
-use std::cell::{RefCell, Cell};
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
@@ -18,7 +18,7 @@ use crate::ast::statement::Stmt;
 use crate::ast::traits::{ImplBlockInterface, TraitInterface, TraitRef};
 use crate::ast::types::{
 	Basic, BindingProps, DataLayout, FloatSize, FnParamList, FnPrototype, GenericArg, GenericArgs,
-	GenericParam, Generics, TupleKind, Type, TypeDef, Visibility, PtrKind,
+	GenericParam, Generics, PtrKind, TupleKind, Type, TypeDef, Visibility,
 };
 use crate::ast::{Attribute, FnScope};
 
@@ -70,15 +70,13 @@ impl<'ctx> Parser {
 	//
 	// kind of a blunt solution, but it works.
 	fn set_speculative_parsing(&self) {
-		self.spec_parse_counter.set(
-			self.spec_parse_counter.get() + 1
-		)
+		self.spec_parse_counter
+			.set(self.spec_parse_counter.get() + 1)
 	}
 
 	fn unset_speculative_parsing(&self) {
-		self.spec_parse_counter.set(
-			self.spec_parse_counter.get() - 1
-		)
+		self.spec_parse_counter
+			.set(self.spec_parse_counter.get() - 1)
 	}
 
 	fn parsing_speculatively(&self) -> bool {
@@ -94,7 +92,7 @@ impl<'ctx> Parser {
 				code,
 				span: self.lexer.borrow().current().unwrap().0,
 				origin: None,
-				notes: vec![]
+				notes: vec![],
 			})
 		} else {
 			Err(ComuneError::new(
@@ -102,7 +100,6 @@ impl<'ctx> Parser {
 				self.lexer.borrow().current().unwrap().0,
 			))
 		}
-
 	}
 
 	fn get_current(&self) -> ComuneResult<Token> {
@@ -177,21 +174,29 @@ impl<'ctx> Parser {
 		Ok(())
 	}
 
-	fn register_module_item(&mut self, name: Identifier, item: ModuleItemInterface) -> ComuneResult<()> {
+	fn register_module_item(
+		&mut self,
+		name: Identifier,
+		item: ModuleItemInterface,
+	) -> ComuneResult<()> {
 		if let Some(predef) = self.interface.children.get(&name) {
 			match (item, predef) {
 				(ModuleItemInterface::Functions(lhs), ModuleItemInterface::Functions(rhs)) => {
 					rhs.write().unwrap().extend(lhs.write().unwrap().drain(..));
-					return Ok(())
+					return Ok(());
 				}
 
-				_ => return Err(ComuneError::new(ComuneErrCode::AlreadyDefined(name), SrcSpan::new())),
+				_ => {
+					return Err(ComuneError::new(
+						ComuneErrCode::AlreadyDefined(name),
+						SrcSpan::new(),
+					))
+				}
 			}
-			
 		}
-		
+
 		self.interface.children.insert(name, item);
-		
+
 		Ok(())
 	}
 
@@ -373,7 +378,7 @@ impl<'ctx> Parser {
 					}
 
 					self.get_next()?; // Consume closing brace
-					
+
 					self.register_module_item(
 						Identifier::from_parent(scope, name),
 						ModuleItemInterface::Trait(Arc::new(RwLock::new(this_trait))),
@@ -568,12 +573,10 @@ impl<'ctx> Parser {
 
 							if self.interface.import_names.contains(&import) {
 								return self.err(ComuneErrCode::AlreadyDefined(
-									Identifier::from_parent(&self.current_scope, module)
-								))
+									Identifier::from_parent(&self.current_scope, module),
+								));
 							} else {
-								self.interface
-									.import_names
-									.insert(import);
+								self.interface.import_names.insert(import);
 							}
 
 							self.get_next()?;
@@ -612,9 +615,7 @@ impl<'ctx> Parser {
 
 							self.register_module_item(
 								id,
-								ModuleItemInterface::Functions(Arc::new(RwLock::new(vec![
-									proto,
-								]))),
+								ModuleItemInterface::Functions(Arc::new(RwLock::new(vec![proto]))),
 							)?;
 						}
 
@@ -1030,6 +1031,24 @@ impl<'ctx> Parser {
 			props.is_ref = true;
 			self.get_next()?;
 		}
+
+		if self.get_current()? == Token::Other('\'') {
+			match self.get_next()? {
+				Token::Name(name) => {
+					props.lifetime = Some(name);
+				}
+			
+				Token::Keyword(keyword @ ("static" | "return")) => {
+					props.lifetime = Some(keyword.into());
+				}
+
+				Token::Keyword(_) => return self.err(ComuneErrCode::InvalidLifetimeName),
+			
+				_ => return self.err(ComuneErrCode::UnexpectedToken),
+			}
+
+			self.get_next()?;
+		}
 		
 		Ok(Some(props))
 	}
@@ -1117,7 +1136,7 @@ impl<'ctx> Parser {
 						patterns.push(Pattern::Binding(Binding {
 							name: Some(name),
 							ty,
-							props,
+							props: props.clone(),
 						}));
 
 						match self.get_next()? {
@@ -1191,7 +1210,7 @@ impl<'ctx> Parser {
 					self.get_next()?;
 
 					let sub = self.parse_expression_bp(0, scope)?;
-								
+
 					self.consume(&Token::Operator(")"))?;
 
 					sub
@@ -1295,17 +1314,10 @@ impl<'ctx> Parser {
 						start: begin_lhs,
 						len: end_lhs - begin_lhs,
 					};
-					
+
 					// now here's a feature i don't get to use often - nested functions!
 					fn wrap_in_deref(lhs: Expr, span: SrcSpan) -> Expr {
-						Expr::Unary(
-							Box::new(lhs), 
-							Operator::Deref,
-							NodeData {
-								span,
-								ty: None
-							}
-						)
+						Expr::Unary(Box::new(lhs), Operator::Deref, NodeData { span, ty: None })
 					}
 
 					lhs = wrap_in_deref(lhs, lhs_span);
@@ -1316,7 +1328,7 @@ impl<'ctx> Parser {
 								lhs = wrap_in_deref(lhs, lhs_span);
 								self.get_next()?;
 							}
-							
+
 							Token::Operator(">>") => {
 								lhs = wrap_in_deref(lhs, lhs_span);
 								lhs = wrap_in_deref(lhs, lhs_span);
@@ -1326,7 +1338,7 @@ impl<'ctx> Parser {
 							_ => break,
 						}
 					}
-					
+
 					let rhs = self.parse_expression_bp(rbp, scope)?;
 					let end_rhs = self.get_prev_end_index();
 
@@ -1401,11 +1413,11 @@ impl<'ctx> Parser {
 
 						Err(e) => {
 							self.unset_speculative_parsing();
-							return Err(e)
+							return Err(e);
 						}
 					}
 				}
-				
+
 				self.consume(&Token::Operator("("))?;
 
 				// Function call
@@ -1479,8 +1491,8 @@ impl<'ctx> Parser {
 								}
 							} else {
 								s.parse::<i128>().unwrap()
-							}, 
-							suffix_b
+							},
+							suffix_b,
 						)
 					};
 
@@ -2109,7 +2121,7 @@ impl<'ctx> Parser {
 		if !self.is_at_type_token(scope)? {
 			return self.err(ComuneErrCode::ExpectedIdentifier);
 		}
-		
+
 		if self.get_current()? == Token::Operator("(") {
 			let (kind, types) = self.parse_tuple_type(scope)?;
 
@@ -2117,13 +2129,13 @@ impl<'ctx> Parser {
 		} else if self.is_at_identifier_token()? || self.get_current()? == Token::Keyword("auto") {
 			if self.get_current()? == Token::Keyword("auto") {
 				let start = self.get_current_start_index();
-				
+
 				self.get_next()?;
-				
+
 				let end = self.get_prev_end_index();
-				
-				result = Type::Infer(SrcSpan { 
-					start, 
+
+				result = Type::Infer(SrcSpan {
+					start,
 					len: end - start,
 				})
 			} else {
@@ -2135,21 +2147,27 @@ impl<'ctx> Parser {
 					Token::Operator("*") | Token::Keyword("mut" | "raw") => {
 						// Pointer type
 						let start = self.get_current_token_index();
-						
+
 						let kind = match self.get_current()? {
-							Token::Keyword("mut") => { self.get_next()?; PtrKind::Unique }
-							Token::Keyword("raw") => { self.get_next()?; PtrKind::Raw }
+							Token::Keyword("mut") => {
+								self.get_next()?;
+								PtrKind::Unique
+							}
+							Token::Keyword("raw") => {
+								self.get_next()?;
+								PtrKind::Raw
+							}
 							Token::Operator("*") => PtrKind::Shared,
 							_ => unreachable!(),
 						};
 
 						if self.get_current()? == Token::Operator("*") {
 							self.get_next()?;
-						
+
 							result = Type::Pointer(Box::new(result), kind);
 						} else {
 							self.lexer.borrow_mut().seek_token_idx(start);
-							break
+							break;
 						}
 					}
 
@@ -2226,7 +2244,7 @@ impl<'ctx> Parser {
 		loop {
 			let mut typename = self.parse_identifier(scope)?;
 			typename.qualifier.0 = qualifier;
-			
+
 			if let Some(scope) = scope {
 				if let Some(ty) = scope.find_type(&typename) {
 					result = ty;
@@ -2250,8 +2268,8 @@ impl<'ctx> Parser {
 					},
 				};
 			}
-			
-			if self.get_current()? == Token::Operator("<") {				
+
+			if self.get_current()? == Token::Operator("<") {
 				match self.parse_generic_arg_list(scope) {
 					Ok(mut args) => {
 						args_accum.append(&mut args);
@@ -2269,21 +2287,19 @@ impl<'ctx> Parser {
 							let (Type::TypeRef { args, .. } | Type::Unresolved { generic_args: args, .. }) = &mut result else {
 								panic!()
 							};
-			
+
 							*args = args_accum.clone();
 						}
 
-						return Err(
-							ComuneError {
-								code: ComuneErrCode::RightShiftInGenericArgs(Some(result), None),
-								span,
-								origin,
-								notes: vec![],
-							}
-						)
+						return Err(ComuneError {
+							code: ComuneErrCode::RightShiftInGenericArgs(Some(result), None),
+							span,
+							origin,
+							notes: vec![],
+						});
 					}
 
-					Err(err) => return Err(err)
+					Err(err) => return Err(err),
 				}
 			}
 
@@ -2452,17 +2468,17 @@ impl<'ctx> Parser {
 		loop {
 			let generic = match self.parse_type(scope) {
 				Ok(generic) => generic,
-				
-				Err(ComuneError { 
-					code: ComuneErrCode::RightShiftInGenericArgs(Some(ty), None), 
-					.. 
+
+				Err(ComuneError {
+					code: ComuneErrCode::RightShiftInGenericArgs(Some(ty), None),
+					..
 				}) => {
 					result.push(GenericArg::Type(ty));
 					self.get_next()?;
 					self.unset_speculative_parsing();
 
-					return Ok(result)
-				},
+					return Ok(result);
+				}
 
 				Err(err) => return Err(err),
 			};
@@ -2488,10 +2504,8 @@ impl<'ctx> Parser {
 				self.set_speculative_parsing();
 				self.err(ComuneErrCode::RightShiftInGenericArgs(None, Some(result)))
 			}
-			
-			_ => {
-				self.err(ComuneErrCode::UnexpectedToken)
-			}
+
+			_ => self.err(ComuneErrCode::UnexpectedToken),
 		}
 	}
 

@@ -6,13 +6,13 @@ use std::path::PathBuf;
 
 // ironic, isn't it?
 #[cfg(not(feature = "concurrent"))]
-use std::sync::{RwLock, Arc};
+use std::sync::{Arc, RwLock};
 
 use std::sync::mpsc::Sender;
 use std::{ffi::OsString, sync::atomic::Ordering, time::Instant};
 
 use comune::ast::module::Identifier;
-use comune::driver::{Compiler, COMUNE_TOOLCHAIN_KEY, JobSpawner, get_file_suffix};
+use comune::driver::{get_file_suffix, Compiler, JobSpawner, COMUNE_TOOLCHAIN_KEY};
 use comune::errors::{self, MessageLog};
 
 #[derive(Parser, Debug)]
@@ -79,7 +79,6 @@ fn main() -> color_eyre::eyre::Result<()> {
 		.build_global()
 		.unwrap();
 
-
 	if args.backtrace {
 		unsafe {
 			comune::errors::CAPTURE_BACKTRACE = true;
@@ -96,7 +95,7 @@ fn main() -> color_eyre::eyre::Result<()> {
 	);
 
 	let error_sender = comune::errors::spawn_logger(args.backtrace);
-	
+
 	#[cfg(not(feature = "concurrent"))]
 	{
 		// Launch single-threaded compilation
@@ -118,7 +117,7 @@ fn main() -> color_eyre::eyre::Result<()> {
 			compiler.finish_module_job(job)
 		}
 	}
-	
+
 	#[cfg(feature = "concurrent")]
 	{
 		// Launch multithreaded compilation
@@ -127,7 +126,8 @@ fn main() -> color_eyre::eyre::Result<()> {
 
 			for input_file in &args.input_files {
 				let input_file = fs::canonicalize(input_file).unwrap();
-				let module_name = Identifier::from_name(get_file_suffix(&input_file).unwrap(), true);
+				let module_name =
+					Identifier::from_name(get_file_suffix(&input_file).unwrap(), true);
 
 				let Ok(parsers) = compiler.launch_module_compilation(
 					input_file,
@@ -141,8 +141,8 @@ fn main() -> color_eyre::eyre::Result<()> {
 				for parser in parsers {
 					let _ = compiler.generate_typed_interface(
 						parser,
-						error_sender.clone(), 
-						spawner.clone()
+						error_sender.clone(),
+						spawner.clone(),
 					);
 				}
 			}
@@ -171,7 +171,6 @@ fn main() -> color_eyre::eyre::Result<()> {
 			}
 		};
 	});
-	
 
 	if !check_last_phase_ok(&error_sender) {
 		await_output_written();

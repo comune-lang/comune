@@ -69,7 +69,7 @@ pub struct CompileState {
 #[derive(Clone)]
 pub enum JobSpawner<T> {
 	Concurrent(T),
-	Synchronous(Arc<RwLock<Vec<CompileState>>>)
+	Synchronous(Arc<RwLock<Vec<CompileState>>>),
 }
 
 #[derive(Clone)]
@@ -116,7 +116,7 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 
 			for ty in &links {
 				dep_emits.extend(T::get_required_emit_types(&ty));
-			}	
+			}
 		}
 
 		Self {
@@ -161,16 +161,16 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 
 		if ext == "cpp" {
 			self.compile_cpp_module(src_path, &module_name, error_sender, s)?;
-			
+
 			Ok(vec![])
 		} else if ext == "co" {
 			let mut parsers = vec![];
 
 			self.generate_untyped_interface(
-				src_path, 
-				module_name.clone(), 
-				error_sender.clone(), 
-				&mut parsers
+				src_path,
+				module_name.clone(),
+				error_sender.clone(),
+				&mut parsers,
 			)?;
 
 			Ok(parsers)
@@ -201,11 +201,11 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 					return Err(e);
 				}
 			};
-		
+
 		for import in &parser.interface.import_names {
 			if let ModuleImportKind::Child(child) = import {
 				let import_id = import.get_import_identifier(&parser.interface.name);
-				
+
 				let Some(import_path) = self
 					.get_module_source_path(src_path.clone(), &import_id)
 				else {
@@ -215,21 +215,21 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 				let child_interface = self.generate_untyped_interface(
 					import_path.clone(),
 					import_id,
-					error_sender.clone(), 
-					jobs_out
+					error_sender.clone(),
+					jobs_out,
 				)?;
-				
+
 				parser.interface.imported.insert(
-					child.clone(), 
-					ModuleImport { 
-						interface: child_interface, 
-						import_kind: import.clone(), 
-						path: import_path
-					}
+					child.clone(),
+					ModuleImport {
+						interface: child_interface,
+						import_kind: import.clone(),
+						path: import_path,
+					},
 				);
 			}
 		}
-	
+
 		let interface = Arc::new(parser.interface.get_external_interface(false));
 
 		self.module_states.write().unwrap().insert(
@@ -257,12 +257,12 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 			.collect_vec();
 
 		self.await_imports_ready(
-			&parser.path, 
-			&parser.interface.name, 
-			modules, 
+			&parser.path,
+			&parser.interface.name,
+			modules,
 			&mut parser.interface.imported,
 			error_sender.clone(),
-			s.clone()
+			s.clone(),
 		)?;
 
 		match ast::semantic::validate_interface(&mut parser) {
@@ -294,7 +294,13 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 		// The rest of the module's compilation happens later,
 		// either in a worker thread, or when the single-threaded
 		// spawner is done with the rest of the interfaces
-		self.spawn(s, CompileState { parser, error_sender });
+		self.spawn(
+			s,
+			CompileState {
+				parser,
+				error_sender,
+			},
+		);
 		Ok(())
 	}
 
@@ -310,7 +316,10 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 		let mut imports_left = module_names
 			.into_iter()
 			.map(|m_kind| {
-				(m_kind.clone(), m_kind.get_import_identifier(&parser.interface.name))
+				(
+					m_kind.clone(),
+					m_kind.get_import_identifier(&parser.interface.name),
+				)
 			})
 			.collect_vec();
 
@@ -361,7 +370,13 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 			};
 		}
 
-		let src_name = parser.path.file_name().unwrap().to_str().unwrap().to_string();
+		let src_name = parser
+			.path
+			.file_name()
+			.unwrap()
+			.to_str()
+			.unwrap()
+			.to_string();
 
 		// generate_cir() is a bit of a misleading name; this function takes care of
 		// everything from AST parsing, to type checking, to cIR generation and validation.
@@ -410,16 +425,15 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 		let out_path = self.get_module_out_path(&parser.interface.name);
 
 		self.output_modules.lock().unwrap().push(out_path.clone());
-		
-		let custom_emits: Vec<_> = 
-			self
-				.emit_types
-				.iter()
-				.filter(|emit| !BUILTIN_EMIT_TYPES.contains(emit))
-				.chain(self.dep_emit_types.iter())
-				.unique()
-				.copied()
-				.collect();
+
+		let custom_emits: Vec<_> = self
+			.emit_types
+			.iter()
+			.filter(|emit| !BUILTIN_EMIT_TYPES.contains(emit))
+			.chain(self.dep_emit_types.iter())
+			.unique()
+			.copied()
+			.collect();
 
 		backend.emit(self, &result, &custom_emits, &out_path);
 	}
@@ -497,11 +511,10 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 		error_sender: Sender<MessageLog>,
 		s: JobSpawner<&RayonScope<'ctx>>,
 	) -> ComuneResult<()> {
-
 		while let Some(kind) = imports_in.first().cloned() {
 			let import_id = kind.get_import_identifier(module_name);
 			let import_name = import_id.name();
-			
+
 			let Some(import_path) = self
 				.get_module_source_path(src_path.clone(), &import_id)
 			else {
@@ -520,7 +533,6 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 					.cloned();
 
 				match import_state {
-
 					None => match self.launch_module_compilation(
 						import_path.clone(),
 						import_id.clone(),
@@ -541,18 +553,18 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 								};
 
 								imports_out.insert(
-									import_name.clone(), 
+									import_name.clone(),
 									ModuleImport {
 										interface: interface.clone(),
 										import_kind: kind.clone(),
 										path: import_path.clone(),
-									}
+									},
 								);
 
 								self.generate_typed_interface(
-									parser, 
-									error_sender.clone(), 
-									s.clone()
+									parser,
+									error_sender.clone(),
+									s.clone(),
 								)?;
 							}
 						}
@@ -661,7 +673,8 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 		if self.emit_types.contains(&"cir") {
 			// Write cIR to file
 			fs::write(
-				self.get_module_out_path(&parser.interface.name).with_extension("cir"),
+				self.get_module_out_path(&parser.interface.name)
+					.with_extension("cir"),
 				cir_module.to_string(),
 			)
 			.unwrap();
@@ -795,15 +808,14 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 			}
 		};
 
-		let custom_emits: Vec<_> = 
-			self
-				.emit_types
-				.iter()
-				.filter(|emit| !BUILTIN_EMIT_TYPES.contains(emit))
-				.chain(self.dep_emit_types.iter())
-				.unique()
-				.copied()
-				.collect();
+		let custom_emits: Vec<_> = self
+			.emit_types
+			.iter()
+			.filter(|emit| !BUILTIN_EMIT_TYPES.contains(emit))
+			.chain(self.dep_emit_types.iter())
+			.unique()
+			.copied()
+			.collect();
 
 		backend.emit(self, &result, &custom_emits, &out_path);
 

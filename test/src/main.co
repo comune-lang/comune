@@ -282,6 +282,14 @@ void global_var_test() {
 	global_var = 0;
 }
 
+// return value is T + 'return by default
+int& regions_test(
+	int& 'return left, 
+	int& 'return right,
+) {
+	left
+}
+
 int main() {
 	ops_test();
 	enum_test();

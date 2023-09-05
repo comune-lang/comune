@@ -31,10 +31,12 @@ use inkwell::{
 use crate::{
 	ast::{
 		expression::Operator,
+		get_attribute,
+		module::Identifier,
 		types::{
-			Basic, BindingProps, DataLayout, FloatSize, FnPrototype, IntSize, TupleKind, Type,
-			TypeDef, GenericParam, PtrKind,
-		}, get_attribute, module::Identifier,
+			Basic, BindingProps, DataLayout, FloatSize, FnPrototype, GenericParam, IntSize,
+			PtrKind, TupleKind, Type, TypeDef,
+		},
 	},
 	backend::Backend,
 	cir::{CIRCallId, CIRFunction, CIRModule, CIRStmt, LValue, Operand, PlaceElem, RValue},
@@ -109,7 +111,7 @@ impl Backend for LLVMBackend {
 				boguspath.to_string_lossy().bold()
 			);
 
-			return Err(ComuneError::new(ComuneErrCode::LLVMError, SrcSpan::new()));
+			return Err(ComuneError::new(ComuneErrCode::BackendError, SrcSpan::new()));
 		};
 
 		Ok(builder)
@@ -214,11 +216,9 @@ impl Backend for LLVMBackend {
 		}
 	}
 
-
 	fn get_required_emit_types(_: &str) -> &'static [&'static str] {
 		&["obj"]
 	}
-
 }
 
 impl<'ctx> LLVMBuilder<'ctx> {
@@ -301,11 +301,9 @@ impl<'ctx> LLVMBuilder<'ctx> {
 		for (name, (ty, _)) in &module.globals {
 			let ty_ll = Self::to_basic_type(self.get_llvm_type(ty));
 
-			self.module.add_global(
-				ty_ll, 
-				None, 
-				&name.to_string()
-			).set_initializer(&ty_ll.const_zero());
+			self.module
+				.add_global(ty_ll, None, &name.to_string())
+				.set_initializer(&ty_ll.const_zero());
 		}
 
 		// Register functions
@@ -315,7 +313,7 @@ impl<'ctx> LLVMBuilder<'ctx> {
 			self.register_fn(&mangled, func)?;
 			self.fn_map.insert(proto.clone(), mangled);
 		}
-		
+
 		// And generate their bodies
 		for (proto, func) in &module.functions {
 			if !func.is_extern {
@@ -425,13 +423,13 @@ impl<'ctx> LLVMBuilder<'ctx> {
 			// Export with custom symbol name
 			let Some(first_arg) = export_name.args.get(0) else {
 				panic!()
-			}; 
+			};
 
 			let Some(Token::StringLiteral(name)) = first_arg.get(0) else {
 				panic!()
 			};
 
-			name.clone()				
+			name.clone()
 		} else {
 			// Mangle name
 			mangle_name(&id.path, func)
@@ -459,7 +457,7 @@ impl<'ctx> LLVMBuilder<'ctx> {
 
 			self.variables.push((
 				self.create_entry_block_alloca(&format!("_{i}"), ty_ll),
-				*props,
+				props.clone(),
 				ty.clone(),
 			));
 		}
@@ -475,7 +473,7 @@ impl<'ctx> LLVMBuilder<'ctx> {
 				.get_param_iter()
 				.enumerate()
 			{
-				let param_props = t.variables[idx].1;
+				let param_props = t.variables[idx].1.clone();
 
 				// If parameter is a `new&` binding, don't add noundef attribute
 				if !param_props.is_new {
@@ -497,35 +495,35 @@ impl<'ctx> LLVMBuilder<'ctx> {
 			for stmt in block.items.iter() {
 				match stmt {
 					CIRStmt::Assignment(lval, expr) => {
-						let store = self.generate_lvalue_use(
-							lval, 
-							BindingProps::mut_reference()
-						).into_pointer_value();
+						let store = self
+							.generate_lvalue_use(lval, &BindingProps::mut_reference())
+							.into_pointer_value();
 
-						self.generate_expr(
-							store,
-							expr,
-						);
+						self.generate_expr(store, expr);
 					}
 
 					CIRStmt::RefInit(var, lval) => {
 						let reference = self.variables[*var].0;
-						let props = self.variables[*var].1;
+						let props = self.variables[*var].1.clone();
 
 						assert!(props.is_ref);
-						
-						self.builder.build_store(reference, self.generate_lvalue_use(lval, props));
+
+						self.builder
+							.build_store(reference, self.generate_lvalue_use(lval, &props));
 					}
 
 					CIRStmt::GlobalAccess { local, symbol } => {
 						let reference = self.variables[*local].0;
-						let props = self.variables[*local].1;
+						let props = self.variables[*local].1.clone();
 
 						assert!(props.is_ref);
 
 						self.builder.build_store(
-							reference, 
-							self.module.get_global(&symbol.to_string()).unwrap().as_basic_value_enum()
+							reference,
+							self.module
+								.get_global(&symbol.to_string())
+								.unwrap()
+								.as_basic_value_enum(),
 						);
 					}
 
@@ -555,7 +553,7 @@ impl<'ctx> LLVMBuilder<'ctx> {
 
 					CIRStmt::Return => {
 						if let Some(lval) = t.get_return_lvalue() {
-							let ret = self.generate_lvalue_use(&lval, t.ret.0);
+							let ret = self.generate_lvalue_use(&lval, &t.ret.0);
 
 							self.builder.build_return(Some(&ret));
 						} else {
@@ -587,7 +585,7 @@ impl<'ctx> LLVMBuilder<'ctx> {
 
 							CIRCallId::Indirect { local, .. } => {
 								let ptr = self
-									.generate_lvalue_use(local, BindingProps::value())
+									.generate_lvalue_use(local, &BindingProps::value())
 									.into_pointer_value();
 
 								CallableValue::try_from(ptr).unwrap()
@@ -598,7 +596,7 @@ impl<'ctx> LLVMBuilder<'ctx> {
 							.iter()
 							.map(|(lval, _, props)| {
 								Self::to_basic_metadata_value(
-									self.generate_lvalue_use(lval, *props).into(),
+									self.generate_lvalue_use(lval, props).into(),
 								)
 							})
 							.collect();
@@ -617,8 +615,11 @@ impl<'ctx> LLVMBuilder<'ctx> {
 							} else {
 								// Function return value is a plain value - use normal assignment
 								self.builder.build_store(
-									self.generate_lvalue_use(result, BindingProps::mut_reference())
-										.into_pointer_value(),
+									self.generate_lvalue_use(
+										result,
+										&BindingProps::mut_reference(),
+									)
+									.into_pointer_value(),
 									callsite.try_as_basic_value().unwrap_left(),
 								);
 							}
@@ -648,7 +649,7 @@ impl<'ctx> LLVMBuilder<'ctx> {
 
 							CIRCallId::Indirect { local, .. } => {
 								let ptr = self
-									.generate_lvalue_use(local, BindingProps::value())
+									.generate_lvalue_use(local, &BindingProps::value())
 									.into_pointer_value();
 
 								CallableValue::try_from(ptr).unwrap()
@@ -657,7 +658,7 @@ impl<'ctx> LLVMBuilder<'ctx> {
 
 						let args_mapped: Vec<_> = args
 							.iter()
-							.map(|(lval, _, props)| self.generate_lvalue_use(lval, *props))
+							.map(|(lval, _, props)| self.generate_lvalue_use(lval, props))
 							.collect();
 
 						let callsite = self.builder.build_invoke(
@@ -682,8 +683,11 @@ impl<'ctx> LLVMBuilder<'ctx> {
 							} else {
 								// Function return value is a plain value - use normal assignment
 								self.builder.build_store(
-									self.generate_lvalue_use(result, BindingProps::mut_reference())
-										.into_pointer_value(),
+									self.generate_lvalue_use(
+										result,
+										&BindingProps::mut_reference(),
+									)
+									.into_pointer_value(),
 									callsite.try_as_basic_value().unwrap_left(),
 								);
 							}
@@ -704,14 +708,14 @@ impl<'ctx> LLVMBuilder<'ctx> {
 						let i8ptr_ty = self.context.i8_type().ptr_type(AddressSpace::Generic);
 
 						let lifetime_func = intrinsic.get_declaration(&self.module, &[
-							i64_ty.as_basic_type_enum(), 
+							i64_ty.as_basic_type_enum(),
 							i8ptr_ty.as_basic_type_enum()
 						]).unwrap();
 
 						let local = self.variables[*local].0;
 						let underlying_type = local.get_type().get_element_type();
 						let store_size = self.target_machine.get_target_data().get_store_size(&underlying_type);
-						
+
 						self.builder.build_call(lifetime_func, &[
 							self.context.i64_type().const_int(store_size, false).into(),
 							self.builder.build_bitcast(local, i8ptr_ty, "").into()
@@ -755,12 +759,12 @@ impl<'ctx> LLVMBuilder<'ctx> {
 					Some(Operator::Ref | Operator::RefMut) => {
 						if let Operand::LValueUse(lval, props) = atom {
 							// Terrible hack
-							let mut props = *props;
+							let mut props = props.clone();
 							props.is_ref = true;
 							props.is_mut = matches!(op_opt, Some(Operator::RefMut));
 
 							self.builder
-								.build_store(store, self.generate_lvalue_use(lval, props))
+								.build_store(store, self.generate_lvalue_use(lval, &props))
 						} else {
 							panic!()
 						}
@@ -771,37 +775,31 @@ impl<'ctx> LLVMBuilder<'ctx> {
 							let atom_ir = self.generate_operand(ty, atom).into_int_value();
 
 							assert!(ty.is_signed());
-							
-							self.builder.build_store(
-								store,
-								self.builder.build_int_neg(atom_ir, "")
-							)
+
+							self.builder
+								.build_store(store, self.builder.build_int_neg(atom_ir, ""))
 						} else if ty.is_floating_point() {
 							let atom_ir = self.generate_operand(ty, atom).into_float_value();
-							
-							self.builder.build_store(
-								store,
-								self.builder.build_float_neg(atom_ir, "")
-							)
+
+							self.builder
+								.build_store(store, self.builder.build_float_neg(atom_ir, ""))
 						} else {
 							panic!()
 						}
 					}
 
 					// honestly why do we even have this
-					Some(Operator::UnaryPlus) => {
-						self.builder.build_store(store, self.generate_operand(ty, atom))
-					}
+					Some(Operator::UnaryPlus) => self
+						.builder
+						.build_store(store, self.generate_operand(ty, atom)),
 
 					Some(Operator::LogicNot) => {
 						let atom_ir = self.generate_operand(ty, atom).into_int_value();
-						
+
 						assert!(ty.is_boolean());
 
-						self.builder.build_store(
-							store,
-							self.builder.build_not(atom_ir, "")
-						)
+						self.builder
+							.build_store(store, self.builder.build_not(atom_ir, ""))
 					}
 
 					None => self
@@ -838,7 +836,7 @@ impl<'ctx> LLVMBuilder<'ctx> {
 								self.builder.build_int_unsigned_div(lhs_i, rhs_i, "")
 							}
 						}
-						
+
 						// NOTE: This translates to LLVM's srem and urem instructions,
 						// which are subtly different from a proper modulo operator,
 						// particularly in the sign of the result type.
@@ -850,14 +848,16 @@ impl<'ctx> LLVMBuilder<'ctx> {
 								self.builder.build_int_unsigned_rem(lhs_i, rhs_i, "")
 							}
 						}
-						
+
 						Operator::BitAND => self.builder.build_and(lhs_i, rhs_i, ""),
 						Operator::BitOR => self.builder.build_or(lhs_i, rhs_i, ""),
 						Operator::BitXOR => self.builder.build_xor(lhs_i, rhs_i, ""),
 						Operator::BitShiftL => self.builder.build_left_shift(lhs_i, rhs_i, ""),
-						Operator::BitShiftR => self.builder.build_right_shift(lhs_i, rhs_i, false, ""),
-						
-						_ => unimplemented!()
+						Operator::BitShiftR => {
+							self.builder.build_right_shift(lhs_i, rhs_i, false, "")
+						}
+
+						_ => unimplemented!(),
 					}
 					.as_basic_value_enum();
 				} else if expr_ty.is_floating_point() {
@@ -975,8 +975,8 @@ impl<'ctx> LLVMBuilder<'ctx> {
 								panic!()
 							};
 
-							let val = self.generate_lvalue_use(lvalue, *props);
-							
+							let val = self.generate_lvalue_use(lvalue, props);
+
 							self.builder.build_store(store, val)
 						}
 
@@ -986,8 +986,8 @@ impl<'ctx> LLVMBuilder<'ctx> {
 								panic!()
 							};
 
-							let val = self.generate_lvalue_use(lvalue, *props);
-							
+							let val = self.generate_lvalue_use(lvalue, props);
+
 							self.builder.build_store(store, val)
 						}
 
@@ -1187,13 +1187,13 @@ impl<'ctx> LLVMBuilder<'ctx> {
 				.const_int(u64::from(*b), false)
 				.as_basic_value_enum(),
 
-			Operand::LValueUse(lval, props) => self.generate_lvalue_use(lval, *props),
+			Operand::LValueUse(lval, props) => self.generate_lvalue_use(lval, props),
 
 			Operand::Undef => self.get_undef(&Self::to_basic_type(self.get_llvm_type(ty))),
 		}
 	}
 
-	fn generate_lvalue_use(&self, expr: &LValue, props: BindingProps) -> BasicValueEnum<'ctx> {
+	fn generate_lvalue_use(&self, expr: &LValue, props: &BindingProps) -> BasicValueEnum<'ctx> {
 		// Get the variable pointer from the function
 		let (mut local, lprops, ty) = &self.variables[expr.local];
 
@@ -1217,7 +1217,11 @@ impl<'ctx> LLVMBuilder<'ctx> {
 					.as_basic_value_enum()
 					.into_pointer_value(),
 
-				PlaceElem::Index { index_ty, index, op } => {
+				PlaceElem::Index {
+					index_ty,
+					index,
+					op,
+				} => {
 					let mut idx = self
 						.generate_operand(index_ty, index)
 						.as_basic_value_enum()
@@ -1232,30 +1236,32 @@ impl<'ctx> LLVMBuilder<'ctx> {
 					unsafe { self.builder.build_gep(local, &[idx], "") }
 				}
 
-				PlaceElem::Field(i) => 
-					self
-						.builder
+				PlaceElem::Field(i) => {
+					self.builder
 						.build_struct_gep(local, *i as u32, "")
-						.expect(&format!("failed to generate Field projection for `{expr}` into {:?}`", local.get_type())),
+						.expect(&format!(
+							"failed to generate Field projection for `{expr}` into {:?}`",
+							local.get_type()
+						))
+				}
 
-				PlaceElem::SumDisc => 
-					self
-						.builder
-						.build_struct_gep(local, 0, "")
-						.expect(&format!("failed to generate SumDisc projection for `{expr} into {:?}`", local.get_type())),
+				PlaceElem::SumDisc => self.builder.build_struct_gep(local, 0, "").expect(&format!(
+					"failed to generate SumDisc projection for `{expr} into {:?}`",
+					local.get_type()
+				)),
 
-				PlaceElem::SumData(ty) => {					
-					let data = self
-								.builder
-								.build_struct_gep(local, 1, "")
-								.unwrap();
+				PlaceElem::SumData(ty) => {
+					let data = self.builder.build_struct_gep(local, 1, "").unwrap();
 
 					// SumData index requires a cast to variant type
-					self.builder.build_bitcast(
-						data,
-						Self::to_basic_type(self.get_llvm_type(ty)).ptr_type(AddressSpace::Generic),
-						""
-					).into_pointer_value()
+					self.builder
+						.build_bitcast(
+							data,
+							Self::to_basic_type(self.get_llvm_type(ty))
+								.ptr_type(AddressSpace::Generic),
+							"",
+						)
+						.into_pointer_value()
 				}
 			}
 		}
@@ -1430,7 +1436,7 @@ impl<'ctx> LLVMBuilder<'ctx> {
 			Type::TypeRef { def, .. } => {
 				let ir_typename = ty.get_ir_typename();
 				let ty = &self.type_map[&ir_typename];
-				
+
 				if ty.into_struct_type().is_opaque() {
 					self.generate_type_body(&ir_typename, &def.upgrade().unwrap().read().unwrap());
 				}
@@ -1680,7 +1686,7 @@ fn mangle_type(ty: &Type, f: &mut impl std::fmt::Write) -> std::fmt::Result {
 				write!(f, "P")?;
 				mangle_type(pointee, f)?;
 			}
-			
+
 			Ok(())
 		}
 

@@ -95,7 +95,7 @@ pub enum ComuneErrCode {
 		scrutinee: Type,
 		branch: Type,
 	},
-	CastTypeMismatch {
+	InvalidCast {
 		from: Type,
 		to: Type,
 	},
@@ -152,13 +152,14 @@ pub enum ComuneErrCode {
 	DtorDefOverlap,
 	AlreadyDefined(Identifier),
 	UnsupportedConstExpr,
+	InvalidLifetimeName,
 
 	// Resolution errors
 	ModuleNotFound(Identifier),
 	DependencyError,
 
 	// Code generation errors
-	LLVMError,
+	BackendError,
 
 	// Borrowck errors
 	InvalidUse {
@@ -202,150 +203,61 @@ impl Display for ComuneMessage {
 
 impl Display for ComuneErrCode {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		match self {
-			ComuneErrCode::OK => write!(f, "ok (how did you trigger this error???)"),
-			ComuneErrCode::UnexpectedEOF => write!(f, "unexpected end of file"),
-			ComuneErrCode::UnexpectedToken => write!(f, "unexpected token"),
-			ComuneErrCode::UnexpectedKeyword => write!(f, "unexpected keyword"),
-			ComuneErrCode::ExpectedIdentifier => write!(f, "expected identifier"),
-			ComuneErrCode::InvalidSuffix => write!(f, "invalid suffix"),
-			
-			ComuneErrCode::RightShiftInGenericArgs(..) => {
-				write!(f, "`>>` in generic argument list interpreted as right shift operator")
-			}
+		use ComuneErrCode::*;
 
-			ComuneErrCode::UndeclaredIdentifier(id) => {
-				write!(f, "`{id}` was not found in this scope")
-			}
-			ComuneErrCode::UnresolvedTypename(id) => write!(f, "unresolved typename `{id}`"),
-			ComuneErrCode::UnsupportedInference => write!(f, "`auto` in this position is not supported"),
-			ComuneErrCode::ExprTypeMismatch(a, b, op) => write!(
-				f,
-				"type mismatch; cannot apply operator {op:?} to `{a}` and `{b}`"
-			),
-			ComuneErrCode::AssignTypeMismatch { expr, to } => {
+		match self {
+			OK => write!(f, "ok (how did you trigger this error???)"),
+
+			AlreadyDefined(name) => write!(f, "conflicting definitions of `{name}`"),
+			AmbiguousCall => write!(f, "ambiguous call"),
+
+			AssignTypeMismatch { expr, to } => {
 				write!(
 					f,
 					"cannot assign value of type `{expr}` to variable of type `{to}`"
 				)
 			}
-			ComuneErrCode::MatchTypeMismatch { scrutinee, branch } => {
+
+			BackendError => write!(f, "an internal compiler error occurred"),
+
+			CtorSelfParam(id) => write!(f, "constructor of `{id}` must take a `new& self` parameter"),
+			DependencyError => write!(f, "a dependency failed to compile"),
+			DSTWithoutIndirection => write!(f, "dynamically-sized type without indirection"),
+			DtorDefOverlap => write!(f, "overlapping definitions of `drop`"),
+			DtorSelfParam(id) => write!(f, "destructor of `{id}` must take a `mut& self` parameter"),
+			ExpectedIdentifier => write!(f, "expected identifier"),
+			InvalidSuffix => write!(f, "invalid suffix"),
+
+			RightShiftInGenericArgs(..) => {
 				write!(
 					f,
-					"branch type `{branch}` is not a subtype of matched type `{scrutinee}`"
+					"`>>` in generic argument list interpreted as right shift operator"
 				)
 			}
-			ComuneErrCode::CastTypeMismatch { from, to } => {
-				write!(f, "cannot cast from `{from}` to `{to}`")
-			}
-			ComuneErrCode::InvalidCoercion { from, to } => {
-				write!(f, "cannot coerce from `{from}` to `{to}`")
-			}
-			ComuneErrCode::InvalidLValue => write!(f, "invalid lvalue"),
-			ComuneErrCode::InvalidSubscriptLHS { t } => write!(f, "can't index into type `{t}`"),
-			ComuneErrCode::InvalidSubscriptRHS { t } => {
-				write!(f, "can't index into array with index type `{t}`")
-			}
-			ComuneErrCode::ReturnTypeMismatch { expected, got } => {
-				write!(
-					f,
-					"return type mismatch; expected `{expected}`, got `{got}`"
-				)
-			}
-			ComuneErrCode::ParamCountMismatch { expected, got } => write!(
+
+			ExprTypeMismatch(a, b, op) => write!(
 				f,
-				"parameter count mismatch; expected `{expected}`, got `{got}`",
+				"type mismatch; cannot apply operator {op:?} to `{a}` and `{b}`"
 			),
-			ComuneErrCode::InvalidMemberAccess { t, idx } => {
-				write!(f, "variable of type `{t}` has no member `{idx}`")
-			}
-			ComuneErrCode::NotCallable(id) => write!(f, "`{id}` is not callable"),
-			ComuneErrCode::InvalidDeref(ty) => write!(f, "can't dereference value of type `{ty}`"),
-			ComuneErrCode::InfiniteSizeType => write!(f, "cyclical type dependency found"),
-			ComuneErrCode::UnstableFeature(feat) => write!(f, "feature `{feat}` is unstable"),
-			ComuneErrCode::NoCandidateFound {
-				name,
-				args,
-				generic_args,
-			} => {
-				write!(f, "no viable overload found for `{name}`")?;
 
-				if !generic_args.is_empty() {
-					write_arg_list!(f, generic_args, "<", ">");
-				}
-
-				write_arg_list!(f, args, "(", ")");
-				Ok(())
-			}
-
-			ComuneErrCode::MissingInitializers { ty, members } => {
-				let mut iter = members.iter();
+			ImmutVarMutation { variable } => {
 				write!(
 					f,
-					"missing initializers for type `{ty}`: {}",
-					iter.next().unwrap()
-				)?;
-
-				for member in iter {
-					write!(f, ", {member}")?;
-				}
-
-				Ok(())
-			}
-
-			ComuneErrCode::UnsupportedConstExpr => write!(f, "unsupported constant expression"),
-
-			ComuneErrCode::CtorSelfParam(id) => {
-				write!(f, "constructor of `{id}` must take a `new& self` parameter")
-			}
-			ComuneErrCode::DtorSelfParam(id) => {
-				write!(f, "destructor of `{id}` must take a `mut& self` parameter")
-			}
-			ComuneErrCode::DtorDefOverlap => {
-				write!(f, "overlapping definitions of `drop`")
-			}
-			ComuneErrCode::UnresolvedTrait(tr) => write!(f, "failed to resolve trait `{tr}`"),
-			ComuneErrCode::UninitReference => {
-				write!(f, "a reference binding must be immediately initialized")
-			}
-			ComuneErrCode::UninitNewReference => {
-				write!(
-					f,
-					"new& binding must be initialized in all control flow paths"
+					"cannot mutate `{variable}`, as it is not declared as mutable"
 				)
 			}
-			ComuneErrCode::UninitMutReference => {
-				write!(
-					f,
-					"moved-from mut& binding must be re-initialized in all control flow paths"
-				)
-			}
-			ComuneErrCode::LocalNewReference => {
-				write!(f, "new& is only allowed in function parameters")
-			}
 
-			ComuneErrCode::LoopCtrlOutsideLoop(name) => write!(f, "{name} outside of loop"),
-			ComuneErrCode::UnsafeOperation => {
-				write!(f, "unsafe operation outside `unsafe` context")
-			}
-			ComuneErrCode::UnsafeCall(call) => {
-				write!(f, "unsafe call to `{call}` outside `unsafe` context")
-			}
-			ComuneErrCode::DSTWithoutIndirection => {
-				write!(f, "dynamically-sized type without indirection")
-			}
-			ComuneErrCode::TraitFunctionMismatch => {
-				write!(f, "function signature does not match trait definition")
-			}
-			ComuneErrCode::MissingTraitFuncImpl(name) => {
-				write!(f, "missing implementation for function `{name}`")
-			}
-			ComuneErrCode::AlreadyDefined(name) => write!(f, "conflicting definitions of `{name}`"),
-			ComuneErrCode::ModuleNotFound(m) => write!(f, "module not found: {m:#?}"),
-			ComuneErrCode::DependencyError => write!(f, "a dependency failed to compile"),
-			ComuneErrCode::LLVMError => write!(f, "an internal compiler error occurred"),
+			InfiniteSizeType => write!(f, "cyclical type dependency found"),
+			InvalidCast { from, to } => write!(f, "cannot cast from `{from}` to `{to}`"),
+			InvalidCoercion { from, to } => write!(f, "cannot coerce from `{from}` to `{to}`"),
+			InvalidDeref(ty) => write!(f, "can't dereference value of type `{ty}`"),
+			InvalidLifetimeName => write!(f, "invalid lifetime name"),
+			InvalidLValue => write!(f, "invalid lvalue"),
+			InvalidMemberAccess { t, idx } => write!(f, "no such member `{idx}` on type `{t}`"),
+			InvalidSubscriptLHS { t } => write!(f, "can't index into type `{t}`"),
+			InvalidSubscriptRHS { t } => write!(f, "can't index with value of type `{t}`"),
 
-			ComuneErrCode::InvalidUse { variable, state } => {
+			InvalidUse { variable, state } => {
 				write!(
 					f,
 					"use of {} variable `{variable}`",
@@ -360,29 +272,103 @@ impl Display for ComuneErrCode {
 				)
 			}
 
-			ComuneErrCode::InvalidNewReference { variable } => {
+			InvalidNewReference { variable } => {
 				write!(
 					f,
 					"variable `{variable}` must be uninitialized to pass as new&"
 				)
 			}
 
-			ComuneErrCode::ImmutVarMutation { variable } => {
+			LocalNewReference => write!(f, "new& is only allowed in function parameters"),
+			LoopCtrlOutsideLoop(name) => write!(f, "{name} outside of loop"),
+			
+			MatchTypeMismatch { scrutinee, branch } => {
 				write!(
 					f,
-					"cannot mutate `{variable}`, as it is not declared as mutable"
+					"branch type `{branch}` is not a subtype of matched type `{scrutinee}`"
 				)
 			}
 
-			ComuneErrCode::AmbiguousCall => {
-				write!(f, "ambiguous call")
+			MissingInitializers { ty, members } => {
+				let mut iter = members.iter();
+				write!(
+					f,
+					"missing initializers for type `{ty}`: {}",
+					iter.next().unwrap()
+				)?;
+
+				for member in iter {
+					write!(f, ", {member}")?;
+				}
+
+				Ok(())
 			}
 
-			ComuneErrCode::Pack(vec) => write!(f, "encountered {} errors", vec.len()),
+			MissingTraitFuncImpl(name) => write!(f, "missing implementation for function `{name}`"),
 
-			ComuneErrCode::Custom(text) => write!(f, "{text}"),
-			ComuneErrCode::Unimplemented => write!(f, "not yet implemented"),
-			ComuneErrCode::Other => write!(f, "an unknown error occurred"),
+			ModuleNotFound(m) => write!(f, "module not found: {m:#?}"),
+			NotCallable(id) => write!(f, "`{id}` is not callable"),
+			NoCandidateFound {
+				name,
+				args,
+				generic_args,
+			} => {
+				write!(f, "no viable overload found for `{name}`")?;
+
+				if !generic_args.is_empty() {
+					write_arg_list!(f, generic_args, "<", ">");
+				}
+
+				write_arg_list!(f, args, "(", ")");
+				Ok(())
+			}
+
+			ParamCountMismatch { expected, got } => write!(
+				f,
+				"parameter count mismatch; expected `{expected}`, got `{got}`",
+			),
+			
+			ReturnTypeMismatch { expected, got } => {
+				write!(
+					f,
+					"return type mismatch; expected `{expected}`, got `{got}`"
+				)
+			}
+
+			TraitFunctionMismatch => write!(f, "function signature does not match trait definition"),
+
+			UndeclaredIdentifier(id) => write!(f, "`{id}` was not found in this scope"),
+			UnexpectedEOF => write!(f, "unexpected end of file"),
+			UnexpectedToken => write!(f, "unexpected token"),
+			UnexpectedKeyword => write!(f, "unexpected keyword"),
+			UninitReference => write!(f, "reference binding must be immediately initialized"),
+			
+			UninitNewReference => {
+				write!(
+					f,
+					"new& binding must be initialized in all control flow paths"
+				)
+			}
+			
+			UninitMutReference => {
+				write!(
+					f,
+					"moved-from mut& binding must be re-initialized in all control flow paths"
+				)
+			}
+
+			UnresolvedTypename(id) => write!(f, "unresolved typename `{id}`"),
+			UnstableFeature(feat) => write!(f, "feature `{feat}` is unstable"),
+			UnresolvedTrait(tr) => write!(f, "failed to resolve trait `{tr}`"),
+			UnsafeOperation => write!(f, "unsafe operation outside `unsafe` context"),
+			UnsafeCall(call) => write!(f, "unsafe call to `{call}` outside `unsafe` context"),
+			UnsupportedInference => write!(f, "`auto` in this position is not supported"),
+			UnsupportedConstExpr => write!(f, "unsupported constant expression"),
+
+			Pack(vec) => write!(f, "encountered {} errors", vec.len()),
+			Custom(text) => write!(f, "{text}"),
+			Unimplemented => write!(f, "not yet implemented"),
+			Other => write!(f, "an unknown error occurred"),
 		}
 	}
 }

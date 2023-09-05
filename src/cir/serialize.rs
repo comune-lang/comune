@@ -75,7 +75,7 @@ impl Display for CIRStmt {
 
 				writeln!(f, "\t\telse => bb{else_branch},\n\t}}")
 			}
-			
+
 			CIRStmt::GlobalAccess { local, symbol } => {
 				writeln!(f, "{local} := global {symbol};")
 			}
@@ -198,7 +198,11 @@ impl Display for LValue {
 				PlaceElem::Field(i) => {
 					write!(&mut result, ".{i}")?;
 				}
-				PlaceElem::Index { index_ty, index, op } => {
+				PlaceElem::Index {
+					index_ty,
+					index,
+					op,
+				} => {
 					write!(&mut result, "[{op}{index_ty} {index}]")?;
 				}
 				PlaceElem::SumData(ty) => {

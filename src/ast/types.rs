@@ -232,11 +232,12 @@ pub struct TypeDef {
 	pub drop: Option<Arc<FnPrototype>>, // Zero or one destructor
 }
 
-#[derive(Default, Debug, Clone, Copy)]
+#[derive(Default, Debug, Clone)]
 pub struct BindingProps {
 	pub is_ref: bool,
 	pub is_mut: bool,
 	pub is_new: bool,
+	pub lifetime: Option<Name>,
 	pub span: SrcSpan,
 }
 
@@ -303,7 +304,7 @@ impl TypeDef {
 
 	pub fn get_member_index(&self, name: &Name) -> Option<usize> {
 		let idx = self.members.iter().position(|(mem, ..)| mem == name)?;
-		
+
 		if self.variants.is_empty() {
 			Some(idx)
 		} else {
@@ -329,17 +330,23 @@ impl TypeDef {
 
 	pub fn needs_drop(&self, args: &GenericArgs) -> bool {
 		if self.drop.is_some() {
-			return true
+			return true;
 		}
 
-		if self.variants.iter().any(|(_, var)| var.read().unwrap().needs_drop(args)) {
-			return true
+		if self
+			.variants
+			.iter()
+			.any(|(_, var)| var.read().unwrap().needs_drop(args))
+		{
+			return true;
 		}
-		
+
 		if args.is_empty() {
 			self.members.iter().any(|(_, ty, _)| ty.needs_drop())
 		} else {
-			self.members.iter().any(|(_, ty, _)| ty.get_concrete_type(args).needs_drop())
+			self.members
+				.iter()
+				.any(|(_, ty, _)| ty.get_concrete_type(args).needs_drop())
 		}
 	}
 }
@@ -350,6 +357,7 @@ impl BindingProps {
 			is_ref: false,
 			is_mut: false,
 			is_new: false,
+			lifetime: None,
 			span: SrcSpan::new(),
 		}
 	}
@@ -359,6 +367,7 @@ impl BindingProps {
 			is_ref: true,
 			is_mut: false,
 			is_new: false,
+			lifetime: None,
 			span: SrcSpan::new(),
 		}
 	}
@@ -368,6 +377,7 @@ impl BindingProps {
 			is_ref: false,
 			is_mut: true,
 			is_new: false,
+			lifetime: None,
 			span: SrcSpan::new(),
 		}
 	}
@@ -377,6 +387,7 @@ impl BindingProps {
 			is_ref: true,
 			is_mut: true,
 			is_new: false,
+			lifetime: None,
 			span: SrcSpan::new(),
 		}
 	}
@@ -528,10 +539,9 @@ impl Type {
 		match self {
 			Type::Basic(b) => Type::Basic(*b),
 
-			Type::Pointer(pointee, kind) => Type::Pointer(
-				Box::new(pointee.get_concrete_type(args)),
-				*kind,
-			),
+			Type::Pointer(pointee, kind) => {
+				Type::Pointer(Box::new(pointee.get_concrete_type(args)), *kind)
+			}
 
 			Type::Array(arr_ty, size) => {
 				Type::Array(Box::new(arr_ty.get_concrete_type(args)), size.clone())
@@ -567,7 +577,7 @@ impl Type {
 				Box::new(ret.get_concrete_type(args)),
 				fn_args
 					.iter()
-					.map(|(props, arg)| (*props, arg.get_concrete_type(args)))
+					.map(|(props, arg)| (props.clone(), arg.get_concrete_type(args)))
 					.collect(),
 			),
 
@@ -604,11 +614,7 @@ impl Type {
 				}
 
 				Type::Pointer(pointee, kind) => {
-					if let Type::Pointer(
-						gen_pointee,
-						gen_kind,
-					) = generic_ty
-					{
+					if let Type::Pointer(gen_pointee, gen_kind) = generic_ty {
 						kind == gen_kind && pointee.fits_generic(gen_pointee)
 					} else {
 						false
@@ -655,9 +661,7 @@ impl Type {
 
 	pub fn needs_drop(&self) -> bool {
 		match self {
-			Type::TypeRef { def, args } => {
-				def.upgrade().unwrap().read().unwrap().needs_drop(args)
-			}
+			Type::TypeRef { def, args } => def.upgrade().unwrap().read().unwrap().needs_drop(args),
 
 			Type::Array(arr_ty, _) => arr_ty.needs_drop(),
 
@@ -681,10 +685,7 @@ impl Type {
 	}
 
 	pub fn ptr_type(&self, kind: PtrKind) -> Self {
-		Type::Pointer(
-			Box::new(self.clone()),
-			kind
-		)
+		Type::Pointer(Box::new(self.clone()), kind)
 	}
 
 	pub fn castable_to(&self, target: &Type) -> bool {
@@ -692,17 +693,13 @@ impl Type {
 			true
 		} else if self.is_numeric() {
 			target.is_numeric() || target.is_boolean()
-		} else if let (
-			Type::Pointer(_, kind),
-			Type::Pointer(_, target_kind)
-		) = (self, target)
-		{
+		} else if let (Type::Pointer(_, kind), Type::Pointer(_, target_kind)) = (self, target) {
 			// If self is a `T mut*`, it can be cast to a `T*`
 			// but if self is a `T*`, it can't be cast to a `T mut*`
-			*kind == PtrKind::Raw 
-			|| *target_kind == PtrKind::Raw 
-			|| *kind == PtrKind::Unique 
-			|| *target_kind != PtrKind::Unique
+			*kind == PtrKind::Raw
+				|| *target_kind == PtrKind::Raw
+				|| *kind == PtrKind::Unique
+				|| *target_kind != PtrKind::Unique
 		} else if matches!(self, Type::Pointer { .. }) && target.is_boolean() {
 			true
 		} else {
@@ -736,9 +733,9 @@ impl Type {
 			Type::TypeRef { def, .. } => {
 				let def = def.upgrade().unwrap();
 				let def = def.read().unwrap();
-				
+
 				if !def.variants.is_empty() {
-					return vec![]
+					return vec![];
 				}
 
 				(0..def.members.len())
@@ -747,12 +744,10 @@ impl Type {
 			}
 
 			Type::Tuple(TupleKind::Product, types) => {
-				(0..types.len())
-					.map(|i| PlaceElem::Field(i))
-					.collect_vec()
+				(0..types.len()).map(|i| PlaceElem::Field(i)).collect_vec()
 			}
 
-			_ => vec![]
+			_ => vec![],
 		}
 	}
 
@@ -795,9 +790,11 @@ impl Type {
 		} else {
 			match self {
 				Type::Never => true,
-				
-				Type::Tuple(TupleKind::Sum, types) => types.iter().all(|ty| ty.is_subtype_of(other)),
-				
+
+				Type::Tuple(TupleKind::Sum, types) => {
+					types.iter().all(|ty| ty.is_subtype_of(other))
+				}
+
 				_ => match other {
 					Type::Tuple(TupleKind::Sum, types) => {
 						for ty in types {
@@ -805,31 +802,30 @@ impl Type {
 								return true;
 							}
 						}
-	
+
 						false
 					}
-	
+
 					Type::TypeRef { def, args } => {
 						let Type::TypeRef { def: self_def, args: self_args } = self else {
 							return false
 						};
-	
+
 						if args != self_args {
 							return false;
 						}
-	
+
 						let def = def.upgrade().unwrap();
 						let def = def.read().unwrap();
-	
+
 						def.variants
 							.iter()
 							.any(|(_, variant)| Arc::ptr_eq(variant, &self_def.upgrade().unwrap()))
 					}
-	
+
 					_ => false,
-				}
+				},
 			}
-			
 		}
 	}
 
