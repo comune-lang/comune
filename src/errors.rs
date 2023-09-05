@@ -95,6 +95,7 @@ pub enum ComuneErrCode {
 		scrutinee: Type,
 		branch: Type,
 	},
+	InvalidBlockResult,
 	InvalidCast {
 		from: Type,
 		to: Type,
@@ -219,21 +220,12 @@ impl Display for ComuneErrCode {
 			}
 
 			BackendError => write!(f, "an internal compiler error occurred"),
-
 			CtorSelfParam(id) => write!(f, "constructor of `{id}` must take a `new& self` parameter"),
 			DependencyError => write!(f, "a dependency failed to compile"),
 			DSTWithoutIndirection => write!(f, "dynamically-sized type without indirection"),
 			DtorDefOverlap => write!(f, "overlapping definitions of `drop`"),
 			DtorSelfParam(id) => write!(f, "destructor of `{id}` must take a `mut& self` parameter"),
 			ExpectedIdentifier => write!(f, "expected identifier"),
-			InvalidSuffix => write!(f, "invalid suffix"),
-
-			RightShiftInGenericArgs(..) => {
-				write!(
-					f,
-					"`>>` in generic argument list interpreted as right shift operator"
-				)
-			}
 
 			ExprTypeMismatch(a, b, op) => write!(
 				f,
@@ -248,6 +240,7 @@ impl Display for ComuneErrCode {
 			}
 
 			InfiniteSizeType => write!(f, "cyclical type dependency found"),
+			InvalidBlockResult => write!(f, "block result may not be a declaration"),
 			InvalidCast { from, to } => write!(f, "cannot cast from `{from}` to `{to}`"),
 			InvalidCoercion { from, to } => write!(f, "cannot coerce from `{from}` to `{to}`"),
 			InvalidDeref(ty) => write!(f, "can't dereference value of type `{ty}`"),
@@ -256,6 +249,7 @@ impl Display for ComuneErrCode {
 			InvalidMemberAccess { t, idx } => write!(f, "no such member `{idx}` on type `{t}`"),
 			InvalidSubscriptLHS { t } => write!(f, "can't index into type `{t}`"),
 			InvalidSubscriptRHS { t } => write!(f, "can't index with value of type `{t}`"),
+			InvalidSuffix => write!(f, "invalid suffix"),
 
 			InvalidUse { variable, state } => {
 				write!(
@@ -305,7 +299,6 @@ impl Display for ComuneErrCode {
 			}
 
 			MissingTraitFuncImpl(name) => write!(f, "missing implementation for function `{name}`"),
-
 			ModuleNotFound(m) => write!(f, "module not found: {m:#?}"),
 			NotCallable(id) => write!(f, "`{id}` is not callable"),
 			NoCandidateFound {
@@ -335,8 +328,14 @@ impl Display for ComuneErrCode {
 				)
 			}
 
-			TraitFunctionMismatch => write!(f, "function signature does not match trait definition"),
+			RightShiftInGenericArgs(..) => {
+				write!(
+					f,
+					"`>>` in generic argument list interpreted as right shift operator"
+				)
+			}
 
+			TraitFunctionMismatch => write!(f, "function signature does not match trait definition"),
 			UndeclaredIdentifier(id) => write!(f, "`{id}` was not found in this scope"),
 			UnexpectedEOF => write!(f, "unexpected end of file"),
 			UnexpectedToken => write!(f, "unexpected token"),

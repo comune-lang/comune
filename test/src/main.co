@@ -27,7 +27,7 @@ impl Test {
 		printf(c"This is a method call!\n");
 		self.a + self.b
 	}
-	
+
 	// the `self` parameter's type can be omitted
 	int product(&self) {
 		self.a * self.b
@@ -142,9 +142,9 @@ void sub_drop_test() {
 	printf(c"\nEntering subscope\n\n");
 	{
 		DropTest c = new DropTest(3);
-		
+
 		int mut i = 0;
-		
+
 		printf(c"\nEntering loop\n\n");
 
 		while i < 5 {
@@ -168,7 +168,7 @@ void sub_drop_test() {
 		Vector<DropTest> mut drop_vec = new Vector<DropTest>();
 		drop_vec.push(new DropTest(5));
 		drop_vec.push(new DropTest(6));
-		
+
 		*drop_vec.get_mut(1).unwrap() = new DropTest(7);
 	}
 
@@ -202,7 +202,7 @@ type Some<type T> = Option<T>::Some;
 
 void enum_test() {
 	Option<i32> mut option = new None<i32>;
-	
+
 	option = new Some<i32> {
 		value: 23,
 	};
@@ -222,7 +222,7 @@ void enum_test() {
 	i32 unwrapped = option.unwrap();
 
 	option = new None<i32>;
-	
+
 	//option.unwrap();
 }
 
@@ -248,12 +248,13 @@ void ops_test() {
 void rc_test() {
 	printf(c"Creating Rc<DropTest>!\n");
 	auto rc = new Rc<DropTest>(new DropTest(0));
-	
+
 	for (int mut i = 0; i < 10; i += 1) {
 		printf(c"Cloning Rc<DropTest>!\n");
 		Rc<auto> rc = new Rc<DropTest>(rc);
 		printf(c"Dropping Rc<DropTest>!\n");
 	}
+
 	printf(c"Dropping last Rc<DropTest>!\n");
 }
 
@@ -265,11 +266,11 @@ void ptr_access_test() {
 	auto mut a = new DerefTest {
 		a: 0
 	};
-	
+
 	auto mut b = &mut a;
 	auto mut c = &mut b;
 	auto mut d = &mut c;
-	
+
 	b->a = 1;
 	c->>a = 2;
 	d->>>a = 3;
@@ -326,7 +327,7 @@ int main() {
 	}
 
 	// `else if` syntax test
-	
+
 	if i == 12 {
 		int scope_test = 15;
 		int scope_test_2 = 15;
@@ -340,7 +341,7 @@ int main() {
 	void(int) function;
 	//function(12);
 	//fn_pointer_test(fn_pointer_callback);
-	
+
 	TestSumType mut who_knows = sum_type_test(322);
 
 	match who_knows {
@@ -352,9 +353,9 @@ int main() {
 			printf(c"It's a float! %f\n", float_result)
 		}
 	}
-	
+
 	int mut loop_count = 0;
-	
+
 	while true {		
 		loop_count += 1;
 
@@ -365,7 +366,7 @@ int main() {
 	}
 
 	printf(c"Loop count after loop: %i\n", loop_count);
-	
+
 	impl_test();
 
 	overload_test(12i32);
@@ -375,7 +376,7 @@ int main() {
 	printf(c"int_ref_test: %i\n", int_ref_test);
 
 	printf(c"Temporary->lvalue promotion: %i\n", new Test { a: 23, b: 35 }.sum());
-	
+
 	unsafe {
 		printf(c"bit_cast<f32, u32>: %i\n", bit_cast<f32, u32>(10.0f32));
 	}

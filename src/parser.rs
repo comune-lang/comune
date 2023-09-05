@@ -22,16 +22,6 @@ use crate::ast::types::{
 };
 use crate::ast::{Attribute, FnScope};
 
-// Convenience function that matches a &str against various token kinds
-fn token_compare(token: &Token, text: &str) -> bool {
-	match token {
-		Token::Operator(op) => text == *op,
-		Token::Other(c) => text.chars().next().unwrap() == *c,
-		Token::Keyword(keyword) => text == *keyword,
-		_ => false,
-	}
-}
-
 pub type ComuneResult<T> = Result<T, ComuneError>;
 
 pub struct Parser {
@@ -117,8 +107,8 @@ impl<'ctx> Parser {
 	}
 
 	// Consume the current token, returning an error if it doesn't match `expected`
-	fn consume(&self, expected: &Token) -> ComuneResult<()> {
-		if &self.get_current()? == expected {
+	fn consume(&self, expected: Token) -> ComuneResult<()> {
+		if self.get_current()? == expected {
 			self.get_next()?;
 			Ok(())
 		} else {
@@ -234,7 +224,7 @@ impl<'ctx> Parser {
 						args: def_write.generics.get_as_arg_list(),
 					};
 
-					self.consume(&Token::Other('{'))?;
+					self.consume(Token::Other('{'))?;
 
 					let parent_name = Identifier {
 						qualifier: (Some(Box::new(self_ty.clone())), None),
@@ -352,7 +342,7 @@ impl<'ctx> Parser {
 						attributes: current_attributes,
 					};
 
-					self.consume(&Token::Other('{'))?;
+					self.consume(Token::Other('{'))?;
 
 					while self.get_current()? != Token::Other('}') {
 						let func_attributes = self.parse_attributes()?;
@@ -414,7 +404,7 @@ impl<'ctx> Parser {
 					}
 
 					// Consume brace
-					self.consume(&Token::Other('{'))?;
+					self.consume(Token::Other('{'))?;
 
 					// Parse functions
 					let mut functions: HashMap<_, Vec<Arc<FnPrototype>>> = HashMap::new();
@@ -483,7 +473,7 @@ impl<'ctx> Parser {
 						},
 					);
 
-					self.consume(&Token::Other('}'))?;
+					self.consume(Token::Other('}'))?;
 				}
 
 				Token::Keyword("import") => {
@@ -510,7 +500,7 @@ impl<'ctx> Parser {
 
 					let generics = self.parse_generic_param_list(None)?;
 
-					self.consume(&Token::Operator("="))?;
+					self.consume(Token::Operator("="))?;
 
 					let ty = self.parse_type(None)?;
 
@@ -684,7 +674,7 @@ impl<'ctx> Parser {
 			args: def_write.generics.get_as_arg_list(),
 		};
 
-		self.consume(&Token::Other('{'))?; // Consume brace
+		self.consume(Token::Other('{'))?; // Consume brace
 
 		loop {
 			match self.get_current()? {
@@ -717,7 +707,7 @@ impl<'ctx> Parser {
 						_ => unreachable!(),
 					}
 
-					self.consume(&Token::Other(':'))?;
+					self.consume(Token::Other(':'))?;
 				}
 
 				Token::Keyword(k @ ("new" | "drop")) => {
@@ -746,7 +736,7 @@ impl<'ctx> Parser {
 			}
 		}
 
-		self.consume(&Token::Other('}'))?; // Consume brace
+		self.consume(Token::Other('}'))?; // Consume brace
 
 		drop(def_write);
 		Ok(def)
@@ -807,17 +797,14 @@ impl<'ctx> Parser {
 	}
 
 	fn skip_block(&self) -> ComuneResult<()> {
-		let mut current = self.get_current()?;
-
-		if current != Token::Other('{') {
+		if self.get_current()? != Token::Other('{') {
 			return self.err(ComuneErrCode::UnexpectedToken);
 		}
+
 		let mut bracket_depth = 1;
 
 		while bracket_depth > 0 {
-			current = self.get_next()?;
-
-			match current {
+			match self.get_next()? {
 				Token::Other('{') => bracket_depth += 1,
 				Token::Other('}') => bracket_depth -= 1,
 				Token::Eof => break,
@@ -831,18 +818,16 @@ impl<'ctx> Parser {
 
 	fn parse_block(&self, scope: &FnScope<'ctx>) -> ComuneResult<Expr> {
 		let begin = self.get_current_start_index();
-		let mut current = self.get_current()?;
-
 		let is_unsafe;
 
-		if current == Token::Keyword("unsafe") {
+		if self.get_current()? == Token::Keyword("unsafe") {
 			is_unsafe = true;
-			current = self.get_next()?;
+			self.get_next()?;
 		} else {
 			is_unsafe = false;
 		}
 
-		if current != Token::Other('{') {
+		if self.get_current()? != Token::Other('{') {
 			return self.err(ComuneErrCode::UnexpectedToken);
 		}
 
@@ -854,14 +839,19 @@ impl<'ctx> Parser {
 		while self.get_current()? != Token::Other('}') {
 			let stmt = self.parse_statement(scope)?;
 
-			current = self.get_current()?;
+			if self.get_current()? == Token::Other('}') {
+				match stmt {
+					Stmt::Expr(expr) => {
+						result = Some(Box::new(expr));
+						break;
+					}
 
-			if current == Token::Other('}') {
-				if let Stmt::Expr(expr) = stmt {
-					result = Some(Box::new(expr));
-					break;
-				} else {
-					panic!() // TODO: Error handling
+					Stmt::Decl(.., span) => {
+						return Err(ComuneError::new(
+							ComuneErrCode::InvalidBlockResult,
+							span
+						))
+					}
 				}
 			}
 
@@ -924,12 +914,7 @@ impl<'ctx> Parser {
 	}
 
 	fn check_semicolon(&self) -> ComuneResult<()> {
-		if token_compare(&self.get_current()?, ";") {
-			self.get_next()?;
-			Ok(())
-		} else {
-			self.err(ComuneErrCode::UnexpectedToken)
-		}
+		self.consume(Token::Other(';'))
 	}
 
 	fn parse_namespace_declaration(
@@ -1072,7 +1057,7 @@ impl<'ctx> Parser {
 
 			let mut expr = None;
 
-			if token_compare(&self.get_next()?, "=") {
+			if self.get_next()? == Token::Operator("=") {
 				self.get_next()?;
 				expr = Some(self.parse_expression(scope)?);
 			}
@@ -1211,7 +1196,7 @@ impl<'ctx> Parser {
 
 					let sub = self.parse_expression_bp(0, scope)?;
 
-					self.consume(&Token::Operator(")"))?;
+					self.consume(Token::Operator(")"))?;
 
 					sub
 				} else {
@@ -1418,7 +1403,7 @@ impl<'ctx> Parser {
 					}
 				}
 
-				self.consume(&Token::Operator("("))?;
+				self.consume(Token::Operator("("))?;
 
 				// Function call
 				let mut args = vec![];
@@ -1523,14 +1508,14 @@ impl<'ctx> Parser {
 						}
 					}
 
-					self.consume(&Token::Operator("]"))?;
+					self.consume(Token::Operator("]"))?;
 
 					result = Some(Atom::ArrayLit(elements));
 				}
 
 				Token::Other('{') | Token::Keyword("unsafe") => {
 					let Expr::Atom(block @ Atom::Block { .. }, _) = self.parse_block(scope)? else {
-						panic!()
+						unreachable!()
 					};
 
 					result = Some(block);
@@ -1544,7 +1529,7 @@ impl<'ctx> Parser {
 							// Placement-new
 							self.get_next()?;
 							let expr = self.parse_expression(scope)?;
-							self.consume(&Token::Operator(")"))?;
+							self.consume(Token::Operator(")"))?;
 
 							Some(Box::new(expr))
 						} else {
@@ -1595,7 +1580,7 @@ impl<'ctx> Parser {
 								}
 							}
 
-							self.consume(&Token::Other('}'))?;
+							self.consume(Token::Other('}'))?;
 
 							result = Some(Atom::Constructor {
 								def,
@@ -1742,13 +1727,13 @@ impl<'ctx> Parser {
 						let body;
 						let mut else_body = None;
 
-						if token_compare(&self.get_current()?, "{") {
+						if self.get_current()? == Token::Other('{') {
 							body = self.parse_block(scope)?;
 						} else {
 							return self.err(ComuneErrCode::UnexpectedToken);
 						}
 
-						if token_compare(&self.get_current()?, "else") {
+						if self.get_current()? == Token::Keyword("else") {
 							self.get_next()?;
 
 							match self.get_current()? {
@@ -1786,7 +1771,7 @@ impl<'ctx> Parser {
 						self.get_next()?;
 
 						// Check opening brace
-						self.consume(&Token::Operator("("))?;
+						self.consume(Token::Operator("("))?;
 
 						let mut init = None;
 						let mut cond = None;
@@ -1817,7 +1802,7 @@ impl<'ctx> Parser {
 						}
 
 						// Check closing brace
-						self.consume(&Token::Operator(")"))?;
+						self.consume(Token::Operator(")"))?;
 
 						// Parse body
 						let body = self.parse_block(scope)?;
@@ -1912,7 +1897,7 @@ impl<'ctx> Parser {
 				_ => return self.err(ComuneErrCode::UnexpectedToken),
 			};
 
-			self.consume(&Token::Operator(">"))?;
+			self.consume(Token::Operator(">"))?;
 
 			absolute = true;
 			qualifier = (Some(Box::new(ty)), tr);
@@ -1996,7 +1981,7 @@ impl<'ctx> Parser {
 						}
 					}
 
-					self.consume(&Token::Other('}'))?;
+					self.consume(Token::Other('}'))?;
 				}
 
 				_ => return self.err(ComuneErrCode::UnexpectedToken),
@@ -2026,7 +2011,7 @@ impl<'ctx> Parser {
 			variadic: false,
 		};
 
-		if token_compare(&self.get_current()?, "(") {
+		if self.get_current()? == Token::Operator("(") {
 			self.get_next()?;
 		} else {
 			return self.err(ComuneErrCode::UnexpectedToken);
@@ -2062,9 +2047,7 @@ impl<'ctx> Parser {
 			);
 
 			// Check for param name
-			let mut current = self.get_current()?;
-
-			if let Token::Name(name) = current {
+			if let Token::Name(name) = self.get_current()? {
 				param.1 = Some(name);
 				self.get_next()?;
 			}
@@ -2079,9 +2062,7 @@ impl<'ctx> Parser {
 			result.params.push(param);
 
 			// Check if we've arrived at a comma, skip it, and loop back around
-			current = self.get_current()?;
-
-			match current {
+			match self.get_current()?  {
 				Token::Other(',') => {
 					self.get_next()?;
 					continue;
@@ -2176,7 +2157,11 @@ impl<'ctx> Parser {
 						if self.get_next()? == Token::Operator("]") {
 							result = Type::Slice(Box::new(result));
 						} else {
-							let Some(scope) = scope else { panic!() };
+							let Some(scope) = scope else {
+								// TODO: Defer this parse until interface is complete
+								return self.err(ComuneErrCode::Unimplemented) 
+							};
+
 							let const_expr = self.parse_expression(scope)?;
 
 							result = Type::Array(
@@ -2185,7 +2170,7 @@ impl<'ctx> Parser {
 							);
 						}
 
-						self.consume(&Token::Operator("]"))?;
+						self.consume(Token::Operator("]"))?;
 					}
 
 					Token::Operator("(") => {
@@ -2323,7 +2308,7 @@ impl<'ctx> Parser {
 	}
 
 	fn parse_attribute(&self) -> ComuneResult<Attribute> {
-		if !token_compare(&self.get_current()?, "@") {
+		if self.get_current()? != Token::Other('@') {
 			return self.err(ComuneErrCode::UnexpectedToken); // You called this from the wrong place lol
 		}
 
@@ -2339,47 +2324,43 @@ impl<'ctx> Parser {
 			return self.err(ComuneErrCode::ExpectedIdentifier);
 		}
 
-		let mut current = self.get_next()?;
+		if self.get_next()? == Token::Operator("(") {
+			let mut current_seq = vec![];
+			let mut paren_depth = 0;
 
-		if token_compare(&current, "(") {
-			current = self.get_next()?;
+			loop {
+				match self.get_next()? {
 
-			if current != Token::Operator(")") {
-				let mut current_seq = vec![];
-				let mut paren_depth = 0;
-
-				loop {
-					match current {
-						Token::Other(',') => {
-							if paren_depth == 0 {
-								result.args.push(current_seq);
-								current_seq = vec![];
-								current = self.get_next()?;
-								continue;
-							}
+					Token::Other(',') => {
+						if paren_depth == 0 {
+							result.args.push(current_seq);
+							current_seq = vec![];
+							continue
 						}
-
-						Token::Operator(op) => match op {
-							"(" => paren_depth += 1,
-
-							")" => {
-								if paren_depth == 0 {
-									result.args.push(current_seq);
-									break;
-								} else {
-									paren_depth -= 1
-								}
-							}
-
-							_ => {}
-						},
-						_ => {}
 					}
 
-					current_seq.push(current);
-					current = self.get_next()?;
+					Token::Operator("(") => {
+						paren_depth += 1;
+						current_seq.push(Token::Operator("("));
+					}
+
+					Token::Operator(")") => {
+						if paren_depth == 0 {
+							if !current_seq.is_empty() {
+								result.args.push(current_seq);
+							}
+
+							break
+						} else {
+							paren_depth -= 1
+						}
+						current_seq.push(Token::Operator(")"));
+					}
+
+					token => current_seq.push(token),
 				}
 			}
+		
 			self.get_next()?;
 		}
 
@@ -2392,10 +2373,11 @@ impl<'ctx> Parser {
 		}
 
 		let mut result = vec![];
-		let mut current = self.get_next()?;
+		
+		self.get_next()?;
 
 		loop {
-			match current {
+			match self.get_current()? {
 				Token::Keyword("type") => {
 					let Token::Name(name) = self.get_next()? else {
 						return self.err(ComuneErrCode::UnexpectedToken)
@@ -2403,10 +2385,8 @@ impl<'ctx> Parser {
 
 					let mut bounds = vec![];
 
-					current = self.get_next()?;
-
-					if let Token::Other(':') = current {
-						current = self.get_next()?;
+					if self.get_next()? == Token::Other(':') {
+						self.get_next()?;
 
 						// Collect trait bounds
 						while self.is_at_identifier_token()? {
@@ -2418,24 +2398,22 @@ impl<'ctx> Parser {
 								generic_args: vec![],
 							});
 
-							current = self.get_next()?;
-
-							match current {
-								Token::Operator("+") => current = self.get_next()?,
+							match self.get_next()? {
+								Token::Operator("+") => self.get_next()?,
 
 								Token::Other(',') => break,
 
 								_ => return self.err(ComuneErrCode::UnexpectedToken),
-							}
+							};
 						}
 					}
 
 					result.push((name, GenericParam::Type { bounds, arg: None }));
 
-					match &current {
+					match &self.get_current()? {
 						Token::Operator(">") => continue,
 						Token::Other(',') => {
-							current = self.get_next()?;
+							self.get_next()?;
 							continue;
 						}
 
