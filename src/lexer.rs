@@ -50,6 +50,10 @@ static OPERATORS: [&str; 41] = [
 	">>", ">>=", "<<=", "..", "...", "=>", "as",
 ];
 
+static NUM_SUFFIXES: [&str; 13] = [
+	"u8", "i8", "u16", "i16", "u32", "i32", "u64", "i64", "usize", "isize", "f32", "f64", "f",
+];
+
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum Token {
 	Eof,
@@ -58,7 +62,7 @@ pub enum Token {
 	CStringLiteral(CString),
 	BoolLiteral(bool),
 	Keyword(&'static str),
-	NumLiteral(String, String), // Optional suffix
+	NumLiteral(String, Option<&'static str>), // Optional suffix
 	Operator(&'static str),
 	Other(char),
 }
@@ -68,7 +72,9 @@ impl Token {
 		match self {
 			Token::Name(x) => x.as_str().len(),
 
-			Token::NumLiteral(x, suf) => x.len() + suf.len(),
+			Token::NumLiteral(x, Some(suf)) => x.len() + suf.len(),
+
+			Token::NumLiteral(x, None) => x.len(),
 
 			Token::BoolLiteral(val) => {
 				if *val {
@@ -441,7 +447,12 @@ impl Lexer {
 					next = self.get_next_char()?;
 				}
 
-				result_token = Ok(Token::NumLiteral(result, suffix));
+				if let Some(suf) = NUM_SUFFIXES.iter().find(|suf| *suf == &suffix) {
+					result_token = Ok(Token::NumLiteral(result, Some(suf)));
+				} else {
+					result_token = Ok(Token::NumLiteral(result, None));
+				}
+				
 			} else if let Some(op) = OPERATORS
 				.iter()
 				.find(|x| x.chars().next().unwrap() == token)

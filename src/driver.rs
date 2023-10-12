@@ -658,7 +658,7 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 		}
 
 		// Validate code
-		if let Err(e) = validate_module_impl(&parser.interface, &mut parser.module_impl) {
+		if let Err(e) = validate_module_impl(&parser.interface, &mut parser.module_impl.borrow_mut()) {
 			parser
 				.lexer
 				.borrow()

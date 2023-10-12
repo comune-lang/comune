@@ -1404,7 +1404,7 @@ impl<'ctx> LLVMBuilder<'ctx> {
 					if let ConstExpr::Result(ConstValue::Integral(e, _)) = &**size {
 						*e as u32
 					} else {
-						panic!()
+						panic!("unresolved constant expression in LLVM codegen!")
 					},
 				)
 				.as_any_type_enum(),

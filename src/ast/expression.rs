@@ -130,7 +130,7 @@ impl Operator {
 		// Kind of a hack for the sake of being at least somewhat concise
 		// If the binding power values change, be sure to update these too
 		match self.get_binding_power() {
-			80 | 190 => true, // Pre-inc/dec, logical not, compound assignment
+			80 | 190 => true, // Unary ops, logical not, compound assignment
 			_ => false,       // All others
 		}
 	}

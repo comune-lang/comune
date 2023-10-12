@@ -226,6 +226,10 @@ void enum_test() {
 	//option.unwrap();
 }
 
+void slice_test(i32[]& slice) {
+	printf(c"slice length: %i\n", slice.len());
+}
+
 void ops_test() {
 	u8 mut bitwise_test = 0xFF;
 	bitwise_test &= 0x0Fu8;
@@ -278,6 +282,7 @@ void ptr_access_test() {
 
 
 int global_var;
+//int[5] global_constexpr_test;
 
 void global_var_test() {
 	global_var = 0;

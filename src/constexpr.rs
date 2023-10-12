@@ -12,6 +12,7 @@ use crate::{
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum ConstExpr {
+	Deferred(usize),
 	Expr(Expr),
 	Result(ConstValue),
 }

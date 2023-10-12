@@ -26,7 +26,7 @@ pub type ComuneResult<T> = Result<T, ComuneError>;
 
 pub struct Parser {
 	pub interface: ModuleInterface,
-	pub module_impl: ModuleImpl,
+	pub module_impl: RefCell<ModuleImpl>,
 	pub child_parsers: Vec<Parser>,
 	pub path: PathBuf,
 	pub lexer: RefCell<Lexer>,
@@ -43,7 +43,7 @@ impl<'ctx> Parser {
 	pub fn new(lexer: Lexer, module_name: Identifier, path: PathBuf) -> Parser {
 		Parser {
 			interface: ModuleInterface::new(module_name),
-			module_impl: ModuleImpl::new(),
+			module_impl: RefCell::default(),
 			child_parsers: vec![],
 			path,
 			lexer: RefCell::new(lexer),
@@ -140,7 +140,7 @@ impl<'ctx> Parser {
 	pub fn generate_ast(&mut self) -> ComuneResult<()> {
 		let mut fn_impls = HashMap::new();
 
-		for (proto, ast) in &self.module_impl.fn_impls {
+		for (proto, ast) in &self.module_impl.borrow().fn_impls {
 			// Parse function block
 			if let ModuleASTElem::Unparsed(idx) = ast {
 				self.lexer.borrow_mut().seek_token_idx(*idx);
@@ -159,7 +159,7 @@ impl<'ctx> Parser {
 			}
 		}
 
-		self.module_impl.fn_impls = fn_impls;
+		self.module_impl.get_mut().fn_impls = fn_impls;
 
 		Ok(())
 	}
@@ -352,7 +352,7 @@ impl<'ctx> Parser {
 							Some(&Type::TypeParam(0)),
 						)? {
 							(DeclParseResult::Function(name, proto), ast) => {
-								self.module_impl.fn_impls.insert(proto.clone(), ast);
+								self.module_impl.borrow_mut().fn_impls.insert(proto.clone(), ast);
 
 								if let Some(existing) = this_trait.items.get_mut(&name) {
 									existing.push(proto);
@@ -456,7 +456,7 @@ impl<'ctx> Parser {
 							functions.insert(fn_name.clone(), vec![proto.clone()]);
 						}
 
-						self.module_impl.fn_impls.insert(proto, ast);
+						self.module_impl.borrow_mut().fn_impls.insert(proto, ast);
 					}
 
 					// Register impl to solver
@@ -601,7 +601,7 @@ impl<'ctx> Parser {
 
 							let id = Identifier::from_parent(scope, name);
 
-							self.module_impl.fn_impls.insert(proto.clone(), ast);
+							self.module_impl.borrow_mut().fn_impls.insert(proto.clone(), ast);
 
 							self.register_module_item(
 								id,
@@ -774,6 +774,7 @@ impl<'ctx> Parser {
 
 		// Add fn to module impl
 		self.module_impl
+			.borrow_mut()
 			.fn_impls
 			.insert(func.clone(), ModuleASTElem::Unparsed(ast));
 
@@ -785,7 +786,13 @@ impl<'ctx> Parser {
 			match self.get_next()? {
 				Token::Other('{') => self.skip_block()?,
 
-				Token::Other(';') | Token::Eof => break,
+				Token::Other(';') | Token::Operator("]") | Token::Eof => break,
+
+				Token::Operator("[") => {
+					self.get_next()?;
+					self.skip_expression()?;
+					self.consume(Token::Operator("]"))?;
+				}
 
 				_ => {
 					self.get_next()?;
@@ -1448,11 +1455,11 @@ impl<'ctx> Parser {
 
 				Token::NumLiteral(s, suffix) => {
 					self.get_next()?;
+					
+					let mut suffix_b = suffix.and_then(|suffix| Basic::get_basic_type(&suffix));
 
-					let mut suffix_b = Basic::get_basic_type(&suffix);
-
-					if suffix_b.is_none() && !suffix.is_empty() {
-						suffix_b = match suffix.as_str() {
+					if suffix_b.is_none() && suffix.is_some() {
+						suffix_b = match suffix.unwrap() {
 							// Add special numeric suffixes here
 							"f" => Some(Basic::Float {
 								size: FloatSize::F32,
@@ -2157,17 +2164,28 @@ impl<'ctx> Parser {
 						if self.get_next()? == Token::Operator("]") {
 							result = Type::Slice(Box::new(result));
 						} else {
-							let Some(scope) = scope else {
-								// TODO: Defer this parse until interface is complete
-								return self.err(ComuneErrCode::Unimplemented) 
-							};
+							if let Some(scope) = scope {
+								let const_expr = self.parse_expression(scope)?;
+	
+								result = Type::Array(
+									Box::new(result),
+									Box::new(ConstExpr::Expr(const_expr)),
+								);
+							} else {
+								let idx = self.get_current_token_index();
+								self.skip_expression()?;
+								
+								self
+									.module_impl
+									.borrow_mut()
+									.const_exprs
+									.push(ModuleASTElem::Unparsed(idx));
 
-							let const_expr = self.parse_expression(scope)?;
-
-							result = Type::Array(
-								Box::new(result),
-								Box::new(ConstExpr::Expr(const_expr)),
-							);
+								result = Type::Array(
+									Box::new(result),
+									Box::new(ConstExpr::Deferred(self.module_impl.borrow().const_exprs.len() - 1))
+								);
+							}
 						}
 
 						self.consume(Token::Operator("]"))?;

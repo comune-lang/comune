@@ -23,7 +23,7 @@ use crate::{
 pub fn resolve_interface_types(parser: &mut Parser) -> ComuneResult<()> {
 	// Resolve types
 	let interface = &parser.interface;
-	let module_impl = &mut parser.module_impl;
+	let module_impl = &mut parser.module_impl.borrow_mut();
 
 	// Resolve type aliases before everything else, for Annoying Reasons
 	for child in interface.children.values() {

@@ -1,0 +1,8 @@
+
+
+impl<type T> T[] {
+	usize len(&self) {
+		// hack: slices are currently implemented as (T*, usize)
+		*(&self as usize* + 1)
+	}
+}

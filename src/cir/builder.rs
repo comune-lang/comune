@@ -55,7 +55,7 @@ impl CIRModuleBuilder {
 		};
 
 		result.register_module(&ast.interface);
-		result.generate_module(&ast.module_impl);
+		result.generate_module(&ast.module_impl.borrow());
 
 		result
 	}
@@ -68,24 +68,18 @@ impl CIRModuleBuilder {
 
 			for (_, fns) in &im.functions {
 				for func in fns {
-					let cir_fn = Self::generate_prototype(&func);
+					let cir_fn = Self::get_empty_function(&func);
 
 					self.module.functions.insert(func.clone(), cir_fn);
 				}
 			}
 		}
-
-		//for import in module.imported.values() {
-		//	assert!(import.interface.is_typed);
-
-		//	self.register_module(&import.interface);
-		//}
-
+		
 		for (id, item) in &module.children {
 			match item {
 				ModuleItemInterface::Functions(fns) => {
 					for func in &*fns.read().unwrap() {
-						let cir_fn = Self::generate_prototype(func);
+						let cir_fn = Self::get_empty_function(func);
 
 						self.module.functions.insert(func.clone(), cir_fn);
 					}
@@ -118,14 +112,14 @@ impl CIRModuleBuilder {
 		}
 
 		if let Some(drop) = &ty.read().unwrap().drop {
-			let cir_fn = Self::generate_prototype(&drop);
+			let cir_fn = Self::get_empty_function(&drop);
 
 			self.module.functions.insert(drop.clone(), cir_fn);
 		}
 
 		for init in &ty.read().unwrap().init {
 			let proto = init.clone();
-			let cir_fn = Self::generate_prototype(&proto);
+			let cir_fn = Self::get_empty_function(&proto);
 
 			self.module.functions.insert(proto, cir_fn);
 		}
@@ -139,7 +133,7 @@ impl CIRModuleBuilder {
 		}
 	}
 
-	pub fn generate_prototype(func: &FnPrototype) -> CIRFunction {
+	pub fn get_empty_function(func: &FnPrototype) -> CIRFunction {
 		CIRFunction {
 			variables: func
 				.params
@@ -186,8 +180,8 @@ impl CIRModuleBuilder {
 			is_loop: false,
 		});
 
-		if !proto.ret.1.is_void() {
-			// If the return type isn't void, insert a
+		if !proto.ret.1.is_void_or_never() {
+			// If the return type isn't void/never, insert a
 			// variable to write the return value to
 			let mut props = proto.ret.0.clone();
 			props.is_mut = true;
@@ -1453,7 +1447,7 @@ impl CIRModuleBuilder {
 				}
 
 				if !self.module.functions.contains_key(resolved) {
-					let extern_proto = Self::generate_prototype(resolved);
+					let extern_proto = Self::get_empty_function(resolved);
 
 					self.module.functions.insert(resolved.clone(), extern_proto);
 				}

@@ -621,6 +621,14 @@ impl Type {
 					}
 				}
 
+				Type::Slice(slicee) => {
+					if let Type::Slice(gen_slicee) = generic_ty {
+						slicee.fits_generic(gen_slicee)
+					} else {
+						false
+					}
+				}
+
 				Type::TypeRef {
 					def: ty_def,
 					args: ty_args,

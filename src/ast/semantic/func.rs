@@ -331,6 +331,7 @@ pub fn is_candidate_viable(
 			let param_concrete = param.get_concrete_type(generic_args);
 
 			if !arg_concrete.castable_to(&param_concrete) {
+				println!("{arg_concrete} not castable to {param_concrete} ({param})");
 				return false;
 			}
 		}

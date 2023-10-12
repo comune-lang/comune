@@ -104,6 +104,7 @@ pub struct ModuleInterface {
 #[derive(Default, Debug)]
 pub struct ModuleImpl {
 	pub fn_impls: HashMap<Arc<FnPrototype>, ModuleASTElem>,
+	pub const_exprs: Vec<ModuleASTElem>,
 }
 
 // I HATE RWLOCKS I HATE RWLOCKS I HATE RWLOCKS I HATE RWLOCKS I
@@ -121,6 +122,7 @@ impl ModuleImpl {
 	pub fn new() -> Self {
 		ModuleImpl {
 			fn_impls: HashMap::new(),
+			const_exprs: vec![],
 		}
 	}
 }
