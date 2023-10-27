@@ -97,10 +97,10 @@ struct Slice<type T> {
 	usize len;
 }
 
-void slice_test(i32[]* test) {
-	auto slice = test as Slice<i32>*;
+fn slice_test(i32[]* test) {
+	//auto slice = test as Slice<i32>*;
 
-	printf(c"Slice length: %i", slice->len);
+	//printf(c"Slice length: %i", slice->len);
 }
 
 

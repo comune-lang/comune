@@ -26,7 +26,7 @@ static KEYWORDS: [&str; 32] = [
 	"for",
 	"while",
 	"using",
-	"import",
+	"fn",
 	"return",
 	"break",
 	"continue",

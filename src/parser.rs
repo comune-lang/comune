@@ -592,11 +592,11 @@ impl<'ctx> Parser {
 					}
 				}
 
-				Token::Keyword(_) => {
+				Token::Keyword(key) if key != "fn" => {
 					return self.err(ComuneErrCode::UnexpectedKeyword);
 				}
 
-				_ => {
+				Token::Keyword("fn") | _ => {
 					// Parse declaration/definition
 
 					match self.parse_namespace_declaration(current_attributes, None)? {
@@ -936,7 +936,15 @@ impl<'ctx> Parser {
 		attributes: Vec<Attribute>,
 		self_ty: Option<&Type>,
 	) -> ComuneResult<(DeclParseResult, ModuleASTElem)> {
-		let t = self.parse_type(None)?;
+		let mut t;
+
+		if self.get_current()? == Token::Keyword("fn") {
+			t = None;
+			self.get_next()?;
+		} else {
+			t = Some(self.parse_type(None)?);
+		}
+
 		let props = self.parse_binding_props()?.unwrap_or_default();
 		let interface;
 		let item;
@@ -950,11 +958,21 @@ impl<'ctx> Parser {
 				// Function declaration
 				"<" | "(" => {
 					let generics = self.parse_generic_param_list(None)?;
+					let params = self.parse_parameter_list(self_ty, None)?;
+
+					if t.is_none() {
+						if self.get_current()? == Token::Operator("->") {
+							self.get_next()?;
+							t = Some(self.parse_type(None)?);
+						} else {
+							t = Some(Type::void_type());
+						}
+					}
 
 					let t = FnPrototype {
 						path: Identifier::from_parent(&self.current_scope, name.clone()),
-						ret: (props, t),
-						params: self.parse_parameter_list(self_ty, None)?,
+						ret: (props, t.unwrap()),
+						params,
 						generics,
 						attributes,
 						is_unsafe: false,
@@ -983,7 +1001,7 @@ impl<'ctx> Parser {
 					self.get_next()?;
 
 					item = ModuleASTElem::Unparsed(self.get_current_token_index());
-					interface = DeclParseResult::Variable(name, t);
+					interface = DeclParseResult::Variable(name, t.unwrap());
 
 					self.skip_expression()?;
 					self.check_semicolon()?;
@@ -995,7 +1013,7 @@ impl<'ctx> Parser {
 			}
 		} else {
 			self.check_semicolon()?;
-			interface = DeclParseResult::Variable(name, t);
+			interface = DeclParseResult::Variable(name, t.unwrap());
 			item = ModuleASTElem::NoElem;
 		}
 
