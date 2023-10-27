@@ -366,6 +366,17 @@ impl CIRModuleBuilder {
 
 			Pattern::Binding(Binding { name: None, .. }) => {}
 
+			Pattern::Destructure(patterns, ty) => {
+				if value_ty.get_variant_index(&ty).is_some() {
+					value.projection.push(PlaceElem::SumData(ty.clone()));
+				}
+
+				for (i, pattern) in patterns.iter().enumerate() {
+					let lval = value.clone().projected(vec![PlaceElem::Field(i)]);
+					self.generate_pattern_bindings(pattern.clone(), lval, pattern.get_type());
+				}
+			}
+
 			_ => todo!(),
 		}
 	}
@@ -1720,11 +1731,7 @@ impl CIRModuleBuilder {
 			Pattern::Binding(Binding { ty: pattern_ty, .. }) => {
 				if pattern_ty == value_ty {
 					RValue::const_bool(true)
-				} else if let Type::Tuple(TupleKind::Sum, types) = value_ty {
-					let Some(discriminant) = types.iter().position(|item| item == pattern_ty) else {
-						panic!("invalid match variant type!"); // TODO: Figure this out
-					};
-
+				} else if let Some(discriminant) = value_ty.get_variant_index(pattern_ty) {
 					// TODO: Actually figure out proper discriminant type
 					let disc_type = Type::i32_type(true);
 
@@ -1739,7 +1746,7 @@ impl CIRModuleBuilder {
 										projection: vec![PlaceElem::SumDisc],
 										props: value.props,
 									},
-									BindingProps::reference(),
+									BindingProps::value(),
 								),
 							),
 							(
@@ -1755,7 +1762,37 @@ impl CIRModuleBuilder {
 				}
 			}
 
-			Pattern::Destructure(_, _) => todo!(),
+			Pattern::Destructure(patterns, _) => {
+				let mut result = None;
+
+				for (i, pattern) in patterns.iter().enumerate() {
+					let lval = value.clone().projected(vec![PlaceElem::Field(i)]);				
+					let member = self.generate_match_expr(pattern, &lval, pattern.get_type());
+					
+					if let Some(prev_result) = result {
+						let op = self.get_as_operand(pattern.get_type(), member, SrcSpan::new());
+						let prev = self.get_as_operand(&Type::bool_type(), prev_result, SrcSpan::new());
+						
+						result = Some(RValue::Cons(
+							Type::bool_type(), 
+							[
+								(Type::bool_type(), prev),
+								(Type::bool_type(), op)
+							],
+							Operator::LogicAnd, 
+							SrcSpan::new()
+						));
+					} else {
+						result = Some(member);
+					}
+				}
+				
+				if let Some(result) = result {
+					result
+				} else {
+					RValue::const_bool(true)
+				}
+			},
 
 			Pattern::Or(_, _) => todo!(),
 		}

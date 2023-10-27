@@ -98,9 +98,9 @@ struct Slice<type T> {
 }
 
 fn slice_test(i32[]* test) {
-	//auto slice = test as Slice<i32>*;
+	auto slice = &test as Slice<i32>*;
 
-	//printf(c"Slice length: %i", slice->len);
+	printf(c"Slice length: %i\n", slice->len);
 }
 
 
@@ -296,6 +296,16 @@ int main() {
 	enum_test();
 	drop_test();
 	rc_test();
+
+	global_var_test();
+	printf(c"Global var: %i\n", global_var);
+
+	auto slice = new Slice<i32> {
+		t: core::mem::null<i32>() as i32*,
+		len: 1,
+	};
+
+	slice_test(*(&slice as i32[]**));
 
 	submodule_test::bar();
 	printf(c"fib(10) = %i\n", module_test::fib(10));

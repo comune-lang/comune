@@ -874,7 +874,7 @@ impl<'ctx> LLVMBuilder<'ctx> {
 					}
 					.as_basic_value_enum()
 				} else if expr_ty.is_boolean() {
-					if lhs_v.is_int_value() {
+					if lhs_ty.is_integral() {
 						let lhs_i = lhs_v.into_int_value();
 						let rhs_i = rhs_v.into_int_value();
 
@@ -887,7 +887,7 @@ impl<'ctx> LLVMBuilder<'ctx> {
 								"",
 							)
 							.as_basic_value_enum();
-					} else if lhs_v.is_float_value() {
+					} else if lhs_ty.is_floating_point() {
 						let lhs_f = lhs_v.into_float_value();
 						let rhs_f = rhs_v.into_float_value();
 
