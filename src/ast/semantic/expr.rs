@@ -210,17 +210,17 @@ impl Expr {
 		meta: &NodeData,
 	) -> ComuneResult<Type> {
 		lhs.validate(scope)?;
-
-		let Type::TypeRef { def, args } = lhs.get_type() else {
-			return Err(ComuneError::new(ComuneErrCode::InvalidSubscriptLHS { t: lhs.get_type().clone() }, meta.span));
-		};
-
-		let def = def.upgrade().unwrap();
-		let def = def.read().unwrap();
-
+		
 		match rhs {
 			// Member access
 			Expr::Atom(Atom::Identifier(id), _) => {
+				let Type::TypeRef { def, args } = lhs.get_type() else {
+					return Err(ComuneError::new(ComuneErrCode::InvalidSubscriptLHS { t: lhs.get_type().clone() }, meta.span));
+				};
+		
+				let def = def.upgrade().unwrap();
+				let def = def.read().unwrap();
+
 				if let Some(m) = def.get_member_type(id.name(), &args) {
 					rhs.set_type_hint(m.clone());
 

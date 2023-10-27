@@ -92,7 +92,16 @@ TestSumType sum_type_test(i32 value) {
 	return value;
 }
 
-void slice_test(i32[]& test) { }
+struct Slice<type T> {
+	T* t;
+	usize len;
+}
+
+void slice_test(i32[]* test) {
+	auto slice = test as Slice<i32>*;
+
+	printf(c"Slice length: %i", slice->len);
+}
 
 
 struct DropTest {
