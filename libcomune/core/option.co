@@ -13,7 +13,7 @@ enum Option<type T> {
 }
 
 impl<type T> Option<T> {
-	T unwrap(self) {
+	fn unwrap(self) -> T {
 		match self {
 			Option<T>::Some some => {
 				return some.value

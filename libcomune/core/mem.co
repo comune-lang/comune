@@ -1,7 +1,7 @@
 using core::libc::{printf, abort, malloc, memcpy};
 
 // TODO: Replace this with an intrinsic lol
-usize size_of<type T>() {
+fn size_of<type T>() -> usize {
 	T raw* ptr1 = malloc(0) as T raw*;
 	T raw* ptr2 = ptr1 + 1;
 
@@ -12,7 +12,7 @@ usize size_of<type T>() {
 	}
 }
 
-unsafe U bit_cast<type T, type U>(T t) {
+unsafe fn bit_cast<type T, type U>(T t) -> U {
 	if size_of<T>() != size_of<U>() {
 		// TODO: Replace this with a panic/throw when implemented
 		printf(c"ERROR: size_of<T> != size_of<U>!\n");
@@ -22,13 +22,13 @@ unsafe U bit_cast<type T, type U>(T t) {
 	unsafe { *(&t as U*) }
 }
 
-T raw* null<type T>() {
+fn null<type T>() -> T raw* {
 	unsafe {
 		bit_cast<usize, T raw*>(0)
 	}
 }
 
-unsafe void write<type T>(T raw* dest, T src) {
+unsafe fn write<type T>(T raw* dest, T src) {
 	memcpy(
 		dest as void mut*,
 		&src as void*,
@@ -38,4 +38,4 @@ unsafe void write<type T>(T raw* dest, T src) {
 }
 
 @lang(forget)
-void forget<type T>(T t) { }
+fn forget<type T>(T t) { }

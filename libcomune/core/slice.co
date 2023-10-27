@@ -1,6 +1,6 @@
 
 impl<type T> T[] {
-    usize len(&self) {
+    fn len(&self) -> usize {
         *(&self as usize* + 1)
     }
 }

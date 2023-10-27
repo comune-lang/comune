@@ -426,34 +426,11 @@ impl<'ctx> Parser {
 					while self.get_current()? != Token::Other('}') {
 						let func_attributes = self.parse_attributes()?;
 
-						let ret = self.parse_type(None)?;
-						let props = self.parse_binding_props()?.unwrap_or_default();
+						let result = self.parse_namespace_declaration(func_attributes, Some(&impl_ty))?;
 
-						let Token::Name(fn_name) = self.get_current()? else {
-							return self.err(ComuneErrCode::ExpectedIdentifier);
+						let (DeclParseResult::Function(fn_name, proto), ast) = result else {
+							return self.err(ComuneErrCode::UnexpectedToken)
 						};
-
-						self.get_next()?;
-
-						let generics = self.parse_generic_param_list(None)?;
-						let params = self.parse_parameter_list(Some(&impl_ty), None)?;
-						let ast = ModuleASTElem::Unparsed(self.get_current_token_index());
-
-						self.skip_block()?;
-
-						let proto = Arc::new(FnPrototype {
-							path: Identifier::from_parent(&canonical_root, fn_name.clone()),
-							ret: (props, ret),
-							params,
-							generics,
-							attributes: func_attributes,
-							is_unsafe: if unsafe_token_store {
-								unsafe_token_store = false;
-								true
-							} else {
-								false
-							},
-						});
 
 						if let Some(existing) = functions.get_mut(&fn_name) {
 							existing.push(proto.clone());
