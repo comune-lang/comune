@@ -601,7 +601,8 @@ impl Type {
 					types.retain(|ty| !ty.is_never());
 
 					if types.len() == 1 {
-						*kind = TupleKind::Newtype
+						let ty = types.pop().unwrap();
+						*self = ty;
 					}
 				}
 			}
