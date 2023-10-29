@@ -151,6 +151,7 @@ pub enum ComuneErrCode {
 	DtorSelfParam(Identifier),
 	DtorDefOverlap,
 	AlreadyDefined(Identifier),
+	DestructureNotExhaustive(Vec<Name>),
 
 	// Resolution errors
 	ModuleNotFound(Identifier),
@@ -373,6 +374,20 @@ impl Display for ComuneErrCode {
 
 			ComuneErrCode::AmbiguousCall => {
 				write!(f, "ambiguous call")
+			}
+
+			ComuneErrCode::DestructureNotExhaustive(fields) => {
+				write!(f, "missing fields ")?;
+
+				for (i, field) in fields.iter().enumerate() {
+					if i == fields.len() - 1 {
+						write!(f, "`{field}`")?;
+					} else {
+						write!(f, "`{field}`, ")?;
+					}
+				}
+				
+				write!(f, " in destructure pattern")
 			}
 
 			ComuneErrCode::Pack(vec) => write!(f, "encountered {} errors", vec.len()),

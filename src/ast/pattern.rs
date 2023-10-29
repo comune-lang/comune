@@ -1,3 +1,5 @@
+use crate::lexer::SrcSpan;
+
 use super::{
 	module::Name,
 	types::{BindingProps, Type},
@@ -16,7 +18,12 @@ pub enum Pattern {
 	Binding(Binding),
 
 	// Destructures an aggregate type into its constituents
-	Destructure(Vec<Pattern>, Type),
+	Destructure{
+		patterns: Vec<(Name, Pattern)>, 
+		pattern_ty: Type,
+		exhaustive: bool,
+		span: SrcSpan,
+	},
 
 	// Combines two or more patterns
 	Or(Vec<Pattern>, Type),
@@ -26,7 +33,7 @@ impl Pattern {
 	pub fn get_type(&self) -> &Type {
 		match self {
 			Pattern::Binding(Binding { ty, .. })
-			| Pattern::Destructure(_, ty)
+			| Pattern::Destructure { pattern_ty: ty, .. }
 			| Pattern::Or(_, ty) => ty,
 		}
 	}
@@ -35,11 +42,13 @@ impl Pattern {
 		match self {
 			Pattern::Binding(binding) => vec![binding],
 
-			Pattern::Destructure(elems, _) => {
+			Pattern::Destructure { patterns, .. } => {
 				let mut result = vec![];
-				for elem_pat in elems {
-					result.append(&mut elem_pat.get_bindings());
+
+				for elem_pat in patterns {
+					result.append(&mut elem_pat.1.get_bindings());
 				}
+
 				result
 			}
 

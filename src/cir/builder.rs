@@ -10,7 +10,7 @@ use crate::{
 		module::{ModuleASTElem, ModuleImpl, ModuleInterface, ModuleItemInterface, Name},
 		pattern::{Binding, Pattern},
 		statement::Stmt,
-		types::{Basic, BindingProps, FnPrototype, GenericArgs, TupleKind, Type, TypeDef, PtrKind},
+		types::{Basic, BindingProps, FnPrototype, GenericArgs, Type, TypeDef, PtrKind},
 	},
 	lexer::SrcSpan,
 	parser::Parser,
@@ -366,14 +366,14 @@ impl CIRModuleBuilder {
 
 			Pattern::Binding(Binding { name: None, .. }) => {}
 
-			Pattern::Destructure(patterns, ty) => {
-				if value_ty.get_variant_index(&ty).is_some() {
-					value.projection.push(PlaceElem::SumData(ty.clone()));
+			Pattern::Destructure { patterns, pattern_ty, .. } => {
+				if value_ty.get_variant_index(&pattern_ty).is_some() {
+					value.projection.push(PlaceElem::SumData(pattern_ty.clone()));
 				}
 
 				for (i, pattern) in patterns.iter().enumerate() {
 					let lval = value.clone().projected(vec![PlaceElem::Field(i)]);
-					self.generate_pattern_bindings(pattern.clone(), lval, pattern.get_type());
+					self.generate_pattern_bindings(pattern.1.clone(), lval, pattern.1.get_type());
 				}
 			}
 
@@ -1762,15 +1762,15 @@ impl CIRModuleBuilder {
 				}
 			}
 
-			Pattern::Destructure(patterns, _) => {
+			Pattern::Destructure { patterns, .. } => {
 				let mut result = None;
 
 				for (i, pattern) in patterns.iter().enumerate() {
 					let lval = value.clone().projected(vec![PlaceElem::Field(i)]);				
-					let member = self.generate_match_expr(pattern, &lval, pattern.get_type());
+					let member = self.generate_match_expr(&pattern.1, &lval, pattern.1.get_type());
 					
 					if let Some(prev_result) = result {
-						let op = self.get_as_operand(pattern.get_type(), member, SrcSpan::new());
+						let op = self.get_as_operand(pattern.1.get_type(), member, SrcSpan::new());
 						let prev = self.get_as_operand(&Type::bool_type(), prev_result, SrcSpan::new());
 						
 						result = Some(RValue::Cons(

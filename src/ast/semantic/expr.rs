@@ -702,6 +702,8 @@ impl Atom {
 					let mut branch_types = vec![];
 
 					for branch in branches {
+						branch.0.validate(scope)?;
+
 						let mut subscope = FnScope::from_parent(scope, false, false);
 
 						for binding in branch.0.get_bindings() {
