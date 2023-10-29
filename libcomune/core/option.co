@@ -16,7 +16,7 @@ impl<type T> Option<T> {
 	fn unwrap(self) -> T {
 		match self {
 			Option<T>::Some { value } => {
-				return value
+				value
 			}
 
 			Option<T>::None _ => {

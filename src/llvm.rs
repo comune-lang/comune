@@ -969,6 +969,12 @@ impl<'ctx> LLVMBuilder<'ctx> {
 							}
 						}
 
+						Type::Tuple(TupleKind::Newtype, _) => {
+							let val = self.generate_operand(from, val);
+							
+							self.builder.build_store(store, val)
+						}
+
 						Type::Tuple(TupleKind::Sum, _) => {
 							// Tuple downcast, aka just indexing into the data field
 							let Operand::LValueUse(lvalue, props) = val else {

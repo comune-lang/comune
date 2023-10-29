@@ -25,7 +25,7 @@ impl Expr {
 	}
 
 	pub fn validate<'ctx>(&mut self, scope: &mut FnScope<'ctx>) -> ComuneResult<Type> {
-		let result = match self {
+		let mut result = match self {
 			Expr::Atom(a, meta) => a.validate(scope, meta),
 
 			Expr::Cons([lhs, rhs], op, meta) => {
@@ -701,7 +701,7 @@ impl Atom {
 					let scrutinee_type = scrutinee.validate(scope)?;
 					let mut branch_types = vec![];
 
-					for branch in branches {
+					for branch in branches.iter_mut() {
 						branch.0.validate(scope)?;
 
 						let mut subscope = FnScope::from_parent(scope, false, false);
@@ -732,7 +732,16 @@ impl Atom {
 						}
 					}
 
-					Ok(Type::common_type(&branch_types))
+					let mut common_ty = Type::common_type(&branch_types);
+					common_ty.validate(scope)?;
+					
+					for (_, expr) in branches {
+						if expr.get_type() != &common_ty {
+							expr.try_wrap_in_cast(common_ty.clone())?;
+						}
+					}
+
+					Ok(common_ty)
 				}
 			},
 		}

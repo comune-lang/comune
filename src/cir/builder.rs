@@ -1210,10 +1210,6 @@ impl CIRModuleBuilder {
 
 						// Generate branches
 						for (i, (pattern, branch)) in branches.iter().enumerate() {
-							let Expr::Atom(Atom::Block { items, result, .. }, _) = branch else { 
-								panic!("invalid match arm: {branch:?}")
-							};
-
 							let binding_idx = self.append_block();
 							
 							self.generate_scope_start();
@@ -1224,7 +1220,7 @@ impl CIRModuleBuilder {
 								&scrutinee_ty,
 							);
 
-							let (_, match_result) = self.generate_block(items, result, true);
+							let match_result = self.generate_expr(branch, qualifs);
 
 							if let Some(match_result) = match_result {
 								if let Some(result_loc) = &result_loc {

@@ -9,7 +9,7 @@ use crate::{
 		module::{ItemRef, ModuleImpl, ModuleInterface, ModuleItemInterface},
 		traits::{TraitInterface, TraitRef},
 		types::{
-			self, BindingProps, FnPrototype, GenericArg, GenericParam, Generics, Type, TypeDef, Basic,
+			self, BindingProps, FnPrototype, GenericArg, GenericParam, Generics, Type, TypeDef, Basic, TupleKind,
 		},
 		FnScope, Attribute,
 	},
@@ -580,7 +580,7 @@ pub fn check_module_cyclical_deps(module: &ModuleInterface) -> ComuneResult<()> 
 }
 
 impl Type {
-	pub fn validate<'ctx>(&self, scope: &'ctx FnScope<'ctx>) -> ComuneResult<()> {
+	pub fn validate(&mut self, scope: &FnScope) -> ComuneResult<()> {
 		match self {
 			Type::Array(_, n) => {
 				let result = if let ConstExpr::Expr(e) = &*n.read().unwrap() {
@@ -592,9 +592,17 @@ impl Type {
 				*n.write().unwrap() = result;
 			}
 
-			Type::Tuple(_, types) => {
-				for ty in types {
+			Type::Tuple(kind, types) => {
+				for ty in types.iter_mut() {
 					ty.validate(scope)?;
+				}
+
+				if *kind == TupleKind::Sum {
+					types.retain(|ty| !ty.is_never());
+
+					if types.len() == 1 {
+						*kind = TupleKind::Newtype
+					}
 				}
 			}
 

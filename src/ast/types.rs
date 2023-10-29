@@ -689,25 +689,51 @@ impl Type {
 
 	pub fn castable_to(&self, target: &Type) -> bool {
 		if self == target || self == &Type::Never {
-			true
-		} else if self.is_numeric() {
-			target.is_numeric() || target.is_boolean()
-		} else if let (
+			return true
+		}
+		
+		if self.is_numeric() {
+			return target.is_numeric() || target.is_boolean()
+		}
+		
+		if let (
 			Type::Pointer(_, kind),
 			Type::Pointer(_, target_kind)
 		) = (self, target)
 		{
 			// If self is a `T mut*`, it can be cast to a `T*`
 			// but if self is a `T*`, it can't be cast to a `T mut*`
-			*kind == PtrKind::Raw 
-			|| *target_kind == PtrKind::Raw 
-			|| *kind == PtrKind::Unique 
-			|| *target_kind != PtrKind::Unique
-		} else if matches!(self, Type::Pointer { .. }) && target.is_boolean() {
-			true
-		} else {
-			false
+			return *kind == PtrKind::Raw 
+				|| *target_kind == PtrKind::Raw 
+				|| *kind == PtrKind::Unique 
+				|| *target_kind != PtrKind::Unique
 		}
+		
+		if matches!(self, Type::Pointer { .. }) && target.is_boolean() {
+			return true
+		}
+
+		if let Type::Tuple(TupleKind::Newtype, types) = self {
+			let [ty] = types.as_slice() else {
+				panic!()
+			};
+
+			if ty.castable_to(target) {
+				return true
+			}
+		}
+
+		if let Type::Tuple(TupleKind::Newtype, types) = target {
+			let [ty] = types.as_slice() else {
+				panic!()
+			};
+
+			if ty == self {
+				return true
+			}
+		}
+		
+		false
 	}
 
 	pub fn get_variant_index(&self, variant: &Type) -> Option<usize> {
@@ -798,6 +824,14 @@ impl Type {
 				
 				Type::Tuple(TupleKind::Sum, types) => types.iter().all(|ty| ty.is_subtype_of(other)),
 				
+				Type::Tuple(TupleKind::Newtype, types) => {
+					let [ty] = types.as_slice() else {
+						panic!()
+					};
+					
+					ty.is_subtype_of(other)
+				}
+
 				_ => match other {
 					Type::Tuple(TupleKind::Sum, types) => {
 						for ty in types {
