@@ -1621,16 +1621,16 @@ fn mangle_name(name: &Identifier, func: &CIRFunction) -> String {
 		result.push('N');
 
 		if let Some(ty_qualifier) = &name.qualifier.0 {
-			let Type::TypeRef { def, .. } = &**ty_qualifier else {
-				unimplemented!()
-			};
-
-			let def = def.upgrade().unwrap();
-			let typename = &def.read().unwrap().name;
-
-			for scope in &typename.path {
-				result.push_str(&scope.as_str().len().to_string());
-				result.push_str(scope.as_str());
+			if let Type::TypeRef { def, .. } = &**ty_qualifier {
+				let def = def.upgrade().unwrap();
+				let typename = &def.read().unwrap().name;
+	
+				for scope in &typename.path {
+					result.push_str(&scope.as_str().len().to_string());
+					result.push_str(scope.as_str());
+				}	
+			} else {
+				mangle_type(&ty_qualifier, &mut result).unwrap();
 			}
 		}
 
@@ -1706,7 +1706,12 @@ fn mangle_type(ty: &Type, f: &mut impl std::fmt::Write) -> std::fmt::Result {
 			Ok(())
 		}
 
-		Type::Slice(_) => panic!("encountered Type::Slice without indirection!"),
+		Type::Slice(slicee) => {
+			// note: this is pretty nonsensical in C++ terms. probably not interop-viable
+			//panic!("encountered Type::Slice without indirection!"),
+			write!(f, "A_")?;
+			mangle_type(slicee, f)
+		}
 
 		_ => todo!(),
 	}

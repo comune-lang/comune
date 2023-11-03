@@ -10,7 +10,7 @@ use crate::{
 			Identifier, ModuleASTElem, ModuleImportKind, ModuleInterface, ModuleItemInterface, Name,
 		},
 		statement::Stmt,
-		types::{Basic, FnPrototype, GenericArg, GenericArgs, Type, FnParamList},
+		types::{Basic, FnPrototype, GenericArgs, Type, FnParamList, GenericArg},
 		FnScope,
 	},
 	errors::{ComuneErrCode, ComuneError},
@@ -236,11 +236,11 @@ pub fn resolve_method_call(
 
 	args.insert(0, lhs.clone());
 
-	if let Type::TypeRef { args, .. } = receiver {
-		generic_args.append(&mut args.clone());
-	};
+	//if let Type::TypeRef { args, .. } = receiver {
+	//	generic_args.append(&mut args.clone());
+	//};
 
-	generic_args.push(GenericArg::Type(receiver.clone()));
+	//generic_args.push(GenericArg::Type(receiver.clone()));
 
 	for arg in args.iter_mut() {
 		arg.validate(scope)?;
@@ -250,12 +250,26 @@ pub fn resolve_method_call(
 	let candidates =
 		collect_impl_candidates(&scope.context, name.expect_scopeless().unwrap(), receiver);
 
-	let mut candidates: Vec<_> = candidates
+	let candidates: Vec<_> = candidates
 		.into_iter()
-		.filter(|func| is_candidate_viable(args, generic_args, func))
+		.filter_map(|(impl_ty, func)| {
+			let mut generic_args = vec![];
+			
+			receiver.extract_generic_args(&impl_ty, &mut generic_args);
+			generic_args.push(GenericArg::Type(receiver.clone()));
+			
+			if is_candidate_viable(args, &generic_args, &func) {
+				Some((generic_args, func))
+			} else {
+				None
+			}
+		})
 		.collect();
-
-	let func = try_select_candidate(name, args, generic_args, &mut candidates, span, scope)?;
+	
+	let mut candidates_rhs = candidates.iter().map(|(_, func)| func.clone()).collect_vec();
+	let func = try_select_candidate(name, args, generic_args, &mut candidates_rhs, span, scope)?;
+	
+	*generic_args = candidates.into_iter().find(|(_, fun)| fun == &func).unwrap().0;
 
 	validate_arg_list(args, &func.params, generic_args, scope)?;
 
@@ -434,7 +448,7 @@ fn collect_impl_candidates(
 	interface: &ModuleInterface,
 	name: &Name,
 	receiver: &Type,
-) -> Vec<Arc<FnPrototype>> {
+) -> Vec<(Type, Arc<FnPrototype>)> {
 	let mut result = vec![];
 
 	collect_impl_candidates_recursive(
@@ -453,7 +467,7 @@ fn collect_impl_candidates_recursive(
 	interface: &ModuleInterface,
 	name: &Name,
 	receiver: &Type,
-	candidates: &mut Vec<Arc<FnPrototype>>,
+	candidates: &mut Vec<(Type, Arc<FnPrototype>)>,
 	already_visited: &mut HashSet<Identifier>,
 	collect_imports: bool,
 ) {
@@ -470,7 +484,7 @@ fn collect_impl_candidates_recursive(
 		if let Some(fns) = im.functions.get(name) {
 			if receiver.fits_generic(ty) {
 				for func in fns {
-					candidates.push(func.clone());
+					candidates.push((ty.clone(), func.clone()));
 				}
 			}
 		}

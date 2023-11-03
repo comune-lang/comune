@@ -615,6 +615,14 @@ impl Type {
 					}
 				}
 
+				Type::Slice(slicee) => {
+					if let Type::Slice(gen_slicee) = generic_ty {
+						slicee.fits_generic(gen_slicee)
+					} else {
+						false
+					}
+				}
+
 				Type::TypeRef {
 					def: ty_def,
 					args: ty_args,
@@ -650,6 +658,49 @@ impl Type {
 
 				_ => self == generic_ty,
 			}
+		}
+	}
+
+	pub fn extract_generic_args(&self, generic: &Type, args_out: &mut GenericArgs) {
+		match (self, generic) {
+			(this, Type::TypeParam(idx)) => {
+				if args_out.len() <= *idx {
+					for i in args_out.len()..*idx {
+						args_out.push(GenericArg::Type(Type::TypeParam(i)));
+					}
+					args_out.push(GenericArg::Type(this.clone()));
+				} else {
+					args_out[*idx] = GenericArg::Type(this.clone());
+				}
+			}
+
+			(Type::Pointer(pointee, _), Type::Pointer(other, _))
+			| (Type::Slice(pointee), Type::Slice(other)) => {
+				pointee.extract_generic_args(other, args_out)
+			}
+
+			(Type::Tuple(kind, types), Type::Tuple(other_kind, others))
+			if kind == other_kind && types.len() == others.len() => {
+				for (lhs, rhs) in types.iter().zip(others) {
+					lhs.extract_generic_args(rhs, args_out)
+				}
+			}
+
+			(Type::TypeRef { def, args }, Type::TypeRef { def: other_def, args: other_args }) => {
+				if !Arc::ptr_eq(&def.upgrade().unwrap(), &other_def.upgrade().unwrap()) {
+					return
+				}
+
+				for (arg, other) in args.iter().zip(other_args.iter()) {
+					match (arg, other) {
+						(GenericArg::Type(lhs), GenericArg::Type(rhs)) => {
+							lhs.extract_generic_args(rhs, args_out);
+						}
+					}
+				}
+			}
+
+			_ => {}
 		}
 	}
 
