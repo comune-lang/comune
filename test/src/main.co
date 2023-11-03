@@ -101,7 +101,6 @@ void slice_test(i32[]* test) {
 	auto slice = &test as Slice<i32>*;
 
 	printf(c"Slice length (call): %i\n", test->len());
-	printf(c"Slice length (cast): %i\n", slice->len);
 }
 
 

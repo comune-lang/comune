@@ -1,6 +1,14 @@
 
+struct SliceRepr<type T> {
+	T* t;
+	usize len;
+}
+
+
 impl<type T> T[] {
-    fn len(&self) -> usize {
-        *(&self as usize* + 1)
-    }
+	fn len(&self) -> usize {
+		auto slice = &self as SliceRepr<T>*;
+
+		slice->len
+	}
 }

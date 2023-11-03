@@ -500,10 +500,10 @@ impl<'ctx> LLVMBuilder<'ctx> {
 						let store = self.generate_lvalue_use(
 							lval, 
 							BindingProps::mut_reference()
-						).into_pointer_value();
+						);
 
 						self.generate_expr(
-							store,
+							self.indirection_as_pointer(store),
 							expr,
 						);
 					}
@@ -742,12 +742,12 @@ impl<'ctx> LLVMBuilder<'ctx> {
 			RValue::Atom(ty, op_opt, atom, _) => {
 				match op_opt {
 					Some(Operator::Deref) => {
-						let atom_ir = self.generate_operand(ty, atom);
+						let atom_ir = self.indirection_as_pointer(self.generate_operand(ty, atom));
 
 						self.builder.build_store(
 							store,
 							self.builder
-								.build_load(atom_ir.into_pointer_value(), "")
+								.build_load(atom_ir, "")
 								.as_basic_value_enum(),
 						)
 					}
@@ -953,14 +953,14 @@ impl<'ctx> LLVMBuilder<'ctx> {
 							if to.is_boolean() {
 								self.builder.build_store(
 									store,
-									self.builder.build_is_not_null(val.into_pointer_value(), ""),
+									self.builder.build_is_not_null(self.indirection_as_pointer(val), ""),
 								)
 							} else {
 								self.builder.build_store(
 									store,
 									self.builder
 										.build_pointer_cast(
-											val.into_pointer_value(),
+											self.indirection_as_pointer(val),
 											to_ir.into_pointer_type(),
 											"",
 										)
@@ -1201,16 +1201,17 @@ impl<'ctx> LLVMBuilder<'ctx> {
 
 	fn generate_lvalue_use(&self, expr: &LValue, props: BindingProps) -> BasicValueEnum<'ctx> {
 		// Get the variable pointer from the function
-		let (mut local, lprops, ty) = &self.variables[expr.local];
+		let (local, lprops, ty) = &self.variables[expr.local];
+
+		let mut local = local.as_basic_value_enum();
 
 		// If the lvalue is a reference, perform a load
 		// so we're left with a single indirection
 		if self.pass_by_ptr(ty, lprops) {
 			local = self
-				.builder
-				.build_load(local, "")
-				.as_basic_value_enum()
-				.into_pointer_value();
+					.builder
+					.build_load(self.indirection_as_pointer(local), "")
+					.as_basic_value_enum();
 		}
 
 		// Perform geps and whatnot to get a pointer to the sublocation
@@ -1219,9 +1220,8 @@ impl<'ctx> LLVMBuilder<'ctx> {
 			local = match proj {
 				PlaceElem::Deref => self
 					.builder
-					.build_load(local, "")
-					.as_basic_value_enum()
-					.into_pointer_value(),
+					.build_load(self.indirection_as_pointer(local), "")
+					.as_basic_value_enum(),
 
 				PlaceElem::Index { index_ty, index, op } => {
 					let mut idx = self
@@ -1233,27 +1233,38 @@ impl<'ctx> LLVMBuilder<'ctx> {
 						idx = self.builder.build_int_neg(idx, "");
 					}
 
-					local = self.builder.build_load(local, "").into_pointer_value();
+					local = self.builder.build_load(self.indirection_as_pointer(local), "");
 
-					unsafe { self.builder.build_gep(local, &[idx], "") }
+					unsafe { 
+						self
+							.builder
+							.build_gep(
+								self.indirection_as_pointer(local),
+								&[idx], 
+								""
+							)
+							.as_basic_value_enum() 
+						}
 				}
 
 				PlaceElem::Field(i) => 
 					self
 						.builder
-						.build_struct_gep(local, *i as u32, "")
-						.expect(&format!("failed to generate Field projection for `{expr}` into {:?}`", local.get_type())),
-
+						.build_struct_gep(self.indirection_as_pointer(local), *i as u32, "")
+						.expect(&format!("failed to generate Field projection for `{expr}` into {:?}`", local.get_type()))
+						.as_basic_value_enum(),
+						
 				PlaceElem::SumDisc => 
 					self
 						.builder
-						.build_struct_gep(local, 0, "")
-						.expect(&format!("failed to generate SumDisc projection for `{expr} into {:?}`", local.get_type())),
+						.build_struct_gep(self.indirection_as_pointer(local), 0, "")
+						.expect(&format!("failed to generate SumDisc projection for `{expr} into {:?}`", local.get_type()))
+						.as_basic_value_enum(),
 
 				PlaceElem::SumData(ty) => {					
 					let data = self
 								.builder
-								.build_struct_gep(local, 1, "")
+								.build_struct_gep(self.indirection_as_pointer(local), 1, "")
 								.unwrap();
 
 					// SumData index requires a cast to variant type
@@ -1261,7 +1272,7 @@ impl<'ctx> LLVMBuilder<'ctx> {
 						data,
 						Self::to_basic_type(self.get_llvm_type(ty)).ptr_type(AddressSpace::Generic),
 						""
-					).into_pointer_value()
+					)
 				}
 			}
 		}
@@ -1269,7 +1280,30 @@ impl<'ctx> LLVMBuilder<'ctx> {
 		if props.is_ref {
 			local.as_basic_value_enum()
 		} else {
-			self.builder.build_load(local, "")
+			self.builder.build_load(self.indirection_as_pointer(local), "")
+		}
+	}
+
+	// get the pointer element of an indirection.
+	//
+	// pointers and references may have differing representations,
+	// based on what they point to -- a pointer to a T[] will
+	// actually be represented as (T*, usize) internally.
+	// this function extracts the pointer element, allowing these
+	// differing representations to be handled uniformly in codegen.
+	// prefer this over into_pointer_value() when dealing with lvalues.
+
+	fn indirection_as_pointer(&self, value: BasicValueEnum<'ctx>) -> PointerValue<'ctx> {
+		match value {
+			// for common types
+			BasicValueEnum::PointerValue(ptr) => ptr,
+	
+			// for slice types
+			BasicValueEnum::StructValue(strct) => {
+				self.builder.build_extract_value(strct, 0, "").unwrap().into_pointer_value()
+			}
+
+			other => panic!("unexpected pointer value: {other}")
 		}
 	}
 

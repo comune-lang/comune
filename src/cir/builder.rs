@@ -1437,10 +1437,10 @@ impl CIRModuleBuilder {
 						if let RValue::Atom(ty, None, Operand::LValueUse(lval, _), _) = cir_expr {
 							Some((lval, ty, props))
 						} else {
-							let temp = self.insert_temporary(
+							let temp = self.insert_temporary_with_props(
 								arg.get_type(),
 								cir_expr,
-								arg.get_span(),
+								props
 							);
 
 							Some((temp, arg.get_type().clone(), props))
@@ -1860,14 +1860,16 @@ impl CIRModuleBuilder {
 	}
 
 	fn insert_temporary(&mut self, ty: &Type, rval: RValue, span: SrcSpan) -> LValue {
-		assert!(!ty.is_void_or_never());
-
-		let props = BindingProps {
+		self.insert_temporary_with_props(ty, rval, BindingProps {
 			is_mut: true,
 			is_ref: false,
 			is_new: false,
 			span,
-		};
+		})
+	}
+
+	fn insert_temporary_with_props(&mut self, ty: &Type, rval: RValue, props: BindingProps) -> LValue {
+		assert!(!ty.is_void_or_never());
 
 		let local = self.get_fn().variables.len();
 
