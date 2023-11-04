@@ -98,8 +98,6 @@ struct Slice<type T> {
 }
 
 void slice_test(i32[]* test) {
-	auto slice = &test as Slice<i32>*;
-
 	printf(c"Slice length (call): %i\n", test->len());
 }
 
@@ -300,8 +298,10 @@ int main() {
 	global_var_test();
 	printf(c"Global var: %i\n", global_var);
 
+	i32 slice_data = 0;
+	
 	auto slice = new Slice<i32> {
-		t: core::mem::null<i32>() as i32*,
+		t: &slice_data,
 		len: 1,
 	};
 

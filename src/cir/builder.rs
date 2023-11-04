@@ -1377,7 +1377,7 @@ impl CIRModuleBuilder {
 			}
 
 			Expr::Unary(sub, op, _) => {
-				let sub_expr = self.generate_expr(sub, BindingProps::default())?;
+				let sub_expr = self.generate_expr(sub, qualifs)?;
 				let temp = self.get_as_operand(sub.get_type(), sub_expr, sub.get_span());
 
 				Some(RValue::Atom(
@@ -1432,18 +1432,24 @@ impl CIRModuleBuilder {
 							BindingProps::value()
 						};
 
-						let cir_expr = self.generate_expr(arg, props)?;
+						if props.is_ref {
+							let cir_expr = self.generate_lvalue_expr(arg)?;
 
-						if let RValue::Atom(ty, None, Operand::LValueUse(lval, _), _) = cir_expr {
-							Some((lval, ty, props))
+							Some((cir_expr, arg.get_type().clone(), props))
 						} else {
-							let temp = self.insert_temporary_with_props(
-								arg.get_type(),
-								cir_expr,
-								props
-							);
+							let cir_expr = self.generate_expr(arg, props)?;
 
-							Some((temp, arg.get_type().clone(), props))
+							if let RValue::Atom(ty, None, Operand::LValueUse(lval, _), _) = cir_expr {
+								Some((lval, ty, props))
+							} else {
+								let temp = self.insert_temporary(
+									arg.get_type(),
+									cir_expr,
+									arg.get_span()
+								);
+
+								Some((temp, arg.get_type().clone(), props))
+							}
 						}
 					})
 					.collect();
@@ -1689,7 +1695,10 @@ impl CIRModuleBuilder {
 				Some(lval)
 			}
 
-			_ => panic!("invalid lvalue expression:\n{expr}"),
+			expr => {
+				let rval = self.generate_expr(expr, BindingProps::value())?;
+				Some(self.insert_temporary(expr.get_type(), rval, SrcSpan::new()))
+			}
 		}
 	}
 
@@ -1860,19 +1869,16 @@ impl CIRModuleBuilder {
 	}
 
 	fn insert_temporary(&mut self, ty: &Type, rval: RValue, span: SrcSpan) -> LValue {
-		self.insert_temporary_with_props(ty, rval, BindingProps {
+		assert!(!ty.is_void_or_never());
+
+		let local = self.get_fn().variables.len();
+		let props = BindingProps {
 			is_mut: true,
 			is_ref: false,
 			is_new: false,
 			span,
-		})
-	}
-
-	fn insert_temporary_with_props(&mut self, ty: &Type, rval: RValue, props: BindingProps) -> LValue {
-		assert!(!ty.is_void_or_never());
-
-		let local = self.get_fn().variables.len();
-
+		};
+		
 		self.get_fn_mut().variables.push((ty.clone(), props, None));
 		self.scope_stack
 			.last_mut()
