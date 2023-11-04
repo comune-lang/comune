@@ -98,7 +98,7 @@ struct Slice<type T> {
 }
 
 void slice_test(i32[]* test) {
-	printf(c"Slice length (call): %i\n", test->len());
+	printf(c"Slice length: %i\n", test->len());
 }
 
 

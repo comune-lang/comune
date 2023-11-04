@@ -7,8 +7,8 @@ struct SliceRepr<type T> {
 
 impl<type T> T[] {
 	fn len(&self) -> usize {
-		auto slice = &self as SliceRepr<T>*;
+		auto slice = *(&(&self) as SliceRepr<T>*);
 
-		slice->len
+		slice.len
 	}
 }
