@@ -303,6 +303,9 @@ int main() {
 
 	slice_test(slice.as_slice());
 
+	i32* slice_ptr = &slice_data;
+	slice_ptr.addr();
+
 	submodule_test::bar();
 	printf(c"fib(10) = %i\n", module_test::fib(10));
 

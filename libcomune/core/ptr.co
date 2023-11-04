@@ -1,0 +1,19 @@
+using core::mem::bit_cast;
+
+impl<type T> T* {
+	fn addr(self) -> usize {
+		unsafe { bit_cast<T*, usize>(self) }
+	}
+}
+
+impl<type T> T mut* {
+	fn addr(self) -> usize {
+		unsafe { bit_cast<T mut*, usize>(self) }
+	}
+}
+
+impl<type T> T raw* {
+	fn addr(self) -> usize {
+		unsafe { bit_cast<T raw*, usize>(self) }
+	}
+}

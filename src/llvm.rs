@@ -1711,13 +1711,20 @@ fn mangle_type(ty: &Type, f: &mut impl std::fmt::Write) -> std::fmt::Result {
 	match ty {
 		Type::Basic(b) => write!(f, "{}", mangle_basic(b)),
 
-		Type::Pointer(pointee, _) => {
+		Type::Pointer(pointee, kind) => {
+			write!(f, "P")?;
+				
+			// compliant-ish? this is all so hacky lol
+			match kind {
+				PtrKind::Shared => write!(f, "K")?,
+				PtrKind::Unique => write!(f, "r")?,
+				PtrKind::Raw => {},
+			}
+			
 			if let Type::Slice(slicee) = &**pointee {
-				write!(f, "P")?;
 				mangle_type(slicee, f)?;
 				write!(f, "y")?;
 			} else {
-				write!(f, "P")?;
 				mangle_type(pointee, f)?;
 			}
 			
