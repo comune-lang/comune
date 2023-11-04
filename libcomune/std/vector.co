@@ -151,7 +151,7 @@ impl<type T> Vector<T> {
 	}
 
 	// suboptimal performance, but it works for now
-	unsafe void resize_zeroed(mut& self, usize len) {
+	void resize_zeroed(mut& self, usize len) {
 		if len > self.len {
 			self.reserve(len);
 			

@@ -13,8 +13,8 @@ struct String {
 }
 
 impl String {
-	fn push_str(mut& self, u8[]& string) {
-		auto len = self.len() + 1;
+	fn push_str(mut& self, [u8]& string) {
+		auto len = self.len() + 1usize;
 
 		unsafe {
 			self.vec.resize_zeroed(len + string.len());

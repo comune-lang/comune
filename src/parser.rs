@@ -1852,7 +1852,9 @@ impl<'ctx> Parser {
 			self.get_next()?;
 		}
 
-		if self.get_current()? == Token::Keyword("auto") {
+		if self.get_current()? == Token::Keyword("auto") ||
+			self.get_current()? == Token::Operator("[")
+		{
 			self.lexer.borrow_mut().seek_token_idx(current_idx);
 
 			Ok(true)
@@ -2127,20 +2129,35 @@ impl<'ctx> Parser {
 			let (kind, types) = self.parse_tuple_type(scope)?;
 
 			Ok(Type::Tuple(kind, types))
-		} else if self.is_at_identifier_token()? || self.get_current()? == Token::Keyword("auto") {
-			if self.get_current()? == Token::Keyword("auto") {
-				let start = self.get_current_start_index();
+		} else if 
+			self.is_at_identifier_token()? || 
+			matches!(self.get_current()?, Token::Keyword("auto") | Token::Operator("["))
+		{
+			match self.get_current()? {
+				Token::Keyword("auto") => {
+					let start = self.get_current_start_index();
 				
-				self.get_next()?;
-				
-				let end = self.get_prev_end_index();
-				
-				result = Type::Infer(SrcSpan { 
-					start, 
-					len: end - start,
-				})
-			} else {
-				result = self.parse_typeref(scope)?;
+					self.get_next()?;
+					
+					let end = self.get_prev_end_index();
+					
+					result = Type::Infer(SrcSpan { 
+						start, 
+						len: end - start,
+					})
+				}
+
+				Token::Operator("[") => {
+					self.get_next()?;
+
+					result = Type::Slice(Box::new(self.parse_type(scope)?));
+										
+					self.consume(&Token::Operator("]"))?;
+				}
+
+				_ => {
+					result = self.parse_typeref(scope)?;
+				}
 			}
 
 			loop {
@@ -2169,7 +2186,8 @@ impl<'ctx> Parser {
 					Token::Operator("[") => {
 						// Array or slice type
 						if self.get_next()? == Token::Operator("]") {
-							result = Type::Slice(Box::new(result));
+							// old slice syntax; use [T] instead
+							return self.err(ComuneErrCode::UnexpectedToken)
 						} else {
 							let Some(scope) = scope else { panic!() };
 							let const_expr = self.parse_expression(scope)?;
