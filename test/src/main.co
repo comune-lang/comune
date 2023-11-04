@@ -301,7 +301,7 @@ int main() {
 		len: 1,
 	};
 
-	slice_test(*(&slice as i32[]**));
+	slice_test(slice.as_slice());
 
 	submodule_test::bar();
 	printf(c"fib(10) = %i\n", module_test::fib(10));
