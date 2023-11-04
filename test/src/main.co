@@ -4,6 +4,7 @@ using core::option::{Option, None, Some};
 using std::vector::Vector;
 using std::rc::Rc;
 using std::io::{print, println};
+using std::box::Box;
 
 using module_test::fib;
 using ascii = u8;

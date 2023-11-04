@@ -11,3 +11,23 @@ struct String {
 		self.vec = new Vector<u8>(copied.vec);
 	}
 }
+
+impl String {
+	fn push_str(mut& self, u8[]& string) {
+		auto len = self.len() + 1;
+
+		unsafe {
+			self.vec.resize_zeroed(len + string.len());
+		}
+	}
+
+	fn len(&self) -> usize {
+		auto len = self.vec.len();
+		
+		if len == 0 {
+			return 0
+		} else {
+			return len - 1usize
+		}
+	}
+}

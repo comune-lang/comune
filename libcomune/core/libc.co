@@ -14,6 +14,9 @@ void free(void raw* ptr);
 void raw* memcpy(void mut* dest, void* src, usize count);
 
 @no_mangle
+void raw* memset(void mut* dest, i32 c, usize len);
+
+@no_mangle
 int printf(u8* fmt, ...);
 
 @no_mangle
