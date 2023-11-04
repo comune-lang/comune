@@ -92,11 +92,6 @@ TestSumType sum_type_test(i32 value) {
 	return value;
 }
 
-struct Slice<type T> {
-	T* t;
-	usize len;
-}
-
 void slice_test(i32[]* test) {
 	printf(c"Slice length: %i\n", test->len());
 }
@@ -300,8 +295,9 @@ int main() {
 
 	i32 slice_data = 0;
 	
-	auto slice = new Slice<i32> {
-		t: &slice_data,
+	// no slice syntax yet - just duck-type one manually lol
+	auto slice = new core::slice::SliceRepr<i32> {
+		ptr: &slice_data as i32 raw*,
 		len: 1,
 	};
 
