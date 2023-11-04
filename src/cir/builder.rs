@@ -648,7 +648,7 @@ impl CIRModuleBuilder {
 				)),
 
 				Atom::StringLit(s) => Some(RValue::Atom(
-					Type::Slice(Box::new(Type::i8_type(false))),
+					Type::Slice(Box::new(Type::i8_type(false))).ptr_type(PtrKind::Shared),
 					None,
 					Operand::StringLit(s.clone(), span),
 					span,

@@ -12,7 +12,7 @@ using core::mem::{
 	null
 };
 
-using core::option::Option;
+using core::option::{Option, Some, None};
 
 struct Vector<type T> {
 	T raw* data;
@@ -87,7 +87,7 @@ impl<type T> Vector<T> {
 			self.len -= 1;
 
 			unsafe {
-				return new Option<T>::Some(
+				return new Some<T>(
 					*(self.data + self.len)
 				)
 			}
@@ -111,25 +111,41 @@ impl<type T> Vector<T> {
 	
 	Option<T*> get(&self, usize i) {
 		if i >= self.len {
-			return new Option::None<T*>;
+			return new None<T*>;
 		} else {
-			return new Option::Some<T*> {
-				value: (self.data + i) as T*,
-			};
+			return new Some<T*>((self.data + i) as T*);
 		}
 	}
 
 	Option<T mut*> get_mut(mut& self, usize i) {
 		if i >= self.len {
-			return new Option::None<T mut*>;
+			return new None<T mut*>
 		} else {
-			return new Option::Some<T mut*> {
-				value: self.data as T mut* + i,
-			};
+			return new Some<T mut*>((self.data + i) as T mut*)
+		}
+	}
+
+	Option<T*> back(&self) {
+		if self.is_empty() {
+			return new None<T*>
+		} else {
+			return new Some<T*>((self.data + self.len - 1) as T*)
+		}
+	}
+
+	Option<T mut*> back_mut(mut &self) {
+		if self.is_empty() {
+			return new None<T mut*>
+		} else {
+			return new Some<T mut*>((self.data + self.len - 1) as T mut*)
 		}
 	}
 
 	usize len(&self) {
 		self.len
+	}
+
+	bool is_empty(&self) {
+		self.len == 0
 	}
 }

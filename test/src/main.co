@@ -1,8 +1,9 @@
 using core::libc::{malloc, free, printf};
 using core::mem::{bit_cast, size_of};
-using core::option::Option;
+using core::option::{Option, None, Some};
 using std::vector::Vector;
 using std::rc::Rc;
+using std::io::{print, println};
 
 using module_test::fib;
 using ascii = u8;
@@ -24,7 +25,7 @@ enum EnumTest {
 
 impl Test {
 	int sum(Test& self) {
-		printf(c"This is a method call!\n");
+		println("This is a method call!");
 		self.a + self.b
 	}
 	
@@ -38,7 +39,7 @@ type NestedGenerics = Vector<Vector<Vector<Vector<Vector<int>>>>>;
 
 impl submodule_test::SubmoduleTrait for Test {
 	void foo() {
-		printf(c"This is a trait in a submodule!\n");
+		println("This is a trait in a submodule!");
 	}
 }
 
@@ -48,7 +49,7 @@ trait Hello {
 
 impl Hello for Test {
 	void hello(&self) {
-		printf(c"Hello Test!\n");
+		println("Hello Test!");
 	}
 }
 
@@ -73,11 +74,11 @@ void fn_pointer_callback(int number) {
 
 
 void overload_test(i32 a) {
-	printf(c"i32 overload called!\n");
+	println("i32 overload called!");
 }
 
 void overload_test(i64 a) {
-	printf(c"i64 overload called!\n");
+	println("i64 overload called!");
 }
 
 type GenericTypeAlias<type T> = Vector<T>;
@@ -123,13 +124,13 @@ impl DropTest {
 }
 
 void temp_drop_test(DropTest& test) {
-	printf(c"temp_drop_test(DropTest&) called\n");
+	println("temp_drop_test(DropTest&) called");
 }
 
 void drop_test() {
-	printf(c"\nEntering drop_test\n\n");
+	println("\nEntering drop_test\n");
 	sub_drop_test();
-	printf(c"Left drop_test\n\n");
+	println("Left drop_test\n");
 }
 
 void memberwise_init_test(DropTest new& test) {
@@ -141,13 +142,13 @@ void sub_drop_test() {
 	DropTest a = new DropTest(1);
 	DropTest b = new DropTest(2);
 
-	printf(c"\nEntering subscope\n\n");
+	println("\nEntering subscope\n");
 	{
 		DropTest c = new DropTest(3);
 		
 		int mut i = 0;
 		
-		printf(c"\nEntering loop\n\n");
+		println("\nEntering loop\n");
 
 		while i < 5 {
 			DropTest b = new DropTest(4);
@@ -159,12 +160,12 @@ void sub_drop_test() {
 			i += 1;
 		}
 
-		printf(c"\nLeft loop\n\n");
+		println("\nLeft loop\n");
 
 	}
-	printf(c"\nLeft subscope\n\n");
+	println("\nLeft subscope\n");
 
-	printf(c"\nVector<DropTest> test:\n\n");
+	println("\nVector<DropTest> test:\n");
 
 	{
 		Vector<DropTest> mut drop_vec = new Vector<DropTest>();
@@ -174,7 +175,7 @@ void sub_drop_test() {
 		*drop_vec.get_mut(1).unwrap() = new DropTest(7);
 	}
 
-	printf(c"\nLeft Vector<DropTest> scope\n\n");
+	println("\nLeft Vector<DropTest> scope\n");
 
 	Option<DropTest> option = new Option<DropTest>::Some(
 		new DropTest(8)
@@ -199,9 +200,6 @@ void mut_move_test(Vector<float> mut& test) {
 	test = tmp;
 }
 
-type None<type T> = Option<T>::None;
-type Some<type T> = Option<T>::Some;
-
 void enum_test() {
 	Option<i32> mut option = new None<i32>;
 	
@@ -211,11 +209,11 @@ void enum_test() {
 
 	match option {
 		None<i32> none => { 
-			printf(c"It's the None variant!");
+			println("It's the None variant!");
 		}
 
 		Some<i32> some => {
-			printf(c"It's the Some(%i) variant!", some.value);
+			printf(c"It's the Some(%i) variant!\n", some.value);
 		}
 	}
 
@@ -248,15 +246,15 @@ void ops_test() {
 }
 
 void rc_test() {
-	printf(c"Creating Rc<DropTest>!\n");
+	println("Creating Rc<DropTest>!");
 	auto rc = new Rc<DropTest>(new DropTest(0));
 	
 	for (int mut i = 0; i < 10; i += 1) {
-		printf(c"Cloning Rc<DropTest>!\n");
+		println("Cloning Rc<DropTest>!");
 		Rc<auto> rc = new Rc<DropTest>(rc);
-		printf(c"Dropping Rc<DropTest>!\n");
+		println("Dropping Rc<DropTest>!");
 	}
-	printf(c"Dropping last Rc<DropTest>!\n");
+	println("Dropping last Rc<DropTest>!");
 }
 
 struct DerefTest {
@@ -340,11 +338,11 @@ int main() {
 	if i == 12 {
 		int scope_test = 15;
 		int scope_test_2 = 15;
-		printf(c"i is 12!\n");
+		println("i is 12!");
 	} else if i == 13 {
-		printf(c"i is 13!\n");
+		println("i is 13!");
 	} else {
-		printf(c"i is something else!\n");
+		println("i is something else!");
 	}
 
 	void(int) function;

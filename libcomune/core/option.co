@@ -12,6 +12,9 @@ enum Option<type T> {
 	None,
 }
 
+type None<type T> = Option<T>::None;
+type Some<type T> = Option<T>::Some;
+
 impl<type T> Option<T> {
 	fn unwrap(self) -> T {
 		match self {

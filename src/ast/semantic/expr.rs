@@ -282,7 +282,7 @@ impl Atom {
 
 			Atom::BoolLit(_) => Ok(Type::Basic(Basic::Bool)),
 
-			Atom::StringLit(_) => Ok(Type::Slice(Box::new(Type::i8_type(false)))),
+			Atom::StringLit(_) => Ok(Type::Slice(Box::new(Type::i8_type(false))).ptr_type(PtrKind::Shared)),
 
 			Atom::CStringLit(_) => Ok(Type::Pointer(
 				Box::new(Type::i8_type(false)),
