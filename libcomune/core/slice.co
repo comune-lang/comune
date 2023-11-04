@@ -1,14 +1,26 @@
 
 struct SliceRepr<type T> {
-	T* t;
+	T raw* ptr;
 	usize len;
 }
 
 
 impl<type T> T[] {
 	fn len(&self) -> usize {
-		auto slice = *(&(&self) as SliceRepr<T>*);
+		self.repr().len
+	}
 
-		slice.len
+	fn ptr(&self) -> T* {
+		self.repr().ptr as T*
+	}
+
+	fn ptr_mut(mut& self) -> T mut* {
+		self.repr().ptr as T mut*
+	}
+
+	// god i can't wait for code privacy to exist so i can banish this forever
+	// 1000% unstable implementation detail; Don't Use This
+	fn repr(&self) -> SliceRepr<T> {
+		*(&(&self) as SliceRepr<T>*)
 	}
 }
