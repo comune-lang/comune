@@ -2,6 +2,7 @@ using core::libc::{malloc, free, printf};
 using core::mem::{bit_cast, size_of};
 using core::option::{Option, None, Some};
 using std::vector::Vector;
+using std::string::String;
 using std::rc::Rc;
 using std::io::{print, println};
 using std::box::Box;
@@ -283,11 +284,25 @@ void global_var_test() {
 	global_var = 0;
 }
 
+void string_test() {
+	println("String test!\n");
+	
+	String mut test = new String();
+	
+	test.push_str("Hello");
+	test.push_str("");
+	test.push_str(" ");
+	test.push_str("world!");
+
+	printf(c"%s\n\n", test.c_str());
+}
+
 int main() {
 	ops_test();
 	enum_test();
 	drop_test();
 	rc_test();
+	string_test();
 
 	global_var_test();
 	printf(c"Global var: %i\n", global_var);

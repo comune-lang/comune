@@ -1,4 +1,6 @@
 using std::vector::Vector;
+using core::libc::memcpy;
+using std::io::println;
 
 struct String {
 	Vector<u8> vec;
@@ -13,12 +15,22 @@ struct String {
 }
 
 impl String {
-	fn push_str(mut& self, [u8]& string) {
-		auto len = self.len() + 1usize;
+	fn push_str(mut& self, [u8]* string) {
+		auto len = self.len();
 
+		// internal length is one byte longer, since
+		// we always store a null-terminator for C/C++
+		// compatibility.
 		unsafe {
-			self.vec.resize_zeroed(len + string.len());
+			self.vec.resize_zeroed(len + string->len() + 1);
 		}
+
+		auto ptr = self.vec.data + len;
+		memcpy(
+			ptr as void mut*,
+			string->ptr() as void*,
+			string->len()
+		);
 	}
 
 	fn len(&self) -> usize {
@@ -29,5 +41,9 @@ impl String {
 		} else {
 			return len - 1usize
 		}
+	}
+
+	fn c_str(&self) -> u8* {
+		self.vec.data as u8*
 	}
 }

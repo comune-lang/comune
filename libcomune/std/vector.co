@@ -158,7 +158,7 @@ impl<type T> Vector<T> {
 			memset(
 				(self.data + self.len) as void mut*,
 				0,
-				self.len - len
+				len - self.len
 			);
 
 			self.len = len;
