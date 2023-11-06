@@ -1074,13 +1074,8 @@ impl CIRModuleBuilder {
 						scrutinee,
 						branches,
 					} => {
-						let scrutinee_ir = self.generate_expr(scrutinee, BindingProps::value())?;
+						let scrutinee_lval = self.generate_lvalue_expr(scrutinee)?;
 						let scrutinee_ty = scrutinee.get_type();
-						let scrutinee_lval = self.insert_temporary(
-							scrutinee_ty,
-							scrutinee_ir,
-							scrutinee.get_span(),
-						);
 
 						let mut branches_ir = vec![];
 						let mut has_result = false;

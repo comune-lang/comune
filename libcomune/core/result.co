@@ -5,7 +5,7 @@ enum Result<type T, type E> {
 	Ok { T value; },
 	Err { E err; },
 }
-/*
+
 impl<type T, type E> Result<T, E> {
 	fn unwrap(self) -> T {
 		match self {
@@ -31,4 +31,4 @@ impl<type T, type E> Result<T, E> {
 	fn is_err(&self) -> bool {
 		!self.is_ok()
 	}
-}*/ 
+}
