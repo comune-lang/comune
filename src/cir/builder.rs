@@ -184,7 +184,7 @@ impl CIRModuleBuilder {
 			is_loop: false,
 		});
 
-		if !proto.ret.1.is_void() {
+		if !proto.ret.1.is_void_or_never() {
 			// If the return type isn't void, insert a
 			// variable to write the return value to
 			let mut props = proto.ret.0;

@@ -34,3 +34,10 @@ impl<type T> SliceRepr<T> {
 		*(&mut self as [T] mut* mut*)
 	}
 }
+
+unsafe fn construct_slice<type T>(T raw* ptr, usize len) -> [T]* {
+	*(&new SliceRepr<T> {
+		ptr,
+		len
+	} as [T]**)
+}

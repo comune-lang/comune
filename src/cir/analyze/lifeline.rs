@@ -231,7 +231,7 @@ impl LiveVarCheckState {
 		let _copy_trait = solver.get_lang_trait(LangTrait::Copy);
 
 		// temp hack
-		let is_copy = matches!(ty, Type::Basic(_) | Type::Pointer { .. } | Type::Slice(_) | Type::Function(_, _));
+		let is_copy = matches!(ty, Type::Basic(_) | Type::Pointer { .. } | Type::Function(_, _));
 
 		if !props.is_ref && !is_copy {
 			self.set_liveness(lval, LivenessState::Moved, func);

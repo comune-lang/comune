@@ -175,7 +175,7 @@ impl Lexer {
 					break;
 				}
 				Ok(tk) => self.token_buffer.push(tk),
-				Err(_) => panic!(), // Shouldn't happen?
+				Err(err) => panic!("{err}"), // Shouldn't happen?
 			}
 		}
 		self.file_index = 0usize;
@@ -273,7 +273,7 @@ impl Lexer {
 		if let Some(mut token) = self.char_buffer {
 			let mut depth = 1;
 
-			while token == '/' && self.peek_next_char()? == '*' {
+			while token == '/' && (self.eof_reached() || self.peek_next_char()? == '*') {
 				while !self.eof_reached() {
 					token = self.get_next_char()?;
 
@@ -572,7 +572,9 @@ impl Lexer {
 		self.file_buffer[self.file_index..]
 			.chars()
 			.next()
-			.ok_or_else(|| Error::new(io::ErrorKind::UnexpectedEof, "Unexpected EOF"))
+			.ok_or_else(|| 
+				Error::new(io::ErrorKind::UnexpectedEof, "Unexpected EOF")
+			)
 	}
 
 	pub fn log_msg(&self, e: ComuneMessage) {

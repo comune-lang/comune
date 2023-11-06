@@ -7,6 +7,7 @@ struct String {
 
 	new(new& self) {
 		self.vec = new Vector<u8>();
+		self.vec.push(0);
 	}
 
 	new(new& self, String& copied) {
@@ -36,14 +37,19 @@ impl String {
 	fn len(&self) -> usize {
 		auto len = self.vec.len();
 		
-		if len == 0 {
-			return 0
-		} else {
-			return len - 1usize
-		}
+		return len - 1usize
 	}
 
 	fn c_str(&self) -> u8* {
 		self.vec.data as u8*
+	}
+
+	fn as_slice(&self) -> [u8]* {
+		unsafe {
+			core::slice::construct_slice<u8>(
+				self.vec.data,
+				self.vec.len
+			)
+		}
 	}
 }

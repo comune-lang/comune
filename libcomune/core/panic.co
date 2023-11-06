@@ -1,0 +1,6 @@
+using core::libc::printf;
+
+fn panic([u8]* message) -> never {
+    printf(c"the application panicked at '%.*s'.\n", message->len(), message->ptr());
+    core::libc::abort()
+}

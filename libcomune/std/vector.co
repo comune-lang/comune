@@ -1,5 +1,4 @@
 using core::libc::{
-	abort,
 	malloc,
 	realloc,
 	free,
@@ -12,6 +11,8 @@ using core::mem::{
 	bit_cast,
 	null
 };
+
+using core::panic::panic;
 
 using core::option::{Option, Some, None};
 
@@ -106,7 +107,7 @@ impl<type T> Vector<T> {
 			self.capacity = capacity;
 		} else {
 			free(self.data as void raw*);
-			// TODO: panic here
+			panic("failed to reallocate Vector storage!")
 		}
 	}
 
