@@ -2,7 +2,7 @@ using core::libc::{printf, abort, malloc, memcpy};
 
 // TODO: Replace this with an intrinsic lol
 fn size_of<type T>() -> usize {
-	T raw* ptr1 = malloc(0) as T raw*;
+	T raw* ptr1 = null<T>();
 	T raw* ptr2 = ptr1 + 1;
 
 	unsafe {
@@ -13,18 +13,22 @@ fn size_of<type T>() -> usize {
 }
 
 unsafe fn bit_cast<type T, type U>(T t) -> U {
+	// FIXME: this currently causes a monomorphization loop
+	// if called from size_of<T> (through null<T>)
 	if size_of<T>() != size_of<U>() {
-		// TODO: Replace this with a panic/throw when implemented
-		printf(c"ERROR: size_of<T> != size_of<U>!\n");
-		abort();
+		core::panic::panic("size_of<T> != size_of<U>!");
 	};
 
 	unsafe { *(&t as U*) }
 }
 
+unsafe fn bit_cast_unchecked<type T, type U>(T t) -> U {
+	unsafe { *(&t as U*) }
+}
+
 fn null<type T>() -> T raw* {
 	unsafe {
-		bit_cast<usize, T raw*>(0)
+		bit_cast_unchecked<usize, T raw*>(0usize)
 	}
 }
 
