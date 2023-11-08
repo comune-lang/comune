@@ -22,9 +22,7 @@ impl String {
 		// internal length is one byte longer, since
 		// we always store a null-terminator for C/C++
 		// compatibility.
-		unsafe {
-			self.vec.resize_zeroed(len + string->len() + 1);
-		}
+		self.vec.resize(len + string->len() + 1, 0);
 
 		auto ptr = self.vec.data + len;
 		memcpy(

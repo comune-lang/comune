@@ -13,7 +13,7 @@ using core::mem::{
 };
 
 using core::panic::panic;
-
+using core::traits::Copy;
 using core::option::{Option, Some, None};
 
 struct Vector<type T> {
@@ -176,5 +176,25 @@ impl<type T> Vector<T> {
 
 	bool is_empty(&self) {
 		self.len == 0
+	}
+}
+
+impl<type T: Copy> Vector<T> {
+	void resize(mut& self, usize len, T fill) {
+		if len > self.len {
+			self.reserve(len);
+			
+			for (usize mut i = self.len; i < len; i += 1) {
+				unsafe {
+					core::mem::write<T>(self.data + i, fill);
+				}
+			}
+
+			self.len = len;
+		} else {
+			while len < self.len {
+				self.pop();
+			}
+		}
 	}
 }

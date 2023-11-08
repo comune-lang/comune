@@ -18,6 +18,8 @@ use crate::{
 	parser::ComuneResult,
 };
 
+use super::ty::generic_arg_fits_bounds;
+
 pub fn validate_function_body(
 	scope: Identifier,
 	func: &FnPrototype,
@@ -185,7 +187,7 @@ pub fn validate_fn_call(
 		.clone()
 		.into_iter()
 		.unique()
-		.filter(|func| is_candidate_viable(args, generic_args, func))
+		.filter(|func| is_candidate_viable(args, generic_args, func, &scope))
 		.collect();
 
 	let func = try_select_candidate(
@@ -258,7 +260,7 @@ pub fn resolve_method_call(
 			receiver.extract_generic_args(&impl_ty, &mut generic_args);
 			generic_args.push(GenericArg::Type(receiver.clone()));
 			
-			if is_candidate_viable(args, &generic_args, &func) {
+			if is_candidate_viable(args, &generic_args, &func, &scope) {
 				Some((generic_args, func))
 			} else {
 				None
@@ -327,6 +329,7 @@ pub fn is_candidate_viable(
 	args: &Vec<Expr>,
 	generic_args: &GenericArgs,
 	func: &FnPrototype,
+	scope: &FnScope,
 ) -> bool {
 	let params = &func.params.params;
 
@@ -337,6 +340,14 @@ pub fn is_candidate_viable(
 	// TODO: Type arg deduction
 	if generic_args.len() < func.generics.non_defaulted_count() {
 		return false;
+	}
+
+	let impl_solver = &scope.context.impl_solver;
+
+	for (arg, (_, generic)) in generic_args.iter().zip(func.generics.params.iter()) {
+		if !generic_arg_fits_bounds(arg, generic, &func.generics, impl_solver) {
+			return false;
+		}
 	}
 
 	for (i, (param, ..)) in params.iter().enumerate() {

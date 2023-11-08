@@ -7,7 +7,7 @@ use crate::{
 	ast::{
 		get_attribute,
 		module::{ItemRef, ModuleImpl, ModuleInterface, ModuleItemInterface},
-		traits::{TraitInterface, TraitRef},
+		traits::{TraitInterface, TraitRef, ImplSolver},
 		types::{
 			self, BindingProps, FnPrototype, GenericArg, GenericParam, Generics, Type, TypeDef, Basic, TupleKind,
 		},
@@ -115,6 +115,8 @@ pub fn resolve_interface_types(parser: &mut Parser) -> ComuneResult<()> {
 
 		// Then use it to fill in the Self param's type
 		*generics.get_mut("Self").unwrap().get_type_arg_mut() = Some(ty.read().unwrap().clone());
+
+		resolve_generic_params(&mut generics, interface)?;
 
 		// Resolve item references in canonical root
 		if let Some(tr) = &mut im.write().unwrap().implements {
@@ -271,6 +273,29 @@ pub fn check_dst_indirection(ty: &Type, props: &BindingProps) -> ComuneResult<()
 		}
 
 		_ => Ok(()),
+	}
+}
+
+pub fn generic_arg_fits_bounds(
+	arg: &GenericArg,
+	param: &GenericParam,
+	generics: &Generics,
+	solver: &ImplSolver
+) -> bool {
+	match (arg, param) {
+		(GenericArg::Type(ty), GenericParam::Type { bounds, .. }) => {
+			for bound in bounds {
+				let ItemRef::Resolved(tr) = bound else {
+					panic!("unresolved trait bound!")
+				};
+
+				if !solver.is_trait_implemented(ty, tr, generics) {
+					return false
+				}
+			}
+
+			true
+		}
 	}
 }
 

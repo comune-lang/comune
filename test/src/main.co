@@ -304,6 +304,11 @@ fn copy_test<type T: Copy>(T t) {
 }
 
 int main() {
+	copy_test<u32>(0);
+
+	// fails: String does not implement Copy
+	// copy_test<String>(new String());
+
 	ops_test();
 	enum_test();
 	drop_test();
