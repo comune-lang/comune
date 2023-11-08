@@ -228,10 +228,8 @@ impl LiveVarCheckState {
 		solver: &ImplSolver, // will be used to query whether a type implements Copy
 		func: &CIRFunction, 
 	) {
-		let _copy_trait = solver.get_lang_trait(LangTrait::Copy);
-
-		// temp hack
-		let is_copy = matches!(ty, Type::Basic(_) | Type::Pointer { .. } | Type::Function(_, _));
+		let copy_trait = solver.get_lang_trait(LangTrait::Copy);
+		let is_copy = solver.is_trait_implemented(ty, &copy_trait, &func.generics);
 
 		if !props.is_ref && !is_copy {
 			self.set_liveness(lval, LivenessState::Moved, func);

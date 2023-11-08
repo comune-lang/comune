@@ -117,30 +117,12 @@ pub fn resolve_interface_types(parser: &mut Parser) -> ComuneResult<()> {
 		*generics.get_mut("Self").unwrap().get_type_arg_mut() = Some(ty.read().unwrap().clone());
 
 		// Resolve item references in canonical root
-		let resolved_trait = if let Some(ItemRef::Unresolved {
-			name,
-			scope,
-			generic_args,
-		}) = &im.read().unwrap().implements
-		{
-			let found = interface.with_item(&name, &scope, |item, name| match item {
-				ModuleItemInterface::Trait(tr) => Some(Box::new(ItemRef::Resolved(TraitRef {
-					def: Arc::downgrade(tr),
-					name: name.clone(),
-					args: generic_args.clone(),
-				}))),
-
-				_ => None,
-			});
-
-			if let Some(found) = found {
-				found
-			} else {
-				return Err(ComuneError::new(
-					ComuneErrCode::UnresolvedTrait(name.clone()),
-					SrcSpan::new(),
-				));
-			}
+		if let Some(tr) = &mut im.write().unwrap().implements {
+			resolve_trait_ref(tr, interface)?
+		};
+		
+		let resolved_trait = if let Some(tr) = &im.read().unwrap().implements {
+			Some(Box::new(tr.clone()))
 		} else {
 			None
 		};
@@ -510,6 +492,8 @@ pub fn resolve_function_prototype(
 ) -> ComuneResult<()> {
 	let mut func = func_og.as_ref().clone();
 
+	resolve_generic_params(&mut func.generics, interface)?;
+
 	resolve_type(&mut func.ret.1, interface, &func.generics)?;
 	check_dst_indirection(&func.ret.1, &BindingProps::default())?;
 
@@ -538,6 +522,49 @@ pub fn resolve_function_prototype(
 	*func_og = func_arc;
 
 	Ok(())
+}
+
+fn resolve_generic_params(
+	generics: &mut Generics,
+	interface: &ModuleInterface,
+) -> ComuneResult<()> {
+	for (_, generic) in &mut generics.params {
+		match generic {
+			GenericParam::Type { bounds, .. } => {
+				for bound in bounds {
+					resolve_trait_ref(bound, interface)?;
+				}
+			}
+		}
+	}
+
+	Ok(())
+}
+
+fn resolve_trait_ref(tr: &mut ItemRef<TraitRef>, interface: &ModuleInterface) -> ComuneResult<()> {
+	let ItemRef::Unresolved { name, scope, generic_args } = tr else {
+		return Ok(())
+	};
+	
+	let found = interface.with_item(&name, &scope, |item, name| match item {
+		ModuleItemInterface::Trait(tr) => Some(ItemRef::Resolved(TraitRef {
+			def: Arc::downgrade(tr),
+			name: name.clone(),
+			args: generic_args.clone(),
+		})),
+
+		_ => None,
+	});
+
+	if let Some(Some(found)) = found {
+		*tr = found;
+		Ok(())
+	} else {
+		Err(ComuneError::new(
+			ComuneErrCode::UnresolvedTrait(name.clone()),
+			SrcSpan::new(),
+		))
+	}
 }
 
 pub fn check_cyclical_deps(

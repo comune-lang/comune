@@ -2433,14 +2433,12 @@ impl<'ctx> Parser {
 								generic_args: vec![],
 							});
 
-							current = self.get_next()?;
+							current = self.get_current()?;
 
 							match current {
 								Token::Operator("+") => current = self.get_next()?,
 
-								Token::Other(',') => break,
-
-								_ => return self.err(ComuneErrCode::UnexpectedToken),
+								_ => break,
 							}
 						}
 					}

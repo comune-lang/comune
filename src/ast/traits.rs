@@ -20,7 +20,7 @@ use super::{
 
 use lazy_static::lazy_static;
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
 pub enum LangTrait {
 	Sized,
 	Copy,
@@ -103,7 +103,6 @@ impl ImplDatabase {
 #[derive(Clone, Debug, Default)]
 pub struct ImplSolver {
 	answer_cache: HashMap<Type, HashMap<TraitRef, TraitDeduction>>,
-	finalized: bool,
 	pub impls: Vec<(Arc<RwLock<Type>>, Arc<RwLock<ImplBlockInterface>>)>,
 }
 
@@ -111,7 +110,6 @@ impl ImplSolver {
 	pub fn new() -> Self {
 		Self {
 			answer_cache: HashMap::new(),
-			finalized: false,
 			impls: vec![],
 		}
 	}
@@ -139,10 +137,6 @@ impl ImplSolver {
 	}
 
 	pub fn is_trait_implemented(&self, ty: &Type, tr: &TraitRef, generics: &Generics) -> bool {
-		if !self.finalized {
-			panic!("finalize the ImplSolver before querying it!");
-		}
-
 		if let Type::TypeParam(idx) = ty {
 			// Type parameter, check if it has the trait bound
 
@@ -169,6 +163,12 @@ impl ImplSolver {
 			// Type param doesn't have trait bound, do the normal lookup
 		}
 
+		if let Some(lang_trait) = self.get_lang_trait_from_ref(tr) {
+			if self.check_lang_trait_impl(lang_trait, ty) {
+				return true
+			}
+		}
+
 		for (im_ty, im) in self.impls.iter() {
 			let im_ty = &*im_ty.read().unwrap();
 			let im = im.read().unwrap();
@@ -189,6 +189,56 @@ impl ImplSolver {
 		}
 
 		false
+	}
+
+	pub fn get_lang_trait_from_ref(&self, tr: &TraitRef) -> Option<LangTrait> {
+		let lang_traits = LANG_TRAITS.read().unwrap();
+		
+		for (lang, def) in lang_traits.iter() {
+			if Arc::ptr_eq(
+				&tr.def.upgrade().unwrap(), 
+				&def.def.upgrade().unwrap()
+			) {
+				return Some(*lang)
+			}
+		}
+
+		None
+	}
+
+	pub fn check_lang_trait_impl(
+		&self,
+		tr: LangTrait,
+		ty: &Type
+	) -> bool {
+		match ty {
+			Type::Basic(_) | Type::Pointer(..) => true,
+			
+			Type::TypeRef { def, args } => {
+				let def = def.upgrade().unwrap();
+				let def = def.read().unwrap();
+				
+				match tr {
+					LangTrait::Send | LangTrait::Sync => {
+						for (_, member, _) in &def.members {
+							if !self.check_lang_trait_impl(tr, member) {
+								return false
+							}
+						}
+
+						for (_, variant) in &def.variants {
+							// TODO: check variants
+						}
+
+						true
+					}
+
+					_ => false,
+				}
+			}
+			
+			_ => false,
+		}		
 	}
 
 	pub fn is_impl_applicable(

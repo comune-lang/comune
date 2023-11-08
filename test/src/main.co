@@ -1,6 +1,7 @@
 using core::libc::{malloc, free, printf};
 using core::mem::{bit_cast, size_of};
 using core::option::{Option, None, Some};
+using core::traits::Copy;
 using std::vector::Vector;
 using std::string::String;
 using std::rc::Rc;
@@ -295,6 +296,11 @@ void string_test() {
 	test.push_str("world!");
 
 	printf(c"%s\n\n", test.c_str());
+}
+
+fn copy_test<type T: Copy>(T t) {
+	auto a = t;
+	auto b = t;
 }
 
 int main() {
