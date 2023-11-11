@@ -151,7 +151,7 @@ impl Expr {
 			}
 		}?;
 
-		result.validate(scope)?;
+		result.validate(scope, self.get_span())?;
 
 		self.set_type_hint(result.get_concrete_type(&scope.generics.get_as_arg_list()));
 
@@ -733,7 +733,7 @@ impl Atom {
 					}
 
 					let mut common_ty = Type::common_type(&branch_types);
-					common_ty.validate(scope)?;
+					common_ty.validate(scope, meta.span)?;
 					
 					for (_, expr) in branches {
 						if expr.get_type() != &common_ty {

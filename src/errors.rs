@@ -16,6 +16,7 @@ use backtrace::Backtrace;
 use lazy_static::lazy_static;
 
 use crate::ast::module::Name;
+use crate::ast::traits::TraitRef;
 use crate::ast::types::Type;
 use crate::ast::types::{FnPrototype, GenericArgs};
 use crate::ast::write_arg_list;
@@ -137,6 +138,7 @@ pub enum ComuneErrCode {
 		members: Vec<Name>,
 	},
 	UnresolvedTrait(Identifier),
+	UnsatisfiedTraitBounds(Type, Vec<TraitRef>),
 	UninitReference,
 	UninitNewReference,
 	UninitMutReference,
@@ -303,6 +305,21 @@ impl Display for ComuneErrCode {
 				write!(f, "overlapping definitions of `drop`")
 			}
 			ComuneErrCode::UnresolvedTrait(tr) => write!(f, "failed to resolve trait `{tr}`"),
+
+			ComuneErrCode::UnsatisfiedTraitBounds(ty, traits) => {
+				write!(f, "trait bounds not satisfied: `{ty}` does not implement ")?;
+
+				for (i, tr) in traits.iter().enumerate() {
+					write!(f, "`{}`", tr.name)?;
+
+					if i != traits.len() - 1 {
+						write!(f, "`, `")?;
+					}
+				}
+				
+				Ok(())
+			}
+
 			ComuneErrCode::UninitReference => {
 				write!(f, "a reference binding must be immediately initialized")
 			}

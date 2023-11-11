@@ -6,7 +6,7 @@ use std::{
 use crate::{
 	ast::{
 		get_attribute,
-		module::{ItemRef, ModuleImpl, ModuleInterface, ModuleItemInterface},
+		module::{ModuleImpl, ModuleInterface, ModuleItemInterface},
 		traits::{TraitInterface, TraitRef, ImplSolver},
 		types::{
 			self, BindingProps, FnPrototype, GenericArg, GenericParam, Generics, Type, TypeDef, Basic, TupleKind,
@@ -169,7 +169,7 @@ pub fn resolve_interface_types(parser: &mut Parser) -> ComuneResult<()> {
 				if let Some(tr) = &resolved_trait {
 					// Check if the function signature matches a declaration in the trait
 
-					let ItemRef::Resolved(TraitRef { def, args, .. }) = &**tr else {
+					let TraitRef { def: Some(def), args, .. } = &**tr else {
 						panic!()
 					};
 
@@ -233,9 +233,9 @@ pub fn resolve_interface_types(parser: &mut Parser) -> ComuneResult<()> {
 			}
 		}
 
-		if let Some(ItemRef::Resolved(tr)) = &resolved_trait.and_then(|t| Some(*t)) {
+		if let Some(tr) = &resolved_trait.and_then(|t| Some(*t)) {
 			// Now go through all the trait's functions and check for missing impls
-			for (_, funcs) in &tr.def.upgrade().unwrap().read().unwrap().items {
+			for (_, funcs) in &tr.unwrap_def().read().unwrap().items {
 				for func in funcs {
 					if !trait_functions_found.contains(func) {
 						return Err(ComuneError::new(
@@ -276,27 +276,31 @@ pub fn check_dst_indirection(ty: &Type, props: &BindingProps) -> ComuneResult<()
 	}
 }
 
-pub fn generic_arg_fits_bounds(
+pub fn find_unsatisfied_trait_bounds(
 	arg: &GenericArg,
 	param: &GenericParam,
 	generics: &Generics,
 	solver: &ImplSolver
-) -> bool {
+) -> Option<(Type, Vec<TraitRef>)> {
+	let mut result = vec![];
+
 	match (arg, param) {
 		(GenericArg::Type(ty), GenericParam::Type { bounds, .. }) => {
-			for bound in bounds {
-				let ItemRef::Resolved(tr) = bound else {
-					panic!("unresolved trait bound!")
-				};
+			for tr in bounds {
+				assert!(tr.is_resolved(), "unresolved trait bound!");
 
 				if !solver.is_trait_implemented(ty, tr, generics) {
-					return false
+					result.push(tr.clone());
 				}
 			}
 
-			true
+			if !result.is_empty() {
+				return Some((ty.clone(), result))
+			}
 		}
 	}
+
+	None
 }
 
 pub fn resolve_generic_arg(
@@ -394,29 +398,17 @@ pub fn resolve_type(
 }
 
 pub fn resolve_type_def(
-	ty_lock: Arc<RwLock<TypeDef>>,
+	ty_def: Arc<RwLock<TypeDef>>,
 	interface: &ModuleInterface,
 	module_impl: &mut ModuleImpl,
 ) -> ComuneResult<()> {
-	let mut ty = ty_lock.write().unwrap();
+	let ty_lock = &mut *ty_def.write().unwrap();
 
-	// Create type parameter list with empty Self param
-	let mut generics = ty.generics.clone();
+	resolve_generic_params(&mut ty_lock.generics, interface)?;
 
-	generics.params.push((
-		"Self".into(),
-		GenericParam::Type {
-			bounds: vec![],
-			arg: Some(Type::TypeRef {
-				def: Arc::downgrade(&ty_lock),
-				args: vec![],
-			}),
-		},
-	));
+	let ty_has_drop = ty_lock.drop.is_some();
 
-	let ty_has_drop = ty.drop.is_some();
-
-	for (_, variant) in &mut ty.variants {
+	for (_, variant) in &mut ty_lock.variants {
 		resolve_type_def(variant.clone(), interface, module_impl)?;
 
 		if ty_has_drop && variant.read().unwrap().drop.is_some() {
@@ -427,51 +419,51 @@ pub fn resolve_type_def(
 		}
 	}
 
-	for (_, ty, _) in &mut ty.members {
-		resolve_type(ty, interface, &generics)?;
+	for (_, ty, _) in &mut ty_lock.members {
+		resolve_type(ty, interface, &ty_lock.generics)?;
 	}
 
 	// This part is ugly as hell. sorry
 
-	if let Some(drop) = &mut ty.drop {
+	if let Some(drop) = &mut ty_lock.drop {
 		resolve_function_prototype(drop, interface, module_impl)?;
 
 		// Check whether the first parameter exists and is `mut& self`
 		let Some((Type::TypeRef { def, .. }, _, props)) = drop.params.params.get(0) else {
 			return Err(ComuneError::new(
-				ComuneErrCode::DtorSelfParam(ty.name.clone()),
+				ComuneErrCode::DtorSelfParam(ty_lock.name.clone()),
 				SrcSpan::new(),
 			))
 		};
 
-		if !Arc::ptr_eq(&ty_lock, &def.upgrade().unwrap()) || !props.is_mut || !props.is_ref {
+		if !Arc::ptr_eq(&ty_def, &def.upgrade().unwrap()) || !props.is_mut || !props.is_ref {
 			return Err(ComuneError::new(
-				ComuneErrCode::DtorSelfParam(ty.name.clone()),
+				ComuneErrCode::DtorSelfParam(ty_lock.name.clone()),
 				SrcSpan::new(),
 			));
 		}
 	}
 
-	for init in &mut ty.init {
+	for init in &mut ty_lock.init {
 		resolve_function_prototype(init, interface, module_impl)?;
 
 		// Check whether the first parameter exists and is `new& self`
 		let Some((Type::TypeRef { def, .. }, _, props)) = init.params.params.get(0) else {
 			return Err(ComuneError::new(
-				ComuneErrCode::CtorSelfParam(ty.name.clone()),
+				ComuneErrCode::CtorSelfParam(ty_lock.name.clone()),
 				SrcSpan::new(),
 			))
 		};
 
-		if !Arc::ptr_eq(&ty_lock, &def.upgrade().unwrap()) || !props.is_new {
+		if !Arc::ptr_eq(&ty_def, &def.upgrade().unwrap()) || !props.is_new {
 			return Err(ComuneError::new(
-				ComuneErrCode::CtorSelfParam(ty.name.clone()),
+				ComuneErrCode::CtorSelfParam(ty_lock.name.clone()),
 				SrcSpan::new(),
 			));
 		}
 	}
 
-	if let Some(layout) = get_attribute(&ty.attributes, "layout") {
+	if let Some(layout) = get_attribute(&ty_lock.attributes, "layout") {
 		if layout.args.len() != 1 {
 			return Err(ComuneError::new(
 				ComuneErrCode::ParamCountMismatch {
@@ -493,7 +485,7 @@ pub fn resolve_type_def(
 		}
 
 		if let Token::Name(layout_name) = &layout.args[0][0] {
-			ty.layout = match layout_name.as_str() {
+			ty_lock.layout = match layout_name.as_str() {
 				"declared" => types::DataLayout::Declared,
 				"optimized" => types::DataLayout::Optimized,
 				"packed" => types::DataLayout::Packed,
@@ -566,23 +558,20 @@ fn resolve_generic_params(
 	Ok(())
 }
 
-fn resolve_trait_ref(tr: &mut ItemRef<TraitRef>, interface: &ModuleInterface) -> ComuneResult<()> {
-	let ItemRef::Unresolved { name, scope, generic_args } = tr else {
+fn resolve_trait_ref(tr: &mut TraitRef, interface: &ModuleInterface) -> ComuneResult<()> {
+	let TraitRef { def: def @ None, name, scope, .. } = tr else {
 		return Ok(())
 	};
 	
 	let found = interface.with_item(&name, &scope, |item, name| match item {
-		ModuleItemInterface::Trait(tr) => Some(ItemRef::Resolved(TraitRef {
-			def: Arc::downgrade(tr),
-			name: name.clone(),
-			args: generic_args.clone(),
-		})),
+		ModuleItemInterface::Trait(tr) => Some((Arc::downgrade(tr), name.clone())),
 
 		_ => None,
 	});
 
 	if let Some(Some(found)) = found {
-		*tr = found;
+		*def = Some(found.0);
+		*name = found.1;
 		Ok(())
 	} else {
 		Err(ComuneError::new(
@@ -632,9 +621,11 @@ pub fn check_module_cyclical_deps(module: &ModuleInterface) -> ComuneResult<()> 
 }
 
 impl Type {
-	pub fn validate(&mut self, scope: &FnScope) -> ComuneResult<()> {
+	pub fn validate(&mut self, scope: &FnScope, span: SrcSpan) -> ComuneResult<()> {
 		match self {
-			Type::Array(_, n) => {
+			Type::Array(ty, n) => {
+				ty.validate(scope, span)?;
+
 				let result = if let ConstExpr::Expr(e) = &*n.read().unwrap() {
 					ConstExpr::Result(e.eval_const(scope)?)
 				} else {
@@ -646,7 +637,7 @@ impl Type {
 
 			Type::Tuple(kind, types) => {
 				for ty in types.iter_mut() {
-					ty.validate(scope)?;
+					ty.validate(scope, span)?;
 				}
 
 				if *kind == TupleKind::Sum {
@@ -658,6 +649,28 @@ impl Type {
 					}
 				}
 			}
+
+			Type::TypeRef { def, args } => {
+				let def = def.upgrade().unwrap();
+				let def = def.read().unwrap();
+
+				// check if type arguments satisfy trait bounds
+				for (arg, (_, param)) in args.iter().zip(def.generics.params.iter()) {
+					let bounds = find_unsatisfied_trait_bounds(arg, param, &scope.generics, &scope.context.impl_solver);
+
+					if let Some((ty, bounds)) = bounds {
+						return Err(ComuneError::new(
+							ComuneErrCode::UnsatisfiedTraitBounds(ty, bounds),
+							span
+						))
+					}
+				}
+			}
+
+			Type::Pointer(ty, _) => ty.validate(scope, span)?,
+
+			Type::Slice(ty) => ty.validate(scope, span)?,
+
 
 			_ => {}
 		}

@@ -24,7 +24,7 @@ impl Stmt {
 					let expr_ty = expr.validate(scope)?;
 					
 					binding_ty.resolve_inference_vars(expr_ty.clone(), binding_props.span)?;
-					binding_ty.validate(scope)?;
+					binding_ty.validate(scope, *span)?;
 
 					if expr_ty != *binding_ty {
 						if expr_ty.is_subtype_of(&binding_ty) {
@@ -46,10 +46,9 @@ impl Stmt {
 							*span,
 						));
 					}
-
-					scope.add_variable(binding_ty.clone(), binding_name.clone(), *binding_props);
-					Ok(expr_ty)
 				} else {
+					binding_ty.validate(scope, *span)?;
+
 					// References must be initialized in their declaration
 					if binding_props.is_ref {
 						return Err(ComuneError::new(ComuneErrCode::UninitReference, *span));
@@ -59,10 +58,10 @@ impl Stmt {
 					if binding_props.is_new {
 						return Err(ComuneError::new(ComuneErrCode::LocalNewReference, *span));
 					}
-
-					scope.add_variable(binding_ty.clone(), binding_name.clone(), *binding_props);
-					Ok(binding_ty.clone())
 				}
+				
+				scope.add_variable(binding_ty.clone(), binding_name.clone(), *binding_props);
+				Ok(binding_ty.clone())
 			}
 
 			Stmt::Expr(expr) => expr.validate(scope),
@@ -74,7 +73,7 @@ impl Pattern {
 	pub fn validate(&mut self, scope: &mut FnScope) -> ComuneResult<Type> {
 		match self {
 			Pattern::Binding(binding) => {
-				binding.ty.validate(scope)?;
+				binding.ty.validate(scope, binding.props.span)?;
 				Ok(binding.ty.clone())
 			}
 
@@ -122,7 +121,7 @@ impl Pattern {
 					
 				}
 
-				pattern_ty.validate(scope)?;
+				pattern_ty.validate(scope, *span)?;
 
 				Ok(pattern_ty.clone())
 			}

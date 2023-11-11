@@ -11,7 +11,7 @@ use crate::lexer::{Lexer, SrcSpan, Token};
 use crate::ast::controlflow::ControlFlow;
 use crate::ast::expression::{Atom, Expr, FnRef, NodeData, Operator, XtorKind};
 use crate::ast::module::{
-	Identifier, ItemRef, ModuleASTElem, ModuleImpl, ModuleImportKind, ModuleInterface,
+	Identifier, ModuleASTElem, ModuleImpl, ModuleImportKind, ModuleInterface,
 	ModuleItemInterface, Name,
 };
 use crate::ast::statement::Stmt;
@@ -398,10 +398,11 @@ impl<'ctx> Parser {
 							return self.err(ComuneErrCode::ExpectedIdentifier); // TODO: Proper error
 						};
 
-						trait_name = Some(ItemRef::<TraitRef>::Unresolved {
+						trait_name = Some(TraitRef {
+							def: None,
 							name,
 							scope,
-							generic_args,
+							args: generic_args,
 						});
 
 						// Then parse the implementing type, for real this time
@@ -1903,10 +1904,11 @@ impl<'ctx> Parser {
 			let tr = match self.get_current()? {
 				Token::Operator("as") => {
 					self.get_next()?;
-					Some(Box::new(ItemRef::Unresolved {
+					Some(Box::new(TraitRef {
+						def: None,
 						name: self.parse_identifier(scope)?,
 						scope: self.current_scope.clone(),
-						generic_args: vec![],
+						args: vec![],
 					}))
 				}
 
@@ -2427,10 +2429,11 @@ impl<'ctx> Parser {
 						while self.is_at_identifier_token()? {
 							let tr = self.parse_identifier(scope)?;
 
-							bounds.push(ItemRef::Unresolved {
+							bounds.push(TraitRef {
+								def: None,
 								name: tr,
 								scope: self.current_scope.clone(),
-								generic_args: vec![],
+								args: vec![],
 							});
 
 							current = self.get_current()?;

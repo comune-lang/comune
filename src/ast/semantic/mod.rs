@@ -68,8 +68,9 @@ fn validate_attributes(interface: &mut ModuleInterface) -> ComuneResult<()> {
 					interface.impl_solver.register_lang_trait(
 						lang_trait,
 						TraitRef {
-							def: Arc::downgrade(tr),
+							def: Some(Arc::downgrade(tr)),
 							name: id.clone(),
+							scope: Arc::new(interface.name.clone()),
 							args: vec![],
 						},
 					);

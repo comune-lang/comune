@@ -303,11 +303,20 @@ fn copy_test<type T: Copy>(T t) {
 	auto b = t;
 }
 
-int main() {
-	copy_test<u32>(0);
+struct GenericTypeBounds<type T: Copy> {
+	T t;
+}
 
+int main() {
 	// fails: String does not implement Copy
 	// copy_test<String>(new String());
+
+	// succeeds: u32 implicitly implements Copy
+	copy_test<u32>(0);
+	
+	// fails: String does not implement Copy	
+	// GenericTypeBounds<String> test;
+
 
 	ops_test();
 	enum_test();

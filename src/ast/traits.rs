@@ -1,6 +1,7 @@
 // Just to shut up rust-analyzer for the time being
 #![allow(dead_code, unused_variables)]
 
+use std::fmt::Display;
 use std::hash::{Hash, Hasher};
 use std::thread;
 use std::time::Duration;
@@ -10,7 +11,6 @@ use std::{
 	sync::{Arc, RwLock, Weak},
 };
 
-use super::module::ItemRef;
 use super::types::{FnPrototype, GenericArgs, GenericParam, Generics};
 use super::Attribute;
 use super::{
@@ -30,8 +30,9 @@ pub enum LangTrait {
 
 #[derive(Debug, Clone, Default)]
 pub struct TraitRef {
-	pub def: Weak<RwLock<TraitInterface>>,
+	pub def: Option<Weak<RwLock<TraitInterface>>>,
 	pub name: Identifier,
+	pub scope: Arc<Identifier>,
 	pub args: GenericArgs,
 }
 
@@ -45,7 +46,7 @@ pub struct TraitInterface {
 
 #[derive(Debug, Clone)]
 pub struct ImplBlockInterface {
-	pub implements: Option<ItemRef<TraitRef>>,
+	pub implements: Option<TraitRef>,
 	pub functions: HashMap<Name, Vec<Arc<FnPrototype>>>,
 	pub types: HashMap<Name, Type>,
 	pub scope: Arc<Identifier>, // The scope used for name resolution within the impl
@@ -53,9 +54,19 @@ pub struct ImplBlockInterface {
 	pub params: Generics,
 }
 
+impl TraitRef {
+	pub fn unwrap_def(&self) -> Arc<RwLock<TraitInterface>> {
+		self.def.as_ref().unwrap().upgrade().unwrap()
+	}
+
+	pub fn is_resolved(&self) -> bool {
+		self.def.is_some()
+	}
+}
+
 impl PartialEq for TraitRef {
 	fn eq(&self, other: &Self) -> bool {
-		Arc::ptr_eq(&self.def.upgrade().unwrap(), &other.def.upgrade().unwrap())
+		Arc::ptr_eq(&self.unwrap_def(), &other.unwrap_def())
 			&& self.name == other.name
 			&& self.args == other.args
 	}
@@ -65,12 +76,26 @@ impl Eq for TraitRef {}
 
 impl Hash for TraitRef {
 	fn hash<H: Hasher>(&self, state: &mut H) {
-		ptr::hash(self.def.upgrade().unwrap().as_ref(), state);
+		if self.is_resolved() {
+			"y".hash(state);
+			ptr::hash(&*self.unwrap_def().read().unwrap(), state);
+		} else {
+			"n".hash(state);
+			self.name.hash(state);
+			self.scope.hash(state);
+		}
 
-		self.name.hash(state);
+		"a".hash(state);
+		self.args.hash(state);
+	}
+}
 
-		for arg in &self.args {
-			arg.hash(state);
+impl Display for TraitRef {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		if self.def.is_some() {
+			write!(f, "{}", self.name)
+		} else {
+			write!(f, "`\'{}\'", self.name)
 		}
 	}
 }
@@ -149,11 +174,10 @@ impl ImplSolver {
 			}
 
 			if bounds.iter().any(|param_trait| {
-				if let ItemRef::Resolved(param_trait) = param_trait {
-					if param_trait == tr {
-						return true;
-					}
+				if param_trait == tr {
+					return true;
 				}
+			
 				false
 			}) {
 				// Type parameter has trait bound, easy result
@@ -173,7 +197,7 @@ impl ImplSolver {
 			let im_ty = &*im_ty.read().unwrap();
 			let im = im.read().unwrap();
 
-			let Some(ItemRef::Resolved(implements)) = &im.implements else {
+			let Some(implements) = &im.implements else {
 				continue
 			};
 
@@ -195,10 +219,7 @@ impl ImplSolver {
 		let lang_traits = LANG_TRAITS.read().unwrap();
 		
 		for (lang, def) in lang_traits.iter() {
-			if Arc::ptr_eq(
-				&tr.def.upgrade().unwrap(), 
-				&def.def.upgrade().unwrap()
-			) {
+			if Arc::ptr_eq(&tr.unwrap_def(), &def.unwrap_def()) {
 				return Some(*lang)
 			}
 		}

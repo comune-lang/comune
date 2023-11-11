@@ -5,7 +5,7 @@ use std::{mem, ptr};
 
 use itertools::Itertools;
 
-use super::module::{Identifier, ItemRef, Name};
+use super::module::{Identifier, Name};
 use super::traits::TraitRef;
 use super::{write_arg_list, Attribute};
 use crate::cir::PlaceElem;
@@ -22,7 +22,7 @@ pub struct Generics {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum GenericParam {
 	Type {
-		bounds: Vec<ItemRef<TraitRef>>,
+		bounds: Vec<TraitRef>,
 		arg: Option<Type>,
 	},
 	// TODO: const generics
@@ -1198,7 +1198,7 @@ impl Display for Type {
 
 			Type::Array(t, _) => write!(f, "{t}[]"), // TODO: ConstExpr serialization
 
-			Type::Slice(slicee) => write!(f, "{slicee}[dyn]"),
+			Type::Slice(slicee) => write!(f, "[{slicee}]"),
 
 			Type::Unresolved {
 				name, generic_args, ..
@@ -1349,15 +1349,6 @@ impl Display for GenericParam {
 
 				Ok(())
 			}
-		}
-	}
-}
-
-impl Display for ItemRef<TraitRef> {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		match self {
-			ItemRef::Resolved(tr) => write!(f, "{}", tr.name),
-			ItemRef::Unresolved { name, .. } => write!(f, "`{name}`"),
 		}
 	}
 }

@@ -15,7 +15,7 @@ use crate::{
 use super::{
 	expression::Expr,
 	traits::{ImplSolver, TraitInterface, TraitRef},
-	types::{Basic, FnPrototype, GenericArgs, Generics, Type, TypeDef},
+	types::{Basic, FnPrototype, Generics, Type, TypeDef},
 };
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
@@ -410,7 +410,7 @@ impl ModuleInterface {
 
 #[derive(Default, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Identifier {
-	pub qualifier: (Option<Box<Type>>, Option<Box<ItemRef<TraitRef>>>),
+	pub qualifier: (Option<Box<Type>>, Option<Box<TraitRef>>),
 	pub path: Vec<Name>,
 	pub absolute: bool,
 }
@@ -470,15 +470,7 @@ impl Display for Identifier {
 			(Some(ty), Some(tr)) => {
 				write!(f, "<")?;
 
-				match &**tr {
-					ItemRef::Resolved(tr) => {
-						write!(f, "{ty} as {}", tr.name)?;
-					}
-
-					ItemRef::Unresolved { name, .. } => {
-						write!(f, "{ty} as \"{name}\"")?;
-					}
-				}
+				write!(f, "{ty} as {tr}")?;
 
 				write!(f, ">::")?;
 			}
@@ -506,84 +498,4 @@ pub enum ModuleASTElem {
 	Parsed(Expr),
 	Unparsed(TokenIndex),
 	NoElem,
-}
-
-// This is old and unwieldy as hell and I gotta get around to removing it
-
-#[derive(Clone)]
-pub enum ItemRef<T: Clone> {
-	Unresolved {
-		name: Identifier,
-		scope: Arc<Identifier>,
-		generic_args: GenericArgs,
-	},
-	Resolved(T),
-}
-
-impl<T: Clone> Eq for ItemRef<T> where T: PartialEq + Eq {}
-
-impl<T: Clone> PartialEq for ItemRef<T>
-where
-	T: PartialEq,
-{
-	fn eq(&self, other: &Self) -> bool {
-		match (self, other) {
-			(
-				Self::Unresolved {
-					name: l0,
-					scope: l1,
-					generic_args: l2,
-				},
-				Self::Unresolved {
-					name: r0,
-					scope: r1,
-					generic_args: r2,
-				},
-			) => l0 == r0 && l1 == r1 && l2 == r2,
-			(Self::Resolved(l0), Self::Resolved(r0)) => l0 == r0,
-			_ => false,
-		}
-	}
-}
-
-impl<T: Clone> Hash for ItemRef<T>
-where
-	T: Hash,
-{
-	fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-		match self {
-			Self::Unresolved {
-				name,
-				scope,
-				generic_args: type_args,
-			} => {
-				name.hash(state);
-				scope.hash(state);
-				type_args.hash(state);
-			}
-
-			Self::Resolved(t) => t.hash(state),
-		}
-	}
-}
-
-impl<T: Clone> Debug for ItemRef<T>
-where
-	T: Debug,
-{
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		match self {
-			Self::Unresolved {
-				name: arg0,
-				scope: arg1,
-				generic_args: arg2,
-			} => f
-				.debug_tuple("Unresolved")
-				.field(arg0)
-				.field(arg1)
-				.field(arg2)
-				.finish(),
-			Self::Resolved(arg0) => f.debug_tuple("Resolved").field(arg0).finish(),
-		}
-	}
 }

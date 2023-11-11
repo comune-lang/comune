@@ -18,7 +18,7 @@ use crate::{
 	parser::ComuneResult,
 };
 
-use super::ty::generic_arg_fits_bounds;
+use super::ty::find_unsatisfied_trait_bounds;
 
 pub fn validate_function_body(
 	scope: Identifier,
@@ -345,7 +345,9 @@ pub fn is_candidate_viable(
 	let impl_solver = &scope.context.impl_solver;
 
 	for (arg, (_, generic)) in generic_args.iter().zip(func.generics.params.iter()) {
-		if !generic_arg_fits_bounds(arg, generic, &func.generics, impl_solver) {
+		let bounds = find_unsatisfied_trait_bounds(arg, generic, &func.generics, impl_solver);
+
+		if bounds.is_some() {
 			return false;
 		}
 	}
