@@ -13,3 +13,11 @@ trait Send {}
 
 @lang(Sync)
 trait Sync {}
+
+trait From<type T> {
+	fn from(T t) -> Self;
+}
+
+trait Into<type T> {
+	fn into(self) -> T;
+}

@@ -602,7 +602,12 @@ impl Atom {
 						if body_ty == else_ty {
 							Ok(body_ty)
 						} else {
-							Ok(Type::common_type([&body_ty, &else_ty]))
+							let result = Type::common_type([&body_ty, &else_ty]);
+
+							body.try_wrap_in_cast(result.clone())?;
+							else_body.try_wrap_in_cast(result.clone())?;
+
+							Ok(result)
 						}
 					} else {
 						Ok(Type::void_type())

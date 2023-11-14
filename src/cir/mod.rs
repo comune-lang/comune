@@ -381,7 +381,7 @@ impl CIRFunction {
 	}
 
 	pub fn get_return_lvalue(&self) -> Option<LValue> {
-		if self.ret.1.is_void() {
+		if self.ret.1.is_void_or_never() {
 			None
 		} else {
 			Some(LValue {

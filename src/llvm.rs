@@ -355,15 +355,32 @@ impl<'ctx> LLVMBuilder<'ctx> {
 
 		let mut members_ir = vec![];
 
-		for (_, mem, _) in &ty.members {
-			members_ir.push(Self::to_basic_type(self.get_llvm_type(mem)));
+		for disc in ty.get_parent_discriminants() {
+			// add parent discriminants
+			// TODO: there's room for space optimization here
+			members_ir.push(Self::to_basic_type(self.get_llvm_type(&Type::Basic(disc))));
 		}
 
-		if !ty.variants.is_empty() {
-			// enum discriminant
-			// TODO: there's room for space optimization here
-			members_ir.push(self.context.i32_type().as_basic_type_enum());
+		self.generate_type_own_members(ty, &mut members_ir);
+		
+		let type_ir = self.type_map[name].into_struct_type();
+		type_ir.set_body(&members_ir, ty.layout == DataLayout::Packed);
+	}
 
+	fn type_own_data_size(&self, ty: &TypeDef) -> u64 {
+		let mut members_ir = vec![];
+		let target_data = self.target_machine.get_target_data();
+		
+		self.generate_type_own_members(ty, &mut members_ir);
+
+		let strct = self.context.struct_type(&members_ir, ty.layout == DataLayout::Packed);
+		target_data.get_store_size(&strct)
+	}
+
+	fn generate_type_own_members(&self, ty: &TypeDef, members_ir: &mut Vec<BasicTypeEnum<'ctx>>) {
+		if !ty.variants.is_empty() {
+			members_ir.push(self.context.i32_type().into());
+						
 			// enum data store
 			let mut max_size = 0;
 
@@ -371,12 +388,7 @@ impl<'ctx> LLVMBuilder<'ctx> {
 				let variant_name = variant.read().unwrap().name.to_string();
 
 				self.generate_type_body(&variant_name, &variant.read().unwrap());
-
-				let variant_type = self.type_map[&variant_name].into_struct_type();
-				let variant_size = self
-					.target_machine
-					.get_target_data()
-					.get_store_size(&variant_type);
+				let variant_size = self.type_own_data_size(&variant.read().unwrap());
 
 				max_size = max_size.max(variant_size);
 			}
@@ -391,9 +403,9 @@ impl<'ctx> LLVMBuilder<'ctx> {
 			}
 		}
 
-		let type_ir = self.type_map[name].into_struct_type();
-
-		type_ir.set_body(&members_ir, ty.layout == DataLayout::Packed);
+		for (_, mem, _) in &ty.members {
+			members_ir.push(Self::to_basic_type(self.get_llvm_type(mem)));
+		}
 	}
 
 	fn generate_libc_bindings(&self) {
@@ -413,6 +425,13 @@ impl<'ctx> LLVMBuilder<'ctx> {
 
 		let fn_t = self.generate_prototype(t)?;
 		let fn_v = self.module.add_function(name, fn_t, None);
+
+		if t.ret.1.is_never() {
+			fn_v.add_attribute(
+				AttributeLoc::Function,
+				self.get_attribute("noreturn")
+			)
+		}
 
 		Ok(fn_v)
 	}
@@ -933,9 +952,25 @@ impl<'ctx> LLVMBuilder<'ctx> {
 						self.builder.build_store(ptr, val)
 					}
 
+					Type::TypeRef { .. } if matches!(from, Type::Tuple(TupleKind::Sum, _)) => {
+						// cast from (T::VariantA | T::VariantB) to T
+
+						let val = self.generate_operand(from, val).into_struct_value();
+						let from_data = from.get_sum_data_field().unwrap() as u32;
+						let data = self.builder.build_extract_value(val, from_data, "").unwrap();
+
+						self.builder.build_store(
+							self.builder.build_bitcast(
+								store, 
+								data.get_type().ptr_type(AddressSpace::Generic), 
+								""
+							).into_pointer_value(),
+							data
+						)
+					}
+
 					Type::TypeRef { .. } if to.get_variant_index(from).is_some() => {
 						let val = self.generate_operand(from, val);
-
 						let ptr = self.builder.build_pointer_cast(
 							store,
 							val.get_type().ptr_type(AddressSpace::Generic),
@@ -1202,7 +1237,7 @@ impl<'ctx> LLVMBuilder<'ctx> {
 	fn generate_lvalue_use(&self, expr: &LValue, props: BindingProps) -> BasicValueEnum<'ctx> {
 		// Get the variable pointer from the function
 		let (local, lprops, ty) = &self.variables[expr.local];
-
+		
 		let mut local = local.as_basic_value_enum();
 
 		// If the lvalue is a reference, perform a load
@@ -1213,17 +1248,32 @@ impl<'ctx> LLVMBuilder<'ctx> {
 					.build_load(self.indirection_as_pointer(local), "")
 					.as_basic_value_enum();
 		}
-
+		
+		let mut ty = ty.clone();
 		// Perform geps and whatnot to get a pointer to the sublocation
 
 		for proj in expr.projection.iter() {
 			local = match proj {
-				PlaceElem::Deref => self
-					.builder
-					.build_load(self.indirection_as_pointer(local), "")
-					.as_basic_value_enum(),
+				PlaceElem::Deref => {
+					let Type::Pointer(pointee, _) = ty else {
+						panic!()
+					};
+					
+					ty = *pointee.clone();
+					
+					self
+						.builder
+						.build_load(self.indirection_as_pointer(local), "")
+						.as_basic_value_enum()
+				}
 
 				PlaceElem::Index { index_ty, index, op } => {
+					let (Type::Array(sub, _) | Type::Pointer(sub, _)) = ty else {
+						panic!()
+					};
+
+					ty = *sub.clone();
+
 					let mut idx = self
 						.generate_operand(index_ty, index)
 						.as_basic_value_enum()
@@ -1247,30 +1297,47 @@ impl<'ctx> LLVMBuilder<'ctx> {
 						}
 				}
 
-				PlaceElem::Field(i) => 
-					self
-						.builder
-						.build_struct_gep(self.indirection_as_pointer(local), *i as u32, "")
-						.expect(&format!("failed to generate Field projection for `{expr}` into {:?}`", local.get_type()))
-						.as_basic_value_enum(),
-						
-				PlaceElem::SumDisc => 
-					self
-						.builder
-						.build_struct_gep(self.indirection_as_pointer(local), 0, "")
-						.expect(&format!("failed to generate SumDisc projection for `{expr} into {:?}`", local.get_type()))
-						.as_basic_value_enum(),
+				PlaceElem::Field(i) => {
+					let idx = i + ty.get_fields_offset();
 
-				PlaceElem::SumData(ty) => {					
-					let data = self
-								.builder
-								.build_struct_gep(self.indirection_as_pointer(local), 1, "")
-								.unwrap();
+					ty = ty.get_field_type(*i);
+
+					self
+						.builder
+						.build_struct_gep(self.indirection_as_pointer(local), idx as u32, "")
+						.expect(&format!("failed to generate Field projection for `{expr}` into {:?}`", local.get_type()))
+						.as_basic_value_enum()
+				}
+						
+				PlaceElem::SumDisc => {
+					let result = self
+						.builder
+						.build_struct_gep(
+							self.indirection_as_pointer(local),
+							ty.get_sum_disc_field().unwrap() as u32,
+							""
+						)
+						.expect(&format!("failed to generate SumDisc projection for `{expr} into {:?}`", local.get_type()))
+						.as_basic_value_enum();
+					
+					ty = Type::Basic(ty.get_discriminant_type().unwrap());
+
+					result
+				},
+
+				PlaceElem::SumData(variant_ty) => {
+					let mut ptr = self.indirection_as_pointer(local);
+
+					if matches!(ty, Type::Tuple(TupleKind::Sum, _)) {
+						ptr = self.builder.build_struct_gep(ptr, 1, "").unwrap();
+					}
+
+					ty = variant_ty.clone();
 
 					// SumData index requires a cast to variant type
 					self.builder.build_bitcast(
-						data,
-						Self::to_basic_type(self.get_llvm_type(ty)).ptr_type(AddressSpace::Generic),
+						ptr,
+						Self::to_basic_type(self.get_llvm_type(variant_ty)).ptr_type(AddressSpace::Generic),
 						""
 					)
 				}

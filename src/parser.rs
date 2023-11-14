@@ -143,7 +143,13 @@ impl<'ctx> Parser {
 	}
 
 	pub fn parse_interface(&mut self) -> ComuneResult<&ModuleInterface> {
-		self.lexer.borrow_mut().tokenize_file().unwrap();
+		match self.lexer.borrow_mut().tokenize_file() {
+			Ok(()) => {},
+			Err(e) => return Err(ComuneError::new(
+				ComuneErrCode::LexerError(e.to_string()),
+				SrcSpan::new()
+			))
+		};
 
 		self.parse_namespace(&Identifier::new(true))?;
 
@@ -2428,12 +2434,13 @@ impl<'ctx> Parser {
 						// Collect trait bounds
 						while self.is_at_identifier_token()? {
 							let tr = self.parse_identifier(scope)?;
+							let args = self.parse_generic_arg_list(scope)?;
 
 							bounds.push(TraitRef {
 								def: None,
 								name: tr,
 								scope: self.current_scope.clone(),
-								args: vec![],
+								args,
 							});
 
 							current = self.get_current()?;
@@ -2477,6 +2484,9 @@ impl<'ctx> Parser {
 	}
 
 	fn parse_generic_arg_list(&self, scope: Option<&FnScope<'ctx>>) -> ComuneResult<GenericArgs> {
+		if self.get_current()? != Token::Operator("<") {
+			return Ok(GenericArgs::new());
+		}
 		self.get_next()?;
 
 		let mut result = vec![];

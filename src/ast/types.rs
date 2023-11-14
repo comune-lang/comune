@@ -342,6 +342,47 @@ impl TypeDef {
 			self.members.iter().any(|(_, ty, _)| ty.get_concrete_type(args).needs_drop())
 		}
 	}
+
+	pub fn get_parent(&self) -> Option<Type> {
+		if let Some(base) = &self.name.qualifier.0 {
+			Some(*base.clone())
+		} else {
+			None
+		}
+	}
+
+	pub fn get_parent_discriminants(&self) -> Vec<Basic> {
+		let mut result = vec![];
+		self.collect_parent_discriminants(&mut result);
+		result
+	}
+
+	fn collect_parent_discriminants(&self, vec: &mut Vec<Basic>) {
+		let Some(ty @ Type::TypeRef { def, .. }) = &self.get_parent() else {
+			return
+		};
+		
+		if let Some(disc) = ty.get_discriminant_type() {
+			vec.push(disc);
+		}
+
+		let def = def.upgrade().unwrap();
+		let def = def.read().unwrap();
+
+		def.collect_parent_discriminants(vec);
+	}
+
+	pub fn get_sum_disc_field(&self) -> Option<usize> {
+		if self.variants.is_empty() {
+			None
+		} else {
+			Some(self.get_parent_discriminants().len())
+		}
+	}
+
+	pub fn get_sum_data_field(&self) -> Option<usize> {
+		self.get_sum_disc_field().map(|idx| idx + 1)
+	}
 }
 
 impl BindingProps {
@@ -503,7 +544,16 @@ impl Type {
 			Type::flatten_sum_type(ty, &mut types_flat);
 		}
 
-		let types = types_flat.into_iter().unique().collect_vec();
+		let mut types = types_flat
+			.into_iter()
+			.unique()
+			.collect_vec();
+
+		if let [Type::Never] = types.as_slice() {
+			return Type::Never;
+		} else {
+			types.retain(|ty| !ty.is_never());
+		}
 
 		if let [ty] = *types.as_slice() {
 			ty.clone()
@@ -571,7 +621,7 @@ impl Type {
 					.collect(),
 			),
 
-			Type::Unresolved { .. } | Type::Infer(_) => panic!(),
+			Type::Unresolved { .. } | Type::Infer(_) => panic!("can't monomorphize type {self}!"),
 		}
 	}
 
@@ -739,14 +789,19 @@ impl Type {
 	}
 
 	pub fn castable_to(&self, target: &Type) -> bool {
+		// T -> T
+		// never -> T
 		if self == target || self == &Type::Never {
 			return true
 		}
-		
+
+		// numeric -> numeric
+		// numeric -> bool
 		if self.is_numeric() {
 			return target.is_numeric() || target.is_boolean()
 		}
 		
+		// T*/T mut*/T raw* -> T*/T raw*
 		if let (
 			Type::Pointer(_, kind),
 			Type::Pointer(_, target_kind)
@@ -760,10 +815,12 @@ impl Type {
 				|| *target_kind != PtrKind::Unique
 		}
 		
+		// T* -> bool
 		if matches!(self, Type::Pointer { .. }) && target.is_boolean() {
 			return true
 		}
 
+		// (T) -> T
 		if let Type::Tuple(TupleKind::Newtype, types) = self {
 			let [ty] = types.as_slice() else {
 				panic!()
@@ -774,12 +831,27 @@ impl Type {
 			}
 		}
 
+		// T -> (T)
 		if let Type::Tuple(TupleKind::Newtype, types) = target {
 			let [ty] = types.as_slice() else {
 				panic!()
 			};
 
 			if ty == self {
+				return true
+			}
+		}
+
+		// (T::VariantA | T::VariantB | ...) -> T
+		if let Type::Tuple(TupleKind::Sum, types) = self {
+			if types.iter().all(|ty| target.get_variant_index(ty).is_some()) {
+				return true
+			}
+		}
+
+		// T -> (T | U | ...)
+		if let Type::Tuple(TupleKind::Sum, types) = target {
+			if types.contains(self) {
 				return true
 			}
 		}
@@ -831,6 +903,58 @@ impl Type {
 
 			_ => vec![]
 		}
+	}
+
+	pub fn get_sum_disc_field(&self) -> Option<usize> {
+		match self {
+			Type::Tuple(TupleKind::Sum, _) => Some(0),
+
+			Type::TypeRef { def, .. } => {
+				let def = def.upgrade().unwrap();
+				let def = def.read().unwrap();
+				def.get_sum_disc_field()
+			}
+
+			_ => None
+		}
+	}
+
+	pub fn get_sum_data_field(&self) -> Option<usize> {
+		self.get_sum_disc_field().map(|idx| idx + 1)
+	}
+
+	pub fn has_variants(&self) -> bool {
+		match self {
+			Type::Tuple(TupleKind::Sum, _) => true,
+			
+			Type::TypeRef { def, .. } => {
+				let def = def.upgrade().unwrap();
+				let def = def.read().unwrap();
+				
+				!def.variants.is_empty()
+			}
+
+			_ => false,
+		}
+	}
+
+	pub fn get_discriminant_count(&self) -> usize {
+		match self {
+			Type::Tuple(TupleKind::Sum, _) => 1,
+			
+			Type::TypeRef { def, .. } => {
+				let def = def.upgrade().unwrap();
+				let def = def.read().unwrap();
+				
+				def.get_parent_discriminants().len() + if !def.variants.is_empty() { 1 } else { 0 }
+			}
+
+			_ => 0,
+		}
+	}
+
+	pub fn get_fields_offset(&self) -> usize {
+		self.get_discriminant_count() + if self.has_variants() { 1 } else { 0 }
 	}
 
 	// Convenience

@@ -205,7 +205,7 @@ impl CIRModuleBuilder {
 
 		for i in 0..func.blocks.len() {
 			if func.blocks[i].items.is_empty() {
-				panic!("encountered empty basic block in cIR!");
+				panic!("encountered empty basic block in cIR! \n{func}");
 			}
 
 			let succs = match func.blocks[i].items.last().unwrap() {
@@ -783,6 +783,24 @@ impl CIRModuleBuilder {
 								}
 							}
 
+							if let Some(_) = ty.get_sum_disc_field() {
+								let mut mem_lval = location.clone();
+								let disc_ty = Type::i32_type(true);
+
+								mem_lval.projection.push(PlaceElem::SumDisc);
+								
+								self.generate_raw_assign(
+									&disc_ty, 
+									mem_lval, 
+									RValue::Atom(
+										disc_ty.clone(),
+										None, 
+										Operand::IntegerLit(0, SrcSpan::new()),
+										SrcSpan::new()
+									)
+								)
+							}
+
 							if placement.is_some() {
 								Some(Self::get_void_rvalue())
 							} else {
@@ -839,7 +857,7 @@ impl CIRModuleBuilder {
 
 					ControlFlow::If {
 						cond,
-						body: Expr::Atom(Atom::Block { items, result, .. }, _),
+						body,
 						else_body,
 					} => {
 						let result_loc = if !expr_ty.is_void_or_never() {
@@ -860,8 +878,9 @@ impl CIRModuleBuilder {
 						let start_block = self.current_block;
 
 						let mut cont_block = None;
-
-						let (if_idx, block_ir) = self.generate_block(items, result, false);
+						
+						let if_idx = self.append_block();
+						let block_ir = self.generate_expr(body, qualifs);
 
 						if let Some(if_val) = block_ir {
 							if let Some(result) = &result_loc {
@@ -877,17 +896,9 @@ impl CIRModuleBuilder {
 							self.write(CIRStmt::Jump(cont_block.unwrap()));
 						}
 
-						if let Some(Expr::Atom(
-							Atom::Block {
-								items: else_items,
-								result: else_result,
-								..
-							},
-							_,
-						)) = else_body
-						{
-							let (else_idx, else_ir) =
-								self.generate_block(else_items, else_result, false);
+						if let Some(else_body) = else_body {
+							let else_idx = self.append_block();
+							let else_ir = self.generate_expr(else_body, qualifs);
 
 							if let Some(else_val) = else_ir {
 								if let Some(result) = &result_loc {
@@ -1134,6 +1145,7 @@ impl CIRModuleBuilder {
 									&scrutinee_lval,
 									&scrutinee_ty,
 								);
+
 								let match_operand = self.get_as_operand(
 									&Type::Basic(Basic::Bool),
 									match_expr,
@@ -1199,10 +1211,6 @@ impl CIRModuleBuilder {
 
 						let cont_block = self.append_block();
 
-						if expr_ty.is_never() {
-							self.write(CIRStmt::Unreachable);
-						}
-
 						// Generate branches
 						for (i, (pattern, branch)) in branches.iter().enumerate() {
 							let binding_idx = self.append_block();
@@ -1255,11 +1263,12 @@ impl CIRModuleBuilder {
 								Some(Self::get_void_rvalue())
 							}
 						} else {
+							self.write(CIRStmt::Unreachable);
 							None
 						}
 					}
 
-					_ => panic!("illegal CtrlFlow construction in cIR!"),
+					ctrl => panic!("illegal CtrlFlow construction in cIR: {ctrl}"),
 				},
 			},
 

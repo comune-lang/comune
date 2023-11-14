@@ -179,6 +179,8 @@ pub enum ComuneErrCode {
 	// Packaged-up collection of errors as a single Err
 	Pack(Vec<ComuneError>),
 
+	LexerError(String),
+
 	// Misc
 	Custom(String),
 	Unimplemented,
@@ -408,6 +410,8 @@ impl Display for ComuneErrCode {
 			}
 
 			ComuneErrCode::Pack(vec) => write!(f, "encountered {} errors", vec.len()),
+
+			ComuneErrCode::LexerError(err) => write!(f, "internal lexer bug ({err})"),
 
 			ComuneErrCode::Custom(text) => write!(f, "{text}"),
 			ComuneErrCode::Unimplemented => write!(f, "not yet implemented"),

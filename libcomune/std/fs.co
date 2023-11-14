@@ -1,0 +1,13 @@
+//using core::libc::CFileHandle;
+
+struct File {
+	void* handle;
+}
+
+impl File {
+	fn open([u8]* path) -> File {
+		new File {
+			handle: core::mem::null<void>() as void*,
+		}
+	}
+}

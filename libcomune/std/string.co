@@ -25,6 +25,7 @@ impl String {
 		self.vec.resize(len + string->len() + 1, 0);
 
 		auto ptr = self.vec.data + len;
+		
 		memcpy(
 			ptr as void mut*,
 			string->ptr() as void*,

@@ -121,33 +121,33 @@ impl<type T> Vector<T> {
 	
 	Option<T*> get(&self, usize i) {
 		if i >= self.len {
-			return new None<T*>;
+			new None<T*>
 		} else {
-			return new Some<T*>((self.data + i) as T*);
+			new Some<T*>((self.data + i) as T*)
 		}
 	}
 
 	Option<T mut*> get_mut(mut& self, usize i) {
 		if i >= self.len {
-			return new None<T mut*>
+			new None<T mut*>
 		} else {
-			return new Some<T mut*>((self.data + i) as T mut*)
+			new Some<T mut*>((self.data + i) as T mut*)
 		}
 	}
 
 	Option<T*> back(&self) {
 		if self.is_empty() {
-			return new None<T*>
+			new None<T*>
 		} else {
-			return new Some<T*>((self.data + self.len - 1) as T*)
+			new Some<T*>((self.data + self.len - 1) as T*)
 		}
 	}
 
 	Option<T mut*> back_mut(mut &self) {
 		if self.is_empty() {
-			return new None<T mut*>
+			new None<T mut*>
 		} else {
-			return new Some<T mut*>((self.data + self.len - 1) as T mut*)
+			new Some<T mut*>((self.data + self.len - 1) as T mut*)
 		}
 	}
 

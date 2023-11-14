@@ -153,10 +153,10 @@ impl MonomorphServer {
 			.collect_vec();
 
 		for ty in types {
-			let mut ty = ty.write().unwrap();
-			
+			let mut newty = ty.read().unwrap().clone();
+
 			self.monoize_typedef_body(
-				&mut ty,
+				&mut newty,
 				&vec![],
 				&mut ModuleAccess {
 					types: &mut module.types,
@@ -164,6 +164,8 @@ impl MonomorphServer {
 					fns_out: &mut functions_mono,
 				}
 			);
+
+			*ty.write().unwrap() = newty;
 		}
 
 		// Remove all generic types from module
@@ -331,41 +333,16 @@ impl MonomorphServer {
 
 			Type::TypeRef { def, args } => {
 				let def_up = def.upgrade().unwrap();
+				// If we're referring to a type with generics, check if the
+				// instantation we want exists already. If not, create it.
 
-				if !args.is_empty() {
-					// If we're referring to a type with generics, check if the
-					// instantation we want exists already. If not, create it.
-
-					for arg in args.iter_mut() {
-						self.monoize_generic_arg(arg, generic_args, access);
-					}
-
-					*def = self.instantiate_type_def(def_up.clone(), args, access);
-					args.clear();
-				} else {
-					// Check if the type exists in the current module
-					// (may not be true in the monomorphization module)
-					let typename = def_up.read().unwrap().name.to_string();
-
-					if !access.types.contains_key(&typename) {
-						let def_lock = def_up.read().unwrap();
-
-						// Register type and its xtors
-						if let Some(drop) = &def_lock.drop {
-							let extern_fn = CIRModuleBuilder::generate_prototype(drop);
-							access.fns_out.insert(drop.clone(), extern_fn);
-						}
-
-						for init in &def_lock.init {
-							let extern_fn = CIRModuleBuilder::generate_prototype(init);
-							access.fns_out.insert(init.clone(), extern_fn);
-						}
-
-						drop(def_lock);
-
-						access.types.insert(typename, def_up);
-					}
+				for arg in args.iter_mut() {
+					self.monoize_generic_arg(arg, generic_args, access);
 				}
+
+				*def = self.instantiate_type_def(def_up.clone(), args, access);
+				args.clear();
+			
 			}
 
 			Type::TypeParam(idx) => {
@@ -413,6 +390,29 @@ impl MonomorphServer {
 		access: &mut ModuleAccess,
 	) -> Weak<RwLock<TypeDef>> {
 		if generic_args.is_empty() {
+			let typename = def.read().unwrap().name.to_string();
+
+			if !access.types.contains_key(&typename) {
+				let mut def_lock = def.write().unwrap();
+
+				self.monoize_typedef_body(&mut *def_lock, &vec![], access);
+
+				// Register type and its xtors
+				if let Some(drop) = &def_lock.drop {
+					let extern_fn = CIRModuleBuilder::generate_prototype(drop);
+					access.fns_out.insert(drop.clone(), extern_fn);
+				}
+
+				for init in &def_lock.init {
+					let extern_fn = CIRModuleBuilder::generate_prototype(init);
+					access.fns_out.insert(init.clone(), extern_fn);
+				}
+
+				drop(def_lock);
+
+				access.types.insert(typename, def.clone());
+			}
+
 			return Arc::downgrade(&def)
 		}
 
@@ -478,6 +478,8 @@ impl MonomorphServer {
 				access.fns_out.insert(init.clone(), body);
 			}
 
+			self.fetch_typedef_dependencies(&instance_lock, access);
+
 			Arc::downgrade(&instance_arc)
 		} else {
 			// Couldn't find this instance in the global map either, so register it
@@ -541,7 +543,44 @@ impl MonomorphServer {
 
 			access.fns_out.insert(init_fn.clone(), init_body);
 		}
+	}
 
+	fn fetch_type_dependencies(&self, ty: &Type, access: &mut ModuleAccess) {
+		match ty {
+			Type::TypeRef { def, .. } => {
+				let def_up = def.upgrade().unwrap();
+				let def_lock = def_up.read().unwrap();
+
+				self.fetch_typedef_dependencies(&def_lock, access);
+				
+				drop(def_lock);
+
+				self.instantiate_type_def(def_up.clone(), &vec![], access);
+			}
+
+			Type::Pointer(sub, _) | Type::Array(sub, _) | Type::Slice(sub) => {
+				self.fetch_type_dependencies(&sub, access);
+			}
+
+			Type::Tuple(_, types) => {
+				for ty in types {
+					self.fetch_type_dependencies(ty, access);
+				}
+			}
+
+			_ => {}
+		}
+	}
+
+	fn fetch_typedef_dependencies(&self, def: &TypeDef, access: &mut ModuleAccess) {
+		for (_, member, _) in &def.members {
+			self.fetch_type_dependencies(member, access);
+		}
+
+		for (_, variant) in &def.variants {
+			let variant = variant.read().unwrap();
+			self.fetch_typedef_dependencies(&variant, access);
+		}
 	}
 
 	// Register a function template if it hasn't been registered already

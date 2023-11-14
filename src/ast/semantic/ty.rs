@@ -66,7 +66,7 @@ pub fn resolve_interface_types(parser: &mut Parser) -> ComuneResult<()> {
 			}
 
 			ModuleItemInterface::Trait(tr) => {
-				let TraitInterface { items, .. } = &mut *tr.write().unwrap();
+				let TraitInterface { items, generics: trait_gens, .. } = &mut *tr.write().unwrap();
 
 				for fns in items.values_mut() {
 					for func_og in fns {
@@ -80,6 +80,7 @@ pub fn resolve_interface_types(parser: &mut Parser) -> ComuneResult<()> {
 							..
 						} = func;
 
+						generics.add_base_generics(trait_gens.clone());
 						generics.insert_self_type();
 
 						resolve_type(&mut ret.1, interface, generics)?;

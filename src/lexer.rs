@@ -175,7 +175,7 @@ impl Lexer {
 					break;
 				}
 				Ok(tk) => self.token_buffer.push(tk),
-				Err(err) => panic!("{err}"), // Shouldn't happen?
+				Err(err) => return Err(err),
 			}
 		}
 		self.file_index = 0usize;

@@ -1,9 +1,9 @@
 using core::libc::printf;
 
 void print([u8]* string) {
-    printf(c"%.*s", string->len(), string->ptr());
+	printf(c"%.*s", string->len(), string->ptr());
 }
 
 void println([u8]* string) {
-    printf(c"%.*s\n", string->len(), string->ptr());
+	printf(c"%.*s\n", string->len(), string->ptr());
 }
