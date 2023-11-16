@@ -288,7 +288,7 @@ void global_var_test() {
 void string_test() {
 	println("String test!\n");
 	
-	String mut test = new String();
+	String test = new String();
 	
 	test.push_str("Hello");
 	test.push_str("");
@@ -308,6 +308,7 @@ int main() {
 
 	// fails: String does not implement Copy
 	// copy_test<String>(new String());
+	
 
 	ops_test();
 	enum_test();
@@ -405,7 +406,7 @@ int main() {
 
 	overload_test(12i32);
 
-	int int_ref_test = 12;
+	int mut int_ref_test = 12;
 	ref_test(int_ref_test);
 	printf(c"int_ref_test: %i\n", int_ref_test);
 
