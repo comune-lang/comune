@@ -174,8 +174,17 @@ impl Lexer {
 					self.token_buffer.push((span, Token::Eof));
 					break;
 				}
+
 				Ok(tk) => self.token_buffer.push(tk),
-				Err(err) => panic!("{err}"), // Shouldn't happen?
+
+				// eof in a weird place, it's fine
+				Err(error) if error.kind() == io::ErrorKind::UnexpectedEof => {
+					self.token_buffer.push((SrcSpan::new(), Token::Eof));
+					break;
+				}
+				
+				// somethign Bad happened while lexing..
+				Err(err) => return Err(err), 
 			}
 		}
 		self.file_index = 0usize;
