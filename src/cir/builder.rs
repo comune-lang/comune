@@ -508,7 +508,7 @@ impl CIRModuleBuilder {
 		assert!(!expr.get_type().is_void_or_never());
 
 		if location_ty != expr.get_type() {
-			panic!("mismatched assignment from {} to {location_ty}", expr.get_type());
+			panic!("mismatched assignment from {} to {location_ty} (while building {expr})", expr.get_type());
 		}
 
 		if let RValue::Cast { from, to, val, span } = &expr {

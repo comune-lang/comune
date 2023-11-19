@@ -685,10 +685,7 @@ impl Type {
 
 			Type::TypeRef { args, .. } => {
 				let Type::TypeRef { args: other_args, .. } = hint else {
-					return Err(ComuneError::new(
-						ComuneErrCode::AssignTypeMismatch { expr: hint, to: self.clone() },
-						span
-					))
+					return Ok(());
 				};
 
 				for (GenericArg::Type(lhs), GenericArg::Type(rhs)) in args.iter_mut().zip(other_args.into_iter()) {
@@ -704,10 +701,7 @@ impl Type {
 						pointee.resolve_inference_vars(*other, span)
 					}
 
-					_ => Err(ComuneError::new(
-						ComuneErrCode::AssignTypeMismatch { expr: hint, to: self.clone() },
-						span
-					))
+					_ => Ok(()),
 				}
 			}
 

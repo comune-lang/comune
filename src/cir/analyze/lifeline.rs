@@ -394,6 +394,36 @@ impl AnalysisResultHandler<DefInitFlow> for VarInitCheck {
 
 				// Check for uses of uninit/moved lvalues
 				match stmt {
+					// case where both operands of an RValue have an LValue
+					CIRStmt::Assignment(
+						_,
+						RValue::Cons(
+							_,
+							[(_, Operand::LValueUse(lvl, upl)), (_, Operand::LValueUse(lvr, upr))],
+							..
+						)
+					) => {
+						for (lval, use_props) in [(lvl, upl), (lvr, upr)] {
+							if !use_props.is_new {
+								let liveness = state.get_liveness(lval);
+
+								match liveness {
+									Some(LivenessState::Live) => {}
+
+									_ => errors.push(ComuneError::new(
+											ComuneErrCode::InvalidUse {
+												variable: func.get_variable_name(lval.local),
+												state: liveness.unwrap_or(LivenessState::Uninit),
+											},
+											lval.props.span,
+										))
+									,
+								}
+							}
+						}
+					}
+
+					// other cases where an lvalue is used
 					CIRStmt::Assignment(
 						_,
 						RValue::Atom(_, _, Operand::LValueUse(lval, use_props), _),
@@ -442,7 +472,7 @@ impl AnalysisResultHandler<DefInitFlow> for VarInitCheck {
 							}
 						}
 
-						for (lval, _, use_props) in args {
+						for (lval, ty, use_props) in args {
 							let liveness = state.get_liveness(lval);
 
 							if use_props.is_new {
@@ -472,6 +502,15 @@ impl AnalysisResultHandler<DefInitFlow> for VarInitCheck {
 										},
 										lval.props.span,
 									)),
+								}
+
+								if *use_props == BindingProps::mut_reference() && !lval.is_access_mutable(ty.clone()) {
+									errors.push(ComuneError::new(
+										ComuneErrCode::ImmutVarMutation {
+											variable: func.get_variable_name(lval.local)
+										},
+										lval.props.span
+									))
 								}
 							}
 						}
