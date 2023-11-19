@@ -1,10 +1,11 @@
 use std::{
+	io::Write,
 	collections::{HashMap, HashSet},
 	ffi::OsString,
 	fs,
 	marker::PhantomData,
 	path::{Path, PathBuf},
-	sync::{atomic::Ordering, mpsc::Sender, Arc, Mutex, RwLock},
+	sync::{atomic::Ordering, Arc, Mutex, RwLock}, io,
 };
 
 use colored::Colorize;
@@ -26,7 +27,7 @@ use crate::{
 		monoize::MonomorphServer,
 		CIRModule,
 	},
-	errors::{ComuneErrCode, ComuneError, ComuneMessage, MessageLog, ERROR_COUNT},
+	errors::{ComuneErrCode, ComuneError, ComuneMessage, ERROR_COUNT, log_msg},
 	lexer::{Lexer, SrcSpan},
 	parser::{ComuneResult, Parser},
 };
@@ -63,7 +64,6 @@ pub struct Compiler<'ctx, T: Backend + ?Sized> {
 
 pub struct CompileState {
 	parser: Parser,
-	error_sender: Sender<MessageLog>,
 }
 
 #[derive(Clone)]
@@ -139,7 +139,6 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 		&'ctx self,
 		src_path: PathBuf,
 		module_name: Identifier,
-		error_sender: Sender<MessageLog>,
 		s: JobSpawner<&RayonScope<'ctx>>,
 	) -> Result<Vec<Parser>, ComuneError> {
 		if self.module_states.read().unwrap().contains_key(&src_path) {
@@ -160,7 +159,7 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 		let ext = src_path.extension().unwrap();
 
 		if ext == "cpp" {
-			self.compile_cpp_module(src_path, &module_name, error_sender, s)?;
+			self.compile_cpp_module(src_path, &module_name, s)?;
 			
 			Ok(vec![])
 		} else if ext == "co" {
@@ -169,7 +168,6 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 			self.generate_untyped_interface(
 				src_path, 
 				module_name.clone(), 
-				error_sender.clone(), 
 				&mut parsers
 			)?;
 
@@ -183,11 +181,10 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 		&'ctx self,
 		src_path: PathBuf,
 		module_name: Identifier,
-		error_sender: Sender<MessageLog>,
 		jobs_out: &mut Vec<Parser>,
 	) -> Result<Arc<ModuleInterface>, ComuneError> {
 		let mut parser =
-			match self.parse_interface(src_path.clone(), module_name, error_sender.clone()) {
+			match self.parse_interface(src_path.clone(), module_name) {
 				Ok(parser) => parser,
 
 				Err(e) => {
@@ -215,7 +212,6 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 				let child_interface = self.generate_untyped_interface(
 					import_path.clone(),
 					import_id,
-					error_sender.clone(), 
 					jobs_out
 				)?;
 				
@@ -245,7 +241,6 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 	pub fn generate_typed_interface(
 		&'ctx self,
 		mut parser: Parser,
-		error_sender: Sender<MessageLog>,
 		s: JobSpawner<&RayonScope<'ctx>>,
 	) -> Result<(), ComuneError> {
 		// Resolve module imports
@@ -261,7 +256,6 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 			&parser.interface.name, 
 			modules, 
 			&mut parser.interface.imported,
-			error_sender.clone(),
 			s.clone()
 		)?;
 
@@ -294,15 +288,12 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 		// The rest of the module's compilation happens later,
 		// either in a worker thread, or when the single-threaded
 		// spawner is done with the rest of the interfaces
-		self.spawn(s, CompileState { parser, error_sender });
+		self.spawn(s, CompileState { parser });
 		Ok(())
 	}
 
 	pub fn finish_module_job(&self, module_state: CompileState) {
-		let CompileState {
-			mut parser,
-			error_sender,
-		} = module_state;
+		let CompileState { mut parser } = module_state;
 
 		// Wait for all module interfaces to be finalized
 		let module_names = parser.interface.import_names.clone();
@@ -372,13 +363,15 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 			Err(_) => {
 				ERROR_COUNT.fetch_add(1, Ordering::Relaxed);
 
-				error_sender
-					.send(MessageLog::Raw(format!(
-						"\n{:>10} compiling {}\n",
-						"failed".bold().red(),
-						src_name.bold()
-					)))
-					.unwrap();
+				let mut io = io::stderr().lock();
+
+				write!(
+					io,
+					"\n{:>10} compiling {}\n",
+					"failed".bold().red(),
+					src_name.bold()
+				).unwrap();
+	
 				return;
 			}
 		};
@@ -396,13 +389,15 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 			Err(_) => {
 				ERROR_COUNT.fetch_add(1, Ordering::Relaxed);
 
-				error_sender
-					.send(MessageLog::Raw(format!(
-						"\n{:>10} compiling {}\n",
-						"failed".bold().red(),
-						src_name.bold()
-					)))
-					.unwrap();
+				let mut io = io::stderr().lock();
+
+				write!(
+					io,
+					"\n{:>10} compiling {}\n",
+					"failed".bold().red(),
+					src_name.bold()
+				).unwrap();
+	
 				return;
 			}
 		};
@@ -446,10 +441,9 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 		&self,
 		path: PathBuf,
 		module_name: Identifier,
-		error_sender: Sender<MessageLog>,
 	) -> Result<Parser, ComuneError> {
 		// First phase of module compilation: create Lexer and Parser, and parse the module at the namespace level
-		let lexer = match Lexer::new(path.clone(), error_sender) {
+		let lexer = match Lexer::new(path.clone()) {
 			Ok(f) => f,
 			Err(e) => {
 				eprintln!(
@@ -494,7 +488,6 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 		module_name: &Identifier,
 		mut imports_in: Vec<ModuleImportKind>,
 		imports_out: &mut HashMap<Name, ModuleImport>,
-		error_sender: Sender<MessageLog>,
 		s: JobSpawner<&RayonScope<'ctx>>,
 	) -> ComuneResult<()> {
 
@@ -507,8 +500,6 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 			else {
 				return Err(ComuneError::new(ComuneErrCode::ModuleNotFound(import_id.clone()), SrcSpan::new()))
 			};
-
-			let error_sender = error_sender.clone();
 
 			// Query module interface, blocking until it's ready
 			loop {
@@ -524,7 +515,6 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 					None => match self.launch_module_compilation(
 						import_path.clone(),
 						import_id.clone(),
-						error_sender.clone(),
 						s.clone(),
 					) {
 						Ok(parsers) => {
@@ -551,7 +541,6 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 
 								self.generate_typed_interface(
 									parser, 
-									error_sender.clone(), 
 									s.clone()
 								)?;
 							}
@@ -565,13 +554,14 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 
 							let import_name = import_path.file_name().unwrap().to_str().unwrap();
 
-							error_sender
-								.send(MessageLog::Raw(format!(
-									"\n{:>10} compiling {}\n",
-									"failed".bold().red(),
-									import_name.bold()
-								)))
-								.unwrap();
+							let mut io = io::stderr().lock();
+
+							write!(
+								io,
+								"\n{:>10} compiling {}\n",
+								"failed".bold().red(),
+								import_name.bold()
+							).unwrap();
 
 							return Err(e);
 						}
@@ -731,7 +721,7 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 		Ok(module_mono)
 	}
 
-	pub fn generate_monomorph_module(&self, error_sender: &Sender<MessageLog>) -> ComuneResult<()> {
+	pub fn generate_monomorph_module(&self) -> ComuneResult<()> {
 		let mut out_path = PathBuf::from(&self.output_dir);
 		out_path.push("monomorph-module");
 
@@ -755,12 +745,7 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 
 		if !errors.is_empty() {
 			for error in &errors {
-				error_sender
-					.send(MessageLog::Plain {
-						msg: ComuneMessage::Error(error.clone()),
-						filename: "monomorph-module".to_string(),
-					})
-					.unwrap();
+				log_msg(ComuneMessage::Error(error.clone()), None);
 			}
 
 			return Err(ComuneError::new(
@@ -780,12 +765,7 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 			Ok(res) => res,
 			Err(_) => {
 				for error in &errors {
-					error_sender
-						.send(MessageLog::Plain {
-							msg: ComuneMessage::Error(error.clone()),
-							filename: "monomorph-module".to_string(),
-						})
-						.unwrap();
+					log_msg(ComuneMessage::Error(error.clone()), None);
 				}
 
 				return Err(ComuneError::new(

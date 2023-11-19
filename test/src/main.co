@@ -417,7 +417,7 @@ int main() {
 
 	overload_test(12i32);
 
-	int mut int_ref_test = 12;
+	int int_ref_test = 12;
 	ref_test(int_ref_test);
 	printf(c"int_ref_test: %i\n", int_ref_test);
 

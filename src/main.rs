@@ -8,12 +8,11 @@ use std::path::PathBuf;
 #[cfg(not(feature = "concurrent"))]
 use std::sync::{RwLock, Arc};
 
-use std::sync::mpsc::Sender;
-use std::{ffi::OsString, sync::atomic::Ordering, time::Instant};
+use std::{ffi::OsString, sync::atomic::Ordering, time::Instant, io::Write};
 
 use comune::ast::module::Identifier;
 use comune::driver::{Compiler, COMUNE_TOOLCHAIN_KEY, JobSpawner, get_file_suffix};
-use comune::errors::{self, MessageLog};
+use comune::errors;
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -94,8 +93,6 @@ fn main() -> color_eyre::eyre::Result<()> {
 		&emit_types,
 		1,
 	);
-
-	let error_sender = comune::errors::spawn_logger(args.backtrace);
 	
 	#[cfg(not(feature = "concurrent"))]
 	{
@@ -109,7 +106,6 @@ fn main() -> color_eyre::eyre::Result<()> {
 			let _ = compiler.launch_module_compilation(
 				input_file,
 				module_name,
-				error_sender.clone(),
 				JobSpawner::Synchronous(jobs.clone()),
 			);
 		}
@@ -132,7 +128,6 @@ fn main() -> color_eyre::eyre::Result<()> {
 				let Ok(parsers) = compiler.launch_module_compilation(
 					input_file,
 					module_name,
-					error_sender.clone(),
 					spawner.clone(),
 				) else {
 					continue
@@ -140,8 +135,7 @@ fn main() -> color_eyre::eyre::Result<()> {
 
 				for parser in parsers {
 					let _ = compiler.generate_typed_interface(
-						parser,
-						error_sender.clone(), 
+						parser, 
 						spawner.clone()
 					);
 				}
@@ -149,13 +143,13 @@ fn main() -> color_eyre::eyre::Result<()> {
 		});
 	}
 
-	if !check_last_phase_ok(&error_sender) {
+	if !check_last_phase_ok() {
 		await_output_written();
 		std::process::exit(1);
 	}
 
 	#[cfg(not(feature = "concurrent"))]
-	match compiler.generate_monomorph_module(&error_sender) {
+	match compiler.generate_monomorph_module() {
 		Ok(()) => {}
 		Err(_) => {
 			errors::ERROR_COUNT.fetch_add(1, Ordering::Relaxed);
@@ -164,7 +158,7 @@ fn main() -> color_eyre::eyre::Result<()> {
 
 	#[cfg(feature = "concurrent")]
 	rayon::in_place_scope(|_| {
-		match compiler.generate_monomorph_module(&error_sender) {
+		match compiler.generate_monomorph_module() {
 			Ok(()) => {}
 			Err(_) => {
 				errors::ERROR_COUNT.fetch_add(1, Ordering::Relaxed);
@@ -173,7 +167,7 @@ fn main() -> color_eyre::eyre::Result<()> {
 	});
 	
 
-	if !check_last_phase_ok(&error_sender) {
+	if !check_last_phase_ok() {
 		await_output_written();
 		std::process::exit(1);
 	}
@@ -223,18 +217,18 @@ fn main() -> color_eyre::eyre::Result<()> {
 	Ok(())
 }
 
-fn check_last_phase_ok(error_sender: &Sender<MessageLog>) -> bool {
+fn check_last_phase_ok() -> bool {
 	if errors::ERROR_COUNT.load(Ordering::Acquire) > 0 {
-		error_sender
-			.send(errors::MessageLog::Raw(format!(
-				"\n{:>10} build due to {} previous error(s)\n\n",
+		let mut io = std::io::stderr().lock();
+
+		write!(
+			io,
+			"\n{:>10} build due to {} previous error(s)\n\n",
 				"aborted".bold().red(),
 				errors::ERROR_COUNT.load(Ordering::Acquire)
-			)))
-			.unwrap();
+		).unwrap();
 
 		// Block until the error logger is done writing, so we don't exit early
-		let _ = std::io::stdout().lock();
 
 		return false;
 	}

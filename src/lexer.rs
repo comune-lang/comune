@@ -3,9 +3,8 @@ use std::fmt::{Debug, Display};
 use std::fs::File;
 use std::io::{self, Error, Read};
 use std::path::Path;
-use std::sync::mpsc::Sender;
 
-use crate::errors::{ComuneMessage, MessageLog};
+use crate::errors::{ComuneMessage, self};
 
 use crate::ast::module::Name;
 
@@ -135,22 +134,17 @@ pub struct Lexer {
 	char_buffer: Option<char>,
 	token_buffer: Vec<(SrcSpan, Token)>,
 	token_index: usize,
-	error_logger: Sender<MessageLog>,
 	pub file_name: OsString,
 }
 
 impl Lexer {
-	pub fn new<P: AsRef<Path>>(
-		path: P,
-		error_logger: Sender<MessageLog>,
-	) -> std::io::Result<Lexer> {
+	pub fn new<P: AsRef<Path>>(path: P) -> std::io::Result<Lexer> {
 		let mut result = Lexer {
 			file_buffer: String::new(),
 			file_index: 0usize,
 			char_buffer: None,
 			token_buffer: vec![],
 			token_index: 0usize,
-			error_logger,
 			file_name: path.as_ref().file_name().unwrap().to_os_string(),
 		};
 
@@ -588,39 +582,7 @@ impl Lexer {
 	}
 
 	pub fn log_msg(&self, e: ComuneMessage) {
-		let span = match &e {
-			ComuneMessage::Error(e) => e.span,
-			ComuneMessage::Warning(_) => SrcSpan::new(), // TODO: Implement
-		};
-
-		if span.start > 0 {
-			let first_line = self.get_line_number(span.start);
-			let last_line = self.get_line_number(span.start + span.len);
-			let column = self.get_column(span.start);
-			let mut lines_text = vec![];
-
-			for line in first_line..=last_line {
-				lines_text.push(self.get_line(line).to_string());
-			}
-
-			self.error_logger
-				.send(MessageLog::Annotated {
-					msg: e,
-					lines_text,
-					filename: self.file_name.to_string_lossy().into_owned(),
-					lines: first_line..=last_line,
-					column,
-					length: span.len,
-				})
-				.unwrap();
-		} else {
-			self.error_logger
-				.send(MessageLog::Plain {
-					msg: e,
-					filename: self.file_name.to_string_lossy().into_owned(),
-				})
-				.unwrap();
-		}
+		errors::log_msg(e, Some(self));
 	}
 }
 

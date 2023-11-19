@@ -1,4 +1,4 @@
-use colored::Colorize;
+use colored::{Colorize, ColoredString};
 use std::io::Write;
 use std::ops::RangeInclusive;
 use std::{
@@ -6,10 +6,8 @@ use std::{
 	io,
 	sync::{
 		atomic::AtomicU32,
-		mpsc::{self, Sender},
 		Arc,
 	},
-	thread,
 };
 
 use backtrace::Backtrace;
@@ -20,7 +18,7 @@ use crate::ast::traits::TraitRef;
 use crate::ast::types::Type;
 use crate::ast::types::{FnPrototype, GenericArgs};
 use crate::ast::write_arg_list;
-use crate::lexer::SrcSpan;
+use crate::lexer::{SrcSpan, Lexer};
 use crate::{
 	ast::{expression::Operator, module::Identifier},
 	cir::analyze::lifeline::LivenessState,
@@ -168,7 +166,11 @@ pub enum ComuneErrCode {
 		state: LivenessState,
 	},
 
-	InvalidNewReference {
+	InvalidNewRef {
+		variable: Identifier,
+	},
+
+	InvalidMutRef {
 		variable: Identifier,
 	},
 
@@ -377,7 +379,7 @@ impl Display for ComuneErrCode {
 				)
 			}
 
-			ComuneErrCode::InvalidNewReference { variable } => {
+			ComuneErrCode::InvalidNewRef { variable } => {
 				write!(
 					f,
 					"variable `{variable}` must be uninitialized to pass as new&"
@@ -388,6 +390,13 @@ impl Display for ComuneErrCode {
 				write!(
 					f,
 					"cannot mutate `{variable}`, as it is not declared as mutable"
+				)
+			}
+
+			ComuneErrCode::InvalidMutRef { variable } => {
+				write!(
+					f,
+					"cannot pass `{variable}` as mut&, as it is not declared as mutable"
 				)
 			}
 
@@ -460,185 +469,170 @@ pub enum MessageLog {
 	Raw(String),
 }
 
-pub fn spawn_logger(backtrace_on_error: bool) -> Sender<MessageLog> {
-	let (sender, receiver) = mpsc::channel::<MessageLog>();
 
-	thread::spawn(move || {
-		loop {
-			match receiver.recv() {
-				Ok(MessageLog::Raw(text)) => print!("{}", text),
+pub fn log_msg(msg: ComuneMessage, lexer: Option<&Lexer>) {
+	let mut out = io::stderr().lock();
 
-				Ok(message) => {
-					let (msg, filename) = match &message {
-						MessageLog::Annotated { msg, filename, .. }
-						| MessageLog::Plain { msg, filename, .. } => (msg, filename),
-						_ => panic!(),
-					};
+	match msg {
+		ComuneMessage::Error(ref e) => {
+			write!(
+				out,
+				"\n{}: {}",
+				"error".bold().red(),
+				msg.to_string().bold()
+			)
+			.unwrap();
 
-					let mut out = io::stderr().lock();
+			if let Some(lexer) = lexer {
+				let line = lexer.get_line_number(e.span.start);
+				let column = lexer.get_column(e.span.start);
+				let file_name = lexer.file_name.to_string_lossy();
 
-					// Print message
-					match msg {
-						ComuneMessage::Error(_) => {
-							write!(
-								out,
-								"\n{}: {}",
-								"error".bold().red(),
-								msg.to_string().bold()
-							)
-							.unwrap();
-						}
-						ComuneMessage::Warning(_) => {
-							write!(
-								out,
-								"\n{}: {}",
-								"warning".bold().yellow(),
-								msg.to_string().bold()
-							)
-							.unwrap();
-						}
-					}
+				writeln!(
+					out,
+					"{}",
+					format!(" - in {}:{}:{}\n", file_name, line + 1, column)
+					.bright_black()
+				)
+				.unwrap();
 
-					// Print file:row:column
-					match &message {
-						MessageLog::Annotated {
-							lines,
-							column,
-							lines_text,
-							length,
-							..
-						} => {
-							writeln!(
-								out,
-								"{}",
-								format!(" - in {}:{}:{}\n", filename, lines.start() + 1, column)
-									.bright_black()
-							)
-							.unwrap();
+				write_code_snippet(&mut out, e.span, lexer, "~".red());
+			}
 
-							let mut length_left = *length;
+			for note in &e.notes {
+				write!(
+					out,
+					"\n\n{}: {}\n\n",
+					"note".bold(),
+					note.1
+				).unwrap();
 
-							// Print code snippet
-							for line in lines.clone() {
-								let og_line_text = &lines_text[line - lines.start()];
-
-								// First, convert tabs to spaces and store the display offsets for each character
-								let (line_text, offsets) = {
-									let mut line_result = String::with_capacity(og_line_text.len());
-									let mut current_offset = 0;
-									let mut offsets = vec![];
-
-									for c in og_line_text.chars() {
-										if c == '\t' {
-											line_result.push_str("    ");
-											current_offset += 3;
-											length_left += 3;
-										} else {
-											line_result.push(c);
-										}
-
-										offsets.push(current_offset);
-									}
-									(line_result, offsets)
-								};
-
-								writeln!(
-									out,
-									"{} {}",
-									format!("{}\t{}", line + 1, "|").bright_black(),
-									line_text
-								)
-								.unwrap();
-
-								let column = {
-									if line == *lines.start() {
-										*column + offsets[*column - 1]
-									} else {
-										if let Some(first) =
-											line_text.chars().position(|c| c != ' ')
-										{
-											first + 1
-										} else {
-											0
-										}
-									}
-								};
-
-								let len;
-
-								// welcome to off-by-one hell. don't touch anything or suffer the consequences
-
-								if line_text.is_empty() {
-									// Blank line, skip it
-									len = 0;
-									length_left -= 1;
-								} else if line == *lines.start() {
-									// First line
-									len = usize::min(column + length - 1, line_text.len()) - column
-										+ 1;
-									length_left -= len;
-								} else if line != *lines.end() {
-									// Middle line
-									len = line_text.len() - column + 1;
-									length_left -= line_text.len() + 1;
-								} else {
-									// Last line
-									len = length_left - column;
-								}
-
-								// Print gutter
-								write!(out, "{}", format!("\t{}", "|").bright_black()).unwrap();
-
-								if column == 0 {
-									// No text on this line, just print a newline
-									writeln!(out, "").unwrap();
-								} else {
-									// Print squiggle
-
-									write!(out, "{: <1$}", "", column).unwrap();
-									writeln!(out, "{}", format!("{:~<1$}", "", len).red(),)
-										.unwrap();
-								}
-
-								if length_left == 0 {
-									break;
-								}
-							}
-						}
-
-						MessageLog::Plain { .. } => {
-							writeln!(out, "{}", format!(" - in {}\n", filename).bright_black())
-								.unwrap();
-						}
-
-						_ => panic!(),
-					}
-
-					let notes = msg.get_notes();
-
-					for note in notes {
-						writeln!(out, "{} {}\n", "note:".bold(), note.1).unwrap();
-					}
-
-					// Print compiler backtrace
-					if let ComuneMessage::Error(err) = &msg {
-						if backtrace_on_error {
-							writeln!(
-								out,
-								"\ncompiler backtrace:\n\n{:?}",
-								err.origin.as_ref().unwrap()
-							)
-							.unwrap();
-						}
-					}
-					out.flush().unwrap();
+				if let Some(lexer) = lexer {
+					write_code_snippet(&mut out, note.0, lexer, "-".bright_black());
+					writeln!(out).unwrap();
 				}
+			}
 
-				// All channels closed
-				Err(_) => break,
+			if let Some(backtrace) = &e.origin {
+				writeln!(
+					out,
+					"\ncompiler backtrace:\n\n{:?}",
+					backtrace
+				)
+				.unwrap();
 			}
 		}
-	});
 
-	sender
+		ComuneMessage::Warning(_) => {
+			write!(
+				out,
+				"\n{}: {}",
+				"warning".bold().yellow(),
+				msg.to_string().bold()
+			)
+			.unwrap();
+		}
+	}
+}
+
+
+fn write_code_snippet(mut out: impl Write, span: SrcSpan, lexer: &Lexer, underline: ColoredString) {
+	if span.start == 0 {
+		return
+	}
+
+	let first_line = lexer.get_line_number(span.start);
+	let last_line = lexer.get_line_number(span.start + span.len);
+	let column = lexer.get_column(span.start);
+	let lines = first_line..=last_line;
+
+	let mut length_left = span.len;
+
+	for line in first_line..=last_line {
+		let og_line_text = lexer.get_line(line);
+
+		// First, convert tabs to spaces and store the display offsets for each character
+		let (line_text, offsets) = {
+			let mut line_result = String::with_capacity(og_line_text.len());
+			let mut current_offset = 0;
+			let mut offsets = vec![];
+
+			for c in og_line_text.chars() {
+				if c == '\t' {
+					line_result.push_str("    ");
+					current_offset += 3;
+					length_left += 3;
+				} else {
+					line_result.push(c);
+				}
+
+				offsets.push(current_offset);
+			}
+			(line_result, offsets)
+		};
+
+		writeln!(
+			out,
+			"{} {}",
+			format!("{}\t{}", line + 1, "|").bright_black(),
+			line_text
+		)
+		.unwrap();
+
+		let column = {
+			if line == *lines.start() {
+				column + offsets[column - 1]
+			} else {
+				if let Some(first) =
+					line_text.chars().position(|c| c != ' ')
+				{
+					first + 1
+				} else {
+					0
+				}
+			}
+		};
+
+		let len;
+
+		// welcome to off-by-one hell. don't touch anything or suffer the consequences
+
+		if line_text.is_empty() {
+			// Blank line, skip it
+			len = 0;
+			length_left -= 1;
+		} else if line == *lines.start() {
+			// First line
+			len = usize::min(column + span.len - 1, line_text.len()) - column
+				+ 1;
+			length_left -= len;
+		} else if line != *lines.end() {
+			// Middle line
+			len = line_text.len() - column + 1;
+			length_left -= line_text.len() + 1;
+		} else {
+			// Last line
+			len = length_left - column;
+		}
+
+		// Print gutter
+		write!(out, "{}", format!("\t{}", "|").bright_black()).unwrap();
+
+		if column == 0 {
+			// No text on this line, just print a newline
+			writeln!(out, "").unwrap();
+		} else {
+			// Print squiggle
+
+			write!(out, "{: <1$}", "", column).unwrap();
+
+			let underline = underline.to_string().repeat(len);
+			
+			write!(out, "{underline}").unwrap();
+		}
+
+		if length_left == 0 {
+			break;
+		}
+	}
 }

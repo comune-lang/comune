@@ -4,7 +4,7 @@ use std::{
 	io::{self, Read, Write},
 	path::PathBuf,
 	process::Command,
-	sync::{mpsc::Sender, Arc}, collections::HashMap,
+	sync::Arc, collections::HashMap,
 };
 
 use crate::{
@@ -15,7 +15,7 @@ use crate::{
 	},
 	backend::Backend,
 	driver::{get_file_suffix, Compiler, ModuleState, JobSpawner, RayonScope},
-	errors::{ComuneError, MessageLog},
+	errors::ComuneError,
 };
 
 impl<'ctx, T> Compiler<'ctx, T>
@@ -26,7 +26,6 @@ where
 		&'ctx self,
 		src_path: PathBuf,
 		module_name: &Identifier,
-		error_sender: Sender<MessageLog>,
 		s: JobSpawner<&RayonScope<'ctx>>,
 	) -> Result<(), ComuneError> {
 		let out_path = self.get_module_out_path(&module_name);
@@ -57,7 +56,6 @@ where
 			module_name, 
 			modules,
 			&mut imports,
-			error_sender,
 			s
 		)?;
 
