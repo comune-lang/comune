@@ -489,6 +489,9 @@ impl AnalysisResultHandler<DefInitFlow> for VarInitCheck {
 											variable: func.get_variable_name(lval.local),
 										},
 										lval.props.span,
+									).with_note(
+										"variable declared here:".into(),
+										func.variables[lval.local].1.span,
 									)),
 								}
 							} else {
@@ -564,6 +567,9 @@ impl AnalysisResultHandler<DefInitFlow> for VarInitCheck {
 								variable: func.get_variable_name(lval.local),
 							},
 							lval.props.span,
+						).with_note(
+							"variable declared here:".into(),
+							func.variables[lval.local].1.span,
 						))
 					}
 				}
