@@ -150,6 +150,10 @@ impl Expr {
 				}
 			}
 		}?;
+		
+		if let Some(ty) = &self.get_node_data().ty {
+			result.resolve_inference_vars(ty.clone(), self.get_span())?;
+		}
 
 		result.validate(scope)?;
 

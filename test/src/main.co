@@ -204,6 +204,8 @@ void mut_move_test(Vector<float> mut& test) {
 }
 
 void enum_test() {
+	Option::None<i32> resolve = new None<i32>;
+	
 	Option<i32> mut option = new None<i32>;
 	
 	option = new Some<i32> {
