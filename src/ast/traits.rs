@@ -23,6 +23,7 @@ use lazy_static::lazy_static;
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
 pub enum LangTrait {
 	Sized,
+	Move,
 	Copy,
 	Send,
 	Sync,
@@ -213,7 +214,7 @@ impl ImplSolver {
 	) -> bool {
 		match ty {
 			Type::Basic(_) | Type::Pointer(..) => true,
-			
+
 			Type::TypeRef { def, args } => {
 				let def = def.upgrade().unwrap();
 				let def = def.read().unwrap();

@@ -5,6 +5,9 @@
 @lang(Copy)
 trait Copy {}
 
+@lang(Move)
+trait Move {}
+
 @lang(Sized)
 trait Sized {}
 

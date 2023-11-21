@@ -204,7 +204,7 @@ void mut_move_test(Vector<float> mut& test) {
 }
 
 void enum_test() {
-	Option::None<i32> resolve = new None<i32>;
+	Option<auto> resolve = new None<i32>;
 	
 	Option<i32> mut option = new None<i32>;
 	
@@ -217,8 +217,8 @@ void enum_test() {
 			println("It's the None variant!");
 		}
 
-		Some<i32> some => {
-			printf(c"It's the Some(%i) variant!\n", some.value);
+		Some<i32> { value } => {
+			printf(c"It's the Some(%i) variant!\n", value);
 		}
 	}
 
