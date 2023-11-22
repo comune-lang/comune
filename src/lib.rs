@@ -2,6 +2,7 @@ pub mod ast;
 pub mod backend;
 pub mod cir;
 pub mod clang;
+pub mod cli;
 pub mod constexpr;
 pub mod driver;
 pub mod errors;
