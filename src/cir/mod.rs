@@ -323,6 +323,8 @@ pub struct CIRFunction {
 	pub attributes: Vec<Attribute>,
 	pub is_extern: bool,
 	pub is_variadic: bool,
+	pub line: usize,
+	pub column: usize,
 }
 
 pub struct CIRModule {

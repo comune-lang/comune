@@ -13,7 +13,7 @@ use inkwell::{
 	basic_block::BasicBlock,
 	builder::{Builder, BuilderError},
 	context::Context,
-	debug_info::{DebugInfoBuilder, DIType, DIFlagsConstants, DIScope},
+	debug_info::{DebugInfoBuilder, DIType, DIFlagsConstants, DICompileUnit, AsDIScope, DWARFSourceLanguage, DILexicalBlock},
 	module::{Linkage, Module},
 	passes::PassManager,
 	targets::{FileType, InitializationConfig, Target, TargetMachine, TargetTriple},
@@ -27,6 +27,7 @@ use inkwell::{
 	},
 	AddressSpace, FloatPredicate, GlobalVisibility, IntPredicate,
 };
+use itertools::Itertools;
 
 use crate::{
 	ast::{
@@ -85,14 +86,17 @@ pub struct LLVMBuilder<'ctx> {
 	pub module: Module<'ctx>,
 	pub target_machine: TargetMachine,
 	builder: Builder<'ctx>,
-	di_builder: Option<DebugInfoBuilder<'ctx>>,
 	fn_value_opt: Option<FunctionValue<'ctx>>,
 	type_map: HashMap<String, AnyTypeEnum<'ctx>>,
-	dbg_type_map: HashMap<Type, DIType<'ctx>>,
-	scopes: Vec<DIScope<'ctx>>,
+	scopes: Vec<DILexicalBlock<'ctx>>,
 	fn_map: HashMap<Arc<FnPrototype>, String>,
 	blocks: Vec<BasicBlock<'ctx>>,
 	variables: Vec<(PointerValue<'ctx>, BindingProps, Type)>,
+
+	// DWARF Debug Info stuff	
+	di_builder: Option<DebugInfoBuilder<'ctx>>,
+	di_type_map: HashMap<Type, DIType<'ctx>>,
+	di_compile_unit: Option<DICompileUnit<'ctx>>,
 }
 
 impl Backend for LLVMBackend {
@@ -115,7 +119,13 @@ impl Backend for LLVMBackend {
 		module_name: &str,
 		source_file: &str,
 	) -> ComuneResult<Self::Output<'out>> {
-		let mut builder = LLVMBuilder::new(&self.context, module_name, source_file, false, false);
+		let mut builder = LLVMBuilder::new(
+			&self.context,
+			module_name,
+			source_file,
+			compiler.opt_level,
+			compiler.debug_info
+		);
 
 		builder.compile_module(&module).unwrap();
 		builder.generate_libc_bindings();
@@ -257,13 +267,13 @@ impl<'ctx> LLVMBuilder<'ctx> {
 		context: &'ctx Context,
 		module_name: &str,
 		source_file: &str,
-		optimized: bool,
+		opt_level: u32,
 		debug: bool,
 	) -> Self {
 		let module = context.create_module(module_name);
 		let builder = context.create_builder();
-
-		let (di_builder, _compile_unit) = if debug {
+		
+		let (di_builder, di_compile_unit) = if debug {
 			// jesus christ
 
 			let (di_builder, compile_unit) = module.create_debug_info_builder(
@@ -272,7 +282,7 @@ impl<'ctx> LLVMBuilder<'ctx> {
 				/* filename */ source_file,
 				/* directory */ ".",
 				/* producer */ "comune-rs",
-				/* is_optimized */ optimized,
+				/* is_optimized */ opt_level != 0,
 				/* flags */ "",
 				/* runtime_ver */ 0,
 				/* split_name */ "",
@@ -307,14 +317,16 @@ impl<'ctx> LLVMBuilder<'ctx> {
 			module,
 			target_machine,
 			builder,
-			di_builder,
 			fn_value_opt: None,
 			type_map: HashMap::new(),
-			dbg_type_map: HashMap::new(),
 			scopes: vec![],
 			fn_map: HashMap::new(),
 			blocks: vec![],
 			variables: vec![],
+			
+			di_builder,
+			di_compile_unit,
+			di_type_map: HashMap::new(),
 		}
 	}
 
@@ -331,6 +343,8 @@ impl<'ctx> LLVMBuilder<'ctx> {
 			self.generate_type_body(name, &ty);
 		}
 
+		// Register globals
+		// TODO: Actually initialize
 		for (name, (ty, _)) in &module.globals {
 			let ty_ll = Self::to_basic_type(self.get_llvm_type(ty));
 
@@ -466,6 +480,46 @@ impl<'ctx> LLVMBuilder<'ctx> {
 			)
 		}
 
+		if self.di_builder.is_some() && !t.is_extern {
+			let ret = if t.ret.1.is_never() {
+				None
+			} else {
+				Some(self.get_di_type(&t.ret.1))
+			};
+
+			let params = t
+				.variables[0..t.arg_count]
+				.iter()
+				.map(|(arg, props, _)| if props.is_ref { self.get_di_type(&arg.ptr_type(PtrKind::Raw)) } else { self.get_di_type(arg) })
+				.collect_vec();
+
+			let di_compile_unit = self.di_compile_unit.as_ref().unwrap();
+			let di_builder = self.di_builder.as_ref().unwrap();
+
+			let di_type = di_builder.create_subroutine_type(
+				di_compile_unit.get_file(),
+				ret,
+				&params,
+				DIFlagsConstants::PUBLIC
+			);
+			
+			let subprogram = di_builder.create_function(
+				di_compile_unit.as_debug_info_scope(),
+				name,
+				None,
+				di_compile_unit.get_file(),
+				t.line as u32,
+				di_type,
+				false,
+				true,
+				t.line as u32,
+				DIFlagsConstants::PUBLIC,
+				false
+			);
+
+			fn_v.set_subprogram(subprogram);
+		}
+
 		Ok(fn_v)
 	}
 
@@ -495,10 +549,36 @@ impl<'ctx> LLVMBuilder<'ctx> {
 
 		self.fn_value_opt = Some(fn_v);
 
+		if self.di_builder.is_some() {
+			self.scopes.clear();
+			
+			for _ in 0..t.scopes.len() {
+				let di_builder = self.di_builder.as_ref().unwrap();
+				let compile_unit = self.di_compile_unit.as_ref().unwrap();
+				let block = di_builder.create_lexical_block(
+					fn_v.get_subprogram().unwrap().as_debug_info_scope(),
+					compile_unit.get_file(),
+					0,
+					0
+				);
+
+				self.scopes.push(block);
+			}
+
+			self.builder.set_current_debug_location(
+				self.di_builder.as_ref().unwrap().create_debug_location(
+					self.context, 
+					t.line as u32,
+					t.column as u32,
+					fn_v.get_subprogram().unwrap().as_debug_info_scope(), 
+					None
+				)
+			);
+		}
+
 		for i in 0..t.blocks.len() {
 			self.blocks.push(
-				self.context
-					.append_basic_block(self.fn_value_opt.unwrap(), &format!("bb{i}")),
+				self.context.append_basic_block(fn_v, &format!("bb{i}")),
 			);
 		}
 
@@ -779,12 +859,14 @@ impl<'ctx> LLVMBuilder<'ctx> {
 
 					CIRStmt::SourceLoc(line, column) => {
 						if let Some(di_builder) = &self.di_builder {
-							di_builder.create_debug_location(
-								self.context, 
-								*line as u32, 
-								*column as u32, 
-								self.scopes[i], 
-								None,
+							self.builder.set_current_debug_location(
+								di_builder.create_debug_location(
+									self.context, 
+									*line as u32, 
+									*column as u32, 
+									self.scopes[t.blocks[i].scope].as_debug_info_scope(), 
+									None,
+								)
 							);
 						}
 					}
@@ -1663,71 +1745,6 @@ impl<'ctx> LLVMBuilder<'ctx> {
 		}
 	}
 
-	fn get_di_type(&mut self, ty: &Type) -> DIType<'ctx> {
-		if let Some(ty) = self.dbg_type_map.get(ty) {
-			return *ty
-		}
-
-		let ptr_size = self.target_machine.get_target_data().get_pointer_byte_size(None);
-
-		let result = match ty {
-			Type::Basic(basic) => {
-				let di_builder = self.di_builder.as_ref().unwrap();
-
-				match basic {
-					Basic::Bool => di_builder.create_basic_type(
-						basic.as_str(),
-						8,
-						dwarf_ate::BOOLEAN,
-						DIFlagsConstants::PUBLIC,
-					),
-
-					Basic::Integral { signed, size } => di_builder.create_basic_type(
-						basic.as_str(),
-						(size.as_bytes(ptr_size as usize) * 8) as u64,
-						if *signed { dwarf_ate::SIGNED } else { dwarf_ate::UNSIGNED },
-						DIFlagsConstants::PUBLIC,
-					),
-
-					Basic::Float { size } => di_builder.create_basic_type(
-						basic.as_str(),
-						(size.as_bytes() * 8) as u64,
-						dwarf_ate::FLOAT,
-						DIFlagsConstants::PUBLIC,
-					),
-
-					Basic::Void => di_builder.create_basic_type(
-						basic.as_str(),
-						0,
-						dwarf_ate::VOID,
-						DIFlagsConstants::PUBLIC,
-					)
-				}.unwrap().as_type()
-			},
-
-			Type::Pointer(pointee, _) => {
-				let pointee = self.get_di_type(&pointee);
-				let di_builder = self.di_builder.as_ref().unwrap();
-
-				di_builder.create_pointer_type(
-					&ty.to_string(),
-					pointee,
-					(ptr_size * 8) as u64,
-					ptr_size * 8, // FIXME: actually get alignment
-					AddressSpace::default(),
-				).as_type()
-				
-			}
-
-			Type::Never => panic!(),
-
-			_ => todo!(),
-		};
-
-		self.dbg_type_map.insert(ty.clone(), result);
-		result
-	}
-
 	fn slice_type(&self, ty: &dyn BasicType<'ctx>) -> StructType<'ctx> {
 		self.context.struct_type(
 			&[
@@ -1817,6 +1834,244 @@ impl<'ctx> LLVMBuilder<'ctx> {
 		// The above code is disabled for now,
 		// while I work on generalized reference support
 		props.is_ref
+	}
+	
+	fn get_di_type(&mut self, ty: &Type) -> DIType<'ctx> {
+		if let Some(ty) = self.di_type_map.get(ty) {
+			return *ty
+		}
+
+		let ptr_size = self.target_machine.get_target_data().get_pointer_byte_size(None);
+
+		let result = match ty {
+			Type::Basic(basic) => {
+				let di_builder = self.di_builder.as_ref().unwrap();
+
+				match basic {
+					Basic::Bool => di_builder.create_basic_type(
+						basic.as_str(),
+						8,
+						dwarf_ate::BOOLEAN,
+						DIFlagsConstants::PUBLIC,
+					),
+
+					Basic::Integral { signed, size } => di_builder.create_basic_type(
+						basic.as_str(),
+						(size.as_bytes(ptr_size as usize) * 8) as u64,
+						if *signed { dwarf_ate::SIGNED } else { dwarf_ate::UNSIGNED },
+						DIFlagsConstants::PUBLIC,
+					),
+
+					Basic::Float { size } => di_builder.create_basic_type(
+						basic.as_str(),
+						(size.as_bytes() * 8) as u64,
+						dwarf_ate::FLOAT,
+						DIFlagsConstants::PUBLIC,
+					),
+
+					Basic::Void => di_builder.create_basic_type(
+						basic.as_str(),
+						0,
+						dwarf_ate::VOID,
+						DIFlagsConstants::PUBLIC,
+					)
+				}.unwrap().as_type()
+			},
+
+			Type::TypeRef { def, .. } => {
+				let def = def.upgrade().unwrap();
+				let def = def.read().unwrap();
+
+				let members = def.members
+					.iter()
+					.map(|(_, member, _)| self.get_di_type(member))
+					.collect_vec();
+
+				let di_builder = self.di_builder.as_ref().unwrap();
+				let di_compile_unit = self.di_compile_unit.as_ref().unwrap();
+				let name = def.name.to_string();
+				
+				// TODO: Variants
+
+				di_builder.create_struct_type(
+					di_compile_unit.get_file().as_debug_info_scope(),
+					&name,
+					di_compile_unit.get_file(),
+					0,
+					0,
+					0,
+					DIFlagsConstants::PUBLIC,
+					None,
+					&members,
+					DWARFSourceLanguage::CPlusPlus as u32,
+					None,
+					&name
+				).as_type()
+			}
+
+			Type::Pointer(pointee, _) => {
+				if let Type::Slice(slicee) = &**pointee {
+					let pointee = self.get_di_type(slicee);
+					let size_ty = self.get_di_type(&Type::isize_type(false));
+					let di_builder = self.di_builder.as_ref().unwrap();
+					let di_compile_unit = self.di_compile_unit.as_ref().unwrap();
+					let name = format!("[{}]*", slicee.to_string());
+					
+					di_builder.create_struct_type(
+						di_compile_unit.get_file().as_debug_info_scope(),
+						&name,
+						di_compile_unit.get_file(),
+						0,
+						(ptr_size * 2 * 8) as u64,
+						ptr_size,
+						DIFlagsConstants::PUBLIC,
+						None,
+						&[
+							pointee,
+							size_ty,
+						],
+						DWARFSourceLanguage::CPlusPlus as u32, // idfk
+						None,
+						&name
+					).as_type()
+				} else {
+					let pointee = self.get_di_type(&pointee);
+					let di_builder = self.di_builder.as_ref().unwrap();
+
+					di_builder.create_pointer_type(
+						&ty.to_string(),
+						pointee,
+						(ptr_size * 8) as u64,
+						ptr_size * 8, // FIXME: actually get alignment
+						AddressSpace::default(),
+					).as_type()
+				}
+			}
+
+			Type::Slice(slicee) => self.get_di_type(&slicee),
+
+			Type::Function(ret, args) => {
+				let _ret = self.get_di_type(ret);
+				let _args = args
+					.iter()
+					.map(|(_, arg)| self.get_di_type(arg))
+					.collect_vec();
+
+				self.get_di_type(&Type::void_type().ptr_type(PtrKind::Raw))
+			}
+
+			Type::Array(sub, size) => {
+				let ConstExpr::Result(ConstValue::Integral(size, _)) = &*size.read().unwrap() else {
+					panic!()
+				};
+
+				let sub = self.get_di_type(sub);
+
+				self.di_builder.as_ref().unwrap().create_array_type(
+					sub,
+					sub.get_size_in_bits() * *size as u64,
+					64,
+					&[]
+				).as_type()
+			}
+
+			Type::Tuple(TupleKind::Sum, types) => {
+				let types = types
+					.iter()
+					.map(|ty| self.get_di_type(ty))
+					.collect_vec();
+
+				let disc = self.get_di_type(&Type::i32_type(true));
+
+				let name = ty.to_string();
+				let data_name = name.clone() + "-data";
+				let di_compile_unit = self.di_compile_unit.as_ref().unwrap();
+				let di_builder = self.di_builder.as_ref().unwrap();
+
+				let data = di_builder.create_union_type(
+					di_compile_unit.get_file().as_debug_info_scope(),
+					&data_name,
+					di_compile_unit.get_file(),
+					0,
+					0, // FIXME: ACTUALLY FIGURE OUT SIZE AND ALIGNMENT FOR THESE
+					0,
+					DIFlagsConstants::PUBLIC,
+					&types,
+					DWARFSourceLanguage::CPlusPlus as u32,
+					&data_name
+				).as_type();
+
+				di_builder.create_struct_type(
+					di_compile_unit.get_file().as_debug_info_scope(),
+					&name,
+					di_compile_unit.get_file(),
+					0,
+					0,
+					0,
+					DIFlagsConstants::PUBLIC,
+					None,
+					&[
+						disc,
+						data
+					],
+					DWARFSourceLanguage::CPlusPlus as u32,
+					None,
+					&name
+				).as_type()
+			}
+
+			Type::Tuple(TupleKind::Product, types) => {
+				let types = types
+					.iter()
+					.map(|ty| self.get_di_type(ty))
+					.collect_vec();
+
+				let name = ty.to_string();
+				let di_builder = self.di_builder.as_ref().unwrap();
+				let di_compile_unit = self.di_compile_unit.as_ref().unwrap();
+
+				di_builder.create_struct_type(
+					di_compile_unit.get_file().as_debug_info_scope(),
+					&name,
+					di_compile_unit.get_file(),
+					0,
+					0,
+					0,
+					DIFlagsConstants::PUBLIC,
+					None,
+					&types,
+					DWARFSourceLanguage::CPlusPlus as u32,
+					None,
+					&name
+				).as_type()
+			}
+
+			Type::Tuple(TupleKind::Empty, _) => {
+				let compile_unit = self.di_compile_unit.as_ref().unwrap();
+
+				self.di_builder.as_ref().unwrap().create_struct_type(
+					compile_unit.get_file().as_debug_info_scope(),
+					"()",
+					compile_unit.get_file(),
+					0,
+					0,
+					0,
+					DIFlagsConstants::PUBLIC,
+					None,
+					&[],
+					DWARFSourceLanguage::CPlusPlus as u32,
+					None,
+					"()"
+				).as_type()
+			}
+
+			Type::Tuple(TupleKind::Newtype, ty) => self.get_di_type(&ty[0]),
+
+			Type::Never | Type::TypeParam(_) | Type::Infer(_) | Type::Unresolved { .. } => panic!(),
+		};
+		
+		self.di_type_map.insert(ty.clone(), result);
+		result
 	}
 }
 

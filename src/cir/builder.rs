@@ -1,6 +1,6 @@
 use std::{
 	collections::HashMap,
-	sync::{Arc, RwLock},
+	sync::{Arc, RwLock}, cell::RefCell,
 };
 
 use crate::{
@@ -12,7 +12,7 @@ use crate::{
 		statement::Stmt,
 		types::{Basic, BindingProps, FnPrototype, GenericArgs, Type, TypeDef, PtrKind},
 	},
-	lexer::SrcSpan,
+	lexer::{SrcSpan, Lexer},
 	parser::Parser,
 };
 
@@ -33,16 +33,17 @@ pub struct CIRBuilderScope {
 	pub index: usize,
 }
 
-pub struct CIRModuleBuilder {
+pub struct CIRModuleBuilder<'build> {
 	pub module: CIRModule,
 
 	current_fn: Option<CIRFunction>,
 	current_block: BlockIndex,
 	scope_stack: Vec<usize>,
+	lexer: &'build RefCell<Lexer>,
 }
 
-impl CIRModuleBuilder {
-	pub fn from_ast(ast: &Parser) -> Self {
+impl CIRModuleBuilder<'_> {
+	pub fn from_ast<'build>(ast: &'build Parser) -> CIRModuleBuilder<'build> {
 		let mut result = CIRModuleBuilder {
 			module: CIRModule {
 				types: HashMap::new(),
@@ -54,6 +55,7 @@ impl CIRModuleBuilder {
 			current_fn: None,
 			current_block: 0,
 			scope_stack: vec![],
+			lexer: &ast.lexer,
 		};
 
 		result.register_module(&ast.interface);
@@ -70,7 +72,7 @@ impl CIRModuleBuilder {
 
 			for (_, fns) in &im.functions {
 				for func in fns {
-					let cir_fn = Self::generate_prototype(&func);
+					let cir_fn = self.generate_prototype(&func);
 
 					self.module.functions.insert(func.clone(), cir_fn);
 				}
@@ -81,7 +83,7 @@ impl CIRModuleBuilder {
 			match item {
 				ModuleItemInterface::Functions(fns) => {
 					for func in &*fns.read().unwrap() {
-						let cir_fn = Self::generate_prototype(func);
+						let cir_fn = self.generate_prototype(func);
 
 						self.module.functions.insert(func.clone(), cir_fn);
 					}
@@ -112,14 +114,14 @@ impl CIRModuleBuilder {
 		}
 
 		if let Some(drop) = &ty.read().unwrap().drop {
-			let cir_fn = Self::generate_prototype(&drop);
+			let cir_fn = self.generate_prototype(&drop);
 
 			self.module.functions.insert(drop.clone(), cir_fn);
 		}
 
 		for init in &ty.read().unwrap().init {
 			let proto = init.clone();
-			let cir_fn = Self::generate_prototype(&proto);
+			let cir_fn = self.generate_prototype(&proto);
 
 			self.module.functions.insert(proto, cir_fn);
 		}
@@ -133,7 +135,15 @@ impl CIRModuleBuilder {
 		}
 	}
 
-	pub fn generate_prototype(func: &FnPrototype) -> CIRFunction {
+	pub fn generate_prototype(&self, func: &FnPrototype) -> CIRFunction {
+		Self::generate_prototype_with_loc(
+			func,
+			self.lexer.borrow().get_line_number(func.span.start) + 1,
+			self.lexer.borrow().get_column(func.span.start),
+		)
+	}
+
+	pub fn generate_prototype_with_loc(func: &FnPrototype, line: usize, column: usize) -> CIRFunction {
 		CIRFunction {
 			variables: func
 				.params
@@ -149,6 +159,8 @@ impl CIRModuleBuilder {
 			attributes: func.attributes.clone(),
 			is_extern: true,
 			is_variadic: func.params.variadic,
+			line,
+			column,
 		}
 	}
 
@@ -284,7 +296,9 @@ impl CIRModuleBuilder {
 					.map(|_| ())
 			}
 
-			Stmt::Decl(bindings, expr, _) => {
+			Stmt::Decl(bindings, expr, span) => {
+				self.update_source_loc(*span);
+
 				if bindings.len() != 1 {
 					todo!()
 				}
@@ -650,12 +664,30 @@ impl CIRModuleBuilder {
 		var == 0 && !self.current_fn.as_ref().unwrap().ret.1.is_void()
 	}
 
+	fn update_source_loc(&mut self, span: SrcSpan) {
+		if span == SrcSpan::new() {
+			return
+		}
+
+		if let Some(CIRStmt::SourceLoc(..)) = self.get_fn().blocks[self.current_block].items.last() {
+			let current = self.current_block;
+			self.get_fn_mut().blocks[current].items.pop();
+		}
+
+		self.write(CIRStmt::SourceLoc(
+			self.lexer.borrow().get_line_number(span.start) + 1,
+			self.lexer.borrow().get_column(span.start)
+		));
+	}
+
 	// generate_expr only returns None if `expr` is a "never expression"
 	// aka an expression that will never evaluate to a value
 	#[must_use]
 	fn generate_expr(&mut self, expr: &Expr, qualifs: BindingProps) -> Option<RValue> {
 		let expr_ty = expr.get_type();
 		let span = expr.get_span();
+		
+		self.update_source_loc(span);
 
 		match expr {
 			Expr::Atom(atom, _) => match atom {
@@ -1486,7 +1518,7 @@ impl CIRModuleBuilder {
 				}
 
 				if !self.module.functions.contains_key(resolved) {
-					let extern_proto = Self::generate_prototype(resolved);
+					let extern_proto = self.generate_prototype(resolved);
 
 					self.module.functions.insert(
 						resolved.clone(),

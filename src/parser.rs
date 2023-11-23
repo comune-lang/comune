@@ -760,16 +760,19 @@ impl<'ctx> Parser {
 		self_ty: &Type,
 		keyword: &str,
 	) -> ComuneResult<Arc<FnPrototype>> {
+		let start = self.get_current_start_index();
+
 		self.get_next()?;
 
 		let mut generics = self.parse_generic_param_list(None)?;
 		generics.add_base_generics(base_generics);
 
 		let params = self.parse_parameter_list(Some(&self_ty), None)?;
-
 		let mut path = Identifier::from_parent(&scope, keyword.into());
-		path.qualifier.0 = Some(Box::new(self_ty.clone()));
+		let end = self.get_prev_end_index();
 
+		path.qualifier.0 = Some(Box::new(self_ty.clone()));
+		
 		let func = Arc::new(FnPrototype {
 			path,
 			params,
@@ -777,6 +780,10 @@ impl<'ctx> Parser {
 			ret: (BindingProps::default(), Type::Basic(Basic::Void)),
 			attributes: vec![],
 			is_unsafe: false,
+			span: SrcSpan {
+				start, 
+				len: end - start
+			}
 		});
 
 		// Skip c'tor/d'tor body
@@ -938,6 +945,7 @@ impl<'ctx> Parser {
 		attributes: Vec<Attribute>,
 		self_ty: Option<&Type>,
 	) -> ComuneResult<(DeclParseResult, ModuleASTElem)> {
+		let start = self.get_current_start_index();
 		let mut t;
 
 		if self.get_current()? == Token::Keyword("fn") {
@@ -971,6 +979,8 @@ impl<'ctx> Parser {
 						}
 					}
 
+					let end = self.get_prev_end_index();
+
 					let t = FnPrototype {
 						path: Identifier::from_parent(&self.current_scope, name.clone()),
 						ret: (props, t.unwrap()),
@@ -978,6 +988,10 @@ impl<'ctx> Parser {
 						generics,
 						attributes,
 						is_unsafe: false,
+						span: SrcSpan {
+							start,
+							len: end - start,
+						}
 					};
 
 					// Past the parameter list, check if we're at a function body or not
