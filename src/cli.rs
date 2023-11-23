@@ -18,33 +18,33 @@ use crate::errors;
 #[clap(author, version, about, long_about = None)]
 pub struct ComuneCLI {
 	#[clap(short = 'v', long = "verbose", default_value_t = false, value_parser)]
-	verbose: bool,
+	pub verbose: bool,
 
 	#[clap(value_parser)]
-	input_files: Vec<OsString>,
+	pub input_files: Vec<OsString>,
 
 	#[clap(long = "backtrace", default_value_t = false, value_parser)]
-	backtrace: bool,
+	pub backtrace: bool,
 
 	#[clap(short = 'j', long = "jobs", default_value_t = 0, value_parser)]
-	num_jobs: usize,
+	pub num_jobs: usize,
 
 	#[clap(long = "out-dir", default_value = "./", value_parser)]
-	output_dir: OsString,
+	pub output_dir: OsString,
 
 	#[clap(short = 'o', long = "output", default_value = "a.out", value_parser)]
-	output_file: OsString,
+	pub output_file: OsString,
 
 	#[clap(short = 'e', long = "emit", value_parser)]
-	emit_types: Vec<String>,
+	pub emit_types: Vec<String>,
 }
 
-pub fn run(args: ComuneCLI) {
+pub fn run(args: ComuneCLI) -> Result<(), ()> {
 	let build_time = Instant::now();
 
 	if args.input_files.is_empty() {
 		eprintln!("{} no input modules", "fatal:".red().bold());
-		std::process::exit(1);
+		return Err(())
 	}
 
 	if let Err(e) = std::env::var(COMUNE_TOOLCHAIN_KEY) {
@@ -52,7 +52,7 @@ pub fn run(args: ComuneCLI) {
 			"{} no comune toolchain found!\nplease point the {COMUNE_TOOLCHAIN_KEY} environment variable to a valid comune toolchain. ({e})",
 			"error:".red().bold(),
 		);
-		std::process::exit(1);
+		return Err(())
 	}
 
 	let mut emit_types = vec![];
@@ -66,7 +66,7 @@ pub fn run(args: ComuneCLI) {
 			"{} emit type `none` cannot be used in combination with other options.",
 			"error:".red().bold()
 		);
-		std::process::exit(1);
+		return Err(())
 	}
 
 	#[cfg(feature = "concurrent")]
@@ -152,7 +152,7 @@ pub fn run(args: ComuneCLI) {
 
 	if !check_last_phase_ok() {
 		await_output_written();
-		std::process::exit(1);
+		return Err(())
 	}
 
 	#[cfg(not(feature = "concurrent"))]
@@ -176,7 +176,7 @@ pub fn run(args: ComuneCLI) {
 
 	if !check_last_phase_ok() {
 		await_output_written();
-		std::process::exit(1);
+		return Err(())
 	}
 
 	let compile_time = build_time.elapsed();
@@ -220,6 +220,7 @@ pub fn run(args: ComuneCLI) {
 	}
 
 	await_output_written();
+	Ok(())
 }
 
 fn check_last_phase_ok() -> bool {
