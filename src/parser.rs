@@ -345,9 +345,11 @@ impl<'ctx> Parser {
 					self.get_next()?;
 
 					let generics = self.parse_generic_param_list(None)?;
+					let self_ty_idx = generics.params.len();
 
 					let mut this_trait = TraitInterface {
-						items: HashMap::new(),
+						functions: HashMap::new(),
+						types: HashMap::new(),
 						generics,
 						supers: vec![],
 						attributes: current_attributes,
@@ -356,26 +358,42 @@ impl<'ctx> Parser {
 					self.consume(&Token::Other('{'))?;
 
 					while self.get_current()? != Token::Other('}') {
-						let func_attributes = self.parse_attributes()?;
+						let item_attribs = self.parse_attributes()?;
 
-						match self.parse_namespace_declaration(
-							func_attributes,
-							Some(&Type::TypeParam(0)),
-						)? {
-							(DeclParseResult::Function(name, proto), ast) => {
-								self.module_impl.fn_impls.insert(proto.clone(), ast);
+						match self.get_current()? {
+							Token::Keyword("type") => {
+								let Token::Name(ty_name) = self.get_next()? else {
+									return self.err(ComuneErrCode::UnexpectedToken)
+								};
 
-								if let Some(existing) = this_trait.items.get_mut(&name) {
-									existing.push(proto);
-								} else {
-									this_trait.items.insert(name, vec![proto]);
+								if this_trait.types.contains_key(&ty_name) {
+									return self.err(ComuneErrCode::AlreadyDefined(Identifier::from_name(ty_name, false)));
 								}
+
+								this_trait.types.insert(ty_name, None);
+
+								self.get_next()?;
+								self.consume(&Token::Other(';'))?;
 							}
 
-							(DeclParseResult::Variable(..), _) => todo!(),
+							_ => match self.parse_namespace_declaration(
+									item_attribs,
+									Some(&Type::TypeParam(self_ty_idx)),
+								)? {
+									(DeclParseResult::Function(name, proto), ast) => {
+										self.module_impl.fn_impls.insert(proto.clone(), ast);
+		
+										if let Some(existing) = this_trait.functions.get_mut(&name) {
+											existing.push(proto);
+										} else {
+											this_trait.functions.insert(name, vec![proto]);
+										}
+									}
+		
+									(DeclParseResult::Variable(..), _) => todo!(),
+								}		
+							
 						}
-
-						self.get_current()?;
 					}
 
 					self.get_next()?; // Consume closing brace

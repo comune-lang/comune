@@ -11,9 +11,9 @@ use color_eyre::owo_colors::OwoColorize;
 use inkwell::{
 	attributes::{Attribute, AttributeLoc},
 	basic_block::BasicBlock,
-	builder::Builder,
+	builder::{Builder, BuilderError},
 	context::Context,
-	debug_info::DebugInfoBuilder,
+	debug_info::{DebugInfoBuilder, DIType, DIFlagsConstants, DIScope},
 	module::{Linkage, Module},
 	passes::PassManager,
 	targets::{FileType, InitializationConfig, Target, TargetMachine, TargetTriple},
@@ -45,7 +45,36 @@ use crate::{
 	parser::ComuneResult,
 };
 
-type LLVMResult<T> = Result<T, String>;
+pub mod dwarf_ate {
+	pub const VOID: u32           = 0x00;
+	pub const ADDRESS: u32        = 0x01;
+	pub const BOOLEAN: u32        = 0x02;
+	pub const COMPLEX: u32        = 0x03;
+	pub const FLOAT: u32          = 0x04;
+	pub const SIGNED: u32         = 0x05;
+	pub const SIGNED_CHAR: u32    = 0x06;
+	pub const UNSIGNED: u32       = 0x07;
+	pub const UNSIGNED_CHAR: u32  = 0x08;
+	// DWARF 3
+	pub const IMAGINARY: u32      = 0x09;
+	pub const PACKED_DECIMAL: u32 = 0x0A;
+	pub const NUMERIC_STRING: u32 = 0x0B;
+	pub const EDITED: u32         = 0x0C;
+	pub const SIGNED_FIXED: u32   = 0x0D;
+	pub const UNSIGNED_FIXED: u32 = 0x0E;
+	pub const DECIMAL_FLOAT: u32  = 0x0F;
+	// DWARF 4
+	pub const UTF: u32            = 0x10;
+	// DWARF 5
+	pub const UCS: u32            = 0x11;
+	pub const ASCII: u32          = 0x12;
+	pub const LO_USER: u32        = 0x13;
+	pub const HI_USER: u32        = 0x14;
+}
+
+pub const ADDRESS_SPACE_CONST: u16 = 4;
+
+type LLVMResult<T> = Result<T, BuilderError>;
 
 pub struct LLVMBackend {
 	context: Context,
@@ -59,6 +88,8 @@ pub struct LLVMBuilder<'ctx> {
 	di_builder: Option<DebugInfoBuilder<'ctx>>,
 	fn_value_opt: Option<FunctionValue<'ctx>>,
 	type_map: HashMap<String, AnyTypeEnum<'ctx>>,
+	dbg_type_map: HashMap<Type, DIType<'ctx>>,
+	scopes: Vec<DIScope<'ctx>>,
 	fn_map: HashMap<Arc<FnPrototype>, String>,
 	blocks: Vec<BasicBlock<'ctx>>,
 	variables: Vec<(PointerValue<'ctx>, BindingProps, Type)>,
@@ -279,6 +310,8 @@ impl<'ctx> LLVMBuilder<'ctx> {
 			di_builder,
 			fn_value_opt: None,
 			type_map: HashMap::new(),
+			dbg_type_map: HashMap::new(),
+			scopes: vec![],
 			fn_map: HashMap::new(),
 			blocks: vec![],
 			variables: vec![],
@@ -477,7 +510,7 @@ impl<'ctx> LLVMBuilder<'ctx> {
 			}
 
 			self.variables.push((
-				self.create_entry_block_alloca(&format!("_{i}"), ty_ll),
+				self.create_entry_block_alloca(&format!("_{i}"), ty_ll)?,
 				*props,
 				ty.clone(),
 			));
@@ -504,7 +537,7 @@ impl<'ctx> LLVMBuilder<'ctx> {
 					);
 				}
 
-				self.builder.build_store(self.variables[idx].0, param);
+				self.builder.build_store(self.variables[idx].0, param)?;
 			}
 		}
 
@@ -519,12 +552,12 @@ impl<'ctx> LLVMBuilder<'ctx> {
 						let store = self.generate_lvalue_use(
 							lval, 
 							BindingProps::mut_reference()
-						);
+						)?;
 
 						self.generate_expr(
 							self.indirection_as_pointer(store),
 							expr,
-						);
+						)?;
 					}
 
 					CIRStmt::RefInit(var, lval) => {
@@ -533,7 +566,7 @@ impl<'ctx> LLVMBuilder<'ctx> {
 
 						assert!(props.is_ref);
 						
-						self.builder.build_store(reference, self.generate_lvalue_use(lval, props));
+						self.builder.build_store(reference, self.generate_lvalue_use(lval, props)?)?;
 					}
 
 					CIRStmt::GlobalAccess { local, symbol } => {
@@ -545,40 +578,40 @@ impl<'ctx> LLVMBuilder<'ctx> {
 						self.builder.build_store(
 							reference, 
 							self.module.get_global(&symbol.to_string()).unwrap().as_basic_value_enum()
-						);
+						)?;
 					}
 
 					CIRStmt::Jump(block) => {
-						self.builder.build_unconditional_branch(self.blocks[*block]);
+						self.builder.build_unconditional_branch(self.blocks[*block])?;
 					}
 
 					CIRStmt::Switch(cond, branches, else_block) => {
 						let cond_ir = self
-							.generate_operand(&Type::i32_type(true), cond)
+							.generate_operand(&Type::i32_type(true), cond)?
 							.as_basic_value_enum()
 							.into_int_value();
 
-						let cases: Vec<_> = branches
+						let cases = branches
 							.iter()
 							.map(|(ty, val, branch)| {
-								(
-									self.generate_operand(ty, val).into_int_value(),
+								Ok((
+									self.generate_operand(ty, val)?.into_int_value(),
 									self.blocks[*branch],
-								)
+								))
 							})
-							.collect();
+							.collect::<LLVMResult<Vec<_>>>()?;
 
 						self.builder
-							.build_switch(cond_ir, self.blocks[*else_block], &cases);
+							.build_switch(cond_ir, self.blocks[*else_block], &cases)?;
 					}
 
 					CIRStmt::Return => {
 						if let Some(lval) = t.get_return_lvalue() {
-							let ret = self.generate_lvalue_use(&lval, t.ret.0);
+							let ret = self.generate_lvalue_use(&lval, t.ret.0)?;
 
-							self.builder.build_return(Some(&ret));
+							self.builder.build_return(Some(&ret))?;
 						} else {
-							self.builder.build_return(None);
+							self.builder.build_return(None)?;
 						}
 					}
 
@@ -606,7 +639,7 @@ impl<'ctx> LLVMBuilder<'ctx> {
 
 							CIRCallId::Indirect { local, .. } => {
 								let ptr = self
-									.generate_lvalue_use(local, BindingProps::value())
+									.generate_lvalue_use(local, BindingProps::value())?
 									.into_pointer_value();
 
 								CallableValue::try_from(ptr).unwrap()
@@ -616,13 +649,13 @@ impl<'ctx> LLVMBuilder<'ctx> {
 						let args_mapped: Vec<_> = args
 							.iter()
 							.map(|(lval, _, props)| {
-								Self::to_basic_metadata_value(
-									self.generate_lvalue_use(lval, *props).into(),
-								)
+								Ok(Self::to_basic_metadata_value(
+									self.generate_lvalue_use(lval, *props)?.into(),
+								))
 							})
-							.collect();
+							.collect::<LLVMResult<Vec<_>>>()?;
 
-						let callsite = self.builder.build_call(fn_v, &args_mapped, "");
+						let callsite = self.builder.build_call(fn_v, &args_mapped, "").unwrap();
 
 						if let Some(result) = result {
 							if result.props.is_ref {
@@ -632,14 +665,14 @@ impl<'ctx> LLVMBuilder<'ctx> {
 								self.builder.build_store(
 									self.variables[result.local].0,
 									callsite.try_as_basic_value().unwrap_left(),
-								);
+								)?;
 							} else {
 								// Function return value is a plain value - use normal assignment
 								self.builder.build_store(
-									self.generate_lvalue_use(result, BindingProps::mut_reference())
+									self.generate_lvalue_use(result, BindingProps::mut_reference())?
 										.into_pointer_value(),
 									callsite.try_as_basic_value().unwrap_left(),
-								);
+								)?;
 							}
 						}
 					}
@@ -667,17 +700,18 @@ impl<'ctx> LLVMBuilder<'ctx> {
 
 							CIRCallId::Indirect { local, .. } => {
 								let ptr = self
-									.generate_lvalue_use(local, BindingProps::value())
+									.generate_lvalue_use(local, BindingProps::value())?
 									.into_pointer_value();
 
 								CallableValue::try_from(ptr).unwrap()
 							}
 						};
 
-						let args_mapped: Vec<_> = args
-							.iter()
-							.map(|(lval, _, props)| self.generate_lvalue_use(lval, *props))
-							.collect();
+						let mut args_mapped = Vec::with_capacity(args.len());
+
+						for (lval, _, props) in args {
+							args_mapped.push(self.generate_lvalue_use(lval, *props)?);
+						}
 
 						let callsite = self.builder.build_invoke(
 							fn_v,
@@ -685,7 +719,7 @@ impl<'ctx> LLVMBuilder<'ctx> {
 							self.blocks[*next],
 							self.blocks[*except],
 							"",
-						);
+						).unwrap();
 
 						if let Some(result) = result {
 							self.builder.position_at_end(self.blocks[*next]);
@@ -697,14 +731,14 @@ impl<'ctx> LLVMBuilder<'ctx> {
 								self.builder.build_store(
 									self.variables[result.local].0,
 									callsite.try_as_basic_value().unwrap_left(),
-								);
+								)?;
 							} else {
 								// Function return value is a plain value - use normal assignment
 								self.builder.build_store(
-									self.generate_lvalue_use(result, BindingProps::mut_reference())
+									self.generate_lvalue_use(result, BindingProps::mut_reference())?
 										.into_pointer_value(),
 									callsite.try_as_basic_value().unwrap_left(),
-								);
+								)?;
 							}
 						}
 					}
@@ -720,7 +754,7 @@ impl<'ctx> LLVMBuilder<'ctx> {
 						};
 
 						let i64_ty = self.context.i64_type();
-						let i8ptr_ty = self.context.i8_type().ptr_type(AddressSpace::Generic);
+						let i8ptr_ty = self.context.i8_type().ptr_type(AddressSpace::default());
 
 						let lifetime_func = intrinsic.get_declaration(&self.module, &[
 							i64_ty.as_basic_type_enum(), 
@@ -740,7 +774,19 @@ impl<'ctx> LLVMBuilder<'ctx> {
 					CIRStmt::DropShim { .. } => panic!("encountered DropShim in LLVM codegen!"),
 
 					CIRStmt::Unreachable => {
-						self.builder.build_unreachable();
+						self.builder.build_unreachable()?;
+					}
+
+					CIRStmt::SourceLoc(line, column) => {
+						if let Some(di_builder) = &self.di_builder {
+							di_builder.create_debug_location(
+								self.context, 
+								*line as u32, 
+								*column as u32, 
+								self.scopes[i], 
+								None,
+							);
+						}
 					}
 				}
 			}
@@ -756,17 +802,17 @@ impl<'ctx> LLVMBuilder<'ctx> {
 		Ok(self.fn_value_opt.unwrap())
 	}
 
-	fn generate_expr(&self, store: PointerValue<'ctx>, expr: &RValue) -> InstructionValue<'ctx> {
+	fn generate_expr(&self, store: PointerValue<'ctx>, expr: &RValue) -> LLVMResult<InstructionValue<'ctx>> {
 		match expr {
 			RValue::Atom(ty, op_opt, atom, _) => {
 				match op_opt {
 					Some(Operator::Deref) => {
-						let atom_ir = self.indirection_as_pointer(self.generate_operand(ty, atom));
+						let atom_ir = self.indirection_as_pointer(self.generate_operand(ty, atom)?);
 
 						self.builder.build_store(
 							store,
 							self.builder
-								.build_load(atom_ir, "")
+								.build_load(atom_ir, "")?
 								.as_basic_value_enum(),
 						)
 					}
@@ -779,7 +825,7 @@ impl<'ctx> LLVMBuilder<'ctx> {
 							props.is_mut = matches!(op_opt, Some(Operator::RefMut));
 
 							self.builder
-								.build_store(store, self.generate_lvalue_use(lval, props))
+								.build_store(store, self.generate_lvalue_use(lval, props)?)
 						} else {
 							panic!()
 						}
@@ -787,20 +833,20 @@ impl<'ctx> LLVMBuilder<'ctx> {
 
 					Some(Operator::UnaryMinus) => {
 						if ty.is_integral() {
-							let atom_ir = self.generate_operand(ty, atom).into_int_value();
+							let atom_ir = self.generate_operand(ty, atom)?.into_int_value();
 
 							assert!(ty.is_signed());
 							
 							self.builder.build_store(
 								store,
-								self.builder.build_int_neg(atom_ir, "")
+								self.builder.build_int_neg(atom_ir, "")?
 							)
 						} else if ty.is_floating_point() {
-							let atom_ir = self.generate_operand(ty, atom).into_float_value();
+							let atom_ir = self.generate_operand(ty, atom)?.into_float_value();
 							
 							self.builder.build_store(
 								store,
-								self.builder.build_float_neg(atom_ir, "")
+								self.builder.build_float_neg(atom_ir, "")?
 							)
 						} else {
 							panic!()
@@ -809,23 +855,23 @@ impl<'ctx> LLVMBuilder<'ctx> {
 
 					// honestly why do we even have this
 					Some(Operator::UnaryPlus) => {
-						self.builder.build_store(store, self.generate_operand(ty, atom))
+						self.builder.build_store(store, self.generate_operand(ty, atom)?)
 					}
 
 					Some(Operator::LogicNot) => {
-						let atom_ir = self.generate_operand(ty, atom).into_int_value();
+						let atom_ir = self.generate_operand(ty, atom)?.into_int_value();
 						
 						assert!(ty.is_boolean());
 
 						self.builder.build_store(
 							store,
-							self.builder.build_not(atom_ir, "")
+							self.builder.build_not(atom_ir, "")?
 						)
 					}
 
 					None => self
 						.builder
-						.build_store(store, self.generate_operand(ty, atom)),
+						.build_store(store, self.generate_operand(ty, atom)?),
 
 					_ => panic!(),
 				}
@@ -833,10 +879,10 @@ impl<'ctx> LLVMBuilder<'ctx> {
 
 			RValue::Cons(expr_ty, [(lhs_ty, lhs), (rhs_ty, rhs)], op, _) => {
 				let lhs_v =
-					Self::to_basic_value(self.generate_operand(lhs_ty, lhs).as_any_value_enum())
+					Self::to_basic_value(self.generate_operand(lhs_ty, lhs)?.as_any_value_enum())
 						.as_basic_value_enum();
 				let rhs_v =
-					Self::to_basic_value(self.generate_operand(rhs_ty, rhs).as_any_value_enum())
+					Self::to_basic_value(self.generate_operand(rhs_ty, rhs)?.as_any_value_enum())
 						.as_basic_value_enum();
 				let result;
 
@@ -877,7 +923,7 @@ impl<'ctx> LLVMBuilder<'ctx> {
 						Operator::BitShiftR => self.builder.build_right_shift(lhs_i, rhs_i, false, ""),
 						
 						_ => unimplemented!()
-					}
+					}?
 					.as_basic_value_enum();
 				} else if expr_ty.is_floating_point() {
 					let lhs_f = lhs_v.into_float_value();
@@ -890,7 +936,7 @@ impl<'ctx> LLVMBuilder<'ctx> {
 						Operator::Div => self.builder.build_float_div(lhs_f, rhs_f, ""),
 
 						_ => panic!(),
-					}
+					}?
 					.as_basic_value_enum()
 				} else if expr_ty.is_boolean() {
 					if lhs_ty.is_integral() {
@@ -904,7 +950,7 @@ impl<'ctx> LLVMBuilder<'ctx> {
 								lhs_i,
 								rhs_i,
 								"",
-							)
+							)?
 							.as_basic_value_enum();
 					} else if lhs_ty.is_floating_point() {
 						let lhs_f = lhs_v.into_float_value();
@@ -912,7 +958,7 @@ impl<'ctx> LLVMBuilder<'ctx> {
 
 						result = self
 							.builder
-							.build_float_compare(Self::to_float_predicate(op), lhs_f, rhs_f, "")
+							.build_float_compare(Self::to_float_predicate(op), lhs_f, rhs_f, "")?
 							.as_basic_value_enum();
 					} else {
 						panic!()
@@ -923,7 +969,7 @@ impl<'ctx> LLVMBuilder<'ctx> {
 
 					result = unsafe {
 						self.builder
-							.build_gep(lhs, &[rhs], "")
+							.build_gep(lhs, &[rhs], "")?
 							.as_basic_value_enum()
 					};
 				} else {
@@ -941,13 +987,13 @@ impl<'ctx> LLVMBuilder<'ctx> {
 			} => {
 				match to {
 					Type::Tuple(TupleKind::Sum, _) => {
-						let val = self.generate_operand(from, val);
+						let val = self.generate_operand(from, val)?;
 
 						let ptr = self.builder.build_pointer_cast(
 							store,
-							val.get_type().ptr_type(AddressSpace::Generic),
+							val.get_type().ptr_type(AddressSpace::default()),
 							"",
-						);
+						)?;
 
 						self.builder.build_store(ptr, val)
 					}
@@ -955,40 +1001,40 @@ impl<'ctx> LLVMBuilder<'ctx> {
 					Type::TypeRef { .. } if matches!(from, Type::Tuple(TupleKind::Sum, _)) => {
 						// cast from (T::VariantA | T::VariantB) to T
 
-						let val = self.generate_operand(from, val).into_struct_value();
+						let val = self.generate_operand(from, val)?.into_struct_value();
 						let from_data = from.get_sum_data_field().unwrap() as u32;
 						let data = self.builder.build_extract_value(val, from_data, "").unwrap();
 
 						self.builder.build_store(
 							self.builder.build_bitcast(
 								store, 
-								data.get_type().ptr_type(AddressSpace::Generic), 
+								data.get_type().ptr_type(AddressSpace::default()), 
 								""
-							).into_pointer_value(),
+							)?.into_pointer_value(),
 							data
 						)
 					}
 
 					Type::TypeRef { .. } if to.get_variant_index(from).is_some() => {
-						let val = self.generate_operand(from, val);
+						let val = self.generate_operand(from, val)?;
 						let ptr = self.builder.build_pointer_cast(
 							store,
-							val.get_type().ptr_type(AddressSpace::Generic),
+							val.get_type().ptr_type(AddressSpace::default()),
 							"",
-						);
+						)?;
 
 						self.builder.build_store(ptr, val)
 					}
 
 					_ => match from {
 						Type::Pointer { .. } => {
-							let val = self.generate_operand(from, val);
+							let val = self.generate_operand(from, val)?;
 							let to_ir = self.get_llvm_type(to);
 
 							if to.is_boolean() {
 								self.builder.build_store(
 									store,
-									self.builder.build_is_not_null(self.indirection_as_pointer(val), ""),
+									self.builder.build_is_not_null(self.indirection_as_pointer(val), "")?,
 								)
 							} else {
 								self.builder.build_store(
@@ -998,14 +1044,14 @@ impl<'ctx> LLVMBuilder<'ctx> {
 											self.indirection_as_pointer(val),
 											to_ir.into_pointer_type(),
 											"",
-										)
+										)?
 										.as_basic_value_enum(),
 								)
 							}
 						}
 
 						Type::Tuple(TupleKind::Newtype, _) => {
-							let val = self.generate_operand(from, val);
+							let val = self.generate_operand(from, val)?;
 							
 							self.builder.build_store(store, val)
 						}
@@ -1016,7 +1062,7 @@ impl<'ctx> LLVMBuilder<'ctx> {
 								panic!()
 							};
 
-							let val = self.generate_lvalue_use(lvalue, *props);
+							let val = self.generate_lvalue_use(lvalue, *props)?;
 							
 							self.builder.build_store(store, val)
 						}
@@ -1027,14 +1073,14 @@ impl<'ctx> LLVMBuilder<'ctx> {
 								panic!()
 							};
 
-							let val = self.generate_lvalue_use(lvalue, *props);
+							let val = self.generate_lvalue_use(lvalue, *props)?;
 							
 							self.builder.build_store(store, val)
 						}
 
 						Type::Basic(b) => {
 							if from.is_integral() || from.is_floating_point() {
-								let val = self.generate_operand(from, val);
+								let val = self.generate_operand(from, val)?;
 
 								match val {
 									BasicValueEnum::IntValue(i) => match &to {
@@ -1046,7 +1092,7 @@ impl<'ctx> LLVMBuilder<'ctx> {
 													i.get_type().const_int(1, false),
 													i.get_type().const_zero(),
 													"",
-												)
+												)?
 												.as_basic_value_enum(),
 										),
 
@@ -1054,7 +1100,7 @@ impl<'ctx> LLVMBuilder<'ctx> {
 											AnyTypeEnum::IntType(t) => self.builder.build_store(
 												store,
 												self.builder
-													.build_int_cast(i, t, "")
+													.build_int_cast(i, t, "")?
 													.as_basic_value_enum(),
 											),
 
@@ -1063,14 +1109,14 @@ impl<'ctx> LLVMBuilder<'ctx> {
 													self.builder.build_store(
 														store,
 														self.builder
-															.build_signed_int_to_float(i, t, "")
+															.build_signed_int_to_float(i, t, "")?
 															.as_basic_value_enum(),
 													)
 												} else {
 													self.builder.build_store(
 														store,
 														self.builder
-															.build_unsigned_int_to_float(i, t, "")
+															.build_unsigned_int_to_float(i, t, "")?
 															.as_basic_value_enum(),
 													)
 												}
@@ -1084,7 +1130,7 @@ impl<'ctx> LLVMBuilder<'ctx> {
 										AnyTypeEnum::FloatType(t) => self.builder.build_store(
 											store,
 											self.builder
-												.build_float_cast(f, t, "")
+												.build_float_cast(f, t, "")?
 												.as_basic_value_enum(),
 										),
 
@@ -1093,14 +1139,14 @@ impl<'ctx> LLVMBuilder<'ctx> {
 												self.builder.build_store(
 													store,
 													self.builder
-														.build_float_to_signed_int(f, t, "")
+														.build_float_to_signed_int(f, t, "")?
 														.as_basic_value_enum(),
 												)
 											} else {
 												self.builder.build_store(
 													store,
 													self.builder
-														.build_float_to_unsigned_int(f, t, "")
+														.build_float_to_unsigned_int(f, t, "")?
 														.as_basic_value_enum(),
 												)
 											}
@@ -1121,7 +1167,7 @@ impl<'ctx> LLVMBuilder<'ctx> {
 										};
 
 										let val = self
-											.generate_operand(from, val)
+											.generate_operand(from, val)?
 											.as_basic_value_enum()
 											.into_int_value();
 
@@ -1133,7 +1179,7 @@ impl<'ctx> LLVMBuilder<'ctx> {
 													self.get_llvm_type(to).into_int_type(),
 													*signed,
 													"",
-												)
+												)?
 												.as_basic_value_enum(),
 										)
 									}
@@ -1150,14 +1196,16 @@ impl<'ctx> LLVMBuilder<'ctx> {
 		}
 	}
 
-	fn generate_operand(&self, ty: &Type, expr: &Operand) -> BasicValueEnum<'ctx> {
+	fn generate_operand(&self, ty: &Type, expr: &Operand) -> LLVMResult<BasicValueEnum<'ctx>> {
+		let const_addr_space = AddressSpace::from(ADDRESS_SPACE_CONST);
+
 		match expr {
 			Operand::StringLit(s, _) => {
 				let len = s.as_bytes().len().try_into().unwrap();
 				let string_t = self.context.i8_type().array_type(len);
 				let val = self
 					.module
-					.add_global(string_t, Some(AddressSpace::Const), ".str");
+					.add_global(string_t, Some(const_addr_space), ".str");
 
 				let literal = self.context.const_string(s.as_bytes(), false);
 
@@ -1166,7 +1214,7 @@ impl<'ctx> LLVMBuilder<'ctx> {
 				val.set_unnamed_addr(true);
 				val.set_initializer(&literal);
 
-				self.slice_type(&self.context.i8_type())
+				Ok(self.slice_type(&self.context.i8_type())
 					.const_named_struct(&[
 						val.as_pointer_value().as_basic_value_enum(),
 						self.context
@@ -1174,7 +1222,7 @@ impl<'ctx> LLVMBuilder<'ctx> {
 							.const_int(len.into(), false)
 							.as_basic_value_enum(),
 					])
-					.as_basic_value_enum()
+					.as_basic_value_enum())
 			}
 
 			Operand::CStringLit(s, _) => {
@@ -1182,7 +1230,7 @@ impl<'ctx> LLVMBuilder<'ctx> {
 					self.context
 						.i8_type()
 						.array_type(s.as_bytes_with_nul().len() as u32),
-					Some(AddressSpace::Const),
+					Some(const_addr_space),
 					".cstr",
 				);
 
@@ -1197,44 +1245,44 @@ impl<'ctx> LLVMBuilder<'ctx> {
 				val.set_unnamed_addr(true);
 				val.set_initializer(&literal);
 
-				self.builder
+				Ok(self.builder
 					.build_address_space_cast(
 						self.builder
 							.build_bitcast(
 								val.as_pointer_value(),
-								self.context.i8_type().ptr_type(AddressSpace::Const),
+								self.context.i8_type().ptr_type(const_addr_space),
 								"",
-							)
+							)?
 							.into_pointer_value(),
-						self.context.i8_type().ptr_type(AddressSpace::Generic),
+						self.context.i8_type().ptr_type(AddressSpace::default()),
 						"",
-					)
-					.as_basic_value_enum()
+					)?
+					.as_basic_value_enum())
 			}
 
-			Operand::IntegerLit(i, _) => Self::to_basic_type(self.get_llvm_type(ty))
+			Operand::IntegerLit(i, _) => Ok(Self::to_basic_type(self.get_llvm_type(ty))
 				.into_int_type()
 				.const_int(*i as u64, true)
-				.as_basic_value_enum(),
+				.as_basic_value_enum()),
 
-			Operand::FloatLit(f, _) => Self::to_basic_type(self.get_llvm_type(ty))
+			Operand::FloatLit(f, _) => Ok(Self::to_basic_type(self.get_llvm_type(ty))
 				.into_float_type()
 				.const_float(*f)
-				.as_basic_value_enum(),
+				.as_basic_value_enum()),
 
-			Operand::BoolLit(b, _) => self
+			Operand::BoolLit(b, _) => Ok(self
 				.context
 				.bool_type()
 				.const_int(u64::from(*b), false)
-				.as_basic_value_enum(),
+				.as_basic_value_enum()),
 
 			Operand::LValueUse(lval, props) => self.generate_lvalue_use(lval, *props),
 
-			Operand::Undef => self.get_undef(&Self::to_basic_type(self.get_llvm_type(ty))),
+			Operand::Undef => Ok(self.get_undef(&Self::to_basic_type(self.get_llvm_type(ty)))),
 		}
 	}
 
-	fn generate_lvalue_use(&self, expr: &LValue, props: BindingProps) -> BasicValueEnum<'ctx> {
+	fn generate_lvalue_use(&self, expr: &LValue, props: BindingProps) -> LLVMResult<BasicValueEnum<'ctx>> {
 		// Get the variable pointer from the function
 		let (local, lprops, ty) = &self.variables[expr.local];
 		
@@ -1245,7 +1293,7 @@ impl<'ctx> LLVMBuilder<'ctx> {
 		if self.pass_by_ptr(ty, lprops) {
 			local = self
 					.builder
-					.build_load(self.indirection_as_pointer(local), "")
+					.build_load(self.indirection_as_pointer(local), "")?
 					.as_basic_value_enum();
 		}
 		
@@ -1263,7 +1311,7 @@ impl<'ctx> LLVMBuilder<'ctx> {
 					
 					self
 						.builder
-						.build_load(self.indirection_as_pointer(local), "")
+						.build_load(self.indirection_as_pointer(local), "")?
 						.as_basic_value_enum()
 				}
 
@@ -1275,15 +1323,15 @@ impl<'ctx> LLVMBuilder<'ctx> {
 					ty = *sub.clone();
 
 					let mut idx = self
-						.generate_operand(index_ty, index)
+						.generate_operand(index_ty, index)?
 						.as_basic_value_enum()
 						.into_int_value();
 
 					if *op == Operator::Sub {
-						idx = self.builder.build_int_neg(idx, "");
+						idx = self.builder.build_int_neg(idx, "")?;
 					}
 
-					local = self.builder.build_load(self.indirection_as_pointer(local), "");
+					local = self.builder.build_load(self.indirection_as_pointer(local), "")?;
 
 					unsafe { 
 						self
@@ -1292,8 +1340,8 @@ impl<'ctx> LLVMBuilder<'ctx> {
 								self.indirection_as_pointer(local),
 								&[idx], 
 								""
-							)
-							.as_basic_value_enum() 
+							)?
+							.as_basic_value_enum()
 						}
 				}
 
@@ -1337,15 +1385,15 @@ impl<'ctx> LLVMBuilder<'ctx> {
 					// SumData index requires a cast to variant type
 					self.builder.build_bitcast(
 						ptr,
-						Self::to_basic_type(self.get_llvm_type(variant_ty)).ptr_type(AddressSpace::Generic),
+						Self::to_basic_type(self.get_llvm_type(variant_ty)).ptr_type(AddressSpace::default()),
 						""
-					)
+					)?
 				}
 			}
 		}
 
 		if props.is_ref {
-			local.as_basic_value_enum()
+			Ok(local.as_basic_value_enum())
 		} else {
 			self.builder.build_load(self.indirection_as_pointer(local), "")
 		}
@@ -1409,7 +1457,7 @@ impl<'ctx> LLVMBuilder<'ctx> {
 		&self,
 		name: &str,
 		ty: T,
-	) -> PointerValue<'ctx> {
+	) -> LLVMResult<PointerValue<'ctx>> {
 		let builder = self.context.create_builder();
 		let entry = self.fn_value_opt.unwrap().get_first_basic_block().unwrap();
 
@@ -1512,7 +1560,7 @@ impl<'ctx> LLVMBuilder<'ctx> {
 
 			// Hack to make some ABI/optimization code work. Don't actually use this in codegen
 			Type::Slice(slicee) => Self::to_basic_type(self.get_llvm_type(slicee))
-				.ptr_type(AddressSpace::Generic)
+				.ptr_type(AddressSpace::default())
 				.as_any_type_enum(),
 
 			Type::Pointer(pointee, _) => {
@@ -1525,11 +1573,11 @@ impl<'ctx> LLVMBuilder<'ctx> {
 					Type::Basic(Basic::Void) => self
 						.context
 						.i8_type()
-						.ptr_type(AddressSpace::Generic)
+						.ptr_type(AddressSpace::default())
 						.as_any_type_enum(),
 
 					_ => Self::to_basic_type(self.get_llvm_type(pointee))
-						.ptr_type(AddressSpace::Generic)
+						.ptr_type(AddressSpace::default())
 						.as_any_type_enum(),
 				}
 			}
@@ -1605,7 +1653,7 @@ impl<'ctx> LLVMBuilder<'ctx> {
 					AnyTypeEnum::VoidType(ty) => ty.fn_type(&args_mapped, false),
 					ty => Self::to_basic_type(ty).fn_type(&args_mapped, false),
 				}
-				.ptr_type(AddressSpace::Generic)
+				.ptr_type(AddressSpace::default())
 				.as_any_type_enum()
 			}
 
@@ -1615,10 +1663,75 @@ impl<'ctx> LLVMBuilder<'ctx> {
 		}
 	}
 
+	fn get_di_type(&mut self, ty: &Type) -> DIType<'ctx> {
+		if let Some(ty) = self.dbg_type_map.get(ty) {
+			return *ty
+		}
+
+		let ptr_size = self.target_machine.get_target_data().get_pointer_byte_size(None);
+
+		let result = match ty {
+			Type::Basic(basic) => {
+				let di_builder = self.di_builder.as_ref().unwrap();
+
+				match basic {
+					Basic::Bool => di_builder.create_basic_type(
+						basic.as_str(),
+						8,
+						dwarf_ate::BOOLEAN,
+						DIFlagsConstants::PUBLIC,
+					),
+
+					Basic::Integral { signed, size } => di_builder.create_basic_type(
+						basic.as_str(),
+						(size.as_bytes(ptr_size as usize) * 8) as u64,
+						if *signed { dwarf_ate::SIGNED } else { dwarf_ate::UNSIGNED },
+						DIFlagsConstants::PUBLIC,
+					),
+
+					Basic::Float { size } => di_builder.create_basic_type(
+						basic.as_str(),
+						(size.as_bytes() * 8) as u64,
+						dwarf_ate::FLOAT,
+						DIFlagsConstants::PUBLIC,
+					),
+
+					Basic::Void => di_builder.create_basic_type(
+						basic.as_str(),
+						0,
+						dwarf_ate::VOID,
+						DIFlagsConstants::PUBLIC,
+					)
+				}.unwrap().as_type()
+			},
+
+			Type::Pointer(pointee, _) => {
+				let pointee = self.get_di_type(&pointee);
+				let di_builder = self.di_builder.as_ref().unwrap();
+
+				di_builder.create_pointer_type(
+					&ty.to_string(),
+					pointee,
+					(ptr_size * 8) as u64,
+					ptr_size * 8, // FIXME: actually get alignment
+					AddressSpace::default(),
+				).as_type()
+				
+			}
+
+			Type::Never => panic!(),
+
+			_ => todo!(),
+		};
+
+		self.dbg_type_map.insert(ty.clone(), result);
+		result
+	}
+
 	fn slice_type(&self, ty: &dyn BasicType<'ctx>) -> StructType<'ctx> {
 		self.context.struct_type(
 			&[
-				BasicTypeEnum::PointerType(ty.ptr_type(AddressSpace::Generic)),
+				BasicTypeEnum::PointerType(ty.ptr_type(AddressSpace::default())),
 				BasicTypeEnum::IntType(self.context.i64_type()),
 			],
 			true,

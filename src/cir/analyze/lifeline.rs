@@ -573,6 +573,16 @@ impl AnalysisResultHandler<DefInitFlow> for VarInitCheck {
 						))
 					}
 				}
+
+				// check for mutable global access outside `unsafe` block
+				if let CIRStmt::GlobalAccess { local, .. } = stmt {
+					if func.variables[*local].1.is_mut && !func.scopes[block.scope].is_unsafe {
+						errors.push(ComuneError::new(
+							ComuneErrCode::UnsafeOperation,
+							func.variables[*local].1.span,
+						))
+					}
+				}
 			}
 		}
 
@@ -771,6 +781,7 @@ impl<'func> DropElaborator<'func> {
 					items: vec![],
 					preds: vec![self.current_block],
 					succs: vec![next],
+					scope: self.current_fn.blocks[self.current_block].scope,
 				};
 
 				let flag_lval = LValue::new(flag);

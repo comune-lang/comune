@@ -2,6 +2,8 @@
 //
 // this module contains traits that are fundamental to the type system.
 
+using core::option::Option;
+
 @lang(Copy)
 trait Copy {}
 
@@ -24,3 +26,17 @@ trait From<type T> {
 trait Into<type T> {
 	fn into(self) -> T;
 }
+
+/*
+trait Iterator {
+	type Output;
+
+	fn next(mut& self) -> Option<Output>;
+}
+
+trait Unwrap {
+	type Output;
+
+	fn can_unwrap(&self) -> bool;
+	fn unwrap(self) -> Output;
+}*/

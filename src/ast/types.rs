@@ -212,10 +212,31 @@ pub enum IntSize {
 	IAddr,
 }
 
+impl IntSize {
+	pub fn as_bytes(self, addr_size_bytes: usize) -> usize {
+		match self {
+			IntSize::I8 => 1,
+			IntSize::I16 => 2,
+			IntSize::I32 => 4,
+			IntSize::I64 => 8,
+			IntSize::IAddr => addr_size_bytes,
+		}
+	}
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum FloatSize {
 	F32,
 	F64,
+}
+
+impl FloatSize {
+	pub fn as_bytes(self) -> usize {
+		match self {
+			FloatSize::F32 => 4,
+			FloatSize::F64 => 8,
+		}
+	}
 }
 
 #[derive(Debug, Clone)]

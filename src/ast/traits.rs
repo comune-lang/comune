@@ -39,7 +39,8 @@ pub struct TraitRef {
 
 #[derive(Debug)]
 pub struct TraitInterface {
-	pub items: HashMap<Name, Vec<Arc<FnPrototype>>>,
+	pub functions: HashMap<Name, Vec<Arc<FnPrototype>>>,
+	pub types: HashMap<Name, Option<Type>>,
 	pub generics: Generics,
 	pub supers: Vec<Identifier>,
 	pub attributes: Vec<Attribute>,

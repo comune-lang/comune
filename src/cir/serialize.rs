@@ -41,13 +41,42 @@ impl Display for CIRFunction {
 				}
 			}
 
+			for scope in self.scopes.iter() {
+				write!(f, "\nscope {} ", scope.index)?;
+				
+				if scope.is_unsafe && scope.is_loop {
+					write!(f, "(unsafe, loop) ")?;
+				} else if scope.is_unsafe {
+					write!(f, "(unsafe) ")?;
+				} else if scope.is_loop {
+					write!(f, "(loop) ")?;
+				}
+
+				write!(f, "{{")?;
+				
+				let mut empty = true;
+
+				for (name, var) in scope.variables.iter() {
+					if let Some(name) = name {
+						if empty {
+							writeln!(f)?;
+							empty = false;
+						}
+						writeln!(f, "\t{name} := _{var};")?;
+						
+					}
+				}
+
+				writeln!(f, "}}")?;
+			}
+
 			for idx in 0..self.blocks.len() {
 				let block = &self.blocks[idx];
 
 				writeln!(
 					f,
-					"\nbb{idx}:\t\t\t\t\t\t\t\t\t\t\t; preds: {:?}, succs: {:?}",
-					block.preds, block.succs
+					"\nbb{idx}:\t\t\t\t\t\t\t\t\t\t\t; preds: {:?}, succs: {:?}, scope: {}",
+					block.preds, block.succs, block.scope
 				)?;
 
 				for stmt in &block.items {
@@ -154,6 +183,7 @@ impl Display for CIRStmt {
 			CIRStmt::StorageDead(var) => write!(f, "StorageDead(_{var});\n"),
 			CIRStmt::DropShim { var, next } => write!(f, "drop {var} => bb{next};\n"),
 			CIRStmt::Unreachable => write!(f, "unreachable;\n"),
+			CIRStmt::SourceLoc(line, column) => write!(f, "sourceloc {line}:{column};"),
 		}
 	}
 }

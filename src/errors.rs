@@ -497,12 +497,13 @@ pub fn log_msg(msg: ComuneMessage, lexer: Option<&Lexer>) {
 				.unwrap();
 
 				write_code_snippet(&mut out, e.span, lexer, "~".red());
+				writeln!(out).unwrap();
 			}
 
 			for note in &e.notes {
 				write!(
 					out,
-					"\n\n{}: {}\n\n",
+					"\n{}: {}\n\n",
 					"note".bold(),
 					note.1
 				).unwrap();

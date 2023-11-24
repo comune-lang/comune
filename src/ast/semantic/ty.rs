@@ -66,7 +66,7 @@ pub fn resolve_interface_types(parser: &mut Parser) -> ComuneResult<()> {
 			}
 
 			ModuleItemInterface::Trait(tr) => {
-				let TraitInterface { items, generics: trait_gens, .. } = &mut *tr.write().unwrap();
+				let TraitInterface { functions: items, generics: trait_gens, .. } = &mut *tr.write().unwrap();
 
 				for fns in items.values_mut() {
 					for func_og in fns {
@@ -182,7 +182,7 @@ pub fn resolve_interface_types(parser: &mut Parser) -> ComuneResult<()> {
 
 					let mut found_match = false;
 
-					if let Some(trait_fns) = def.items.get(fn_name) {
+					if let Some(trait_fns) = def.functions.get(fn_name) {
 						// Go through the overloads in the trait definition
 						// and look for one that matches this impl function
 
@@ -236,7 +236,7 @@ pub fn resolve_interface_types(parser: &mut Parser) -> ComuneResult<()> {
 
 		if let Some(tr) = &resolved_trait.and_then(|t| Some(*t)) {
 			// Now go through all the trait's functions and check for missing impls
-			for (_, funcs) in &tr.unwrap_def().read().unwrap().items {
+			for (_, funcs) in &tr.unwrap_def().read().unwrap().functions {
 				for func in funcs {
 					if !trait_functions_found.contains(func) {
 						return Err(ComuneError::new(

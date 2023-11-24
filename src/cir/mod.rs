@@ -16,6 +16,8 @@ use crate::{
 	lexer::{SrcSpan, Token},
 };
 
+use self::builder::CIRBuilderScope;
+
 pub mod analyze;
 pub mod builder;
 pub mod monoize;
@@ -292,6 +294,8 @@ pub enum CIRStmt {
 		next: BlockIndex,
 	},
 
+	SourceLoc(usize, usize),
+
 	// Defines an unreachable point in the IR. Terminator.
 	// Reaching this statement is UB, so care must be taken
 	// when writing codegen involving it (usually around Never types)
@@ -303,6 +307,7 @@ pub struct CIRBlock {
 	pub items: Vec<CIRStmt>,
 	pub preds: Vec<BlockIndex>,
 	pub succs: Vec<BlockIndex>,
+	pub scope: usize,
 }
 
 #[derive(Clone)]
@@ -311,6 +316,7 @@ pub struct CIRFunction {
 	// (They may still have a name for pretty-printing, though.)
 	pub variables: Vec<(Type, BindingProps, Option<Name>)>,
 	pub blocks: Vec<CIRBlock>,
+	pub scopes: Vec<CIRBuilderScope>,
 	pub ret: (BindingProps, Type),
 	pub arg_count: usize,
 	pub generics: Generics,
@@ -364,7 +370,7 @@ impl RValue {
 
 impl CIRBlock {
 	fn new() -> Self {
-		CIRBlock { items: vec![], preds: vec![], succs: vec![] }
+		CIRBlock { items: vec![], preds: vec![], succs: vec![], scope: 0, }
 	}
 }
 

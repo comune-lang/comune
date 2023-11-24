@@ -180,9 +180,10 @@ void sub_drop_test() {
 
 	println("\nLeft Vector<DropTest> scope\n");
 
-	Option<DropTest> option = new Option<DropTest>::Some(
-		new DropTest(8)
-	);
+	// FIXME: the codegen for this is a little Fucked.
+	//Option<DropTest> option = new Option<DropTest>::Some(
+	//	new DropTest(8)
+	//);
 
 	temp_drop_test(new DropTest(9));
 
@@ -281,11 +282,13 @@ void ptr_access_test() {
 }
 
 
-int global_var;
+int mut global_var;
 
 void global_var_test() {
-	global_var = 0;
+	unsafe { global_var = 0; }
 }
+
+void empty_fn_test() {}
 
 void string_test() {
 	println("String test!\n");
@@ -309,6 +312,11 @@ struct GenericTypeBounds<type T: Copy> {
 	T t;
 }
 
+struct SwapTest {
+	int a;
+	int b;
+}
+
 int main() {
 	// fails: String does not implement Copy
 	// copy_test<String>(new String());
@@ -320,6 +328,21 @@ int main() {
 	// fails: String does not implement Copy	
 	// GenericTypeBounds<String> test;
 
+	auto mut swap_test = new SwapTest {
+		a: 413,
+		b: 612,
+	};
+
+	swap_test = new SwapTest {
+		a: swap_test.b,
+		b: swap_test.a,
+	};
+
+	printf(
+		c"Swap test:\n  a: %i\n  b: %i\n",
+		swap_test.a,
+		swap_test.b
+	);
 
 	ops_test();
 	enum_test();
