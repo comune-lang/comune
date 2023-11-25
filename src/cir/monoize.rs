@@ -259,7 +259,7 @@ impl MonomorphServer {
 	) {
 		if generic_args.is_empty() {
 			if !access.fns_in.contains_key(id) {
-				let extern_fn = CIRModuleBuilder::generate_prototype(id);
+				let extern_fn = CIRModuleBuilder::generate_prototype_with_loc(id, 0, 0);
 				access.fns_out.insert(id.clone(), extern_fn);
 			}
 
@@ -399,12 +399,12 @@ impl MonomorphServer {
 
 				// Register type and its xtors
 				if let Some(drop) = &def_lock.drop {
-					let extern_fn = CIRModuleBuilder::generate_prototype(drop);
+					let extern_fn = CIRModuleBuilder::generate_prototype_with_loc(drop, 0, 0);
 					access.fns_out.insert(drop.clone(), extern_fn);
 				}
 
 				for init in &def_lock.init {
-					let extern_fn = CIRModuleBuilder::generate_prototype(init);
+					let extern_fn = CIRModuleBuilder::generate_prototype_with_loc(init, 0, 0);
 					access.fns_out.insert(init.clone(), extern_fn);
 				}
 
@@ -462,7 +462,7 @@ impl MonomorphServer {
 					self.register_fn_template(drop, template);
 				}
 
-				let body = CIRModuleBuilder::generate_prototype(drop);
+				let body = CIRModuleBuilder::generate_prototype_with_loc(drop, 0, 0);
 
 				access.fns_out.insert(drop.clone(), body);
 			}
@@ -473,7 +473,7 @@ impl MonomorphServer {
 					self.register_fn_template(init, template);
 				}
 
-				let body = CIRModuleBuilder::generate_prototype(init);
+				let body = CIRModuleBuilder::generate_prototype_with_loc(init, 0, 0);
 
 				access.fns_out.insert(init.clone(), body);
 			}
@@ -632,7 +632,7 @@ impl MonomorphServer {
 		self.monoize_prototype(&mut func_new, args, access);
 
 		let func_new = Arc::new(func_new);
-		let extern_fn = CIRModuleBuilder::generate_prototype(&func_new);
+		let extern_fn = CIRModuleBuilder::generate_prototype_with_loc(&func_new, 0, 0);
 
 		// very silly how much we have to clone here because &(T, U) != (&T, &U)
 		if !self.fn_instances.read().unwrap().contains_key(&func_new)

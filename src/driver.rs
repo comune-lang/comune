@@ -49,6 +49,7 @@ pub struct Compiler<'ctx, T: Backend + ?Sized> {
 	pub output_modules: Mutex<Vec<PathBuf>>,
 	pub module_states: RwLock<HashMap<PathBuf, ModuleState>>,
 	pub opt_level: u32,
+	pub debug_info: bool,
 
 	pub emit_types: Vec<&'ctx str>,
 	pub dep_emit_types: Vec<&'ctx str>,
@@ -128,6 +129,7 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 			dep_emit_types: dep_emits,
 			link_types: links,
 			opt_level,
+			debug_info: true,
 			module_states: RwLock::default(),
 			output_modules: Mutex::default(),
 			monomorph_server: MonomorphServer::new(),
@@ -761,7 +763,7 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 
 		let backend = T::create_instance(self);
 
-		let result = match backend.generate_code(&module, self, "monomorph-module", "") {
+		let result = match backend.generate_code(&module, self, "monomorph-module", "monomorph-module") {
 			Ok(res) => res,
 			Err(_) => {
 				for error in &errors {

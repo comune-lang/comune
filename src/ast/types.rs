@@ -275,6 +275,7 @@ pub struct FnPrototype {
 	pub generics: Generics,
 	pub attributes: Vec<Attribute>,
 	pub is_unsafe: bool,
+	pub span: SrcSpan,
 }
 
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
