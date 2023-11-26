@@ -37,6 +37,12 @@ pub struct ComuneCLI {
 
 	#[clap(short = 'e', long = "emit", value_parser)]
 	pub emit_types: Vec<String>,
+
+	#[clap(short = 'O', default_value_t = 0, value_parser)]
+	pub opt_level: u32,
+
+	#[clap(short = 'd', long = "debug-info", default_value_t = true, value_parser)]
+	pub debug_info: bool,
 }
 
 pub fn run(args: ComuneCLI) -> Result<(), ()> {
@@ -88,7 +94,8 @@ pub fn run(args: ComuneCLI) -> Result<(), ()> {
 		args.output_dir,
 		args.output_file,
 		&emit_types,
-		1,
+		args.opt_level,
+		args.debug_info,
 	);
 	
 	#[cfg(not(feature = "concurrent"))]

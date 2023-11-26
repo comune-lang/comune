@@ -45,6 +45,10 @@ impl Display for CIRFunction {
 				
 				write!(f, "\nscope {}", scope.index)?;
 				
+				if let Some(parent) = scope.parent {
+					write!(f, ": {parent}")?;
+				}
+
 				if scope.is_unsafe && scope.is_loop {
 					write!(f, " (unsafe, loop)")?;
 				} else if scope.is_unsafe {

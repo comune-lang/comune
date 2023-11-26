@@ -13,7 +13,7 @@ use inkwell::{
 	basic_block::BasicBlock,
 	builder::{Builder, BuilderError},
 	context::Context,
-	debug_info::{DebugInfoBuilder, DIType, DIFlagsConstants, DICompileUnit, AsDIScope, DWARFSourceLanguage, DILexicalBlock},
+	debug_info::{DebugInfoBuilder, DIType, DIFlagsConstants, DICompileUnit, AsDIScope, DWARFSourceLanguage, DILexicalBlock, DILocation},
 	module::{Linkage, Module},
 	passes::PassManager,
 	targets::{FileType, InitializationConfig, Target, TargetMachine, TargetTriple},
@@ -79,24 +79,6 @@ type LLVMResult<T> = Result<T, BuilderError>;
 
 pub struct LLVMBackend {
 	context: Context,
-}
-
-pub struct LLVMBuilder<'ctx> {
-	pub context: &'ctx Context,
-	pub module: Module<'ctx>,
-	pub target_machine: TargetMachine,
-	builder: Builder<'ctx>,
-	fn_value_opt: Option<FunctionValue<'ctx>>,
-	type_map: HashMap<String, AnyTypeEnum<'ctx>>,
-	scopes: Vec<DILexicalBlock<'ctx>>,
-	fn_map: HashMap<Arc<FnPrototype>, String>,
-	blocks: Vec<BasicBlock<'ctx>>,
-	variables: Vec<(PointerValue<'ctx>, BindingProps, Type)>,
-
-	// DWARF Debug Info stuff	
-	di_builder: Option<DebugInfoBuilder<'ctx>>,
-	di_type_map: HashMap<Type, DIType<'ctx>>,
-	di_compile_unit: Option<DICompileUnit<'ctx>>,
 }
 
 impl Backend for LLVMBackend {
@@ -262,6 +244,25 @@ impl Backend for LLVMBackend {
 
 }
 
+pub struct LLVMBuilder<'ctx> {
+	pub context: &'ctx Context,
+	pub module: Module<'ctx>,
+	pub target_machine: TargetMachine,
+	builder: Builder<'ctx>,
+	fn_value_opt: Option<FunctionValue<'ctx>>,
+	type_map: HashMap<String, AnyTypeEnum<'ctx>>,
+	fn_map: HashMap<Arc<FnPrototype>, String>,
+	blocks: Vec<BasicBlock<'ctx>>,
+	variables: Vec<(PointerValue<'ctx>, BindingProps, Type)>,
+
+	// DWARF Debug Info stuff	
+	di_builder: Option<DebugInfoBuilder<'ctx>>,
+	di_type_map: HashMap<Type, DIType<'ctx>>,
+	di_compile_unit: Option<DICompileUnit<'ctx>>,
+	di_scopes: Vec<DILexicalBlock<'ctx>>,
+	di_current_loc: Option<DILocation<'ctx>>,
+}
+
 impl<'ctx> LLVMBuilder<'ctx> {
 	fn new(
 		context: &'ctx Context,
@@ -319,7 +320,6 @@ impl<'ctx> LLVMBuilder<'ctx> {
 			builder,
 			fn_value_opt: None,
 			type_map: HashMap::new(),
-			scopes: vec![],
 			fn_map: HashMap::new(),
 			blocks: vec![],
 			variables: vec![],
@@ -327,6 +327,8 @@ impl<'ctx> LLVMBuilder<'ctx> {
 			di_builder,
 			di_compile_unit,
 			di_type_map: HashMap::new(),
+			di_scopes: vec![],
+			di_current_loc: None,
 		}
 	}
 
@@ -549,33 +551,6 @@ impl<'ctx> LLVMBuilder<'ctx> {
 
 		self.fn_value_opt = Some(fn_v);
 
-		if self.di_builder.is_some() {
-			self.scopes.clear();
-			
-			for _ in 0..t.scopes.len() {
-				let di_builder = self.di_builder.as_ref().unwrap();
-				let compile_unit = self.di_compile_unit.as_ref().unwrap();
-				let block = di_builder.create_lexical_block(
-					fn_v.get_subprogram().unwrap().as_debug_info_scope(),
-					compile_unit.get_file(),
-					0,
-					0
-				);
-
-				self.scopes.push(block);
-			}
-
-			self.builder.set_current_debug_location(
-				self.di_builder.as_ref().unwrap().create_debug_location(
-					self.context, 
-					t.line as u32,
-					t.column as u32,
-					fn_v.get_subprogram().unwrap().as_debug_info_scope(), 
-					None
-				)
-			);
-		}
-
 		for i in 0..t.blocks.len() {
 			self.blocks.push(
 				self.context.append_basic_block(fn_v, &format!("bb{i}")),
@@ -594,6 +569,39 @@ impl<'ctx> LLVMBuilder<'ctx> {
 				*props,
 				ty.clone(),
 			));
+		}
+
+		if self.di_builder.is_some() {
+			self.di_scopes.clear();
+
+			let loc = self.di_builder.as_ref().unwrap().create_debug_location(
+				self.context, 
+				t.line as u32,
+				t.column as u32,
+				fn_v.get_subprogram().unwrap().as_debug_info_scope(), 
+				None
+			);
+
+			
+			for scope in &t.scopes {
+				let di_builder = self.di_builder.as_ref().unwrap();
+				let compile_unit = self.di_compile_unit.as_ref().unwrap();
+				let block = di_builder.create_lexical_block(
+					if let Some(parent) = scope.parent {
+						self.di_scopes[parent].as_debug_info_scope()
+					} else {
+						fn_v.get_subprogram().unwrap().as_debug_info_scope()
+					},
+					compile_unit.get_file(),
+					0,
+					0
+				);
+
+				self.di_scopes.push(block);
+			}
+
+			self.builder.set_current_debug_location(loc);
+			self.di_current_loc = Some(loc);
 		}
 
 		// Build parameter stores
@@ -823,10 +831,39 @@ impl<'ctx> LLVMBuilder<'ctx> {
 						}
 					}
 
-					CIRStmt::StorageLive(_local) | CIRStmt::StorageDead(_local) => {
+					CIRStmt::StorageLive(local) => {
+						let Some(name) = &t.variables[*local].2 else {
+							continue
+						};
+
+						let ty = self.get_di_type(&t.variables[*local].0);
+						let di_builder = self.di_builder.as_ref().unwrap();
+						let compile_unit = self.di_compile_unit.as_ref().unwrap();
+
+						di_builder.insert_declare_at_end(
+							self.variables[*local].0,
+							Some(di_builder.create_auto_variable(
+								self.di_scopes[block.scope].as_debug_info_scope(),
+								name.as_str(),
+								compile_unit.get_file(),
+								0,
+								ty,
+								true,
+								DIFlagsConstants::PUBLIC,
+								0,
+							)),
+							None,
+							self.di_current_loc.unwrap(),
+							self.blocks[0],
+						);
+					}
+
+					CIRStmt::StorageDead(_) => {}
+
+					/*CIRStmt::StorageLive(_local) | CIRStmt::StorageDead(_local) => {
 						// yeah this doesn't work. no idea why
 
-						/*
+						
 						let intrinsic = if let CIRStmt::StorageLive(_) = stmt {
 							Intrinsic::find("llvm.lifetime.start").unwrap()
 						} else {
@@ -848,8 +885,8 @@ impl<'ctx> LLVMBuilder<'ctx> {
 						self.builder.build_call(lifetime_func, &[
 							self.context.i64_type().const_int(store_size, false).into(),
 							self.builder.build_bitcast(local, i8ptr_ty, "").into()
-						], ""); */
-					}
+						], ""); 
+					}*/
 
 					CIRStmt::DropShim { .. } => panic!("encountered DropShim in LLVM codegen!"),
 
@@ -859,15 +896,16 @@ impl<'ctx> LLVMBuilder<'ctx> {
 
 					CIRStmt::SourceLoc(line, column) => {
 						if let Some(di_builder) = &self.di_builder {
-							self.builder.set_current_debug_location(
-								di_builder.create_debug_location(
-									self.context, 
-									*line as u32, 
-									*column as u32, 
-									self.scopes[t.blocks[i].scope].as_debug_info_scope(), 
-									None,
-								)
+							let loc = di_builder.create_debug_location(
+								self.context, 
+								*line as u32, 
+								*column as u32, 
+								self.di_scopes[block.scope].as_debug_info_scope(), 
+								None,
 							);
+
+							self.builder.set_current_debug_location(loc);
+							self.di_current_loc = Some(loc);
 						}
 					}
 				}

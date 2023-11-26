@@ -320,7 +320,6 @@ struct SwapTest {
 int main() {
 	// fails: String does not implement Copy
 	// copy_test<String>(new String());
-	
 
 	// succeeds: u32 implicitly implements Copy
 	copy_test<u32>(0);

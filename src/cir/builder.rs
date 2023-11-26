@@ -31,6 +31,7 @@ pub struct CIRBuilderScope {
 	pub is_loop: bool,
 	pub is_unsafe: bool,
 	pub index: usize,
+	pub parent: Option<usize>,
 }
 
 pub struct CIRModuleBuilder<'build> {
@@ -193,6 +194,7 @@ impl CIRModuleBuilder<'_> {
 			is_loop: false,
 			is_unsafe: false,
 			index: 0,
+			parent: None,
 		});
 		self.scope_stack.push(0);
 
@@ -297,8 +299,6 @@ impl CIRModuleBuilder<'_> {
 			}
 
 			Stmt::Decl(bindings, expr, span) => {
-				self.update_source_loc(*span);
-
 				if bindings.len() != 1 {
 					todo!()
 				}
@@ -317,6 +317,7 @@ impl CIRModuleBuilder<'_> {
 
 				let var = self.insert_variable(Some(name.clone()), *props, ty.clone());
 
+				self.update_source_loc(*span);
 				self.write(CIRStmt::StorageLive(var.local));
 
 				if let Some(val) = val {
@@ -614,6 +615,7 @@ impl CIRModuleBuilder<'_> {
 			is_unsafe: is_unsafe || self.get_current_scope().is_unsafe,
 			is_loop,
 			index,
+			parent: self.scope_stack.last().copied()
 		};
 
 		self.get_fn_mut().scopes.push(scope);
@@ -1609,6 +1611,7 @@ impl CIRModuleBuilder<'_> {
 					Some(self.insert_variable(None, BindingProps::default(), *ret.clone()))
 				};
 
+				self.update_source_loc(span);
 				self.write(CIRStmt::Call {
 					id: CIRCallId::Indirect {
 						local,
@@ -1641,6 +1644,8 @@ impl CIRModuleBuilder<'_> {
 	}
 
 	fn generate_lvalue_expr(&mut self, expr: &Expr, mutable: bool) -> Option<LValue> {
+		self.update_source_loc(expr.get_span());
+
 		match expr {
 			Expr::Atom(Atom::Identifier(id), meta) => {
 				if id.absolute {

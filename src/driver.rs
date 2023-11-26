@@ -91,6 +91,7 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 		output_file: OsString,
 		emit_types: &'ctx [&'ctx str],
 		opt_level: u32,
+		debug_info: bool,
 	) -> Self {
 		let mut emits = vec![];
 		let mut links = vec![];
@@ -129,7 +130,7 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 			dep_emit_types: dep_emits,
 			link_types: links,
 			opt_level,
-			debug_info: true,
+			debug_info,
 			module_states: RwLock::default(),
 			output_modules: Mutex::default(),
 			monomorph_server: MonomorphServer::new(),

@@ -11,6 +11,8 @@ fn check_file(file: impl Into<OsString>) -> bool {
 		output_dir: "".into(),
 		output_file: "".into(),
 		emit_types: vec!["none".into()],
+		debug_info: true,
+		opt_level: 0,
 	}).is_ok()
 }
 
