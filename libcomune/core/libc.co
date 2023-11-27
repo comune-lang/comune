@@ -31,7 +31,7 @@ CFileHandle fopen(u8* path, u8* mode);
 void fclose(CFileHandle handle);
 
 @no_mangle
-void fgets(u8 mut* out, int size, CFileHandle handle);
+usize fread(void mut* out, usize size, usize nmemb, CFileHandle stream);
 
 @no_mangle
 void fputs(u8* in, CFileHandle handle);

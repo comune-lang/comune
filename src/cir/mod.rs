@@ -82,7 +82,7 @@ impl LValue {
 		for proj in &self.projection {
 			if let PlaceElem::Deref = proj {
 				let Type::Pointer(_, kind) = &ty else {
-					panic!()
+					panic!("can't dereference type {ty}!")
 				};
 
 				if *kind == PtrKind::Raw {

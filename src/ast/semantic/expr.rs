@@ -464,9 +464,10 @@ impl Atom {
 								.iter()
 								.filter(|init| func::is_candidate_viable(args, &generic_args, init, &scope))
 								.cloned()
+								.map(|func| ((), func))
 								.collect();
 
-							let func = func::try_select_candidate(
+							let (_, func) = func::try_select_candidate(
 								&def.name,
 								args,
 								generic_args,

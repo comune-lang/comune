@@ -472,7 +472,7 @@ impl AnalysisResultHandler<DefInitFlow> for VarInitCheck {
 							}
 						}
 
-						for (lval, ty, use_props) in args {
+						for (lval, _, use_props) in args {
 							let liveness = state.get_liveness(lval);
 
 							if use_props.is_new {
@@ -506,20 +506,24 @@ impl AnalysisResultHandler<DefInitFlow> for VarInitCheck {
 										lval.props.span,
 									)),
 								}
+								
+								if *use_props == BindingProps::mut_reference() {
+									let ty = func.variables[lval.local].0.clone();
 
-								if *use_props == BindingProps::mut_reference() && !lval.is_access_mutable(ty.clone()) {
-									errors.push(
-										ComuneError::new(
-											ComuneErrCode::InvalidMutRef {
-												variable: func.get_variable_name(lval.local)
-											},
-											lval.props.span
+									if !lval.is_access_mutable(ty) {
+										errors.push(
+											ComuneError::new(
+												ComuneErrCode::InvalidMutRef {
+													variable: func.get_variable_name(lval.local)
+												},
+												lval.props.span
+											)
+											.with_note(
+												"variable declared here:".into(),
+												func.variables[lval.local].1.span,
+											)
 										)
-										.with_note(
-											"variable declared here:".into(),
-											func.variables[lval.local].1.span,
-										)
-									)
+									}
 								}
 							}
 						}

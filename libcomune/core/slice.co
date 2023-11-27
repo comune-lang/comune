@@ -35,9 +35,16 @@ impl<type T> SliceRepr<T> {
 	}
 }
 
-unsafe fn construct_slice<type T>(T raw* ptr, usize len) -> [T]* {
+unsafe fn construct_slice<type T>(T* ptr, usize len) -> [T]* {
 	*(&new SliceRepr<T> {
-		ptr,
+		ptr: ptr as T raw*,
 		len
 	} as [T]**)
+}
+
+unsafe fn construct_slice_mut<type T>(T mut* ptr, usize len) -> [T] mut* {
+	*(&new SliceRepr<T> {
+		ptr: ptr as T raw*,
+		len
+	} as [T] mut**)
 }

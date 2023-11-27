@@ -1,13 +1,33 @@
-using core::libc::CFileHandle;
+using core::libc::{fopen, fclose, fread, CFileHandle};
+using core::option::Option;
+
 
 struct File {
 	CFileHandle handle;
 }
 
 impl File {
-	fn open([u8]* path) -> File {
-		new File {
-			handle: core::mem::null<void>() as void raw*,
+	fn open(u8* filename) -> Option<File> {
+		auto handle = fopen(filename, c"r");
+
+		if handle {
+			new Option<File>::Some(new File { handle })
+		} else {
+			new Option<File>::None
 		}
+	}
+
+	fn create(u8* filename) -> Option<File> {
+		auto handle = fopen(filename, c"w");
+
+		if handle {
+			new Option<File>::Some(new File { handle })
+		} else {
+			new Option<File>::None
+		}
+	}
+
+	fn read_into(mut& self, [u8] mut* buf) {
+		fread((buf->ptr_mut()) as void mut*, 1usize, buf->len(), self.handle);
 	}
 }

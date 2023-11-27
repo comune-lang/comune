@@ -317,7 +317,21 @@ struct SwapTest {
 	int b;
 }
 
+
+void file_test() {
+	auto mut file = std::fs::File::open(c"test/testfile.txt").unwrap();
+	auto mut buf = new Vector<u8>();
+
+	buf.resize(64, 0);
+
+	file.read_into(buf.as_slice_mut());
+	printf(c"Contents of file test/testfile.txt:\n\n%s\n\n", buf);
+}
+
+
 int main() {
+	file_test();
+
 	// fails: String does not implement Copy
 	// copy_test<String>(new String());
 

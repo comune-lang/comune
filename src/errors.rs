@@ -497,7 +497,6 @@ pub fn log_msg(msg: ComuneMessage, lexer: Option<&Lexer>) {
 				.unwrap();
 
 				write_code_snippet(&mut out, e.span, lexer, "~".red());
-				writeln!(out).unwrap();
 			}
 
 			for note in &e.notes {
@@ -510,7 +509,6 @@ pub fn log_msg(msg: ComuneMessage, lexer: Option<&Lexer>) {
 
 				if let Some(lexer) = lexer {
 					write_code_snippet(&mut out, note.0, lexer, "-".bright_black());
-					writeln!(out).unwrap();
 				}
 			}
 
@@ -629,7 +627,7 @@ fn write_code_snippet(mut out: impl Write, span: SrcSpan, lexer: &Lexer, underli
 
 			let underline = underline.to_string().repeat(len);
 			
-			write!(out, "{underline}").unwrap();
+			writeln!(out, "{underline}").unwrap();
 		}
 
 		if length_left == 0 {

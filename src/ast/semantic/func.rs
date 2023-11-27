@@ -145,6 +145,20 @@ pub fn validate_fn_call(
 	}
 
 	// Collect function candidates
+	let mut name_prefix = name.clone();
+	let name_suffix = name_prefix.path.pop().unwrap();
+
+	if name.is_scoped() {
+		// try a fully-qualified method lookup
+		if let Some(ty) = scope.find_type(&name_prefix) {
+			candidates.extend(
+				collect_impl_candidates(scope.context, &name_suffix, &ty)
+					.into_iter()
+					.map(|(ty, func)| (Some(ty), func))
+			);
+		}
+	}
+	
 	if !name.absolute {
 		let mut name_unwrap = scope.scope.clone();
 
@@ -159,7 +173,7 @@ pub fn validate_fn_call(
 				scope.context.get_item(&name_unwrap)
 			{
 				for func in fns.read().unwrap().iter() {
-					candidates.push(func.clone());
+					candidates.push((None, func.clone()));
 				}
 			}
 
@@ -187,7 +201,7 @@ pub fn validate_fn_call(
 		.clone()
 		.into_iter()
 		.unique()
-		.filter(|func| is_candidate_viable(args, generic_args, func, &scope))
+		.filter(|(_, func)| is_candidate_viable(args, generic_args, func, &scope))
 		.collect();
 
 	let func = try_select_candidate(
@@ -199,19 +213,23 @@ pub fn validate_fn_call(
 		scope,
 	)?;
 
-	validate_arg_list(args, &func.params, generic_args, scope)?;
+	if let Some(ty) = func.0 {
+		generic_args.push(GenericArg::Type(ty));
+	}
 
-	if func.is_unsafe && !scope.is_unsafe {
+	validate_arg_list(args, &func.1.params, generic_args, scope)?;
+
+	if func.1.is_unsafe && !scope.is_unsafe {
 		return Err(ComuneError::new(
-			ComuneErrCode::UnsafeCall(func.clone()),
+			ComuneErrCode::UnsafeCall(func.1.clone()),
 			node_data.span,
 		));
 	}
 
-	*resolved = FnRef::Direct(func.clone());
-	*name = func.path.clone();
+	*resolved = FnRef::Direct(func.1.clone());
+	*name = func.1.path.clone();
 
-	Ok(func.ret.1.get_concrete_type(generic_args))
+	Ok(func.1.ret.1.get_concrete_type(generic_args))
 }
 
 pub fn resolve_method_call(
@@ -238,12 +256,6 @@ pub fn resolve_method_call(
 
 	args.insert(0, lhs.clone());
 
-	//if let Type::TypeRef { args, .. } = receiver {
-	//	generic_args.append(&mut args.clone());
-	//};
-
-	//generic_args.push(GenericArg::Type(receiver.clone()));
-
 	for arg in args.iter_mut() {
 		arg.validate(scope)?;
 	}
@@ -252,7 +264,7 @@ pub fn resolve_method_call(
 	let candidates =
 		collect_impl_candidates(&scope.context, name.expect_scopeless().unwrap(), receiver);
 
-	let candidates: Vec<_> = candidates
+	let mut candidates = candidates
 		.into_iter()
 		.filter_map(|(impl_ty, func)| {
 			let mut generic_args = vec![];
@@ -266,36 +278,35 @@ pub fn resolve_method_call(
 				None
 			}
 		})
-		.collect();
+		.collect_vec();
 	
-	let mut candidates_rhs = candidates.iter().map(|(_, func)| func.clone()).collect_vec();
-	let func = try_select_candidate(name, args, generic_args, &mut candidates_rhs, span, scope)?;
+	let func = try_select_candidate(name, args, generic_args, &mut candidates, span, scope)?;
 	
-	*generic_args = candidates.into_iter().find(|(_, fun)| fun == &func).unwrap().0;
+	*generic_args = func.0;
 
-	validate_arg_list(args, &func.params, generic_args, scope)?;
+	validate_arg_list(args, &func.1.params, generic_args, scope)?;
 
-	if func.is_unsafe && !scope.is_unsafe {
+	if func.1.is_unsafe && !scope.is_unsafe {
 		return Err(ComuneError::new(
-			ComuneErrCode::UnsafeCall(func.clone()),
+			ComuneErrCode::UnsafeCall(func.1.clone()),
 			span,
 		));
 	}
 
-	*resolved = FnRef::Direct(func.clone());
-	*name = func.path.clone();
+	*resolved = FnRef::Direct(func.1.clone());
+	*name = func.1.path.clone();
 
-	Ok(func.ret.1.get_concrete_type(&generic_args))
+	Ok(func.1.ret.1.get_concrete_type(&generic_args))
 }
 
-pub fn try_select_candidate(
+pub fn try_select_candidate<T: Clone>(
 	name: &Identifier,
 	args: &[Expr],
 	generic_args: &GenericArgs,
-	candidates: &mut [Arc<FnPrototype>],
+	candidates: &mut [(T, Arc<FnPrototype>)],
 	span: SrcSpan,
 	scope: &FnScope,
-) -> ComuneResult<Arc<FnPrototype>> {
+) -> ComuneResult<(T, Arc<FnPrototype>)> {
 	match candidates.len() {
 		0 => Err(ComuneError::new(
 			ComuneErrCode::NoCandidateFound {
@@ -311,10 +322,10 @@ pub fn try_select_candidate(
 		// More than one viable candidate
 		_ => {
 			// Sort candidates by cost
-			candidates.sort_unstable_by(|l, r| candidate_compare(args, l, r, scope));
+			candidates.sort_unstable_by(|l, r| candidate_compare(args, &l.1, &r.1, scope));
 
 			// Compare the top two candidates
-			match candidate_compare(args, &candidates[0], &candidates[1], scope) {
+			match candidate_compare(args, &candidates[0].1, &candidates[1].1, scope) {
 				Ordering::Less => Ok(candidates[0].clone()),
 
 				Ordering::Equal => Err(ComuneError::new(ComuneErrCode::AmbiguousCall, span)), // Ambiguous call

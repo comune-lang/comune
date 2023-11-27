@@ -177,6 +177,24 @@ impl<type T> Vector<T> {
 	bool is_empty(&self) {
 		self.len == 0
 	}
+
+	[T]* as_slice(&self) {
+		unsafe {
+			core::slice::construct_slice<T>(
+				self.data as T*,
+				self.len
+			)
+		}
+	}
+
+	[T] mut* as_slice_mut(mut& self) {
+		unsafe {
+			core::slice::construct_slice_mut<T>(
+				self.data as T mut*,
+				self.len
+			)
+		}
+	}
 }
 
 impl<type T: Copy> Vector<T> {

@@ -344,13 +344,17 @@ impl ModuleInterface {
 
 						_ => None,
 					}
-				} else if let Some(imported) = self.imported.get(&id.path[0]) {
-					let mut id_sub = id.clone();
-					id_sub.path.remove(0);
+				} else if id.path.len() > 1 {
+					if let Some(imported) = self.imported.get(&id.path[0]) {
+						let mut id_sub = id.clone();
+						id_sub.path.remove(0);
 
-					imported
-						.interface
-						.resolve_type(&id_sub, &Identifier::new(true))
+						imported
+							.interface
+							.resolve_type(&id_sub, &Identifier::new(true))
+					} else {
+						None
+					}
 				} else {
 					None
 				}

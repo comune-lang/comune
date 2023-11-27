@@ -46,7 +46,7 @@ impl String {
 	fn as_slice(&self) -> [u8]* {
 		unsafe {
 			core::slice::construct_slice<u8>(
-				self.vec.data,
+				self.vec.data as u8*,
 				self.vec.len
 			)
 		}
