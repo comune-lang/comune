@@ -1,13 +1,13 @@
-//using core::libc::CFileHandle;
+using core::libc::CFileHandle;
 
 struct File {
-	void* handle;
+	CFileHandle handle;
 }
 
 impl File {
 	fn open([u8]* path) -> File {
 		new File {
-			handle: core::mem::null<void>() as void*,
+			handle: core::mem::null<void>() as void raw*,
 		}
 	}
 }

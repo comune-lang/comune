@@ -15,7 +15,7 @@ use crate::{
 use super::{
 	expression::Expr,
 	traits::{ImplSolver, TraitInterface, TraitRef},
-	types::{Basic, FnPrototype, Generics, Type, TypeDef},
+	types::{Basic, FnPrototype, Generics, Type, TypeDef}, semantic::ty::resolve_type,
 };
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
@@ -208,12 +208,13 @@ impl ModuleInterface {
 		}
 	}
 
-	pub fn resolve_type(&self, id: &Identifier, scope: &Identifier) -> Option<Type> {
+	pub fn resolve_type(&self, id: &Identifier, scope: &Identifier) -> Option<Type> {		
 		if !id.is_scoped() {
 			if let Some(basic) = Basic::get_basic_type(id.name().as_str()) {
 				return Some(Type::Basic(basic));
 			}
-			if id.name().to_string() == "never" {
+
+			if id.name().as_str() == "never" {
 				return Some(Type::Never);
 			}
 		}
@@ -294,7 +295,13 @@ impl ModuleInterface {
 			}
 
 			Some((_, ModuleItemInterface::TypeAlias(alias))) => {
-				Some(alias.read().unwrap().0.clone())
+				let mut alias = alias.read().unwrap().clone();
+				
+				let Ok(()) = resolve_type(&mut alias.0, self, &alias.1) else {
+					return None
+				};
+
+				Some(alias.0)
 			}
 
 			_ => {
