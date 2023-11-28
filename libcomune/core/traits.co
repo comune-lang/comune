@@ -40,3 +40,7 @@ trait Unwrap {
 	fn can_unwrap(&self) -> bool;
 	fn unwrap(self) -> Output;
 }*/
+
+trait Read {
+	fn read(mut& self, [u8] mut* buf) -> usize;
+}
