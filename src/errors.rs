@@ -476,18 +476,28 @@ pub fn log_msg(msg: ComuneMessage, lexer: Option<&Lexer>) {
 			.unwrap();
 
 			if let Some(lexer) = lexer {
-				let line = lexer.get_line_number(e.span.start);
-				let column = lexer.get_column(e.span.start);
 				let file_name = lexer.file_name.to_string_lossy();
 
-				writeln!(
-					out,
-					"{}",
-					format!(" - in {}:{}:{}\n", file_name, line + 1, column)
-					.bright_black()
-				)
-				.unwrap();
+				if e.span == SrcSpan::new() {
+					writeln!(
+						out,
+						"{}",
+						format!(" - in {}\n", file_name)
+						.bright_black()
+					)
+					.unwrap();
+				} else {
+					let line = lexer.get_line_number(e.span.start);
+					let column = lexer.get_column(e.span.start);
 
+					writeln!(
+						out,
+						"{}",
+						format!(" - in {}:{}:{}\n", file_name, line + 1, column)
+						.bright_black()
+					)
+					.unwrap();
+					}
 				write_code_snippet(&mut out, e.span, lexer, "~".red());
 			}
 

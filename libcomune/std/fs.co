@@ -4,6 +4,10 @@ using core::option::Option;
 
 struct File {
 	CFileHandle handle;
+
+	drop(mut& self) {
+		fclose(handle);
+	}
 }
 
 impl File {
@@ -26,8 +30,17 @@ impl File {
 			new Option<File>::None
 		}
 	}
+}
 
-	fn read_into(mut& self, [u8] mut* buf) {
-		fread((buf->ptr_mut()) as void mut*, 1usize, buf->len(), self.handle);
+impl core::traits::Read for File {
+	fn read(mut& self, [u8] mut* buf) -> usize {
+		unsafe {
+			fread(
+				(buf->ptr_mut()) as void mut*,
+				1usize,
+				buf->len(),
+				self.handle
+			)
+		}
 	}
 }

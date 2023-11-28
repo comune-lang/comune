@@ -323,8 +323,8 @@ void file_test() {
 	let mut buf = Vector<u8>();
 
 	buf.resize(64, 0);
-	file.read_into(buf.as_slice_mut());
-	
+
+	file.read(buf.as_slice_mut());
 	printf(c"Contents of file test/testfile.txt:\n\n%s\n\n", buf);
 }
 
