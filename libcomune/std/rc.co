@@ -10,7 +10,7 @@ struct Rc<type T> {
 	RcInner<T> raw* inner;
 
 	new(new& self, T data) {
-		RcInner<T> inner = new RcInner<T> {
+		let inner = new RcInner<T> {
 			count: 1,
 			data,
 		};

@@ -6,7 +6,7 @@ use crate::{
 		controlflow::ControlFlow,
 		expression::{Atom, Expr, FnRef, NodeData, Operator, XtorKind},
 		module::{Identifier, Name},
-		pattern::Binding,
+		pattern::{Binding, Pattern},
 		statement::Stmt,
 		types::{Basic, BindingProps, FloatSize, IntSize, TupleKind, PtrKind},
 		FnScope,
@@ -488,11 +488,11 @@ impl Atom {
 								items: vec![
 									// T tmp;
 									Stmt::Decl(
-										vec![(
-											ty.clone(),
-											tmp_id.clone(),
-											BindingProps::mut_value(),
-										)],
+										Pattern::Binding(Binding {
+											name: Some(tmp_id.clone()),
+											ty: ty.clone(),
+											props: BindingProps::mut_value(),
+										}),
 										None,
 										SrcSpan::new(),
 									),

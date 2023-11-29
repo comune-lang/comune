@@ -4,27 +4,20 @@ use crate::lexer::SrcSpan;
 
 use super::{
 	expression::Expr,
-	module::Name,
-	types::{BindingProps, Type},
+	pattern::Pattern,
 };
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Stmt {
-	Decl(Vec<(Type, Name, BindingProps)>, Option<Expr>, SrcSpan),
+	Decl(Pattern, Option<Expr>, SrcSpan),
 	Expr(Expr),
 }
 
 impl Display for Stmt {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match self {
-			Stmt::Decl(bindings, expr, _) => {
-				for (i, (ty, name, props)) in bindings.iter().enumerate() {
-					if i != 0 {
-						write!(f, ", ")?;
-					}
-
-					write!(f, "{ty}{props} {name}")?;
-				}
+			Stmt::Decl(pattern, expr, _) => {
+				write!(f, "{pattern}")?;
 
 				if let Some(expr) = expr {
 					write!(f, " = {expr}")?;

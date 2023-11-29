@@ -298,13 +298,11 @@ impl CIRModuleBuilder<'_> {
 					.map(|_| ())
 			}
 
-			Stmt::Decl(bindings, expr, span) => {
-				if bindings.len() != 1 {
-					todo!()
-				}
-
+			Stmt::Decl(pattern, expr, span) => {
 				// TODO: Handle destructuring assignment
-				let (ty, name, props) = &bindings[0];
+				let Pattern::Binding(Binding { ty, name, props }) = pattern else {
+					todo!()
+				};
 
 				let val = if let Some(expr) = expr {
 					// Stop building early if the expression never returns
@@ -315,7 +313,7 @@ impl CIRModuleBuilder<'_> {
 					None
 				};
 
-				let var = self.insert_variable(Some(name.clone()), *props, ty.clone());
+				let var = self.insert_variable(name.clone(), *props, ty.clone());
 
 				self.update_source_loc(*span);
 				self.write(CIRStmt::StorageLive(var.local));

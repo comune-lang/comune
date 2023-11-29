@@ -8,7 +8,7 @@ use crate::errors::{ComuneMessage, self};
 
 use crate::ast::module::Name;
 
-static KEYWORDS: [&str; 32] = [
+static KEYWORDS: [&str; 33] = [
 	"if",
 	"else",
 	"auto",
@@ -41,6 +41,7 @@ static KEYWORDS: [&str; 32] = [
 	"type",
 	"new",
 	"drop",
+	"let",
 ];
 
 static OPERATORS: [&str; 41] = [

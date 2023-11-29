@@ -19,7 +19,7 @@ struct Box<type T> {
 
 impl<type T> Box<T> {
 	T raw* into_raw(self) {
-		auto data = self.data;
+		let data = self.data;
 		forget<Box<T>>(self);
 		data
 	}

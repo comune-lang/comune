@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use crate::lexer::SrcSpan;
 
 use super::{
@@ -18,7 +20,7 @@ pub enum Pattern {
 	Binding(Binding),
 
 	// Destructures an aggregate type into its constituents
-	Destructure{
+	Destructure {
 		patterns: Vec<(Name, Pattern)>, 
 		pattern_ty: Type,
 		exhaustive: bool,
@@ -53,6 +55,54 @@ impl Pattern {
 			}
 
 			Pattern::Or(_, _) => todo!(),
+		}
+	}
+}
+
+impl Display for Pattern {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		match self {
+			Pattern::Binding(binding) => write!(f, "{binding}"),
+
+			Pattern::Or(patterns, ty) => {
+				write!(f, "{ty} (")?;
+				
+				for (i, pattern) in patterns.iter().enumerate() {
+					if i != 0 {
+						write!(f, ", ")?;
+					}
+
+					write!(f, "{pattern}")?;
+				}
+
+				write!(f, ")")
+			}
+
+			Pattern::Destructure { patterns, pattern_ty, exhaustive, .. } => {
+				write!(f, "{pattern_ty} {{")?;
+
+				for (i, (name, pattern)) in patterns.iter().enumerate() {
+					if i != 0 { write!(f, ", ")? }
+
+					write!(f, "{name}: {pattern}")?;
+				}
+
+				if !exhaustive {
+					write!(f, ", ..")?;
+				}
+
+				write!(f, "}}")
+			}
+		}
+	}
+}
+
+impl Display for Binding {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		if let Some(name) = &self.name {
+			write!(f, "{}{} {}", self.ty, self.props, name)
+		} else {
+			write!(f, "{}{} _", self.ty, self.props)
 		}
 	}
 }

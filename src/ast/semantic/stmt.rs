@@ -1,7 +1,7 @@
 use itertools::Itertools;
 
 use crate::{
-	ast::{statement::Stmt, pattern::Pattern},
+	ast::{statement::Stmt, pattern::{Pattern, Binding}},
 	errors::{ComuneErrCode, ComuneError},
 	parser::ComuneResult, lexer::SrcSpan,
 };
@@ -11,57 +11,62 @@ use crate::ast::{types::Type, FnScope};
 impl Stmt {
 	pub fn validate(&mut self, scope: &mut FnScope) -> ComuneResult<Type> {
 		match self {
-			Stmt::Decl(names, expr, span) => {
-				if names.len() != 1 {
+			Stmt::Decl(pattern, expr, span) => {
+				let Pattern::Binding(Binding {
+					ty,
+					name,
+					props
+				}) = pattern else {
 					todo!()
-				}
-
-				let (binding_ty, binding_name, binding_props) = &mut names[0];
+				};
 
 				if let Some(expr) = expr {
-					expr.set_type_hint(binding_ty.clone());
+					expr.set_type_hint(ty.clone());
 
 					let expr_ty = expr.validate(scope)?;
 					
-					binding_ty.resolve_inference_vars(expr_ty.clone(), binding_props.span)?;
-					binding_ty.validate(scope, *span)?;
+					ty.resolve_inference_vars(expr_ty.clone(), props.span)?;
+					ty.validate(scope, *span)?;
 
-					if expr_ty != *binding_ty {
-						if expr_ty.is_subtype_of(&binding_ty) {
-							expr.wrap_in_cast(binding_ty.clone());
+					if expr_ty != *ty {
+						if expr_ty.is_subtype_of(&ty) {
+							expr.wrap_in_cast(ty.clone());
 						} else {
 							return Err(ComuneError::new(
 								ComuneErrCode::AssignTypeMismatch {
 									expr: expr_ty,
-									to: binding_ty.clone(),
+									to: ty.clone(),
 								},
 								*span,
 							));
 						}
 					}
 
-					if binding_props.is_ref {
+					if props.is_ref {
 						return Err(ComuneError::new(
 							ComuneErrCode::UnstableFeature("ref_locals"),
 							*span,
 						));
 					}
 				} else {
-					binding_ty.validate(scope, *span)?;
+					ty.validate(scope, *span)?;
 
 					// References must be initialized in their declaration
-					if binding_props.is_ref {
+					if props.is_ref {
 						return Err(ComuneError::new(ComuneErrCode::UninitReference, *span));
 					}
 
 					// new& is only allowed in function parameters
-					if binding_props.is_new {
+					if props.is_new {
 						return Err(ComuneError::new(ComuneErrCode::LocalNewReference, *span));
 					}
 				}
 				
-				scope.add_variable(binding_ty.clone(), binding_name.clone(), *binding_props);
-				Ok(binding_ty.clone())
+				if let Some(name) = name {
+					scope.add_variable(ty.clone(), name.clone(), *props);
+				}
+
+				Ok(ty.clone())
 			}
 
 			Stmt::Expr(expr) => expr.validate(scope),

@@ -49,7 +49,7 @@ struct Vector<type T> {
 	
 	drop(mut& self) {
 		if self.capacity > 0 {
-			for (usize mut i = 0; i < self.len; i += 1) {
+			for (let usize mut i = 0; i < self.len; i += 1) {
 				unsafe {
 					drop *(self.data + i);
 				}
@@ -97,7 +97,7 @@ impl<type T> Vector<T> {
 	}
 
 	void realloc(mut& self, usize capacity) {
-		auto tmp = realloc(
+		let tmp = realloc(
 			self.data as void raw*, 
 			capacity * size_of<T>()
 		);
@@ -202,7 +202,7 @@ impl<type T: Copy> Vector<T> {
 		if len > self.len {
 			self.reserve(len);
 			
-			for (usize mut i = self.len; i < len; i += 1) {
+			for (let usize mut i = self.len; i < len; i += 1) {
 				unsafe {
 					core::mem::write<T>(self.data + i, fill);
 				}

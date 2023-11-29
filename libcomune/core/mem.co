@@ -2,12 +2,12 @@ using core::libc::{printf, abort, malloc, memcpy};
 
 // TODO: Replace this with an intrinsic lol
 fn size_of<type T>() -> usize {
-	T raw* ptr1 = null<T>();
-	T raw* ptr2 = ptr1 + 1;
+	let ptr1 = null<T>();
+	let ptr2 = ptr1 + 1;
 
 	unsafe {
-		usize addr1 = *(&ptr1 as usize raw*);
-		usize addr2 = *(&ptr2 as usize raw*);
+		let addr1 = *(&ptr1 as usize raw*);
+		let addr2 = *(&ptr2 as usize raw*);
 		addr2-addr1
 	}
 }

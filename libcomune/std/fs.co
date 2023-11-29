@@ -8,7 +8,7 @@ struct File {
 
 impl File {
 	fn open(u8* filename) -> Option<File> {
-		auto handle = fopen(filename, c"r");
+		let handle = fopen(filename, c"r");
 
 		if handle {
 			new Option<File>::Some(new File { handle })
@@ -18,7 +18,7 @@ impl File {
 	}
 
 	fn create(u8* filename) -> Option<File> {
-		auto handle = fopen(filename, c"w");
+		let handle = fopen(filename, c"w");
 
 		if handle {
 			new Option<File>::Some(new File { handle })

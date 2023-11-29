@@ -58,7 +58,7 @@ impl Hello for Test {
 
 
 void impl_test() {
-	Test test = new Test { a: 413, b: 612, };
+	let test = new Test { a: 413, b: 612, };
 	test.hello();
 	printf(c"The sum of a and b is %i!\n", test.sum());
 }
@@ -121,7 +121,7 @@ struct DropTest {
 }
 
 impl DropTest {
-	void consume(Self self) {
+	void consume(self) {
 		printf(c"Consuming DropTest %i\n", self.num);
 	}
 }
@@ -142,19 +142,19 @@ void memberwise_init_test(DropTest new& test) {
 }
 
 void sub_drop_test() {
-	DropTest a = new DropTest(1);
-	DropTest b = new DropTest(2);
+	let a = new DropTest(1);
+	let b = new DropTest(2);
 
 	println("\nEntering subscope\n");
 	{
-		DropTest c = new DropTest(3);
+		let c = new DropTest(3);
 		
-		int mut i = 0;
+		let mut i = 0;
 		
 		println("\nEntering loop\n");
 
 		while i < 5 {
-			DropTest b = new DropTest(4);
+			let b = new DropTest(4);
 
 			if i == 4 {
 				break
@@ -171,7 +171,7 @@ void sub_drop_test() {
 	println("\nVector<DropTest> test:\n");
 
 	{
-		Vector<DropTest> mut drop_vec = new Vector<DropTest>();
+		let mut drop_vec = new Vector<DropTest>();
 		drop_vec.push(new DropTest(5));
 		drop_vec.push(new DropTest(6));
 		
@@ -196,7 +196,7 @@ void new_ref_test(Vector<float> new& test) {
 
 void mut_move_test(Vector<float> mut& test) {
 	// move out of mut* - legal, but...
-	Vector<float> tmp = test;
+	let tmp = test;
 
 	// we have to make sure it's initialized
 	// by the end of the function. commenting 
@@ -205,9 +205,9 @@ void mut_move_test(Vector<float> mut& test) {
 }
 
 void enum_test() {
-	Option<auto> resolve = new None<i32>;
+	let Option<auto> resolve = new None<i32>;
 	
-	Option<i32> mut option = new None<i32>;
+	let Option<i32> mut option = new None<i32>;
 	
 	option = new Some<i32> {
 		value: 23,
@@ -223,9 +223,9 @@ void enum_test() {
 		}
 	}
 
-	Option<i32> mut option = new Some<i32>(1);
+	let Option<i32> mut option = new Some<i32>(1);
 
-	i32 unwrapped = option.unwrap();
+	let unwrapped = option.unwrap();
 
 	option = new None<i32>;
 	
@@ -233,7 +233,7 @@ void enum_test() {
 }
 
 void ops_test() {
-	u8 mut bitwise_test = 0xFF;
+	let u8 mut bitwise_test = 0xFF;
 	bitwise_test &= 0x0Fu8;
 	bitwise_test <<= 2;
 	bitwise_test >>= 1;
@@ -242,7 +242,7 @@ void ops_test() {
 
 	printf(c"value of bitwise_test: %i\n", bitwise_test);
 
-	bool this_value = !true;
+	let this_value = !true;
 
 	printf(c"this_value is %s!\n", if this_value {
 		c"true"
@@ -253,11 +253,11 @@ void ops_test() {
 
 void rc_test() {
 	println("Creating Rc<DropTest>!");
-	auto rc = new Rc<DropTest>(new DropTest(0));
+	let rc = new Rc<DropTest>(new DropTest(0));
 	
-	for (int mut i = 0; i < 10; i += 1) {
+	for (let mut i = 0; i < 10; i += 1) {
 		println("Cloning Rc<DropTest>!");
-		Rc<auto> rc = new Rc<DropTest>(rc);
+		let rc = new Rc<DropTest>(rc);
 		println("Dropping Rc<DropTest>!");
 	}
 	println("Dropping last Rc<DropTest>!");
@@ -268,13 +268,13 @@ struct DerefTest {
 }
 
 void ptr_access_test() {
-	auto mut a = new DerefTest {
+	let mut a = new DerefTest {
 		a: 0
 	};
 	
-	auto mut b = &mut a;
-	auto mut c = &mut b;
-	auto mut d = &mut c;
+	let mut b = &mut a;
+	let mut c = &mut b;
+	let mut d = &mut c;
 	
 	b->a = 1;
 	c->>a = 2;
@@ -293,7 +293,7 @@ void empty_fn_test() {}
 void string_test() {
 	println("String test!\n");
 	
-	String mut test = new String();
+	let mut test = new String();
 	
 	test.push_str("Hello");
 	test.push_str("");
@@ -304,8 +304,8 @@ void string_test() {
 }
 
 fn copy_test<type T: Copy>(T t) {
-	auto a = t;
-	auto b = t;
+	let a = t;
+	let b = t;
 }
 
 struct GenericTypeBounds<type T: Copy> {
@@ -319,8 +319,8 @@ struct SwapTest {
 
 
 void file_test() {
-	auto mut file = std::fs::File::open(c"test/testfile.txt").unwrap();
-	auto mut buf = new Vector<u8>();
+	let mut file = std::fs::File::open(c"test/testfile.txt").unwrap();
+	let mut buf = new Vector<u8>();
 
 	buf.resize(64, 0);
 
@@ -341,7 +341,7 @@ int main() {
 	// fails: String does not implement Copy	
 	// GenericTypeBounds<String> test;
 
-	auto mut swap_test = new SwapTest {
+	let mut swap_test = new SwapTest {
 		a: 413,
 		b: 612,
 	};
@@ -366,23 +366,23 @@ int main() {
 	global_var_test();
 	printf(c"Global var: %i\n", global_var);
 
-	i32 slice_data = 0;
+	let slice_data = 0;
 	
 	// no slice syntax yet - just duck-type one manually lol
-	auto slice = new core::slice::SliceRepr<i32> {
+	let slice = new core::slice::SliceRepr<i32> {
 		ptr: &slice_data as i32 raw*,
 		len: 1,
 	};
 
 	slice_test(slice.as_slice());
 
-	i32* slice_ptr = &slice_data;
+	let slice_ptr = &slice_data;
 	slice_ptr.addr();
 
 	submodule_test::bar();
 	printf(c"fib(10) = %i\n", module_test::fib(10));
 
-	Vector<float> mut a;
+	let Vector<float> mut a;
 	
 	new_ref_test(a);
 
@@ -392,7 +392,7 @@ int main() {
 		drop a;
 	}
 
-	int i;
+	let int i;
 
 	if true {
 		i = 12;
@@ -400,19 +400,19 @@ int main() {
 		i = 12;
 	}
 
-	int mut i = i;
+	let mut i = i;
 
-	int i = 12;
+	let i = 12;
 
 	{
-		int explicit_scope_test = 23;
+		let explicit_scope_test = 23;
 	}
 
 	// `else if` syntax test
 	
 	if i == 12 {
-		int scope_test = 15;
-		int scope_test_2 = 15;
+		let scope_test = 15;
+		let scope_test_2 = 15;
 		println("i is 12!");
 	} else if i == 13 {
 		println("i is 13!");
@@ -420,11 +420,11 @@ int main() {
 		println("i is something else!");
 	}
 
-	void(int) function;
+	let void(int) function;
 	//function(12);
 	//fn_pointer_test(fn_pointer_callback);
 	
-	TestSumType mut who_knows = sum_type_test(322);
+	let TestSumType mut who_knows = sum_type_test(322);
 
 	match who_knows {
 		int int_result => {
@@ -436,13 +436,13 @@ int main() {
 		}
 	}
 	
-	int mut loop_count = 0;
+	let mut loop_count = 0;
 	
 	while true {		
 		loop_count += 1;
 
 		if loop_count > 100 {
-			int loop_init_test = 12;
+			let loop_init_test = 12;
 			break;
 		}
 	}
@@ -453,7 +453,7 @@ int main() {
 
 	overload_test(12i32);
 
-	int mut int_ref_test = 12;
+	let mut int_ref_test = 12;
 	ref_test(int_ref_test);
 	printf(c"int_ref_test: %i\n", int_ref_test);
 

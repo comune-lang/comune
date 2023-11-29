@@ -1070,24 +1070,15 @@ impl<'ctx> Parser {
 
 	fn parse_statement(&self, scope: &FnScope<'ctx>) -> ComuneResult<Stmt> {
 		let begin = self.get_current_start_index();
-		let begin_token = self.get_current_token_index();
 
-		if self.is_at_type_token(Some(scope))? {
+		if self.get_current()? == Token::Keyword("let") {
 			// This is a declaration
+			self.get_next()?;
 
-			let ty = self.parse_type(Some(scope))?;
-			let binding_props = self.parse_binding_props()?;
-
-			let Token::Name(name) = self.get_current()? else {
-				// Nope, try to parse as an expression after all
-				self.lexer.borrow_mut().seek_token_idx(begin_token);
-
-				return Ok(Stmt::Expr(self.parse_expression(scope)?))
-			};
-
+			let pattern = self.parse_pattern(scope)?;
 			let mut expr = None;
 
-			if token_compare(&self.get_next()?, "=") {
+			if self.get_current()? == Token::Operator("=") {
 				self.get_next()?;
 				expr = Some(self.parse_expression(scope)?);
 			}
@@ -1097,11 +1088,7 @@ impl<'ctx> Parser {
 				len: self.get_prev_end_index() - begin,
 			};
 
-			let mut props = binding_props.unwrap_or_default();
-
-			props.span = span;
-
-			let stmt_result = Stmt::Decl(vec![(ty, name, props)], expr, span);
+			let stmt_result = Stmt::Decl(pattern, expr, span);
 
 			Ok(stmt_result)
 		} else {
@@ -1112,85 +1099,95 @@ impl<'ctx> Parser {
 	}
 
 	fn parse_pattern(&self, scope: &FnScope<'ctx>) -> ComuneResult<Pattern> {
-		if self.is_at_type_token(Some(scope))? {
-			let start = self.get_current_start_index();
-			let pattern_ty = self.parse_type(Some(scope))?;
-			let props = self.parse_binding_props()?.unwrap_or_default();
+		let start = self.get_current_start_index();
+		
+		let pattern_ty = if self.is_at_type_token(Some(scope))? {
+			Some(self.parse_type(Some(scope))?)
+		} else {
+			None
+		};
 
-			match self.get_current()? {
-				Token::Name(id) => {
-					self.get_next()?;
+		let props = self.parse_binding_props()?.unwrap_or_default();
 
-					Ok(Pattern::Binding(Binding {
-						name: Some(id),
-						ty: pattern_ty,
-						props,
-					}))
-				}
+		match self.get_current()? {
+			Token::Name(id) => {
+				self.get_next()?;
 
-				Token::Other('{') => {
-					let Type::TypeRef { def, args } = &pattern_ty else {
+				Ok(Pattern::Binding(Binding {
+					name: Some(id),
+					ty: if let Some(ty) = pattern_ty {
+						ty
+					} else {
+						Type::Infer(SrcSpan {
+							start,
+							len: self.get_prev_end_index() - start,
+						})
+					},
+					props,
+				}))
+			}
+
+			Token::Other('{') => {
+				let Some(Type::TypeRef { def, args }) = &pattern_ty else {
+					todo!()
+				};
+
+				let def = def.upgrade().unwrap();
+				let def = def.read().unwrap();
+
+				self.get_next()?;
+
+				let mut patterns = vec![];
+				let mut exhaustive = true;
+
+				while self.get_current()? != Token::Other('}') {
+					if let Token::Operator("..") = self.get_current()? {
+						exhaustive = false;
+						self.get_next()?;
+						break
+					};
+
+					let Token::Name(name) = self.get_current()? else {
+						return self.err(ComuneErrCode::UnexpectedToken)
+					};
+
+					let Some(ty) = def.get_member_type(&name, args) else {
 						todo!()
 					};
 
-					let def = def.upgrade().unwrap();
-					let def = def.read().unwrap();
+					patterns.push((name.clone(), Pattern::Binding(Binding {
+						name: Some(name),
+						ty,
+						props,
+					})));
 
-					self.get_next()?;
+					match self.get_next()? {
+						Token::Other(',') => self.get_next()?,
 
-					let mut patterns = vec![];
-					let mut exhaustive = true;
+						Token::Other('}') => break,
 
-					while self.get_current()? != Token::Other('}') {
-						if let Token::Operator("..") = self.get_current()? {
-							exhaustive = false;
-							self.get_next()?;
-							break
-						};
-
-						let Token::Name(name) = self.get_current()? else {
-							return self.err(ComuneErrCode::UnexpectedToken)
-						};
-
-						let Some(ty) = def.get_member_type(&name, args) else {
-							todo!()
-						};
-
-						patterns.push((name.clone(), Pattern::Binding(Binding {
-							name: Some(name),
-							ty,
-							props,
-						})));
-
-						match self.get_next()? {
-							Token::Other(',') => self.get_next()?,
-
-							Token::Other('}') => break,
-
-							_ => return self.err(ComuneErrCode::UnexpectedToken),
-						};
-					}
-
-					self.get_next()?;
-
-					let end = self.get_prev_end_index();
-
-					Ok(Pattern::Destructure { 
-						patterns, 
-						pattern_ty,
-						exhaustive,
-						span: SrcSpan {
-							start,
-							len: end - start,
-						}
-					})
+						_ => return self.err(ComuneErrCode::UnexpectedToken),
+					};
 				}
 
-				_ => self.err(ComuneErrCode::UnexpectedToken),
+				self.get_next()?;
+
+				let end = self.get_prev_end_index();
+
+				Ok(Pattern::Destructure { 
+					patterns, 
+					pattern_ty: pattern_ty.unwrap(),
+					exhaustive,
+					span: SrcSpan {
+						start,
+						len: end - start,
+					}
+				})
 			}
-		} else {
-			self.err(ComuneErrCode::UnexpectedToken)
+
+			_ => self.err(ComuneErrCode::UnexpectedToken),
 		}
+	
 	}
 
 	fn parse_expression(&self, scope: &FnScope<'ctx>) -> ComuneResult<Expr> {
