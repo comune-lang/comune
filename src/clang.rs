@@ -26,7 +26,7 @@ where
 		&'ctx self,
 		src_path: PathBuf,
 		module_name: &Identifier,
-		s: JobSpawner<&RayonScope<'ctx>>,
+		s: JobSpawner<'ctx, &RayonScope<'ctx>>,
 	) -> Result<(), ComuneError> {
 		let out_path = self.get_module_out_path(&module_name);
 		let processed_path = out_path.with_extension("cpp");
@@ -95,10 +95,10 @@ where
 			// TODO: Implement a C++->comune interface, probably using libclang
 			self.module_states.write().unwrap().insert(
 				src_path,
-				ModuleState::InterfaceComplete(Arc::new(ModuleInterface {
-					is_typed: true, // hack to make some assertions pass
-					..Default::default()
-				})),
+				ModuleState::InterfaceComplete(Arc::new(ModuleInterface::new(
+					Identifier::new(false),
+					&self.lang_traits
+				))),
 			);
 		} else {
 			self.module_states

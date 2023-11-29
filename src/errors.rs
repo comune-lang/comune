@@ -4,14 +4,10 @@ use std::ops::RangeInclusive;
 use std::{
 	fmt::Display,
 	io,
-	sync::{
-		atomic::AtomicU32,
-		Arc,
-	},
+	sync::Arc,
 };
 
 use backtrace::Backtrace;
-use lazy_static::lazy_static;
 
 use crate::ast::module::Name;
 use crate::ast::traits::TraitRef;
@@ -23,10 +19,6 @@ use crate::{
 	ast::{expression::Operator, module::Identifier},
 	cir::analyze::lifeline::LivenessState,
 };
-
-lazy_static! {
-	pub static ref ERROR_COUNT: Arc<AtomicU32> = Arc::new(AtomicU32::new(0));
-}
 
 pub static mut CAPTURE_BACKTRACE: bool = false;
 

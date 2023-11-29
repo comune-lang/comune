@@ -10,12 +10,10 @@ struct Rc<type T> {
 	RcInner<T> raw* inner;
 
 	new(new& self, T data) {
-		let inner = new RcInner<T> {
+		self.inner = Box<RcInner<T>>(RcInner<T> {
 			count: 1,
 			data,
-		};
-
-		self.inner = new Box<RcInner<T>>(inner).into_raw();
+		}).into_raw();
 	}
 
 	new(new& self, Rc<T>& other) {

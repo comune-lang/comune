@@ -380,7 +380,7 @@ where
 	T: Analysis,
 {
 	func: &'a CIRFunction,
-	solver: &'a ImplSolver,
+	solver: &'a ImplSolver<'a>,
 	analysis: &'a T,
 	block_start_states: Vec<T::Domain>,
 	cache: RwLock<Option<(BlockIndex, StmtIndex, T::Domain)>>,

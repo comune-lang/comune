@@ -1,0 +1,3 @@
+int main() {
+	core::libc::printf(c"this is comune running without the `std` module!\n")
+}

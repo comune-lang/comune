@@ -8,7 +8,7 @@ use std::{
 use itertools::Itertools;
 
 use crate::ast::{
-	traits::ImplSolver,
+	traits::{ImplSolver, LangTraitDatabase},
 	types::{
 		FnPrototype, GenericArg, GenericArgs, TypeDef,
 	},
@@ -48,17 +48,17 @@ impl MonomorphServer {
 	// Consumes a CIRModule and returns its monomorphized form,
 	// also registering its generic functions for potential
 	// further instantiations by downstream modules
-	pub fn monoize_module(&self, mut module: CIRModule) -> CIRModule {
+	pub fn monoize_module<'ctx>(&self, mut module: CIRModule<'ctx>) -> CIRModule<'ctx> {
 		self.monoize_generics(&mut module);
 		module
 	}
 
-	pub fn generate_fn_instances(&self) -> CIRModule {
+	pub fn generate_fn_instances<'ctx>(&self, lang_traits: &'ctx LangTraitDatabase) -> CIRModule<'ctx> {
 		let mut module = CIRModule {
 			types: HashMap::new(),
 			globals: HashMap::new(),
 			functions: HashMap::new(),
-			impl_solver: ImplSolver::new(),
+			impl_solver: ImplSolver::new(lang_traits),
 		};
 
 		let mut fns_out = HashMap::new();

@@ -15,7 +15,7 @@ use crate::ast::module::{
 	ModuleItemInterface, Name,
 };
 use crate::ast::statement::Stmt;
-use crate::ast::traits::{ImplBlockInterface, TraitInterface, TraitRef};
+use crate::ast::traits::{ImplBlockInterface, TraitInterface, TraitRef, LangTraitDatabase};
 use crate::ast::types::{
 	Basic, BindingProps, DataLayout, FloatSize, FnParamList, FnPrototype, GenericArg, GenericArgs,
 	GenericParam, Generics, TupleKind, Type, TypeDef, Visibility, PtrKind,
@@ -34,10 +34,10 @@ fn token_compare(token: &Token, text: &str) -> bool {
 
 pub type ComuneResult<T> = Result<T, ComuneError>;
 
-pub struct Parser {
-	pub interface: ModuleInterface,
+pub struct Parser<'ctx> {
+	pub interface: ModuleInterface<'ctx>,
 	pub module_impl: ModuleImpl,
-	pub child_parsers: Vec<Parser>,
+	pub child_parsers: Vec<Parser<'ctx>>,
 	pub path: PathBuf,
 	pub lexer: RefCell<Lexer>,
 	current_scope: Arc<Identifier>,
@@ -49,10 +49,15 @@ enum DeclParseResult {
 	Variable(Name, Type),
 }
 
-impl<'ctx> Parser {
-	pub fn new(lexer: Lexer, module_name: Identifier, path: PathBuf) -> Parser {
+impl<'ctx> Parser<'ctx> {
+	pub fn new(
+		lexer: Lexer,
+		module_name: Identifier,
+		path: PathBuf,
+		lang_traits: &'ctx LangTraitDatabase
+	) -> Parser<'ctx> {
 		Parser {
-			interface: ModuleInterface::new(module_name),
+			interface: ModuleInterface::new(module_name, lang_traits),
 			module_impl: ModuleImpl::new(),
 			child_parsers: vec![],
 			path,

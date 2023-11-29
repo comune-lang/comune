@@ -7,7 +7,7 @@ use crate::{
 
 use super::{CIRCallId, CIRFunction, CIRModule, CIRStmt, LValue, Operand, PlaceElem, RValue};
 
-impl Display for CIRModule {
+impl Display for CIRModule<'_> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		for (name, ty) in &self.types {
 			let ty = &*ty.read().unwrap();

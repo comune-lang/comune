@@ -1,5 +1,6 @@
 use clap::Parser;
 use colored::Colorize;
+use crate::backend::Backend;
 use crate::llvm::LLVMBackend;
 use std::fs;
 use std::path::PathBuf;
@@ -43,6 +44,9 @@ pub struct ComuneCLI {
 
 	#[clap(short = 'd', long = "debug-info", default_value_t = true, value_parser)]
 	pub debug_info: bool,
+
+	#[clap(long = "no-std", default_value_t = false, value_parser)]
+	pub no_std: bool,
 }
 
 pub fn run(args: ComuneCLI) -> Result<(), ()> {
@@ -76,9 +80,9 @@ pub fn run(args: ComuneCLI) -> Result<(), ()> {
 	}
 
 	#[cfg(feature = "concurrent")]
-	rayon::ThreadPoolBuilder::new()
+	let thread_pool = rayon::ThreadPoolBuilder::new()
 		.num_threads(args.num_jobs)
-		.build_global()
+		.build()
 		.unwrap();
 
 
@@ -96,6 +100,7 @@ pub fn run(args: ComuneCLI) -> Result<(), ()> {
 		&emit_types,
 		args.opt_level,
 		args.debug_info,
+		args.no_std,
 	);
 	
 	#[cfg(not(feature = "concurrent"))]
@@ -132,7 +137,7 @@ pub fn run(args: ComuneCLI) -> Result<(), ()> {
 	#[cfg(feature = "concurrent")]
 	{
 		// Launch multithreaded compilation
-		rayon::in_place_scope(|s| {
+		thread_pool.in_place_scope(|s| {
 			let spawner = JobSpawner::Concurrent(s);
 
 			for input_file in &args.input_files {
@@ -157,7 +162,7 @@ pub fn run(args: ComuneCLI) -> Result<(), ()> {
 		});
 	}
 
-	if !check_last_phase_ok() {
+	if !check_last_phase_ok(&compiler) {
 		await_output_written();
 		return Err(())
 	}
@@ -171,17 +176,17 @@ pub fn run(args: ComuneCLI) -> Result<(), ()> {
 	};
 
 	#[cfg(feature = "concurrent")]
-	rayon::in_place_scope(|_| {
+	thread_pool.in_place_scope(|_| {
 		match compiler.generate_monomorph_module() {
 			Ok(()) => {}
 			Err(_) => {
-				errors::ERROR_COUNT.fetch_add(1, Ordering::Relaxed);
+				compiler.error_count.fetch_add(1, Ordering::Relaxed);
 			}
 		};
 	});
 	
 
-	if !check_last_phase_ok() {
+	if !check_last_phase_ok(&compiler) {
 		await_output_written();
 		return Err(())
 	}
@@ -230,15 +235,15 @@ pub fn run(args: ComuneCLI) -> Result<(), ()> {
 	Ok(())
 }
 
-fn check_last_phase_ok() -> bool {
-	if errors::ERROR_COUNT.load(Ordering::Acquire) > 0 {
+fn check_last_phase_ok<T: Backend>(compiler: &Compiler<'_, T>) -> bool {
+	if compiler.error_count.load(Ordering::Acquire) > 0 {
 		let mut io = std::io::stderr().lock();
 
 		write!(
 			io,
 			"\n{:>10} build due to {} previous error(s)\n\n",
 				"aborted".bold().red(),
-				errors::ERROR_COUNT.load(Ordering::Acquire)
+				compiler.error_count.load(Ordering::Acquire)
 		).unwrap();
 
 		// Block until the error logger is done writing, so we don't exit early

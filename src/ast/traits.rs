@@ -18,8 +18,6 @@ use super::{
 	types::Type,
 };
 
-use lazy_static::lazy_static;
-
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
 pub enum LangTrait {
 	Sized,
@@ -113,9 +111,7 @@ pub enum TraitDeduction {
 	None,
 }
 
-lazy_static! {
-	static ref LANG_TRAITS: RwLock<HashMap<LangTrait, TraitRef>> = RwLock::new(HashMap::new());
-}
+pub type LangTraitDatabase = RwLock<HashMap<LangTrait, TraitRef>>;
 
 pub struct ImplDatabase {
 	pub impls: Vec<(Type, Arc<RwLock<ImplBlockInterface>>)>,
@@ -127,15 +123,17 @@ impl ImplDatabase {
 	}
 }
 
-#[derive(Clone, Debug, Default)]
-pub struct ImplSolver {
+#[derive(Clone, Debug)]
+pub struct ImplSolver<'ctx> {
+	lang_traits: &'ctx LangTraitDatabase,
 	answer_cache: HashMap<Type, HashMap<TraitRef, TraitDeduction>>,
 	pub impls: Vec<(Arc<RwLock<Type>>, Arc<RwLock<ImplBlockInterface>>)>,
 }
 
-impl ImplSolver {
-	pub fn new() -> Self {
+impl<'ctx> ImplSolver<'ctx> {
+	pub fn new(lang_traits: &'ctx LangTraitDatabase) -> Self {
 		Self {
+			lang_traits,
 			answer_cache: HashMap::new(),
 			impls: vec![],
 		}
@@ -148,19 +146,19 @@ impl ImplSolver {
 
 	pub fn register_lang_trait(&mut self, lang: LangTrait, tr: TraitRef) {
 		assert!(
-			!LANG_TRAITS.read().unwrap().contains_key(&lang),
+			!self.lang_traits.read().unwrap().contains_key(&lang),
 			"language trait {lang:?} already registered!"
 		);
 
-		LANG_TRAITS.write().unwrap().insert(lang, tr);
+		self.lang_traits.write().unwrap().insert(lang, tr);
 	}
 
 	pub fn get_lang_trait(&self, lang_trait: LangTrait) -> TraitRef {
-		while !LANG_TRAITS.read().unwrap().contains_key(&lang_trait) {
+		while !self.lang_traits.read().unwrap().contains_key(&lang_trait) {
 			thread::sleep(Duration::from_millis(1));
 		}
 
-		LANG_TRAITS.write().unwrap()[&lang_trait].clone()
+		self.lang_traits.write().unwrap()[&lang_trait].clone()
 	}
 
 	pub fn is_trait_implemented(&self, ty: &Type, tr: &TraitRef, generics: &Generics) -> bool {
@@ -218,7 +216,7 @@ impl ImplSolver {
 	}
 
 	pub fn get_lang_trait_from_ref(&self, tr: &TraitRef) -> Option<LangTrait> {
-		let lang_traits = LANG_TRAITS.read().unwrap();
+		let lang_traits = self.lang_traits.read().unwrap();
 		
 		for (lang, def) in lang_traits.iter() {
 			if Arc::ptr_eq(&tr.unwrap_def(), &def.unwrap_def()) {

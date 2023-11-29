@@ -14,7 +14,7 @@ use crate::{
 
 use super::{
 	expression::Expr,
-	traits::{ImplSolver, TraitInterface, TraitRef},
+	traits::{ImplSolver, TraitInterface, TraitRef, LangTraitDatabase},
 	types::{Basic, FnPrototype, Generics, Type, TypeDef}, semantic::ty::resolve_type,
 };
 
@@ -80,8 +80,8 @@ pub enum ModuleImportKind {
 }
 
 #[derive(Debug, Clone)]
-pub struct ModuleImport {
-	pub interface: Arc<ModuleInterface>,
+pub struct ModuleImport<'ctx> {
+	pub interface: Arc<ModuleInterface<'ctx>>,
 	pub import_kind: ModuleImportKind,
 	pub path: PathBuf,
 }
@@ -95,13 +95,13 @@ pub struct ModuleImport {
 // expression bodies, only the prototypes of namespace items.
 // This is quick to construct, and downstream modules depend on
 // this stage for expression parsing.
-#[derive(Default, Debug)]
-pub struct ModuleInterface {
+#[derive(Debug)]
+pub struct ModuleInterface<'ctx> {
 	pub name: Identifier,
 	pub children: HashMap<Identifier, ModuleItemInterface>,
 	pub import_names: HashSet<ModuleImportKind>,
-	pub imported: HashMap<Name, ModuleImport>,
-	pub impl_solver: ImplSolver,
+	pub imported: HashMap<Name, ModuleImport<'ctx>>,
+	pub impl_solver: ImplSolver<'ctx>,
 	pub is_typed: bool,
 }
 
@@ -140,14 +140,14 @@ impl ModuleImportKind {
 	}
 }
 
-impl ModuleInterface {
-	pub fn new(name: Identifier) -> Self {
+impl<'ctx> ModuleInterface<'ctx> {
+	pub fn new(name: Identifier, lang_traits: &'ctx LangTraitDatabase) -> Self {
 		ModuleInterface {
 			name,
 			children: HashMap::new(),
 			import_names: HashSet::new(),
 			imported: HashMap::new(),
-			impl_solver: ImplSolver::new(),
+			impl_solver: ImplSolver::new(lang_traits),
 			is_typed: false,
 		}
 	}

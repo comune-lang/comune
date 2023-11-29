@@ -327,11 +327,11 @@ pub struct CIRFunction {
 	pub column: usize,
 }
 
-pub struct CIRModule {
+pub struct CIRModule<'ctx> {
 	pub types: HashMap<String, Arc<RwLock<TypeDef>>>,
 	pub globals: HashMap<Identifier, (Type, RValue)>,
 	pub functions: CIRFnMap,
-	pub impl_solver: ImplSolver,
+	pub impl_solver: ImplSolver<'ctx>,
 }
 
 impl RValue {

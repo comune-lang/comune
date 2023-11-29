@@ -231,7 +231,6 @@ dependencies = [
  "colored",
  "inkwell",
  "itertools",
- "lazy_static",
  "rayon",
 ]
 

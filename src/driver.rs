@@ -5,7 +5,7 @@ use std::{
 	fs,
 	marker::PhantomData,
 	path::{Path, PathBuf},
-	sync::{atomic::Ordering, Arc, Mutex, RwLock}, io,
+	sync::{atomic::{Ordering, AtomicU32}, Arc, Mutex, RwLock}, io,
 };
 
 use colored::Colorize;
@@ -15,7 +15,7 @@ use crate::{
 	ast::{
 		self,
 		module::{Identifier, ModuleImport, ModuleImportKind, ModuleInterface, Name},
-		semantic::validate_module_impl,
+		semantic::validate_module_impl, traits::LangTraitDatabase,
 	},
 	backend::Backend,
 	cir::{
@@ -27,7 +27,7 @@ use crate::{
 		monoize::MonomorphServer,
 		CIRModule,
 	},
-	errors::{ComuneErrCode, ComuneError, ComuneMessage, ERROR_COUNT, log_msg},
+	errors::{ComuneErrCode, ComuneError, ComuneMessage, log_msg},
 	lexer::{Lexer, SrcSpan},
 	parser::{ComuneResult, Parser},
 };
@@ -47,38 +47,42 @@ pub struct Compiler<'ctx, T: Backend + ?Sized> {
 	pub output_file: OsString,
 	pub verbose_output: bool,
 	pub output_modules: Mutex<Vec<PathBuf>>,
-	pub module_states: RwLock<HashMap<PathBuf, ModuleState>>,
+	pub module_states: RwLock<HashMap<PathBuf, ModuleState<'ctx>>>,
 	pub opt_level: u32,
 	pub debug_info: bool,
+	pub no_std: bool,
 
 	pub emit_types: Vec<&'ctx str>,
 	pub dep_emit_types: Vec<&'ctx str>,
 	pub link_types: Vec<&'ctx str>,
 
+	pub lang_traits: LangTraitDatabase,
+	pub error_count: AtomicU32,
+	
 	monomorph_server: MonomorphServer,
-
+	
 	// the compiler doesn't actually *own* any instances of Backend,
 	// so we use PhantomData<fn() -> T> to signal that T doesn't
 	// have to be Send or Sync
 	backend: PhantomData<fn() -> T>,
 }
 
-pub struct CompileState {
-	parser: Parser,
+pub struct CompileState<'ctx> {
+	parser: Parser<'ctx>,
 }
 
 #[derive(Clone)]
-pub enum JobSpawner<T> {
+pub enum JobSpawner<'ctx, T> {
 	Concurrent(T),
-	Synchronous(Arc<RwLock<Vec<CompileState>>>)
+	Synchronous(Arc<RwLock<Vec<CompileState<'ctx>>>>)
 }
 
 #[derive(Clone)]
-pub enum ModuleState {
+pub enum ModuleState<'ctx> {
 	Parsing,
 	ParsingFailed,
-	InterfaceUntyped(Arc<ModuleInterface>),
-	InterfaceComplete(Arc<ModuleInterface>),
+	InterfaceUntyped(Arc<ModuleInterface<'ctx>>),
+	InterfaceComplete(Arc<ModuleInterface<'ctx>>),
 }
 
 const BUILTIN_EMIT_TYPES: [&str; 3] = ["cir", "cirmono", "none"];
@@ -92,6 +96,7 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 		emit_types: &'ctx [&'ctx str],
 		opt_level: u32,
 		debug_info: bool,
+		no_std: bool,
 	) -> Self {
 		let mut emits = vec![];
 		let mut links = vec![];
@@ -131,9 +136,12 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 			link_types: links,
 			opt_level,
 			debug_info,
+			no_std,
 			module_states: RwLock::default(),
 			output_modules: Mutex::default(),
 			monomorph_server: MonomorphServer::new(),
+			error_count: AtomicU32::new(0),
+			lang_traits: RwLock::new(HashMap::default()),
 			backend: PhantomData,
 		}
 	}
@@ -142,7 +150,7 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 		&'ctx self,
 		src_path: PathBuf,
 		module_name: Identifier,
-		s: JobSpawner<&RayonScope<'ctx>>,
+		s: JobSpawner<'ctx, &RayonScope<'ctx>>,
 	) -> Result<Vec<Parser>, ComuneError> {
 		if self.module_states.read().unwrap().contains_key(&src_path) {
 			return Ok(vec![]);
@@ -184,14 +192,14 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 		&'ctx self,
 		src_path: PathBuf,
 		module_name: Identifier,
-		jobs_out: &mut Vec<Parser>,
+		jobs_out: &mut Vec<Parser<'ctx>>,
 	) -> Result<Arc<ModuleInterface>, ComuneError> {
 		let mut parser =
 			match self.parse_interface(src_path.clone(), module_name) {
 				Ok(parser) => parser,
 
 				Err(e) => {
-					ERROR_COUNT.fetch_add(1, Ordering::Relaxed);
+					self.error_count.fetch_add(1, Ordering::Relaxed);
 
 					self.module_states
 						.write()
@@ -243,8 +251,8 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 
 	pub fn generate_typed_interface(
 		&'ctx self,
-		mut parser: Parser,
-		s: JobSpawner<&RayonScope<'ctx>>,
+		mut parser: Parser<'ctx>,
+		s: JobSpawner<'ctx, &RayonScope<'ctx>>,
 	) -> Result<(), ComuneError> {
 		// Resolve module imports
 		let modules = parser
@@ -265,7 +273,7 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 		match ast::semantic::validate_interface(&mut parser) {
 			Ok(_) => {}
 			Err(e) => {
-				ERROR_COUNT.fetch_add(1, Ordering::Relaxed);
+				self.error_count.fetch_add(1, Ordering::Relaxed);
 
 				parser
 					.lexer
@@ -295,7 +303,7 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 		Ok(())
 	}
 
-	pub fn finish_module_job(&self, module_state: CompileState) {
+	pub fn finish_module_job(&self, module_state: CompileState<'ctx>) {
 		let CompileState { mut parser } = module_state;
 
 		// Wait for all module interfaces to be finalized
@@ -361,10 +369,12 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 		// everything from AST parsing, to type checking, to cIR generation and validation.
 		// should be broken up into discrete functions at some point honestly
 
+		let parser_name = parser.interface.name.to_string();
+		let parser_path = parser.path.to_string_lossy().to_string();
 		let module_mono = match self.generate_cir(&mut parser) {
 			Ok(res) => res,
 			Err(_) => {
-				ERROR_COUNT.fetch_add(1, Ordering::Relaxed);
+				self.error_count.fetch_add(1, Ordering::Relaxed);
 
 				let mut io = io::stderr().lock();
 
@@ -385,12 +395,12 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 		let result = match backend.generate_code(
 			&module_mono,
 			self,
-			&parser.interface.name.to_string(),
-			parser.path.to_str().unwrap(),
+			&parser_name,
+			&parser_path,
 		) {
 			Ok(res) => res,
 			Err(_) => {
-				ERROR_COUNT.fetch_add(1, Ordering::Relaxed);
+				self.error_count.fetch_add(1, Ordering::Relaxed);
 
 				let mut io = io::stderr().lock();
 
@@ -422,7 +432,7 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 		backend.emit(self, &result, &custom_emits, &out_path);
 	}
 
-	pub fn spawn(&'ctx self, s: JobSpawner<&RayonScope<'ctx>>, state: CompileState) {
+	pub fn spawn(&'ctx self, s: JobSpawner<'ctx, &RayonScope<'ctx>>, state: CompileState<'ctx>) {
 		match s {
 			#[cfg(feature = "concurrent")]
 			JobSpawner::Concurrent(s) => {
@@ -462,14 +472,18 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 			}
 		};
 
-		let mut parser = Parser::new(lexer, module_name, path);
+		let mut parser = Parser::new(lexer, module_name, path, &self.lang_traits);
 
-		// TODO: HEY ASH TOMORROW MORNING MAKE IT SO CORE DOESN'T IMPORT STD
-		// TODO: FUCK YOU I'M TIRED AND I HAVE TOO MUCH TO DO. IT WORKS FOR NOW
-		parser.interface.import_names = HashSet::from([
-			ModuleImportKind::Language("core".into()),
-			ModuleImportKind::Language("std".into()),
-		]);
+		if self.no_std {
+			parser.interface.import_names = HashSet::from([
+				ModuleImportKind::Language("core".into()),
+			]);
+		} else {
+			parser.interface.import_names = HashSet::from([
+				ModuleImportKind::Language("core".into()),
+				ModuleImportKind::Language("std".into()),
+			]);
+		}
 
 		// Parse namespace level
 
@@ -490,8 +504,8 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 		src_path: &PathBuf,
 		module_name: &Identifier,
 		mut imports_in: Vec<ModuleImportKind>,
-		imports_out: &mut HashMap<Name, ModuleImport>,
-		s: JobSpawner<&RayonScope<'ctx>>,
+		imports_out: &mut HashMap<Name, ModuleImport<'ctx>>,
+		s: JobSpawner<'ctx, &RayonScope<'ctx>>,
 	) -> ComuneResult<()> {
 
 		while let Some(kind) = imports_in.first().cloned() {
@@ -627,7 +641,7 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 		Ok(())
 	}
 
-	pub fn generate_cir(&self, parser: &mut Parser) -> Result<CIRModule, ComuneError> {
+	pub fn generate_cir<'cir>(&self, parser: &'cir mut Parser<'ctx>) -> Result<CIRModule<'cir>, ComuneError> {
 		// Generate AST
 		if let Err(e) = parser.generate_ast() {
 			parser
@@ -732,7 +746,7 @@ impl<'ctx, T: Backend> Compiler<'ctx, T> {
 		//
 		// This is pretty low-hanging fruit for optimization,
 		// considering it's entirely single-threaded right now
-		let mut module = self.monomorph_server.generate_fn_instances();
+		let mut module = self.monomorph_server.generate_fn_instances(&self.lang_traits);
 
 		if self.emit_types.contains(&"cir") {
 			// Write cIR to file

@@ -35,7 +35,7 @@ pub struct CIRBuilderScope {
 }
 
 pub struct CIRModuleBuilder<'build> {
-	pub module: CIRModule,
+	pub module: CIRModule<'build>,
 
 	current_fn: Option<CIRFunction>,
 	current_block: BlockIndex,

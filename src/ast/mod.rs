@@ -30,7 +30,7 @@ pub fn get_attribute<'a>(attributes: &'a [Attribute], attr_name: &str) -> Option
 }
 
 pub struct FnScope<'ctx> {
-	context: &'ctx ModuleInterface,
+	context: &'ctx ModuleInterface<'ctx>,
 	scope: Identifier,
 	parent: Option<&'ctx FnScope<'ctx>>,
 	ret: (BindingProps, Type),
