@@ -58,7 +58,7 @@ impl Hello for Test {
 
 
 void impl_test() {
-	let test = new Test { a: 413, b: 612, };
+	let test = Test { a: 413, b: 612, };
 	test.hello();
 	printf(c"The sum of a and b is %i!\n", test.sum());
 }
@@ -87,7 +87,7 @@ void overload_test(i64 a) {
 type GenericTypeAlias<type T> = Vector<T>;
 
 Vector<i32> generic_ret() {
-	new GenericTypeAlias<i32>()
+	GenericTypeAlias<i32>()
 }
 
 type TestSumType = (i32 | f32);
@@ -113,7 +113,7 @@ struct DropTest {
 	new(new& self, int num) {
 		printf(c"DropTest no. %i created!\n", num);
 
-		self = new DropTest {
+		self = DropTest {
 			num,
 			allocation: malloc(4) as int raw*,
 		}
@@ -142,19 +142,19 @@ void memberwise_init_test(DropTest new& test) {
 }
 
 void sub_drop_test() {
-	let a = new DropTest(1);
-	let b = new DropTest(2);
+	let a = DropTest(1);
+	let b = DropTest(2);
 
 	println("\nEntering subscope\n");
 	{
-		let c = new DropTest(3);
+		let c = DropTest(3);
 		
 		let mut i = 0;
 		
 		println("\nEntering loop\n");
 
 		while i < 5 {
-			let b = new DropTest(4);
+			let b = DropTest(4);
 
 			if i == 4 {
 				break
@@ -171,27 +171,27 @@ void sub_drop_test() {
 	println("\nVector<DropTest> test:\n");
 
 	{
-		let mut drop_vec = new Vector<DropTest>();
-		drop_vec.push(new DropTest(5));
-		drop_vec.push(new DropTest(6));
+		let mut drop_vec = Vector<DropTest>();
+		drop_vec.push(DropTest(5));
+		drop_vec.push(DropTest(6));
 		
-		*drop_vec.get_mut(1).unwrap() = new DropTest(7);
+		*drop_vec.get_mut(1).unwrap() = DropTest(7);
 	}
 
 	println("\nLeft Vector<DropTest> scope\n");
 
 	// FIXME: the codegen for this is a little Fucked.
-	//Option<DropTest> option = new Option<DropTest>::Some(
-	//	new DropTest(8)
+	//Option<DropTest> option = Option<DropTest>::Some(
+	//	DropTest(8)
 	//);
 
-	temp_drop_test(new DropTest(9));
+	temp_drop_test(DropTest(9));
 
-	new DropTest(10).consume();
+	DropTest(10).consume();
 }
 
 void new_ref_test(Vector<float> new& test) {
-	test = new Vector<float>();
+	test = Vector<float>();
 }
 
 void mut_move_test(Vector<float> mut& test) {
@@ -205,11 +205,11 @@ void mut_move_test(Vector<float> mut& test) {
 }
 
 void enum_test() {
-	let Option<auto> resolve = new None<i32>;
+	let Option<auto> resolve = None<i32>;
 	
-	let Option<i32> mut option = new None<i32>;
+	let Option<i32> mut option = None<i32>;
 	
-	option = new Some<i32> {
+	option = Some<i32> {
 		value: 23,
 	};
 
@@ -223,11 +223,11 @@ void enum_test() {
 		}
 	}
 
-	let Option<i32> mut option = new Some<i32>(1);
+	let Option<i32> mut option = Some<i32>(1);
 
 	let unwrapped = option.unwrap();
 
-	option = new None<i32>;
+	option = None<i32>;
 	
 	//option.unwrap();
 }
@@ -253,11 +253,11 @@ void ops_test() {
 
 void rc_test() {
 	println("Creating Rc<DropTest>!");
-	let rc = new Rc<DropTest>(new DropTest(0));
+	let rc = Rc<DropTest>(DropTest(0));
 	
 	for (let mut i = 0; i < 10; i += 1) {
 		println("Cloning Rc<DropTest>!");
-		let rc = new Rc<DropTest>(rc);
+		let rc = Rc<DropTest>(rc);
 		println("Dropping Rc<DropTest>!");
 	}
 	println("Dropping last Rc<DropTest>!");
@@ -268,7 +268,7 @@ struct DerefTest {
 }
 
 void ptr_access_test() {
-	let mut a = new DerefTest {
+	let mut a = DerefTest {
 		a: 0
 	};
 	
@@ -293,7 +293,7 @@ void empty_fn_test() {}
 void string_test() {
 	println("String test!\n");
 	
-	let mut test = new String();
+	let mut test = String();
 	
 	test.push_str("Hello");
 	test.push_str("");
@@ -320,7 +320,7 @@ struct SwapTest {
 
 void file_test() {
 	let mut file = std::fs::File::open(c"test/testfile.txt").unwrap();
-	let mut buf = new Vector<u8>();
+	let mut buf = Vector<u8>();
 
 	buf.resize(64, 0);
 
@@ -333,7 +333,7 @@ int main() {
 	file_test();
 
 	// fails: String does not implement Copy
-	// copy_test<String>(new String());
+	// copy_test<String>(String());
 
 	// succeeds: u32 implicitly implements Copy
 	copy_test<u32>(0);
@@ -341,12 +341,12 @@ int main() {
 	// fails: String does not implement Copy	
 	// GenericTypeBounds<String> test;
 
-	let mut swap_test = new SwapTest {
+	let mut swap_test = SwapTest {
 		a: 413,
 		b: 612,
 	};
 
-	swap_test = new SwapTest {
+	swap_test = SwapTest {
 		a: swap_test.b,
 		b: swap_test.a,
 	};
@@ -369,7 +369,7 @@ int main() {
 	let slice_data = 0;
 	
 	// no slice syntax yet - just duck-type one manually lol
-	let slice = new core::slice::SliceRepr<i32> {
+	let slice = core::slice::SliceRepr<i32> {
 		ptr: &slice_data as i32 raw*,
 		len: 1,
 	};
@@ -457,7 +457,7 @@ int main() {
 	ref_test(int_ref_test);
 	printf(c"int_ref_test: %i\n", int_ref_test);
 
-	printf(c"Temporary->lvalue promotion: %i\n", new Test { a: 23, b: 35 }.sum());
+	printf(c"Temporary->lvalue promotion: %i\n", Test { a: 23, b: 35 }.sum());
 	
 	unsafe {
 		printf(c"bit_cast<f32, u32>: %i\n", bit_cast<f32, u32>(10.0f32));

@@ -1113,8 +1113,14 @@ impl<'ctx> Parser {
 			Token::Name(id) => {
 				self.get_next()?;
 
+				let name = if id.as_str() == "_" {
+					None
+				} else {
+					Some(id)
+				};
+
 				Ok(Pattern::Binding(Binding {
-					name: Some(id),
+					name,
 					ty: if let Some(ty) = pattern_ty {
 						ty
 					} else {
@@ -1416,8 +1422,12 @@ impl<'ctx> Parser {
 
 	fn parse_atom(&self, scope: &FnScope<'ctx>) -> ComuneResult<Atom> {
 		let mut result;
-
-		if self.is_at_identifier_token()? {
+		
+		if self.is_at_type_token(Some(scope))? {
+			// constructor shorthand
+			result = Some(self.parse_constructor(scope, None)?);
+		
+		} else if self.is_at_identifier_token()? {
 			let id = self.parse_identifier(Some(scope))?;
 
 			// Variable or function name
@@ -1588,98 +1598,8 @@ impl<'ctx> Parser {
 							// Regular new
 							None
 						};
-
-						let Type::TypeRef { def, args: generic_args } = self.parse_typeref(Some(scope))? else {
-							unreachable!()
-						};
-
-						if self.get_current()? == Token::Other('{') {
-							// Parse literal constructor
-
-							let mut inits = vec![];
-
-							while self.get_current()? != Token::Other('}') {
-								self.get_next()?;
-
-								if let Token::Name(member_name) = self.get_current()? {
-									match self.get_next()? {
-										// plain `member: expr` syntax
-										Token::Other(':') => {
-											self.get_next()?;
-
-											let expr = self.parse_expression(scope)?;
-
-											inits.push((member_name, expr));
-										}
-
-										// shorthand when `expr` is equal to the member name
-										Token::Other(',') | Token::Other('}') => {
-											let expr = Expr::Atom(
-												Atom::Identifier(Identifier::from_name(
-													member_name.clone(),
-													false,
-												)),
-												NodeData::new(),
-											);
-
-											inits.push((member_name, expr))
-										}
-
-										_ => return self.err(ComuneErrCode::UnexpectedToken),
-									}
-								} else if self.get_current()? != Token::Other('}') {
-									return self.err(ComuneErrCode::UnexpectedToken);
-								}
-							}
-
-							self.consume(&Token::Other('}'))?;
-
-							result = Some(Atom::Constructor {
-								def,
-								generic_args,
-								kind: XtorKind::Literal { fields: inits },
-								placement,
-							});
-						} else if self.get_current()? == Token::Operator("(") {
-							// Parse constructor call
-							self.get_next()?;
-
-							let mut args = vec![];
-
-							if self.get_current()? != Token::Operator(")") {
-								loop {
-									args.push(self.parse_expression(scope)?);
-
-									if self.get_current()? == Token::Other(',') {
-										self.get_next()?;
-									} else if self.get_current()? == Token::Operator(")") {
-										break;
-									} else {
-										return self.err(ComuneErrCode::UnexpectedToken);
-									}
-								}
-							}
-
-							self.get_next()?;
-
-							result = Some(Atom::Constructor {
-								def,
-								generic_args,
-								kind: XtorKind::Constructor {
-									args,
-									resolved: FnRef::None,
-								},
-								placement,
-							});
-						} else {
-							// Literal constructor with no fields
-							result = Some(Atom::Constructor {
-								def,
-								generic_args,
-								kind: XtorKind::Literal { fields: vec![] },
-								placement,
-							});
-						}
+						
+						result = Some(self.parse_constructor(scope, placement)?);
 					}
 
 					"drop" => {
@@ -1876,6 +1796,100 @@ impl<'ctx> Parser {
 		}
 
 		Ok(result.unwrap())
+	}
+
+	fn parse_constructor(&self, scope: &FnScope<'ctx>, placement: Option<Box<Expr>>) -> ComuneResult<Atom> {
+		let Type::TypeRef { def, args: generic_args } = self.parse_typeref(Some(scope))? else {
+			unreachable!()
+		};
+
+		if self.get_current()? == Token::Other('{') {
+			// Parse literal constructor
+
+			let mut inits = vec![];
+
+			while self.get_current()? != Token::Other('}') {
+				self.get_next()?;
+
+				if let Token::Name(member_name) = self.get_current()? {
+					match self.get_next()? {
+						// plain `member: expr` syntax
+						Token::Other(':') => {
+							self.get_next()?;
+
+							let expr = self.parse_expression(scope)?;
+
+							inits.push((member_name, expr));
+						}
+
+						// shorthand when `expr` is equal to the member name
+						Token::Other(',') | Token::Other('}') => {
+							let expr = Expr::Atom(
+								Atom::Identifier(Identifier::from_name(
+									member_name.clone(),
+									false,
+								)),
+								NodeData::new(),
+							);
+
+							inits.push((member_name, expr))
+						}
+
+						_ => return self.err(ComuneErrCode::UnexpectedToken),
+					}
+				} else if self.get_current()? != Token::Other('}') {
+					return self.err(ComuneErrCode::UnexpectedToken);
+				}
+			}
+
+			self.consume(&Token::Other('}'))?;
+
+			return Ok(Atom::Constructor {
+				def,
+				generic_args,
+				kind: XtorKind::Literal { fields: inits },
+				placement,
+			});
+		} else if self.get_current()? == Token::Operator("(") {
+			// Parse constructor call
+			self.get_next()?;
+
+			let mut args = vec![];
+
+			if self.get_current()? != Token::Operator(")") {
+				loop {
+					args.push(self.parse_expression(scope)?);
+
+					if self.get_current()? == Token::Other(',') {
+						self.get_next()?;
+					} else if self.get_current()? == Token::Operator(")") {
+						break;
+					} else {
+						return self.err(ComuneErrCode::UnexpectedToken);
+					}
+				}
+			}
+
+			self.get_next()?;
+
+			return Ok(Atom::Constructor {
+				def,
+				generic_args,
+				kind: XtorKind::Constructor {
+					args,
+					resolved: FnRef::None,
+				},
+				placement,
+			});
+		} else {
+			// Literal constructor with no fields
+			return Ok(Atom::Constructor {
+				def,
+				generic_args,
+				kind: XtorKind::Literal { fields: vec![] },
+				placement,
+			});
+		}
 	}
 
 	// Returns true if the current token is the start of a Type.
