@@ -22,7 +22,7 @@ struct Vector<type T> {
 	usize capacity;
 
 	new(new& self) {
-		self = new Vector<T> {
+		new (self) Vector<T> {
 			data: null<T>(),
 			capacity: 0,
 			len: 0,
@@ -30,7 +30,7 @@ struct Vector<type T> {
 	}
 
 	new(new& self, Vector<T>& copied) {
-		self = new Vector<T>();
+		new (self) Vector<T>();
 		
 		self.realloc(copied.capacity);
 		
@@ -84,12 +84,12 @@ impl<type T> Vector<T> {
 
 	Option<T> pop(mut& self) {
 		if self.len == 0 {
-			return new Option<T>::None
+			return None<T>
 		} else {
 			self.len -= 1;
 
 			unsafe {
-				return new Some<T>(
+				return Some<T>(
 					*(self.data + self.len)
 				)
 			}
@@ -121,33 +121,33 @@ impl<type T> Vector<T> {
 	
 	Option<T*> get(&self, usize i) {
 		if i >= self.len {
-			new None<T*>
+			None<T*>
 		} else {
-			new Some<T*>((self.data + i) as T*)
+			Some<T*>((self.data + i) as T*)
 		}
 	}
 
 	Option<T mut*> get_mut(mut& self, usize i) {
 		if i >= self.len {
-			new None<T mut*>
+			None<T mut*>
 		} else {
-			new Some<T mut*>((self.data + i) as T mut*)
+			Some<T mut*>((self.data + i) as T mut*)
 		}
 	}
 
 	Option<T*> back(&self) {
 		if self.is_empty() {
-			new None<T*>
+			None<T*>
 		} else {
-			new Some<T*>((self.data + self.len - 1) as T*)
+			Some<T*>((self.data + self.len - 1) as T*)
 		}
 	}
 
 	Option<T mut*> back_mut(mut &self) {
 		if self.is_empty() {
-			new None<T mut*>
+			None<T mut*>
 		} else {
-			new Some<T mut*>((self.data + self.len - 1) as T mut*)
+			Some<T mut*>((self.data + self.len - 1) as T mut*)
 		}
 	}
 

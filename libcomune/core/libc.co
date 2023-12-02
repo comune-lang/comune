@@ -4,34 +4,34 @@
 type CFileHandle = void raw*;
 
 @no_mangle
-void raw* malloc(usize size);
+fn malloc(usize size) -> void raw*;
 
 @no_mangle
-void raw* realloc(void raw* ptr, usize capacity);
+fn realloc(void raw* ptr, usize capacity) -> void raw*;
 
 @no_mangle
-void free(void raw* ptr);
+fn free(void raw* ptr);
 
 @no_mangle
-void raw* memcpy(void mut* dest, void* src, usize count);
+fn memcpy(void mut* dest, void* src, usize count) -> void raw*;
 
 @no_mangle
-void raw* memset(void mut* dest, i32 c, usize len);
+fn memset(void mut* str, int c, usize n) -> void raw*;
 
 @no_mangle
-int printf(u8* fmt, ...);
+fn printf(u8* fmt, ...) -> int;
 
 @no_mangle
-never abort();
+fn abort() -> never;
 
 @no_mangle
-CFileHandle fopen(u8* path, u8* mode);
+unsafe fn fopen(u8* path, u8* mode) -> CFileHandle;
 
 @no_mangle
-void fclose(CFileHandle handle);
+unsafe fn fclose(CFileHandle handle);
 
 @no_mangle
-usize fread(void mut* out, usize size, usize nmemb, CFileHandle stream);
+unsafe fn fread(void mut* out, usize size, usize nmemb, CFileHandle stream) -> usize;
 
 @no_mangle
-void fputs(u8* in, CFileHandle handle);
+unsafe fn fwrite(void* in, usize size, usize nmemb, CFileHandle stream) -> usize;

@@ -832,10 +832,14 @@ impl<'ctx> LLVMBuilder<'ctx> {
 					}
 
 					CIRStmt::StorageLive(local) => {
+						if self.di_builder.is_none() {
+							continue
+						}
+						
 						let Some(name) = &t.variables[*local].2 else {
 							continue
 						};
-
+						
 						let ty = self.get_di_type(&t.variables[*local].0);
 						let di_builder = self.di_builder.as_ref().unwrap();
 						let compile_unit = self.di_compile_unit.as_ref().unwrap();

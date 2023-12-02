@@ -6,12 +6,12 @@ struct String {
 	Vector<u8> vec;
 
 	new(new& self) {
-		self.vec = new Vector<u8>();
+		new (self.vec) Vector<u8>();
 		self.vec.push(0);
 	}
 
 	new(new& self, String& copied) {
-		self.vec = new Vector<u8>(copied.vec);
+		new (self.vec) Vector<u8>(copied.vec);
 	}
 }
 
