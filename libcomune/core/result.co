@@ -6,25 +6,28 @@ enum Result<type T, type E> {
 	Err { E err; },
 }
 
+type Ok<type T, type E> = Result<T, E>::Ok;
+type Err<type T, type E> = Result<T, E>::Err;
+
 impl<type T, type E> Result<T, E> {
 	fn unwrap(self) -> T {
 		match self {
-			Result<T, E>::Ok { value } => value,
-			Result<T, E>::Err { .. } => panic("called unwrap() on an Err value!"),
+			Ok<T, E> { value } => value,
+			Err<T, E> { .. } => panic("called unwrap() on an Err value!"),
 		}
 	}
 
 	fn unwrap_err(self) -> E {
 		match self {
-			Result<T, E>::Ok { .. } => panic("called unwrap_err() on an Ok value!"),
-			Result<T, E>::Err { err } => err,
+			Ok<T, E> { .. } => panic("called unwrap_err() on an Ok value!"),
+			Err<T, E> { err } => err,
 		}
 	}
 
 	fn is_ok(&self) -> bool {
 		match self {
-			Result<T, E>::Ok { .. } => true,
-			Result<T, E>::Err { .. } => false,
+			Ok<T, E> { .. } => true,
+			Err<T, E> { .. } => false,
 		}
 	}
 

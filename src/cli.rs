@@ -1,4 +1,4 @@
-use clap::Parser;
+use clap::{Parser, ArgAction};
 use colored::Colorize;
 use crate::backend::Backend;
 use crate::llvm::LLVMBackend;
@@ -42,7 +42,7 @@ pub struct ComuneCLI {
 	#[clap(short = 'O', default_value_t = 0, value_parser)]
 	pub opt_level: u32,
 
-	#[clap(short = 'd', long = "debug-info", default_value_t = true, value_parser)]
+	#[clap(short = 'd', long = "debug-info", action = ArgAction::Set, default_value_t = true, value_parser)]
 	pub debug_info: bool,
 
 	#[clap(long = "no-std", default_value_t = false, value_parser)]

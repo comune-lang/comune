@@ -101,6 +101,15 @@ impl SrcSpan {
 	pub fn new() -> Self {
 		SrcSpan { start: 0, len: 0 }
 	}
+
+	pub fn union(self, other: SrcSpan) -> SrcSpan {
+		let start = self.start.min(other.start);
+		let end = (self.start + self.len).max(other.start + other.len);
+		SrcSpan {
+			start,
+			len: end - start,
+		}
+	}
 }
 
 impl Display for Token {

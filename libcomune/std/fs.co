@@ -1,42 +1,56 @@
-using core::libc::{fopen, fclose, fread, CFileHandle};
-using core::option::Option;
+using core::libc::{fopen, fclose, fread, fwrite, CFileHandle};
+using core::option::{Option, Some, None};
 
 
 struct File {
 	CFileHandle handle;
 
 	drop(mut& self) {
-		fclose(self.handle);
+		unsafe { fclose(self.handle) };
 	}
 }
 
 impl File {
 	fn open(u8* filename) -> Option<File> {
-		let handle = fopen(filename, c"r");
+		let handle = unsafe { fopen(filename, c"r") };
 
 		if handle {
-			new Option<File>::Some(new File { handle })
+			Some<File>(File { handle })
 		} else {
-			new Option<File>::None
+			None<File>
 		}
 	}
 
 	fn create(u8* filename) -> Option<File> {
-		let handle = fopen(filename, c"w");
+		let handle = unsafe { fopen(filename, c"w") };
 
 		if handle {
-			new Option<File>::Some(new File { handle })
+			Some<File>(File { handle })
 		} else {
-			new Option<File>::None
+			None<File>
 		}
 	}
 }
 
-impl core::traits::Read for File {
+// trait references are still a bit janky
+impl /*core::traits::Read for*/ File {
 	fn read(mut& self, [u8] mut* buf) -> usize {
 		unsafe {
 			fread(
-				(buf->ptr_mut()) as void mut*,
+				buf->ptr_mut() as void mut*,
+				1usize,
+				buf->len(),
+				self.handle
+			)
+		}
+	}
+}
+
+impl File {
+	fn write(mut& self, [u8]* buf) -> usize {
+		unsafe {
+			fwrite(
+				buf->ptr() as void*,
 				1usize,
 				buf->len(),
 				self.handle

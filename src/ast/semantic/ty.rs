@@ -688,6 +688,12 @@ impl Type {
 					return Ok(());
 				};
 
+				if args.len() < other_args.len() {
+					for _ in 0..other_args.len()-args.len() {
+						args.push(GenericArg::Type(Type::Infer(span)));
+					}
+				}
+
 				for (GenericArg::Type(lhs), GenericArg::Type(rhs)) in args.iter_mut().zip(other_args.into_iter()) {
 					lhs.resolve_inference_vars(rhs, span)?;
 				}

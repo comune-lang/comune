@@ -190,11 +190,14 @@ void sub_drop_test() {
 	DropTest(10).consume();
 }
 
-void new_ref_test(Vector<float> new& test) {
+fn new_ref_test(Vector<float> new& test) {
 	test = Vector<float>();
+	
+	// alternatively, to initialize directly in-place:
+	// new (test) Vector<float>();
 }
 
-void mut_move_test(Vector<float> mut& test) {
+fn mut_move_test(Vector<float> mut& test) {
 	// move out of mut* - legal, but...
 	let tmp = test;
 
@@ -204,8 +207,8 @@ void mut_move_test(Vector<float> mut& test) {
 	test = tmp;
 }
 
-void enum_test() {
-	let Option<auto> resolve = None<i32>;
+fn enum_test() {
+	let Option resolve = None<i32>;
 	
 	let Option<i32> mut option = None<i32>;
 	
@@ -214,7 +217,7 @@ void enum_test() {
 	};
 
 	match option {
-		None<i32> none => { 
+		Option::None none => { 
 			println("It's the None variant!");
 		}
 

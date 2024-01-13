@@ -712,6 +712,13 @@ impl Atom {
 					let mut branch_types = vec![];
 
 					for branch in branches.iter_mut() {
+						let span = branch.0.get_span();
+
+						branch.0.get_type_mut().resolve_inference_vars(
+							scrutinee_type.clone(),
+							span
+						)?;
+
 						branch.0.validate(scope)?;
 
 						let mut subscope = FnScope::from_parent(scope, false, false);
@@ -737,7 +744,7 @@ impl Atom {
 									scrutinee: scrutinee_type,
 									branch: branch.0.get_type().clone(),
 								},
-								branch.1.get_span(),
+								span,
 							));
 						}
 					}

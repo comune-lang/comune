@@ -1112,7 +1112,7 @@ impl<'ctx> Parser<'ctx> {
 			None
 		};
 
-		let props = self.parse_binding_props()?.unwrap_or_default();
+		let mut props = self.parse_binding_props()?.unwrap_or_default();
 
 		match self.get_current()? {
 			Token::Name(id) => {
@@ -1124,15 +1124,19 @@ impl<'ctx> Parser<'ctx> {
 					Some(id)
 				};
 
+				let span = SrcSpan {
+					start,
+					len: self.get_prev_end_index() - start,
+				};
+
+				props.span = span;
+
 				Ok(Pattern::Binding(Binding {
 					name,
 					ty: if let Some(ty) = pattern_ty {
 						ty
 					} else {
-						Type::Infer(SrcSpan {
-							start,
-							len: self.get_prev_end_index() - start,
-						})
+						Type::Infer(span)
 					},
 					props,
 				}))

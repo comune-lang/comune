@@ -230,7 +230,7 @@ impl Display for ComuneErrCode {
 			ComuneErrCode::MatchTypeMismatch { scrutinee, branch } => {
 				write!(
 					f,
-					"branch type `{branch}` is not a subtype of matched type `{scrutinee}`"
+					"pattern type `{branch}` is not a subtype of matched type `{scrutinee}`"
 				)
 			}
 			ComuneErrCode::CastTypeMismatch { from, to } => {
