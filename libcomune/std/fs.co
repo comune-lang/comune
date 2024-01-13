@@ -6,7 +6,7 @@ struct File {
 	CFileHandle handle;
 
 	drop(mut& self) {
-		fclose(handle);
+		fclose(self.handle);
 	}
 }
 
